@@ -155,6 +155,7 @@ struct NativeBrainView: View {
     @State private var showBrain = true
     @State private var showQueue = false
     @State private var opened: BrainMemory?
+    @State private var showVolumes = false
 
     private var palette: GlassPalette { .named(themeName) }
 
@@ -162,9 +163,12 @@ struct NativeBrainView: View {
         ZStack {
             GlassBackdrop(palette: palette)
             VStack(spacing: 0) {
-                GlassHeader(title: "不忘", palette: palette, onBack: { dismiss() },
-                            trailing: AnyView(queueButton))
-                if loading && items.isEmpty {
+                GlassHeader(title: showVolumes ? "叙事卷" : "不忘", palette: palette, onBack: { dismiss() },
+                            switchTitle: showVolumes ? "不忘" : "叙事卷",
+                            onSwitch: { showVolumes.toggle() }, trailing: showVolumes ? nil : AnyView(queueButton))
+                if showVolumes {
+                    NarrativeVolumesView(palette: palette)
+                } else if loading && items.isEmpty {
                     Spacer()
                     ProgressView().tint(palette.ink3)
                     Spacer()
@@ -659,5 +663,146 @@ private struct QueueSheet: View {
                       ago: r.string("ago"))
         }
         await MainActor.run { emotion = e; fact = f; loading = false }
+    }
+}
+
+// MARK: - Narrative volumes (read-only)
+private struct NarrativeVolume: Identifiable {
+    let id: String
+    let raw: [String: Any]
+    var title: String { raw["title"] as? String ?? "" }
+    var content: String { raw["content"] as? String ?? "" }
+}
+private struct NarrativeVolumesView: View {
+    let palette: GlassPalette
+    @State private var items: [NarrativeVolume] = []
+    @State private var query = ""
+    @State private var filter = "全部"
+    @State private var errorText = ""
+    @State private var loading = true
+    @State private var opened: NarrativeVolume?
+    @State private var pendingText = ""
+    @State private var pendingOpen = false
+    private var shown: [NarrativeVolume] {
+        items.filter { v in
+            (filter == "全部" || (v.raw["status"] as? String == (filter == "已封卷" ? "closed" : "active"))) &&
+            (query.isEmpty || (v.title + v.content).localizedCaseInsensitiveContains(query))
+        }
+    }
+    var body: some View {
+        VStack(spacing: 12) {
+            HStack {
+                TextField("搜索卷名和正文", text: $query)
+                Button("待办") { pendingOpen = true; Task { await loadPending() } }
+            }
+            Picker("状态", selection: $filter) {
+                ForEach(["全部", "进行中", "已封卷"], id: \.self) { Text($0) }
+            }.pickerStyle(.segmented)
+            if loading { ProgressView() }
+            if !errorText.isEmpty { Text(errorText); Button("重试") { Task { await load() } } }
+            ScrollView {
+                LazyVStack(spacing: 12) {
+                    if !loading && errorText.isEmpty && shown.isEmpty { Text("暂时没有符合条件的卷").padding() }
+                    ForEach(shown) { v in
+                        Button { opened = v } label: {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text(v.title).font(.system(size: 19, design: .serif))
+                                Text(v.raw["range_text"] as? String ?? "").font(.caption)
+                                Text(v.raw["status"] as? String == "closed" ? "已封卷" : "进行中").font(.caption2)
+                            }.frame(maxWidth: .infinity, alignment: .leading).padding(16)
+                                .background(palette.ink.opacity(0.05), in: RoundedRectangle(cornerRadius: 16))
+                        }.buttonStyle(.plain)
+                    }
+                }
+            }.refreshable { await load() }
+        }.foregroundColor(palette.ink).padding(.horizontal, 16)
+            .task { await load() }
+            .sheet(item: $opened) { NarrativeReadingView(volume: $0) }
+            .sheet(isPresented: $pendingOpen) {
+                NavigationStack {
+                    ScrollView { Text(pendingText).textSelection(.enabled).padding() }
+                        .navigationTitle("叙事待办")
+                        .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { pendingOpen = false } } }
+                }
+            }
+    }
+    private func load() async {
+        loading = true; errorText = ""
+        do {
+            let d = try await NativeHouseAPI.object("/api/lmc5/volumes")
+            guard let rows = d["items"] as? [[String: Any]] else { throw URLError(.cannotParseResponse) }
+            items = rows.map { NarrativeVolume(id: $0["id"] as? String ?? "", raw: $0) }
+        } catch { errorText = "叙事卷没能加载：\(error.localizedDescription)" }
+        loading = false
+    }
+    private func loadPending() async {
+        pendingText = "正在读取…"
+        do {
+            let d = try await NativeHouseAPI.object("/api/lmc5/volumes/pending")
+            guard let text = d["display_text"] as? String else { throw URLError(.cannotParseResponse) }
+            pendingText = text
+        } catch { pendingText = "待办读取失败：\(error.localizedDescription)" }
+    }
+}
+private struct NarrativeReadingView: View {
+    let volume: NarrativeVolume
+    @Environment(\.dismiss) private var dismiss
+    @State private var tab = "正文"
+    @State private var selectedMemory = ""
+    @State private var memoryOpen = false
+    private let ink = Color(red: 0.23, green: 0.19, blue: 0.16)
+    private let gold = Color(red: 0.62, green: 0.49, blue: 0.24)
+    var body: some View {
+        NavigationStack {
+            ScrollView {
+                VStack(spacing: 24) {
+                    Text("V O L U M E N").font(.system(size: 12, design: .serif)).foregroundStyle(gold)
+                    Text(volume.title).font(.custom("Songti SC", size: 28)).multilineTextAlignment(.center)
+                    Text(volume.raw["range_text"] as? String ?? "").font(.system(size: 15, design: .serif))
+                    Text(volume.raw["status"] as? String == "closed" ? "已封卷" : "进行中")
+                    VStack(spacing: 4) {
+                        Text("创建：\(stamp("created_at"))")
+                        Text("更新：\(stamp("updated_at"))")
+                    }.font(.caption).foregroundStyle(ink.opacity(0.65))
+                    Picker("内容", selection: $tab) { Text("正文").tag("正文"); Text("关联记忆").tag("关联记忆") }.pickerStyle(.segmented)
+                    Rectangle().fill(gold.opacity(0.55)).frame(height: 1)
+                    if tab == "正文" {
+                        ForEach(Array((volume.raw["blocks"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { _, block in
+                            HStack(alignment: .top, spacing: 12) {
+                                if let date = block["date_label"] as? String {
+                                    Text(date).font(.system(size: 11, design: .serif)).foregroundStyle(gold).frame(width: 48)
+                                    Rectangle().fill(gold.opacity(0.6)).frame(width: 1)
+                                        .overlay(alignment: .top) { Circle().fill(gold).frame(width: 5, height: 5) }
+                                }
+                                Text(block["text"] as? String ?? "")
+                                    .font(.custom("Songti SC", size: 20)).lineSpacing(9)
+                                    .frame(maxWidth: .infinity, alignment: .leading).textSelection(.enabled)
+                            }.fixedSize(horizontal: false, vertical: true)
+                        }
+                    } else {
+                        ForEach(Array((volume.raw["memories"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { _, m in
+                            Button {
+                                selectedMemory = (m["title"] as? String ?? "") + "\n\n" + (m["content"] as? String ?? "")
+                                memoryOpen = true
+                            } label: {
+                                Text(m["title"] as? String ?? "").frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 10)
+                            }.buttonStyle(.plain)
+                        }
+                    }
+                }.padding(24).foregroundStyle(ink)
+            }
+            .background(Color(red: 0.96, green: 0.93, blue: 0.87))
+            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { dismiss() } } }
+            .sheet(isPresented: $memoryOpen) { ScrollView { Text(selectedMemory).textSelection(.enabled).padding(24) } }
+        }
+    }
+    private func stamp(_ key: String) -> String {
+        guard let value = volume.raw[key] as? String else { return "—" }
+        let parser = ISO8601DateFormatter()
+        parser.formatOptions = [.withInternetDateTime, .withFractionalSeconds]
+        var date = parser.date(from: value)
+        if date == nil { parser.formatOptions = [.withInternetDateTime]; date = parser.date(from: value) }
+        guard let date else { return value }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd HH:mm"; return f.string(from: date)
     }
 }
