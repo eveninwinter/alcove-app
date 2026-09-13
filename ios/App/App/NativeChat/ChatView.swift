@@ -5679,8 +5679,16 @@ struct RecallPop: View {
 private struct EdgeFadeMaskModifier<M: View>: ViewModifier {
     let enabled: Bool
     let mask: M
-    @ViewBuilder func body(content: Content) -> some View {
-        if enabled { content.mask(mask) } else { content }
+    func body(content: Content) -> some View {
+        // Keep the ScrollView in the same structural branch when themes change.
+        // Only the mask changes; an opaque mask is equivalent to no clipping.
+        content.mask {
+            if enabled {
+                mask
+            } else {
+                Rectangle().fill(Color.white)
+            }
+        }
     }
 }
 
