@@ -188,7 +188,15 @@ struct AlbumPhotoViewer: View {
                         HStack(spacing: 8) {
                             Text(current.category)
                             Spacer()
-                            Label(current.isPosted ? "已发过" : current.postStatus == "reserved" ? "正在用于发帖" : current.postStatus == "unused" ? "未发过" : "", systemImage: current.isPosted ? "checkmark.circle" : "circle")
+                            // 0913 她报：发过的图那一行是空的。post_status 一共四档，
+                            // 第四档 unknown（占用超时＝不知道到底发没发）这里漏写了文案，
+                            // 三元链直接落到空串，只剩一个空心圈。
+                            Label(current.isPosted ? "已发过"
+                                  : current.postStatus == "reserved" ? "正在用于发帖"
+                                  : current.postStatus == "unknown" ? "发没发不清楚，没登记上"
+                                  : current.postStatus == "unused" ? "未发过" : "",
+                                  systemImage: current.isPosted ? "checkmark.circle"
+                                  : current.postStatus == "unknown" ? "questionmark.circle" : "circle")
                         }.font(.caption).foregroundStyle(.white.opacity(0.6))
                         if !current.note.isEmpty { Text(current.note).font(.system(size: 16)).lineSpacing(5) }
                         if let date = current.createdAt { Text(albumDate(date)).font(.caption2).foregroundStyle(.white.opacity(0.45)) }
