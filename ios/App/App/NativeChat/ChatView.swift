@@ -2770,6 +2770,8 @@ struct MessageRow: View {
                     GhostActivityMessageCard(card: ghost, theme: theme)
                 } else if let play = msg.playCard {
                     PlayPageMessageCard(card: play, theme: theme)
+                } else if let forward = msg.favoriteForward {
+                    FavoriteForwardMessageCard(card: forward)
                 } else if let reading = msg.readingCard {
                     ReadingShareMessageCard(card: reading, theme: theme)
                 } else if let tarot = msg.tarotCard {
@@ -5978,6 +5980,73 @@ enum UploadImage {
         format.opaque = opaque
         return UIGraphicsImageRenderer(size: target, format: format).image { _ in
             image.draw(in: CGRect(origin: .zero, size: target))
+        }
+    }
+}
+
+private struct FavoriteForwardMessageCard: View {
+    let card: FavoriteForwardPayload
+    @State private var opened = false
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    var body: some View {
+        Button { opened = true } label: {
+            VStack(alignment: .leading, spacing: 8) {
+                Label(card.label, systemImage: "bookmark")
+                    .font(.system(size: 13, weight: .medium))
+                Text(card.preview).font(.system(size: 14)).lineLimit(3)
+                Text("来自收藏 · 点开查看").font(.system(size: 11)).foregroundStyle(.secondary)
+            }
+            .padding(12).frame(maxWidth: 260, alignment: .leading)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $opened) {
+            NavigationStack {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 18) {
+                        ForEach(Array(card.items.enumerated()), id: \.offset) { _, item in
+                            if !item.title.isEmpty { Text(item.title).font(.headline) }
+                            ForEach(Array(item.members.enumerated()), id: \.offset) { _, member in
+                                FavoriteForwardMemberView(member: member, themeName: themeName)
+                            }
+                            Divider()
+                        }
+                    }.padding()
+                }
+                .navigationTitle(card.label)
+                .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { opened = false } } }
+            }
+        }
+    }
+}
+
+private struct FavoriteForwardMemberView: View {
+    let member: FavoriteForwardPayload.Member
+    let themeName: String
+    @State private var transcriptShown = false
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text((member.role == "user" ? "陈霁" : "陈璟") + " · " + member.ts)
+                .font(.caption).foregroundStyle(.secondary)
+            if let url = member.attachment_url, !url.isEmpty {
+                if member.attachment_type == "audio" {
+                    AudioBubble(url: AlcoveAPI.attachmentURL(url), isUser: member.role == "user",
+                        theme: .named(themeName), fontSize: 14,
+                        hasTranscript: !member.text.isEmpty, transcript: member.text,
+                        transcriptShown: transcriptShown, onToggleTranscript: { transcriptShown.toggle() },
+                        translation: member.audio_zh ?? "")
+                } else if member.attachment_type == "image" {
+                    AsyncImage(url: AlcoveAPI.attachmentURL(url)) { image in
+                        image.resizable().scaledToFit()
+                    } placeholder: { Image(systemName: "photo") }
+                    .frame(maxHeight: 300)
+                } else {
+                    Link("打开附件", destination: AlcoveAPI.attachmentURL(url))
+                }
+            }
+            if member.attachment_type != "audio" && !member.text.isEmpty {
+                Text(alcoveMarkdown(member.text)).textSelection(.enabled)
+            }
         }
     }
 }

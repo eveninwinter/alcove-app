@@ -519,6 +519,10 @@ enum AlcoveAPI {
         _ = try await postJSON("/api/favorites/add", body: body)
     }
 
+    static func forwardFavorites(ids: [Int], requestID: String) async throws -> [String: Any] {
+        try await postJSON("/api/favorites/forward", body: ["ids": ids, "request_id": requestID])
+    }
+
     static func favoriteRemove(id: Int) async throws {
         _ = try await postJSON("/api/favorites/remove", body: ["id": id])
     }

@@ -425,6 +425,9 @@ struct GlassFavoritesView: View {
     @State private var picking = false
     @State private var picked: Set<Int> = []
     @State private var deleting = false
+    @State private var sending = false
+    @State private var sendError: String?
+    @State private var forwardRequest: (ids: [Int], key: String)?
 
     private var palette: GlassPalette { .named(themeName) }
     private let kinds: [(String, String)] = [
@@ -454,6 +457,9 @@ struct GlassFavoritesView: View {
             if picking && !picked.isEmpty { deleteBar }
         }
         .task { await load() }
+        .alert("发送收藏", isPresented: Binding(get: { sendError != nil }, set: { if !$0 { sendError = nil } })) {
+            Button("知道了", role: .cancel) {}
+        } message: { Text(sendError ?? "") }
         .sheet(item: $opened) { entry in
             FavoriteThreadSheet(entry: entry, palette: palette,
                                 userName: userName, assistantName: assistantName)
@@ -474,7 +480,7 @@ struct GlassFavoritesView: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("多选删除收藏")
+        .accessibilityLabel("多选收藏")
     }
 
     private var content: some View {
@@ -502,7 +508,8 @@ struct GlassFavoritesView: View {
                                         if picked.contains(entry.id) { picked.remove(entry.id) }
                                         else { picked.insert(entry.id) }
                                     },
-                                    onRemove: { Task { await remove(entry) } })
+                                    onRemove: { Task { await remove(entry) } },
+                                    onForward: { Task { await forward([entry.id]) } })
                             } else {
                                 card(entry)
                             }
@@ -585,6 +592,9 @@ struct GlassFavoritesView: View {
                 .strokeBorder(picked.contains(entry.id) ? palette.acc.opacity(0.55) : .clear,
                               lineWidth: 1.2))
         .contextMenu {
+            Button { Task { await forward([entry.id]) } } label: {
+                Label("发送到聊天", systemImage: "paperplane")
+            }.disabled(sending)
             Button(role: .destructive) {
                 Task { await remove(entry) }
             } label: {
@@ -603,6 +613,9 @@ struct GlassFavoritesView: View {
                 withAnimation { picking = false; picked.removeAll() }
             }
             .foregroundColor(palette.ink3)
+            Button(sending ? "发送中" : "发送到聊天") {
+                Task { await forward(entries.filter { picked.contains($0.id) }.sorted { $0.ts < $1.ts }.map(\.id)) }
+            }.disabled(sending || deleting)
             Button(deleting ? "删除中" : "删除", role: .destructive) {
                 Task { await removePicked() }
             }
@@ -614,6 +627,23 @@ struct GlassFavoritesView: View {
         .glassCard(palette, radius: 16)
         .padding(.horizontal, 16)
         .padding(.bottom, 22)
+    }
+
+    @MainActor private func forward(_ ids: [Int]) async {
+        guard !sending else { return }
+        sending = true
+        defer { sending = false }
+        if forwardRequest?.ids != ids { forwardRequest = (ids, UUID().uuidString) }
+        do {
+            let response = try await AlcoveAPI.forwardFavorites(ids: ids, requestID: forwardRequest!.key)
+            guard response["ok"] as? Bool == true else {
+                sendError = response.string("error"); return
+            }
+            let record = response["record"] as? [String: Any] ?? [:]
+            forwardRequest = nil
+            picked.removeAll(); picking = false
+            NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: record.string("ts"))
+        } catch { sendError = "发送未确认，请先查看主聊天。\n" + error.localizedDescription }
     }
 
     private func typeLabel(_ t: String) -> String {
@@ -665,6 +695,7 @@ private struct FavoriteAudioCard: View {
     let isPicked: Bool
     let onPick: () -> Void
     let onRemove: () -> Void
+    var onForward: () -> Void = {}
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @State private var showTranscript = true
 
@@ -730,6 +761,7 @@ private struct FavoriteAudioCard: View {
             RoundedRectangle(cornerRadius: 18, style: .continuous)
                 .strokeBorder(isPicked ? palette.acc.opacity(0.55) : .clear, lineWidth: 1.2))
         .contextMenu {
+            Button(action: onForward) { Label("发送到聊天", systemImage: "paperplane") }
             Button(role: .destructive) { onRemove() } label: {
                 Label("不收了", systemImage: "trash")
             }

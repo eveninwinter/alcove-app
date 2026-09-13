@@ -101,6 +101,12 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(GhostActivityCard.self, from: data)
     }
 
+    var favoriteForward: FavoriteForwardPayload? {
+        guard let raw = Self.taggedBody(text, tag: "FAVORITE_FORWARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(FavoriteForwardPayload.self, from: data)
+    }
+
     var readingCard: ReadingShareCard? {
         guard let raw = Self.taggedBody(text, tag: "READING_CARD"),
               let data = raw.data(using: .utf8) else { return nil }
@@ -747,4 +753,37 @@ struct PendingVoice: Equatable {
     var analysis: VoiceAnalysis? = nil
     var emotionPending = false
     var error: String? = nil
+}
+
+
+struct FavoriteForwardPayload: Decodable {
+    let forward_id: String
+    let items: [Item]
+    struct Item: Decodable {
+        let favorite_id: Int
+        let kind: String
+        let title: String
+        let atype: String
+        let members: [Member]
+    }
+    struct Member: Decodable {
+        let ts: String
+        let text: String
+        let role: String
+        let attachment_url: String?
+        let attachment_type: String?
+        let audio_zh: String?
+    }
+    var label: String {
+        if items.count > 1 { return "多条收藏" }
+        if items.first?.kind == "thread" { return "聊天记录" }
+        if items.first?.atype == "audio" { return "语音" }
+        if items.first?.atype == "image" { return "图片" }
+        return "单条消息"
+    }
+    var preview: String {
+        items.flatMap { $0.members }.prefix(3).map {
+            ($0.role == "user" ? "陈霁：" : "陈璟：") + ($0.text.isEmpty ? "[附件]" : $0.text)
+        }.joined(separator: "\n")
+    }
 }
