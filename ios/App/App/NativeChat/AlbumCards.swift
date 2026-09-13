@@ -66,17 +66,25 @@ private struct AlbumBatchCard: View {
                         Label("\(batch.photos.count) 张珍藏", systemImage: "photo.stack")
                             .font(.system(size: 12, weight: .medium)).foregroundStyle(theme.textDim)
                         Spacer()
+                        // 0913 她报：点右上角 x 关不掉，反而进了大图。默认 button style 在新系统上
+                        // 会把它渲染成比 32×32 更大的玻璃圆，点到圆的下缘就漏到下面的 mosaic 上去了。
+                        // 钉死 .plain + contentShape 让看到的圆就是能点的圆，header 再抬一层 zIndex。
                         Button { dismiss() } label: {
                             Image(systemName: "xmark").font(.system(size: 12, weight: .semibold))
                                 .frame(width: 32, height: 32).background(theme.text.opacity(0.06), in: Circle())
-                        }.accessibilityLabel("关闭收藏卡片")
-                    }.padding(.horizontal, 17).padding(.top, 10).padding(.bottom, 8)
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("关闭收藏卡片")
+                    }.padding(.horizontal, 17).padding(.top, 10).padding(.bottom, 8).zIndex(1)
                     AlbumBatchMosaic(photos: batch.photos) { photo in
                         selectedId = photo.id
                         selected = AlbumSelection(photos: batch.photos, selectedId: photo.id)
                     }
                     .frame(height: side * 0.58)
                     .clipShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
+                    // clipShape 只裁画面不裁点击区，这里显式把命中形状也收进圆角框里
+                    .contentShape(RoundedRectangle(cornerRadius: 17, style: .continuous))
                     .padding(.horizontal, 12)
                     ScrollView {
                         VStack(alignment: .leading, spacing: 7) {
@@ -156,14 +164,16 @@ struct AlbumPhotoViewer: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack {
-                Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 44, height: 44) }
+                // 0913 同 AlbumBatchCard 的毛病：Image 撑到 44×44 只是占位，能点的还是图标那一小块，
+                // 周围一圈是空的。contentShape 把整块方框都变成可点区域。
+                Button { dismiss() } label: { Image(systemName: "xmark").frame(width: 44, height: 44).contentShape(Rectangle()) }
                     .accessibilityLabel("关闭照片")
                 Spacer()
                 Text("\((photos.firstIndex { $0.id == selectedId } ?? 0) + 1) / \(photos.count)")
                     .font(.system(size: 13, weight: .medium, design: .monospaced))
                 Spacer()
                 if editable {
-                    Button { editing = current } label: { Image(systemName: "pencil").frame(width: 44, height: 44) }
+                    Button { editing = current } label: { Image(systemName: "pencil").frame(width: 44, height: 44).contentShape(Rectangle()) }
                         .accessibilityLabel("编辑照片备注和分类")
                 } else { Color.clear.frame(width: 44, height: 44) }
             }.padding(.horizontal, 8)
