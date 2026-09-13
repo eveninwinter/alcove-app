@@ -651,8 +651,8 @@ struct NativeHouseDrawer: View {
                 }
                 Text("\(model.days) days")
                     .font(.system(size: 25, weight: .light, design: .serif))
-                Text(model.coinsLine)
-                    .font(.system(size: 9.5))
+                Text("and counting")
+                    .font(.system(size: 9.5, design: .serif).italic())
                     .foregroundColor(theme.textDim)
                     .lineLimit(1)
                     .minimumScaleFactor(0.7)
