@@ -756,21 +756,27 @@ private struct NarrativeReadingView: View {
         NavigationStack {
             ScrollView {
                 VStack(spacing: 24) {
-                    Text("V O L U M E N").font(.system(size: 12, design: .serif)).foregroundStyle(gold)
+                    Text("VOLUMEN").font(.custom("Baskerville", size: 12)).tracking(6).foregroundStyle(gold)
                     Text(volume.title).font(.custom("Songti SC", size: 28)).multilineTextAlignment(.center)
-                    Text(volume.raw["range_text"] as? String ?? "").font(.system(size: 15, design: .serif))
+                    Text(volume.raw["range_text"] as? String ?? "").font(.custom("Noteworthy-Light", size: 16))
                     Text(volume.raw["status"] as? String == "closed" ? "已封卷" : "进行中")
                     VStack(spacing: 4) {
                         Text("创建：\(stamp("created_at"))")
                         Text("更新：\(stamp("updated_at"))")
-                    }.font(.caption).foregroundStyle(ink.opacity(0.65))
+                    }.font(.custom("Noteworthy-Light", size: 12)).foregroundStyle(ink.opacity(0.65))
                     Picker("内容", selection: $tab) { Text("正文").tag("正文"); Text("关联记忆").tag("关联记忆") }.pickerStyle(.segmented)
                     Rectangle().fill(gold.opacity(0.55)).frame(height: 1)
                     if tab == "正文" {
+                        HStack(alignment: .firstTextBaseline, spacing: 10) {
+                            Text("I").font(.custom("Baskerville-Italic", size: 16))
+                            Text("ANNALES").font(.custom("Baskerville", size: 12)).tracking(4)
+                            Text("turning points").font(.custom("Baskerville-Italic", size: 13)).tracking(1)
+                            Rectangle().fill(gold.opacity(0.4)).frame(height: 1)
+                        }.foregroundStyle(gold)
                         ForEach(Array((volume.raw["blocks"] as? [[String: Any]] ?? []).enumerated()), id: \.offset) { _, block in
                             HStack(alignment: .top, spacing: 12) {
                                 if let date = block["date_label"] as? String {
-                                    Text(date).font(.system(size: 11, design: .serif)).foregroundStyle(gold).frame(width: 48)
+                                    Text(date).font(.custom("Noteworthy-Light", size: 12)).foregroundStyle(gold).frame(width: 48)
                                     Rectangle().fill(gold.opacity(0.6)).frame(width: 1)
                                         .overlay(alignment: .top) { Circle().fill(gold).frame(width: 5, height: 5) }
                                 }
