@@ -1,4 +1,5 @@
 import SwiftUI
+import Translation
 import WebKit
 import PhotosUI
 import Photos
@@ -2768,6 +2769,7 @@ struct MessageRow: View {
                         trailBlock
                     }
                 }
+                if !theme.isMessages && !isUser { nativeThinkingButton }
                 if let paperDate = msg.morningPaperDate {
                     MorningPaperMessageCard(date: paperDate, theme: theme, messageID: msg.id)
                 } else if let inside = msg.insideText {
@@ -3054,9 +3056,6 @@ struct MessageRow: View {
         if suppressOwnThought { return nil }
         if let handwritten = msg.thinking?.trimmingCharacters(in: .whitespacesAndNewlines),
            !handwritten.isEmpty { return handwritten }
-        if theme.isPaper && !isUser,
-           let native = msg.nativeThinking?.trimmingCharacters(in: .whitespacesAndNewlines),
-           !native.isEmpty { return cuteThinkingPlaceholder }
         return nil
     }
 
@@ -3306,6 +3305,7 @@ struct MessageRow: View {
                 }
                 .buttonStyle(.plain)
                 if recall != nil { recallBadge }
+                nativeThinkingButton
               }
                 if processOpen {
                     VStack(alignment: .leading, spacing: 8) {
@@ -3331,9 +3331,11 @@ struct MessageRow: View {
                 }
             }
             .padding(.leading, 4)
-        } else if recall != nil && showProcessDots {
-            // 0822 她定的：记忆召回也归过程线开关管，关了就一起藏
-            recallBadge
+        } else if showProcessDots {
+            HStack(spacing: 14) {
+                if recall != nil { recallBadge }
+                nativeThinkingButton
+            }
         }
     }
 
@@ -3524,11 +3526,18 @@ struct MessageRow: View {
     }
 
 
+    @ViewBuilder private var nativeThinkingButton: some View {
+        if !isUser, let text = msg.nativeThinking,
+           !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            NativeThinkingButton(text: text, color: theme.thoughtColor)
+        }
+    }
+
     private var recallBadge: some View {
         Button {
             showRecall = true
         } label: {
-            Text("✦ ··· 记起")
+            Text("✦")
                 .font(.system(size: 11, design: .serif))
                 .italic()
                 .foregroundColor(theme.thoughtColor)
@@ -6057,6 +6066,121 @@ private struct FavoriteForwardMemberView: View {
             }
             if member.attachment_type != "audio" && !member.text.isEmpty {
                 Text(alcoveMarkdown(member.text)).textSelection(.enabled)
+            }
+        }
+    }
+}
+
+
+// Native summaries are a separate source, never synthesized from handwritten thoughts.
+private struct NativeThinkingButton: View {
+    let text: String
+    let color: Color
+    @State private var presented = false
+    var body: some View {
+        Button { presented = true } label: {
+            Image(systemName: "brain")
+                .font(.system(size: 13, weight: .light))
+                .foregroundStyle(color)
+                .frame(width: 44, height: 44)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("查看原生 Thinking")
+        .sheet(isPresented: $presented) {
+            if #available(iOS 18.0, *) {
+                NativeThinkingSheet(text: text)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(32)
+            } else {
+                ScrollView { Text(text).padding().textSelection(.enabled) }
+            }
+        }
+    }
+}
+
+@available(iOS 18.0, *)
+private struct NativeThinkingSheet: View {
+    let text: String
+    @Environment(\.dismiss) private var dismiss
+    @State private var configuration: TranslationSession.Configuration?
+    @State private var translated: String?
+    @State private var showTranslation = false
+    @State private var translating = false
+    @State private var errorText: String?
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 19, weight: .light))
+                        .frame(width: 44, height: 44)
+                        .background(Color(uiColor: .secondarySystemBackground), in: Circle())
+                }.accessibilityLabel("关闭")
+                Spacer()
+                Text("原生 Thinking").font(.system(size: 17, weight: .semibold))
+                Spacer()
+                Button {
+                    if translated != nil {
+                        showTranslation.toggle()
+                    } else {
+                        translating = true
+                        errorText = nil
+                        if configuration == nil {
+                            configuration = .init(source: .init(identifier: "en"), target: .init(identifier: "zh-Hans"))
+                        } else { configuration?.invalidate() }
+                    }
+                } label: {
+                    Group {
+                        if translating { ProgressView() }
+                        else { Text(showTranslation ? "原文" : "译") }
+                    }.frame(width: 44, height: 44)
+                }
+                .disabled(translating)
+                .accessibilityLabel(showTranslation ? "显示原文" : "翻译成中文")
+            }
+            .padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 12)
+            if let errorText {
+                Text(errorText).font(.footnote).foregroundStyle(.secondary)
+                    .padding(.horizontal, 22).padding(.bottom, 8)
+            }
+            ScrollView {
+                VStack(alignment: .leading, spacing: 12) {
+                    if showTranslation {
+                        Text("中文译文 · iOS 翻译").font(.caption).foregroundStyle(.secondary)
+                    }
+                    Text(showTranslation ? (translated ?? text) : text)
+                        .font(.system(size: 16)).lineSpacing(8)
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }.padding(.horizontal, 22).padding(.bottom, 28)
+            }
+        }
+        .foregroundStyle(Color.primary)
+        .background(Color(uiColor: .systemBackground))
+        .tint(.primary)
+        .translationTask(configuration) { session in
+            do {
+                // Translate each paragraph separately so the source's blank lines survive.
+                let paragraphs = text.components(separatedBy: "\n\n")
+                var output: [String] = []
+                for paragraph in paragraphs {
+                    try Task.checkCancellation()
+                    if paragraph.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                        output.append(paragraph)
+                    } else {
+                        let response = try await session.translate(paragraph)
+                        output.append(response.targetText)
+                    }
+                }
+                translated = output.joined(separator: "\n\n")
+                showTranslation = true
+                translating = false
+            } catch {
+                translating = false
+                errorText = "翻译未完成，原文已保留。点右上角「译」重试。"
             }
         }
     }
