@@ -357,6 +357,12 @@ struct ChatView: View {
                     }
                 )
                 .modifier(EdgeFadeMaskModifier(enabled: !theme.isMessages, mask: edgeFadeMask))   // 信息主题不罩遮罩，别挡系统效果
+                // 0914：罩与不罩是两条不同的分支，切到／切出信息主题时 SwiftUI 会把这个
+                // ScrollView 当成新视图重建，位置掉回最顶上（她原来报的那个 bug）。
+                // 重建发生在这一帧，下一帧再把锚点拉回最新一条。
+                .onChange(of: theme.isMessages) { _ in
+                    DispatchQueue.main.async { proxy.scrollTo("tail", anchor: .bottom) }
+                }
 
                 if paragraphSelectionMode {
                     paragraphSelectionToolbar
@@ -5679,16 +5685,13 @@ struct RecallPop: View {
 private struct EdgeFadeMaskModifier<M: View>: ViewModifier {
     let enabled: Bool
     let mask: M
-    func body(content: Content) -> some View {
-        // Keep the ScrollView in the same structural branch when themes change.
-        // Only the mask changes; an opaque mask is equivalent to no clipping.
-        content.mask {
-            if enabled {
-                mask
-            } else {
-                Rectangle().fill(Color.white)
-            }
-        }
+    // 0914 她报「顶栏和底部都坏了」：371de38 为了保住滚动位置改成任何主题都罩一层遮罩
+    // （信息主题罩纯白＝等于没裁）。但只要罩了遮罩，内容就被丢进离屏图层，
+    // iOS 26 的 scroll edge effect 和顶栏的毛玻璃材质一起失效——上面那行注释
+    //「信息主题不罩遮罩，别挡系统效果」就是为这个写的。改回按主题罩；
+    // 滚动位置改在 messageList 里用锚点补。
+    @ViewBuilder func body(content: Content) -> some View {
+        if enabled { content.mask(mask) } else { content }
     }
 }
 
