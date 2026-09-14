@@ -6117,7 +6117,7 @@ private struct NativeThinkingSheet: View {
         errorText = nil
         aiTask = Task { @MainActor in
             do {
-                let result = try await AlcoveAPI.postRaw("/api/thinking/translate", body: ["text": text])
+                let result = try await AlcoveAPI.postRaw("/thinking/translate", body: ["text": text])
                 try Task.checkCancellation()
                 guard result["ok"] as? Bool == true,
                       let output = result["text"] as? String, !output.isEmpty else {
