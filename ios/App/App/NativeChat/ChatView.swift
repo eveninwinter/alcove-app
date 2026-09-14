@@ -2745,7 +2745,7 @@ struct MessageRow: View {
             // 0903 她要的：塔罗卡不管谁发的都在屏幕正中间，两侧留白都不吃
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             VStack(alignment: isUser ? .trailing : .leading,
-                   spacing: theme.isPaper && !isUser ? 10 : 7) {
+                   spacing: 0) {
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
@@ -2755,21 +2755,23 @@ struct MessageRow: View {
                         switch blk {
                         case .think(let text, let i):
                             thinkPanelRow(text, index: i, showRecall: blk.id == firstThinkBlockID)
+                                .padding(.bottom, rowPartGap)
                         case .tools(let items, let i):
                             toolRow(items, index: i)
+                                .padding(.bottom, rowPartGap)
                         }
                     }
                 } else {
                     if let think = visibleChatThought {
-                        thinkingBlock(think)
+                        thinkingBlock(think).padding(.bottom, rowPartGap)
                     } else if recall != nil {
-                        recallBadge // 没有思绪行时角标单独站一行，和 PWA 一致
+                        recallBadge.padding(.bottom, rowPartGap) // 没有思绪行时角标单独站一行，和 PWA 一致
                     }
                     if !isUser && trailWorthShowing {
-                        trailBlock
+                        trailBlock.padding(.bottom, rowPartGap)
                     }
                 }
-                if !theme.isMessages && !isUser { nativeThinkingButton }
+                if !theme.isMessages && !isUser { nativeThinkingButton.padding(.bottom, rowPartGap) }
                 if let paperDate = msg.morningPaperDate {
                     MorningPaperMessageCard(date: paperDate, theme: theme, messageID: msg.id)
                 } else if let inside = msg.insideText {
@@ -2886,7 +2888,7 @@ struct MessageRow: View {
                         // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
                         .foregroundColor(theme.thoughtColor.opacity(0.82))
                         .padding(.leading, 3)
-                        .padding(.top, 1)
+                        .padding(.top, rowPartGap + 1)
                 }
                 if shouldShowMetaRow {
                     // 0822 她要的：信息主题下时间／清单／心率三个之间留呼吸感
@@ -2948,6 +2950,7 @@ struct MessageRow: View {
                     }
                     .padding(.leading, isUser ? 0 : timestampTextInset)
                     .padding(.trailing, isUser ? timestampTextInset : 0)
+                    .padding(.top, rowPartGap)
                 }
             }
             if !isUser {
@@ -3285,6 +3288,11 @@ struct MessageRow: View {
 
     // 0822 她画的：iMessage 主题下每轮只剩正文气泡；思绪和工具脚印合成一条「过程线」，
     // 平时就一个小圆点，点开才按发生顺序摊开；加号菜单里能把这个点整个藏掉。
+    /// 0914 她定的：气泡跟气泡之间只听设置里那根滑块；零件（过程点、脚印、时间戳）
+    /// 跟气泡之间的缝写死。所以外层竖排的 spacing 归零，缝改由各个零件自己带 ——
+    /// 一行里只有光气泡时就一点也不多占，两边看起来才一样齐。
+    private var rowPartGap: CGFloat { theme.isPaper && !isUser ? 10 : 7 }
+
     private var hasProcess: Bool {
         !turnBlocks.isEmpty || visibleChatThought != nil || trailWorthShowing
     }
@@ -3331,11 +3339,13 @@ struct MessageRow: View {
                 }
             }
             .padding(.leading, 4)
+            .padding(.bottom, rowPartGap)
         } else if showProcessDots {
             HStack(spacing: 14) {
                 if recall != nil { recallBadge }
                 nativeThinkingButton
             }
+            .padding(.bottom, rowPartGap)
         }
     }
 
