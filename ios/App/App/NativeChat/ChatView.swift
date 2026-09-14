@@ -6080,9 +6080,9 @@ private struct NativeThinkingButton: View {
     var body: some View {
         Button { presented = true } label: {
             Image(systemName: "brain")
-                .font(.system(size: 13, weight: .light))
+                .font(.system(size: 12, weight: .light))
                 .foregroundStyle(color)
-                .frame(width: 44, height: 44)
+                .frame(width: 22, height: 14)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
