@@ -6109,6 +6109,38 @@ private struct NativeThinkingSheet: View {
     @State private var showTranslation = false
     @State private var translating = false
     @State private var errorText: String?
+    @State private var translationSource = "AI 润色翻译"
+    @State private var aiTask: Task<Void, Never>?
+
+    private func translateAI() {
+        translating = true
+        errorText = nil
+        aiTask = Task { @MainActor in
+            do {
+                let result = try await AlcoveAPI.postRaw("/api/thinking/translate", body: ["text": text])
+                try Task.checkCancellation()
+                guard result["ok"] as? Bool == true,
+                      let output = result["text"] as? String, !output.isEmpty else {
+                    throw URLError(.badServerResponse)
+                }
+                translated = output
+                translationSource = "AI 润色翻译"
+                showTranslation = true
+            } catch {
+                if !Task.isCancelled { errorText = "AI翻译未完成，可重试或改用iOS翻译。" }
+            }
+            translating = false
+        }
+    }
+
+    private func translateIOS() {
+        translating = true
+        errorText = nil
+        if configuration == nil {
+            configuration = .init(source: .init(identifier: "en"), target: .init(identifier: "zh-Hans"))
+        } else { configuration?.invalidate() }
+    }
+
 
     var body: some View {
         VStack(spacing: 0) {
@@ -6126,17 +6158,17 @@ private struct NativeThinkingSheet: View {
                     if translated != nil {
                         showTranslation.toggle()
                     } else {
-                        translating = true
-                        errorText = nil
-                        if configuration == nil {
-                            configuration = .init(source: .init(identifier: "en"), target: .init(identifier: "zh-Hans"))
-                        } else { configuration?.invalidate() }
+                        translateAI()
                     }
                 } label: {
                     Group {
                         if translating { ProgressView() }
                         else { Text(showTranslation ? "原文" : "译") }
                     }.frame(width: 44, height: 44)
+                }
+                .contextMenu {
+                    Button("AI 润色翻译") { translateAI() }.disabled(translating)
+                    Button("iOS 翻译") { translateIOS() }.disabled(translating)
                 }
                 .disabled(translating)
                 .accessibilityLabel(showTranslation ? "显示原文" : "翻译成中文")
@@ -6145,11 +6177,15 @@ private struct NativeThinkingSheet: View {
             if let errorText {
                 Text(errorText).font(.footnote).foregroundStyle(.secondary)
                     .padding(.horizontal, 22).padding(.bottom, 8)
+                HStack {
+                    Button("重试 AI 翻译") { translateAI() }
+                    Button("改用 iOS 翻译") { translateIOS() }
+                }.font(.footnote).disabled(translating).padding(.bottom, 8)
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
                     if showTranslation {
-                        Text("中文译文 · iOS 翻译").font(.caption).foregroundStyle(.secondary)
+                        Text("中文译文 · \(translationSource)").font(.caption).foregroundStyle(.secondary)
                     }
                     Text(showTranslation ? (translated ?? text) : text)
                         .font(.system(size: 16)).lineSpacing(8)
@@ -6161,6 +6197,7 @@ private struct NativeThinkingSheet: View {
         .foregroundStyle(Color.primary)
         .background(Color(uiColor: .systemBackground))
         .tint(.primary)
+        .onDisappear { aiTask?.cancel() }
         .translationTask(configuration) { session in
             do {
                 // Translate each paragraph separately so the source's blank lines survive.
@@ -6175,6 +6212,7 @@ private struct NativeThinkingSheet: View {
                         output.append(response.targetText)
                     }
                 }
+                translationSource = "iOS 翻译"
                 translated = output.joined(separator: "\n\n")
                 showTranslation = true
                 translating = false
