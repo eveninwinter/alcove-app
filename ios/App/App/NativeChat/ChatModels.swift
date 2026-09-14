@@ -591,12 +591,17 @@ struct ActivityItem: Identifiable, Equatable {
         self.command = (json["command"] as? String) ?? ""
         self.output = (json["output"] as? String) ?? ""
         self.isError = (json["is_error"] as? Bool) ?? false
-        // 这是过程记录不是聊天正文，markdown 标记留着只会变成一串星号
-        self.content = c
+        // 思绪保留原有段落；只有工具等摘要需要压成单行。
+        let cleaned = c
             .replacingOccurrences(of: "**", with: "")
             .replacingOccurrences(of: "`", with: "")
-            .replacingOccurrences(of: "\n", with: " ")
-            .trimmingCharacters(in: .whitespaces)
+        if k == "think" || k == "thinking" {
+            self.content = cleaned.trimmingCharacters(in: .whitespaces)
+        } else {
+            self.content = cleaned
+                .replacingOccurrences(of: "\n", with: " ")
+                .trimmingCharacters(in: .whitespaces)
+        }
         if let d = json["t"] as? Double { self.t = d }
         else if let i = json["t"] as? Int { self.t = Double(i) }
         else { self.t = 0 }
