@@ -6152,7 +6152,7 @@ private struct NativeThinkingSheet: View {
                         .background(Color(uiColor: .secondarySystemBackground), in: Circle())
                 }.accessibilityLabel("关闭")
                 Spacer()
-                Text("原生 Thinking").font(.system(size: 17, weight: .semibold))
+                Text("Thought process").font(.system(size: 17, weight: .semibold))
                 Spacer()
                 Button {
                     if translated != nil {
