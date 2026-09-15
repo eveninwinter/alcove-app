@@ -408,8 +408,18 @@ final class FloatingItemWindow: UIWindow {
         host.view.backgroundColor = .clear
         rootViewController = host
         let pan = UIPanGestureRecognizer(target: self, action: #selector(onPan(_:)))
-        pan.cancelsTouchesInView = false
-        host.view.addGestureRecognizer(pan)
+        if itemID == "call" {
+            // Own the call pill's gestures at the window, rather than competing
+            // with the hosted SwiftUI button. A drag must never restore the call.
+            pan.cancelsTouchesInView = true
+            addGestureRecognizer(pan)
+            let tap = UITapGestureRecognizer(target: self, action: #selector(restoreCall))
+            tap.require(toFail: pan)
+            addGestureRecognizer(tap)
+        } else {
+            pan.cancelsTouchesInView = false
+            host.view.addGestureRecognizer(pan)
+        }
         place(animated: false)
     }
 
@@ -462,6 +472,11 @@ final class FloatingItemWindow: UIWindow {
     }
 
     // MARK: 拖
+
+    @objc private func restoreCall() {
+        guard itemID == "call" else { return }
+        NotificationCenter.default.post(name: .alcoveCallRestore, object: nil)
+    }
 
     @objc private func onPan(_ g: UIPanGestureRecognizer) {
         // 手指的屏幕坐标：窗自己在动，所以不能用窗坐标

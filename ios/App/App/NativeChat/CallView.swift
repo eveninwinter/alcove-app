@@ -87,9 +87,7 @@ struct CallPill: View {
     @ObservedObject var session: CallSessionModel
 
     var body: some View {
-        Button {
-            NotificationCenter.default.post(name: .alcoveCallRestore, object: nil)
-        } label: {
+        Group {
             HStack(spacing: 6) {
                 CallGlyph(size: 13, color: .white, down: false)
                 Text(String(format: "%02d:%02d", session.seconds / 60, session.seconds % 60))
@@ -102,7 +100,12 @@ struct CallPill: View {
             .overlay(Capsule().stroke(.white.opacity(0.55), lineWidth: 1))
             .shadow(color: CallSkin.ink.opacity(0.28), radius: 6, y: 3)
         }
-        .buttonStyle(.plain)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("返回通话")
+        .accessibilityAddTraits(.isButton)
+        .accessibilityAction {
+            NotificationCenter.default.post(name: .alcoveCallRestore, object: nil)
+        }
     }
 }
 

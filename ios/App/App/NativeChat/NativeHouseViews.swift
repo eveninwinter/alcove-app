@@ -3431,6 +3431,7 @@ struct MusicMessageCard: View {
     @ObservedObject private var model = MusicModel.shared
     @StateObject private var cover = CoverLoader()
     @State private var messageExpanded = false
+    @State private var showPlayer = false
 
     private var isCurrent: Bool { model.nowPlaying?.id == song.id }
     private var isPlaying: Bool { isCurrent && model.isPlaying }
@@ -3509,6 +3510,18 @@ struct MusicMessageCard: View {
                 .allowsHitTesting(false)
         )
         .shadow(color: .black.opacity(0.4), radius: 16, y: 7)
+        .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .onTapGesture {
+            // Opening the current track must not restart it or toggle pause.
+            if !isCurrent { play() }
+            showPlayer = true
+        }
+        .sheet(isPresented: $showPlayer) {
+            MusicPlayerSheet(model: model)
+                .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
         .onAppear { cover.load(song.cover) }
     }
 
