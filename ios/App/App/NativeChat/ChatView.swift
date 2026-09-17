@@ -1436,8 +1436,10 @@ struct ChatView: View {
     }
 
     /// 他正在生成（打字中或实时预览带活着）且她没在录音 → 发送键当停止键用
+    /// 0917 任务#2209 插话：她框里一有东西（字 / 图 / 表情 / 链接）就让回发送键，跟「语音键一打字变发送」同一个道理；
+    /// 框空着才是停止键。
     private var isGenerating: Bool {
-        (store.isTyping || store.live?.active == true) && !recorder.isRecording
+        (store.isTyping || store.live?.active == true) && !recorder.isRecording && !canSend
     }
 
     private func stopGenerating() {

@@ -503,19 +503,27 @@ struct NativeHouseDrawer: View {
     var body: some View {
         GeometryReader { geo in
             ZStack {
-                Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                    .resizable().scaledToFill()
-                    .frame(width: geo.size.width, height: geo.size.height).clipped()
-                (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.10 : 0.08)
+                // 0917 她说侧边栏颜色跟现在的主题不搭：以前铺的是一张固定的灰黑石纹图，换什么壁纸它都是灰的。
+                // 改成整块只用「一块」毛玻璃当底板，透出后面聊天页的壁纸，壁纸是什么色它就是什么色。
+                // 上面再压一层很薄的暗 / 亮纱保证字看得清。
+                Rectangle().fill(.ultraThinMaterial)
+                    .frame(width: geo.size.width, height: geo.size.height)
+                (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.22 : 0.16)
 
                 ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 13) {
-                    HStack(spacing: 8) {
-                        Spacer(minLength: 0)
+                    HStack(spacing: 7) {
+                        // 0917 她要的：听歌、搜索从聊天页右上角搬到这里，排在 Alcove 右边、不往下堆；
+                        // Alcove 从居中让到靠左，挤一点点。
                         Text("Alcove")
                             .font(.custom("Snell Roundhand", size: 34))
                             .italic()
-                        Spacer(minLength: 0)
+                            .lineLimit(1)
+                            .minimumScaleFactor(0.8)
+                            .padding(.leading, 5)
+                        Spacer(minLength: 4)
+                        drawerIconButton("music.note", label: "听歌") { select(.music) }
+                        drawerIconButton("magnifyingglass", label: "搜索") { select(.search) }
                         Button { select(.workbench) } label: {
                             HStack(spacing: 5) {
                                 Image(systemName: "slider.horizontal.2.square")
@@ -672,6 +680,18 @@ struct NativeHouseDrawer: View {
         .frame(maxWidth: .infinity)
     }
 
+    private func drawerIconButton(_ icon: String, label: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: icon)
+                .font(.system(size: 13, weight: .regular))
+                .foregroundColor(theme.textDim)
+                .frame(width: 31, height: 31)
+                .drawerGlass(theme)
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(label)
+    }
+
     private func handwritten(_ text: String) -> some View {
         Text(text)
             .font(.custom("Snell Roundhand", size: 17))
@@ -764,9 +784,9 @@ struct NativeHouseDrawer: View {
 
 private extension View {
     func drawerGlass(_ theme: AlcoveTheme) -> some View {
-        self.background(.ultraThinMaterial,
-                        in: RoundedRectangle(cornerRadius: 17, style: .continuous))
-            .background(theme.glassTint.opacity(theme.isDark ? 0.12 : 0.24),
+        // 0917 她担心玻璃太多手机扛不住：以前三十几行每行各一块毛玻璃，滑动时每块都要实时模糊。
+        // 现在模糊只留底板那一块，行卡片换成不模糊的半透明薄片，看着同一个质感，显卡只干一份活。
+        self.background((theme.isDark ? Color.white.opacity(0.075) : Color.white.opacity(0.42)),
                         in: RoundedRectangle(cornerRadius: 17, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous)
                 .stroke(theme.glassBorder.opacity(0.72), lineWidth: 0.7))

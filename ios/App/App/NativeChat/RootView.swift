@@ -356,13 +356,18 @@ struct RootView: View {
             HStack {
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 0) {
+                    // 0917 她要的「按钮少一点」：搜索、听歌的入口搬到侧边栏 Alcove 右边；
+                    // 音符只在正在放歌时冒出来（放起来之后切歌还是一下到位），歌停了就缩回去。
                     topBarControl("phone", size: 14) { activeCall = .outgoing }
-                    topBarControl("music.note", size: 14) { presentHouse(.music) }
-                    topBarControl("magnifyingglass", size: 14) { presentHouse(.search) }
+                    if listenMusic.nowPlaying != nil {
+                        topBarControl("music.note", size: 14) { presentHouse(.music) }
+                            .transition(.opacity.combined(with: .scale(scale: 0.7)))
+                    }
                     topBarControl("line.3.horizontal", size: 15) { presentHouse(.sidebar) }
                 }
                 .padding(.horizontal, 2)
                 .frame(height: 40)
+                .animation(.easeInOut(duration: 0.2), value: listenMusic.nowPlaying != nil)
                 .modifier(InteractiveTopBarGlassModifier(
                     fallbackTint: theme.capsuleTint,
                     fallbackBorder: glassStroke
@@ -409,11 +414,11 @@ struct RootView: View {
                     topBarControl("phone", size: 14) {
                         activeCall = .outgoing
                     }
-                    topBarControl("music.note", size: 14) {
-                        presentHouse(.music)
-                    }
-                    topBarControl("magnifyingglass", size: 14) {
-                        presentHouse(.search)
+                    if listenMusic.nowPlaying != nil {   // 0917 同上：放歌时才冒出来
+                        topBarControl("music.note", size: 14) {
+                            presentHouse(.music)
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.7)))
                     }
                     topBarControl("line.3.horizontal", size: 15) {
                         presentHouse(.sidebar)
@@ -421,6 +426,7 @@ struct RootView: View {
                 }
                 .padding(.horizontal, 2)
                 .frame(height: 40)
+                .animation(.easeInOut(duration: 0.2), value: listenMusic.nowPlaying != nil)
                 .modifier(InteractiveTopBarGlassModifier(
                     fallbackTint: theme.capsuleTint,
                     fallbackBorder: glassStroke
@@ -630,8 +636,10 @@ private struct InteractiveTopBarGlassModifier: ViewModifier {
     func body(content: Content) -> some View {
         let shape = Capsule()
         if #available(iOS 26.0, *) {
+            // 0917 她要的：跟打字框同一种原生玻璃。以前多染了一层 tint，深色下糊成一块黑；
+            // 打字框是不染色的 .regular.interactive()，这里对齐。
             content
-                .glassEffect(.regular.tint(fallbackTint).interactive(), in: shape)
+                .glassEffect(.regular.interactive(), in: shape)
         } else {
             content
                 .background(.ultraThinMaterial, in: shape)
