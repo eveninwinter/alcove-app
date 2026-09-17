@@ -9254,7 +9254,24 @@ private struct ForgeRoundDetail: Identifiable {
     }
 }
 
-private struct NativeForgeView: View {
+// 0917 任务#2139 她要的：SDK 的 forge 页跟 tmux 统一——同一个页面、同样长按挑思绪 / 工具。
+// provider == "sdk" 时所有请求带 provider=sdk，后端读 SDK 常驻会话那份记录，锻好自动切过去。
+struct NativeForgeView: View {
+    let provider: String?
+    let onForged: (() -> Void)?
+    // 显式写出来：里面有 @State private，自动生成的逐成员初始化方法会变成 private，别的文件（ChatView）调不到
+    init(provider: String? = nil, onForged: (() -> Void)? = nil) {
+        self.provider = provider
+        self.onForged = onForged
+    }
+    private var isSDK: Bool { provider == "sdk" }
+    private var providerQuery: String { isSDK ? "&provider=sdk" : "" }
+    private func withProvider(_ body: [String: Any]) -> [String: Any] {
+        var b = body
+        if isSDK { b["provider"] = "sdk" }
+        return b
+    }
+
     private enum ForgeMode: String, CaseIterable {
         case latest = "默认保留"
         case picker = "挑选轮次"
@@ -9305,7 +9322,7 @@ private struct NativeForgeView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            FoyerPanelTitle(title: "Forge 换窗", theme: theme)
+            FoyerPanelTitle(title: isSDK ? "SDK Forge 换窗" : "Forge 换窗", theme: theme)
             if loading {
                 Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
             } else {
@@ -9466,6 +9483,11 @@ private struct NativeForgeView: View {
                                 Text("新 session: \(String(sid.prefix(20)))...")
                                     .font(.system(size: 11))
                                     .foregroundColor(theme.textDim)
+                                if isSDK {
+                                    Text("已自动切到新窗口，下一句话就在新窗口里")
+                                        .font(.system(size: 11))
+                                        .foregroundColor(theme.textLight)
+                                } else {
                                 VStack(spacing: 4) {
                                     Text("在终端输入：")
                                         .font(.system(size: 10))
@@ -9477,6 +9499,7 @@ private struct NativeForgeView: View {
                                         .frame(maxWidth: .infinity)
                                         .background(Color.black.opacity(0.75), in: RoundedRectangle(cornerRadius: 8))
                                         .foregroundColor(.white)
+                                }
                                 }
                             }
                             .padding(14).foyerCard(theme)
@@ -9690,7 +9713,7 @@ private struct NativeForgeView: View {
         loadingDetailRound = idx
         defer { loadingDetailRound = nil }
         do {
-            let object = try await NativeHouseAPI.object("/api/forge/round?idx=\(idx)")
+            let object = try await NativeHouseAPI.object("/api/forge/round?idx=\(idx)" + providerQuery)
             let detail = ForgeRoundDetail(object)
             for thought in detail.thoughts { thoughtTokens[thought.id] = thought.tokens }
             roundDetail = detail
@@ -9703,7 +9726,7 @@ private struct NativeForgeView: View {
         loadingRounds = true
         defer { loadingRounds = false }
         do {
-            let object = try await NativeHouseAPI.object("/api/forge/rounds")
+            let object = try await NativeHouseAPI.object(isSDK ? "/api/forge/rounds?provider=sdk" : "/api/forge/rounds")
             rounds = (object["rounds"] as? [[String: Any]] ?? [])
                 .map(ForgeRoundChoice.init)
                 .sorted { $0.idx > $1.idx }
@@ -9718,9 +9741,9 @@ private struct NativeForgeView: View {
         do {
             pickPreview = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST",
-                body: ["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
+                body: withProvider(["pick": selectedRounds.sorted(), "thoughts": selectedThoughts.sorted(),
                        "tool_rounds": toolDemoRounds.sorted(), "preview": true,
-                       "force_handoff": forceHandoff])
+                       "force_handoff": forceHandoff]))
             result = (pickPreview["valid"] as? Bool) == true
                 ? nil : (pickPreview["validation_message"] as? String ?? "所选轮次未通过校验")
         } catch {
@@ -9734,7 +9757,7 @@ private struct NativeForgeView: View {
         let mySeq = previewSeq
         if let obj = try? await NativeHouseAPI.object(
             "/api/forge?retain=\(r)&force_handoff=\(forceHandoff ? 1 : 0)"
-            + "&include_system=\(keepSystemRounds ? 1 : 0)") {
+            + "&include_system=\(keepSystemRounds ? 1 : 0)" + providerQuery) {
             // 她拖一下滑块会连发十几个请求，慢的那个最后才回来把快的盖掉，数字就倒着跳。只认最新那个
             guard mySeq == previewSeq else { return }
             preview = obj
@@ -9811,11 +9834,12 @@ private struct NativeForgeView: View {
         do {
             let obj = try await NativeHouseAPI.object(
                 "/api/forge", method: "POST",
-                body: ["retain": 9999, "force_handoff": forceHandoff])
+                body: withProvider(["retain": 9999, "force_handoff": forceHandoff]))
             report = obj
-            if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
+            if let sid = obj["new_session_id"] as? String, !sid.isEmpty, forgeSucceeded(obj) {
                 newSessionId = sid
                 result = nil
+                onForged?()
             } else {
                 result = (obj["error"] as? String) ?? "锻造失败"
             }
@@ -9834,17 +9858,23 @@ private struct NativeForgeView: View {
                 : ["retain": Int(retain), "force_handoff": forceHandoff,
                    "include_system": keepSystemRounds]
             let obj = try await NativeHouseAPI.object(
-                "/api/forge", method: "POST", body: body)
+                "/api/forge", method: "POST", body: withProvider(body))
             report = obj
-            if let sid = obj["new_session_id"] as? String, !sid.isEmpty {
+            if let sid = obj["new_session_id"] as? String, !sid.isEmpty, forgeSucceeded(obj) {
                 newSessionId = sid
                 result = nil
+                onForged?()
             } else {
                 result = (obj["error"] as? String) ?? "锻造失败"
             }
         } catch {
             result = "请求失败"
         }
+    }
+
+    /// SDK 要探针过了、后端真切过去才算成；tmux 照旧有新 session 就算
+    private func forgeSucceeded(_ obj: [String: Any]) -> Bool {
+        isSDK ? ((obj["sdk_switched"] as? Bool) == true) : true
     }
 
     private func infoRow(_ label: String, _ value: String) -> some View {

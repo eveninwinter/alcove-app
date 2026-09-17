@@ -1917,11 +1917,12 @@ private struct ChatChannelPanel: View {
                 Button("取消", role: .cancel) {}
             } message: { Text("SDK 锚点和共用 LMC-5 不动，只清空 SDK 最近对话和 session。") }
             .sheet(isPresented: $showSDKForge) {
-                SDKForgeSheet {
+                // 0917 任务#2139：换成跟 tmux 同一个 forge 页（长按挑思绪 / 工具、账单、真实用量校准的 token）
+                NativeForgeView(provider: "sdk", onForged: {
                     sdkSessionActive = true
                     message = "SDK Forge 已自动切到新 session"
                     Task { await load() }   // 刷出「回上一窗」
-                }
+                })
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
             }
@@ -2221,181 +2222,6 @@ private struct ChatChannelPanel: View {
             message = "已回到上一窗，\((obj["turns"] as? NSNumber)?.intValue ?? 0) 轮对话跟着回来了"
             await load()
         } catch { message = "回上一窗失败：\(error.localizedDescription)" }
-        working = false
-    }
-}
-
-private struct SDKForgeRound: Identifiable {
-    let idx: Int
-    let head: String
-    let at: String
-    let kind: String   // user = 她说的；system = 心跳 / keepalive / 系统班次，默认折叠
-    var id: Int { idx }
-    var isSystem: Bool { kind == "system" }
-    init(_ raw: [String: Any]) {
-        idx = (raw["idx"] as? NSNumber)?.intValue ?? 0
-        head = raw["head"] as? String ?? ""
-        at = raw["at"] as? String ?? ""
-        kind = raw["kind"] as? String ?? "user"
-    }
-}
-
-private struct SDKForgeSheet: View {
-    let onForged: () -> Void
-    @Environment(\.dismiss) private var dismiss
-    @State private var mode = "latest"
-    @State private var retain = 20.0
-    @State private var preview: [String: Any] = [:]
-    @State private var rounds: [SDKForgeRound] = []
-    @State private var picked: Set<Int> = []
-    @State private var working = false
-    @State private var error = ""
-    @State private var confirm = false
-    // 0822 照 CLI 补的：系统轮（心跳/keepalive/系统班次）默认折叠不带；想带就打开
-    @State private var includeSystem = false
-    @State private var showSystemRounds = false
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text("只搬完整的 user / assistant 正文，每轮自带真实时间注记，末尾附上一窗两个真实工具范本。Thought process、图片不进新窗；SDK 锚点重新加载，LMC-5 继续共用。")
-                        .font(.system(size: 13)).foregroundStyle(.secondary)
-                    Picker("方式", selection: $mode) {
-                        Text("默认保留").tag("latest")
-                        Text("挑选轮次").tag("picker")
-                    }.pickerStyle(.segmented)
-                    if systemCount > 0 {
-                        Toggle(isOn: mode == "latest" ? $includeSystem : $showSystemRounds) {
-                            Text(mode == "latest" ? "带上 \(systemCount) 轮系统轮（心跳 / keepalive）"
-                                                  : "显示 \(systemCount) 轮系统轮（折叠中）")
-                                .font(.system(size: 12))
-                        }
-                        .onChange(of: includeSystem) { _ in Task { await loadPreview() } }
-                    }
-
-                    if mode == "latest" {
-                        VStack(alignment: .leading, spacing: 8) {
-                            HStack { Text("保留轮次"); Spacer(); Text("\(Int(min(retain, Double(max(total, 1))))) / \(total)") }
-                            // 0822 她点开就闪退：首帧预览还没回来 total=0，滑条范围成了 1...1 而值是 20，
-                            // 零宽范围 SwiftUI 算出 NaN 直接炸。没拉到数据/只有一轮时不画滑条，值也钳在范围里。
-                            if total > 1 {
-                                Slider(value: Binding(
-                                    get: { min(max(retain, 1), Double(total)) },
-                                    set: { retain = min(max($0, 1), Double(total)) }
-                                ), in: 1...Double(total), step: 1)
-                                    .onChange(of: retain) { _ in Task { await loadPreview() } }
-                            } else {
-                                Text(preview.isEmpty ? "正在读取轮次…" : "只有 \(total) 轮，全部带走")
-                                    .font(.system(size: 12)).foregroundStyle(.secondary)
-                            }
-                        }
-                    } else {
-                        LazyVStack(spacing: 8) {
-                            ForEach(rounds.filter { showSystemRounds || !$0.isSystem }) { round in
-                                Button {
-                                    if picked.contains(round.idx) { picked.remove(round.idx) }
-                                    else { picked.insert(round.idx) }
-                                    preview = [:]
-                                } label: {
-                                    HStack(alignment: .top, spacing: 10) {
-                                        Image(systemName: picked.contains(round.idx)
-                                              ? "checkmark.circle.fill" : "circle")
-                                        VStack(alignment: .leading, spacing: 4) {
-                                            HStack(spacing: 6) {
-                                                Text("#\(round.idx + 1)  \(round.at.prefix(16).replacingOccurrences(of: "T", with: " "))")
-                                                    .font(.system(size: 10, design: .monospaced)).foregroundStyle(.secondary)
-                                                if round.isSystem {
-                                                    Text("系统").font(.system(size: 9, weight: .semibold))
-                                                        .padding(.horizontal, 5).padding(.vertical, 1)
-                                                        .background(Color.secondary.opacity(0.18), in: Capsule())
-                                                        .foregroundStyle(.secondary)
-                                                }
-                                            }
-                                            Text(round.head).font(.system(size: 13)).lineLimit(3)
-                                                .foregroundStyle(round.isSystem ? .secondary : .primary)
-                                        }
-                                        Spacer()
-                                    }
-                                    .padding(11).background(Color(uiColor: .secondarySystemBackground),
-                                                            in: RoundedRectangle(cornerRadius: 12))
-                                }.buttonStyle(.plain)
-                            }
-                        }
-                        Button("预览所选 \(picked.count) 轮") { Task { await previewPicked() } }
-                            .buttonStyle(.bordered).disabled(picked.isEmpty)
-                    }
-
-                    if !preview.isEmpty { report }
-                    if !error.isEmpty { Text(error).font(.system(size: 12)).foregroundStyle(.red) }
-                    Button { confirm = true } label: {
-                        HStack { if working { ProgressView().tint(.white) }; Text("确认锻造并自动切换") }
-                            .frame(maxWidth: .infinity).frame(height: 46)
-                    }
-                    .buttonStyle(.borderedProminent).disabled(working || !valid)
-                }.padding(20)
-            }
-            .navigationTitle("SDK Forge")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("关闭") { dismiss() } } }
-            .task { await loadPreview() }
-            .confirmationDialog("确认锻造新 SDK 窗口？", isPresented: $confirm,
-                                titleVisibility: .visible) {
-                Button("确认锻造") { Task { await forge() } }
-                Button("取消", role: .cancel) {}
-            } message: { Text("新 session 探针通过后才自动切换；失败继续留在旧 session。") }
-        }
-    }
-
-    private var total: Int { (preview["total_rounds"] as? NSNumber)?.intValue ?? rounds.count }
-    private var systemCount: Int { (preview["system_rounds"] as? NSNumber)?.intValue ?? rounds.filter(\.isSystem).count }
-    private var valid: Bool { preview["valid"] as? Bool ?? false }
-    private var report: some View {
-        VStack(alignment: .leading, spacing: 7) {
-            Text("锻造预览").font(.system(size: 14, weight: .semibold))
-            Text("带走 \((preview["retained_rounds"] as? NSNumber)?.intValue ?? 0) / \(total) 轮纯正文")
-            Text("新窗开局约 \((preview["estimated_tokens"] as? NSNumber)?.intValue ?? 0) token")
-            if let first = preview["first_messages"] as? [String], let value = first.first {
-                Text("开头：\(value)").lineLimit(2)
-            }
-            if let last = preview["last_messages"] as? [String], let value = last.last {
-                Text("结尾：\(value)").lineLimit(2)
-            }
-        }.font(.system(size: 12)).foregroundStyle(.secondary)
-            .padding(14).background(Color(uiColor: .secondarySystemBackground),
-                                    in: RoundedRectangle(cornerRadius: 14))
-    }
-
-    @MainActor private func loadPreview() async {
-        do {
-            let obj = try await AlcoveAPI.getRaw("/api/sdk-shadow/forge?retain=\(Int(retain))&include_system=\(includeSystem ? 1 : 0)")
-            preview = obj
-            rounds = (obj["rounds"] as? [[String: Any]] ?? []).map(SDKForgeRound.init)
-            if retain > Double(max(rounds.count, 1)) { retain = Double(max(rounds.count, 1)) }
-            error = ""
-        } catch { self.error = "预览失败：\(error.localizedDescription)" }
-    }
-
-    @MainActor private func previewPicked() async {
-        do {
-            preview = try await AlcoveAPI.postRaw("/api/sdk-shadow/forge-preview",
-                                                  body: ["pick": picked.sorted(), "include_system": true])
-            error = ""
-        } catch { self.error = "预览失败：\(error.localizedDescription)" }
-    }
-
-    @MainActor private func forge() async {
-        working = true; error = ""
-        do {
-            var body: [String: Any] = ["retain": Int(retain), "include_system": includeSystem]
-            if mode == "picker" { body = ["pick": picked.sorted(), "include_system": true] }
-            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/forge", body: body)
-            guard obj["ok"] as? Bool == true, obj["probe_ok"] as? Bool == true else {
-                throw NSError(domain: "SDKForge", code: 1,
-                              userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "探针未通过"])
-            }
-            onForged(); dismiss()
-        } catch { self.error = "锻造失败：\(error.localizedDescription)" }
         working = false
     }
 }
