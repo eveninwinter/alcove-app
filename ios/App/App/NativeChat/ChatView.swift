@@ -395,6 +395,27 @@ struct ChatView: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
                 }
 
+                // 0917 她要的：重新做一颗「一键到底」。0907 退休的那颗是圆的、她嫌丑；这次是小椭圆、
+                // iOS 原生玻璃（跟打字框同一种），不做大。出现条件跟以前那颗一样：人不在最新才有，
+                // 语音卡片在时让开（不然压着卡片右上角的垃圾桶）。底下那条点击窄缝原样留着，不碰。
+                if !atBottom && store.pendingVoice == nil {
+                    Button { jumpToTail(proxy) } label: {
+                        Image(systemName: "chevron.down")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundColor(theme.textDim)
+                            .frame(width: 46, height: 28)
+                            .modifier(TailPillGlassModifier(fallbackTint: theme.glassTint,
+                                                            fallbackBorder: theme.glassBorder))
+                            .contentShape(Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("回到最新")
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
+                    .padding(.trailing, 16)
+                    .padding(.bottom, bottomChromeHeight + 12)
+                    .transition(.opacity)
+                }
+
                 if !showMiniTerminal && !paragraphSelectionMode {
                     ClawdPet(store: store) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
@@ -843,6 +864,10 @@ struct ChatView: View {
             }
         } else {
             withAnimation { proxy.scrollTo("tail", anchor: .bottom) }
+            // 0917 她报的老毛病：翻得很远时点了回不去。列表是懒加载的，远处的高度是估的，
+            // 只喊一次「滚到 tail」会停在半路。开页时是连喊几次才落到底的，这里照办：
+            // 动画那一下之后再无动画补几次，让它收敛到真正的最底。
+            scrollToTail(proxy, delays: [0.35, 0.7], animated: false)
         }
     }
 
@@ -5571,6 +5596,24 @@ private struct MessagesGlassModifier: ViewModifier {
                     .overlay(Capsule().stroke(line, lineWidth: 0.5))
                     .shadow(color: shadow, radius: 8, y: 2)
             }
+        }
+    }
+}
+
+/// 0917「一键到底」小椭圆的玻璃：iOS 26 用原生玻璃（不染色，跟打字框一致），老系统退回毛玻璃。
+private struct TailPillGlassModifier: ViewModifier {
+    let fallbackTint: Color
+    let fallbackBorder: Color
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.interactive(), in: Capsule())
+        } else {
+            content
+                .background(.ultraThinMaterial, in: Capsule())
+                .background(fallbackTint, in: Capsule())
+                .overlay(Capsule().stroke(fallbackBorder, lineWidth: 1))
         }
     }
 }
