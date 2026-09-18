@@ -5045,7 +5045,7 @@ private struct QuietRoomView: View {
                 .padding(15).foyerCard(theme)
             } else {
                 HStack(spacing: 12) {
-                    quietChoice("今夜无声", "今晚先不追问\n明早十点再来", "moon.stars.fill") {
+                    quietChoice("今夜无声", "今晚先不追问\n明早起床再来", "moon.stars.fill")   // 0918 作息改 7 点起；文案不写死钟点，后端按起床时间自动解 {
                         setQuiet(on: true)
                     }
                     quietChoice("借我片刻", "安静两个小时\n再轻轻回来", "hourglass") {

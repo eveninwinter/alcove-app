@@ -412,7 +412,9 @@ struct ChatView: View {
                     .accessibilityLabel("回到最新")
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
-                    .padding(.bottom, bottomChromeHeight + 12)
+                    // 0918 她看真机：信息主题里这颗飘得太高。信息主题的打字框挂在安全区那一栏，系统已经把
+                    // 整块画布往上推过了，再加一份打字框高度就是双份；跟列表底下留白同一个算法。其他主题不动。
+                    .padding(.bottom, (theme.isMessages ? 0 : bottomChromeHeight) + 12)
                     .transition(.opacity)
                 }
 
