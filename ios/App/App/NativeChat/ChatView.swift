@@ -323,10 +323,19 @@ struct ChatView: View {
                                     }
                                 }
                             }
-                            .onDisappear { atBottom = false }
+                            // 0919：离底判断改由上面的滚动几何回调管，这里不再抢着写 false
                     }
                     .padding(.horizontal, 12)
                     .padding(.top, theme.isMessages ? 8 : 52)
+                }
+                // 0919 她报的：他流式说话时页面不跟着往上走。以前「在不在底部」只靠 tail 那 1pt 空气
+                // 的 onAppear/onDisappear，懒加载列表里它经常不吭声，followLiveOutput 一开始就是 false。
+                // 改成看滚动几何：离最底 120pt 以内算在底部。人翻上去就不跟；翻回底部自动再跟。
+                .onScrollGeometryChange(for: Bool.self) { g in
+                    g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 120
+                } action: { _, near in
+                    if near != atBottom { atBottom = near }
+                    if near && (store.live?.active == true || store.isTyping) { followLiveOutput = true }
                 }
                 // 0822 她递的图纸：iMessage 的上下渐进模糊是 iOS 26 系统画的 scroll edge effect，
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
@@ -511,9 +520,13 @@ struct ChatView: View {
                     scrollToTail(proxy, delays: [0, 0.2, 0.5], animated: true)
                 }
             }
+            .onChange(of: store.live?.turnID) { id in
+                guard id != nil else { return }
+                followLiveOutput = shouldFollowTail
+            }
             .onChange(of: liveLayoutKey) { _ in
-                guard followLiveOutput else { return }
-                scrollToTail(proxy, delays: [0], animated: false)
+                guard followLiveOutput, !store.isViewingHistory else { return }
+                scrollToTail(proxy, delays: [0, 0.05], animated: false)
             }
             .onChange(of: inputBarHeight) { _ in
                 if shouldFollowTail {
