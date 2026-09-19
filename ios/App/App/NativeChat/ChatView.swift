@@ -5135,7 +5135,7 @@ struct AudioBubble: View {
                             withAnimation(.easeInOut(duration: 0.18)) { translationShown.toggle() }
                             DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
                         } label: {
-                            Text("译")
+                            Text(translationShown ? "原" : "译")
                                 .font(.system(size: 12, weight: translationShown ? .bold : .semibold))
                                 .frame(width: 22, height: 22)
                                 .contentShape(Rectangle())
@@ -5161,26 +5161,13 @@ struct AudioBubble: View {
                     .fill(ink.opacity(0.16))
                     .frame(height: 1)
                     .padding(.horizontal, 12)
-                Text(transcript)
+                // 0919 她要的：点「译」不再另起一条线挂小字，中文直接顶替英文原文，同字号同样式；再点回原文
+                Text(translationShown && !translation.isEmpty ? translation : transcript)
                     .font(.system(size: fontSize))
                     .lineSpacing(theme.isPaper ? 7 : 5)
                     .padding(.horizontal, 14)
                     .padding(.vertical, 10)
                     .fixedSize(horizontal: false, vertical: true)
-                // 0912：点了「译」才有——再分一条线，他自己写的中文，小一号、淡一点
-                if translationShown && !translation.isEmpty {
-                    Rectangle()
-                        .fill(ink.opacity(0.12))
-                        .frame(height: 1)
-                        .padding(.horizontal, 12)
-                    Text(translation)
-                        .font(.system(size: max(11, fontSize - 2.5)))
-                        .lineSpacing(theme.isPaper ? 6 : 4)
-                        .opacity(0.62)
-                        .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
             }
         }
         .foregroundColor(ink)
