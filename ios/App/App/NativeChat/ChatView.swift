@@ -1571,6 +1571,7 @@ struct ChatView: View {
     }
 
     private var claudeModels: [ClaudeModelOption] {[
+        .init(id: "claude-fable-5-1", label: "Fable 5.1", note: "最新，需要 usage credits"),
         .init(id: "claude-fable-5", label: "Fable 5", note: "需要 usage credits"),
         .init(id: "claude-opus-5", label: "Opus 5", note: "最强推理"),
         .init(id: "claude-sonnet-5", label: "Sonnet 5", note: "日常更快"),
