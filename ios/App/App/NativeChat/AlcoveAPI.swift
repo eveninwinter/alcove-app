@@ -199,21 +199,29 @@ enum AlcoveAPI {
         try await postJSON(path, body: body)
     }
 
+    // 0919 她要的三个房间：聊天页现在只拉当前房间（cli / sdk / api）的记录。
+    // 存 UserDefaults，冷启动接着上次的房间；后端接口不带 room 就是全部，老路不受影响。
+    static var chatRoom: String {
+        get { UserDefaults.standard.string(forKey: "alcove.chatRoom") ?? "cli" }
+        set { UserDefaults.standard.set(newValue, forKey: "alcove.chatRoom") }
+    }
+    private static var roomQuery: String { "&room=\(chatRoom)" }
+
     static func history(limit: Int = 300) async throws -> [ChatMessage] {
-        let obj = try await getJSON("/api/history?limit=\(limit)")
+        let obj = try await getJSON("/api/history?limit=\(limit)" + roomQuery)
         let raw = obj["records"] as? [[String: Any]] ?? []
         return raw.compactMap(ChatMessage.init(json:))
     }
 
     static func history(before: String, limit: Int = 300) async throws -> [ChatMessage] {
         let encoded = timestampQueryValue(before)
-        let obj = try await getJSON("/api/history?limit=\(limit)&before=\(encoded)")
+        let obj = try await getJSON("/api/history?limit=\(limit)&before=\(encoded)" + roomQuery)
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
 
     static func history(around ts: String) async throws -> [ChatMessage] {
         let encoded = timestampQueryValue(ts)
-        let obj = try await getJSON("/api/chat-around?ts=\(encoded)")
+        let obj = try await getJSON("/api/chat-around?ts=\(encoded)" + roomQuery)
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
 
@@ -222,7 +230,7 @@ enum AlcoveAPI {
         let q = query.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? query
         let d = day.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? day
         let t = type == "all" ? "" : type
-        let obj = try await getJSON("/api/chat-search?q=\(q)&day=\(d)&type=\(t)&limit=\(limit)")
+        let obj = try await getJSON("/api/chat-search?q=\(q)&day=\(d)&type=\(t)&limit=\(limit)" + roomQuery)
         return (obj["records"] as? [[String: Any]] ?? []).compactMap(ChatMessage.init(json:))
     }
 
@@ -236,7 +244,7 @@ enum AlcoveAPI {
     }
 
     static func poll(since: String?, limit: Int = 100) async throws -> PollResult {
-        var path = "/api/poll?limit=\(limit)"
+        var path = "/api/poll?limit=\(limit)" + roomQuery
         if let s = since, !s.isEmpty {
             let enc = timestampQueryValue(s)
             path += "&since=\(enc)"

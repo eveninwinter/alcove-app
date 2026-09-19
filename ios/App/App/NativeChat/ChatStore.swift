@@ -22,6 +22,8 @@ final class ChatStore: ObservableObject {
     @Published var heldCount = 0
     @Published var stagingImages = false
     @Published var modelLabel = ""
+    // 0919 三个房间：现在看的是哪间（cli / sdk / api）。切房间＝清空重拉，轮询也只拉这间的
+    @Published var room: String = AlcoveAPI.chatRoom
     @Published var recallMap: [String: RecallItem] = [:] // norm(prompt) -> 最新召回
     private var orderedRecalls: [RecallItem] = []
     @Published var typingLine = "思考" // "陈璟正在X中…" 的 X
@@ -328,6 +330,20 @@ final class ChatStore: ObservableObject {
         liveTask?.cancel()
         liveTask = nil
         live = nil
+    }
+
+    // 0919 三个房间：换到另一间。老的全清掉，从头拉那间最近 300 条
+    func switchRoom(_ target: String) {
+        guard target != room else { return }
+        AlcoveAPI.chatRoom = target
+        room = target
+        messages = []
+        lastTs = nil
+        hasOlder = true
+        loading = true
+        temporarilyHiddenTextTs.removeAll()
+        temporarilyHiddenPhotoTs.removeAll()
+        Task { await initialLoad() }
     }
 
     // 前后台切换后强制刷新

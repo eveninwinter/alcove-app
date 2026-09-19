@@ -69,6 +69,7 @@ struct ChatView: View {
     @State private var showSDKShadow = false
     @State private var showChannelPanel = false
     @State private var activeChatChannel = "cli"
+    @State private var showRoomPicker = false        // 0919 左上角的门：挑房间
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
@@ -173,6 +174,21 @@ struct ChatView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
+        // 0919 她要的三个房间：门打开挑一间。cli / sdk 就是拨开关（同时换房间），api 只换房间先看着
+        .sheet(isPresented: $showRoomPicker) {
+            ChatRoomPicker(activeChannel: $activeChatChannel, currentRoom: store.room,
+                           onPickRoom: { store.switchRoom($0) },
+                           onOpenChannelPanel: { showRoomPicker = false; showChannelPanel = true })
+                .presentationDetents([.height(320), .medium])
+                .presentationDragIndicator(.visible)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenRoomPicker)) { _ in
+            showRoomPicker = true
+        }
+        // 房间跟着开关走：开关拨到哪边，看的就是哪间（api 是只看不拨，留在原地）
+        .onChange(of: activeChatChannel) { ch in
+            if store.room != "api" && store.room != ch { store.switchRoom(ch) }
+        }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
                 if let prepared = UploadImage.prepare(image) {
@@ -217,7 +233,9 @@ struct ChatView: View {
             music.startRemotePolling()
             Task {
                 if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") {
-                    activeChatChannel = obj["channel"] as? String ?? "cli"
+                    let ch = obj["channel"] as? String ?? "cli"
+                    activeChatChannel = ch
+                    if store.room != "api" && store.room != ch { store.switchRoom(ch) }
                 }
             }
         }
@@ -975,6 +993,14 @@ struct ChatView: View {
 
     private var legacyFloatingInput: some View {
         VStack(spacing: 4) {
+            if store.room == "api" {
+                Text("API 房间还没接上，先只能看")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 3)
+                    .background(.ultraThinMaterial, in: Capsule())
+            }
             if store.connectionError {
                 Text("连接不上小屋，重试中…")
                     .font(.caption2)
@@ -1477,6 +1503,7 @@ struct ChatView: View {
 
     private func performDynamicComposerAction() {
         guard !store.stagingImages else { return }
+        if store.room == "api" { return }   // 0919：api 房间后端还没接，先只看不发
         if isGenerating {
             stopGenerating()
             return
@@ -1867,6 +1894,104 @@ struct ChatView: View {
         }
         .presentationDetents([.medium, .large])
         .presentationDragIndicator(.visible)
+    }
+}
+
+extension Notification.Name {
+    /// 0919 左上角的门：RootView 顶栏发这个，ChatView 弹房间选择
+    static let alcoveOpenRoomPicker = Notification.Name("alcove.openRoomPicker")
+}
+
+/// 0919 她要的三个房间：tmux（cli）/ SDK / API。开关还是那一个，挑 cli 或 sdk 就拨开关，
+/// 聊天页只拉那间的记录；api 后端还没做，先只能看。
+private struct ChatRoomPicker: View {
+    @Binding var activeChannel: String
+    let currentRoom: String
+    let onPickRoom: (String) -> Void
+    let onOpenChannelPanel: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var working = ""
+    @State private var message = ""
+    @State private var handoffTurns = 12
+
+    private let rooms: [(id: String, name: String, icon: String, note: String)] = [
+        ("cli", "tmux", "terminal", "老路，hook 和工具最全"),
+        ("sdk", "SDK", "bolt.horizontal", "常驻会话，回得快"),
+        ("api", "API", "antenna.radiowaves.left.and.right", "还没接，先只能看"),
+    ]
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    ForEach(rooms, id: \.id) { r in
+                        Button { Task { await pick(r.id) } } label: {
+                            HStack(spacing: 12) {
+                                Image(systemName: r.icon).frame(width: 22)
+                                VStack(alignment: .leading, spacing: 2) {
+                                    Text(r.name).font(.system(size: 16, weight: .medium))
+                                    Text(r.note).font(.system(size: 12)).foregroundStyle(.secondary)
+                                }
+                                Spacer()
+                                if working == r.id { ProgressView().controlSize(.small) }
+                                else if currentRoom == r.id {
+                                    Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
+                                        .foregroundStyle(.tint)
+                                }
+                                if activeChannel == r.id {
+                                    Text("开关在这").font(.system(size: 11)).foregroundStyle(.secondary)
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(Color.secondary.opacity(0.15), in: Capsule())
+                                }
+                            }
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!working.isEmpty)
+                    }
+                } footer: {
+                    Text(message.isEmpty ? "挑 tmux 或 SDK 会把开关一起拨过去，带 \(handoffTurns) 轮接着聊。" : message)
+                        .foregroundStyle(message.contains("失败") ? .red : .secondary)
+                }
+                Section {
+                    Button { onOpenChannelPanel() } label: {
+                        Label("通道设置", systemImage: "slider.horizontal.3")
+                    }
+                }
+            }
+            .navigationTitle("房间")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .task {
+                if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status"),
+                   let cfg = obj["config"] as? [String: Any],
+                   let n = (cfg["handoff_turns"] as? NSNumber)?.intValue, n > 0 { handoffTurns = n }
+            }
+        }
+    }
+
+    @MainActor private func pick(_ id: String) async {
+        message = ""
+        if id == "api" || id == activeChannel {
+            onPickRoom(id); dismiss(); return
+        }
+        working = id
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/sdk-shadow/switch", body: [
+                "channel": id, "handoff_turns": handoffTurns, "keep_session": true
+            ])
+            guard obj["ok"] as? Bool == true else {
+                throw NSError(domain: "Room", code: 1,
+                              userInfo: [NSLocalizedDescriptionKey: obj["error"] as? String ?? "切换失败"])
+            }
+            activeChannel = obj["channel"] as? String ?? id
+            onPickRoom(activeChannel)
+            working = ""
+            dismiss()
+        } catch {
+            working = ""
+            message = "切换失败：\(error.localizedDescription)"
+        }
     }
 }
 

@@ -354,6 +354,19 @@ struct RootView: View {
             .onTapGesture { showTerminal = true }
             .frame(maxWidth: .infinity)
             HStack {
+                // 0919 她要的：左上角一颗跟右边同款的玻璃胶囊，一扇门，点开挑房间（tmux / SDK / API）
+                HStack(alignment: .center, spacing: 0) {
+                    topBarControl("door.left.hand.open", size: 15) {
+                        NotificationCenter.default.post(name: .alcoveOpenRoomPicker, object: nil)
+                    }
+                }
+                .padding(.horizontal, 2)
+                .frame(height: 40)
+                .modifier(InteractiveTopBarGlassModifier(
+                    fallbackTint: theme.capsuleTint,
+                    fallbackBorder: glassStroke
+                ))
+                .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
                 Spacer(minLength: 0)
                 HStack(alignment: .center, spacing: 0) {
                     // 0917 她要的「按钮少一点」：搜索、听歌的入口搬到侧边栏 Alcove 右边；
@@ -374,6 +387,7 @@ struct RootView: View {
                 ))
                 .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
             }
+            .padding(.leading, 12)
             .padding(.trailing, 12)
         }
         .frame(height: 84)
@@ -407,6 +421,21 @@ struct RootView: View {
                 .onTapGesture(count: 2) { sendPat() }
                 .onTapGesture { showTerminal = true }
                 .frame(width: 44, height: 44)
+
+                // 0919 同上：门，挑房间
+                HStack(alignment: .center, spacing: 0) {
+                    topBarControl("door.left.hand.open", size: 15) {
+                        NotificationCenter.default.post(name: .alcoveOpenRoomPicker, object: nil)
+                    }
+                }
+                .padding(.horizontal, 2)
+                .frame(height: 40)
+                .modifier(InteractiveTopBarGlassModifier(
+                    fallbackTint: theme.capsuleTint,
+                    fallbackBorder: glassStroke
+                ))
+                .shadow(color: .black.opacity(0.05), radius: 14, x: 0, y: 2)
+                .padding(.leading, 8)
 
                 Spacer(minLength: 0)
 
