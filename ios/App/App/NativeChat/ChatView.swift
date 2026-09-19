@@ -359,6 +359,16 @@ struct ChatView: View {
                         .allowsHitTesting(false)
                     }
                 }
+                // 0919：信息主题的「一键到底」挂在这里。这个 overlay 在下面 safeAreaBar 的里面，
+                // 打字框占掉的那块系统会替它让开，按钮永远落在打字框正上方，不压发送键。
+                .overlay(alignment: .bottomTrailing) {
+                    if theme.isMessages && !atBottom && store.pendingVoice == nil {
+                        tailPill(proxy)
+                            .padding(.trailing, 16)
+                            .padding(.bottom, 12)
+                            .transition(.opacity)
+                    }
+                }
                 .safeAreaBar(edge: .top, spacing: 0) {
                     if theme.isMessages, let bar = messagesTopBar {
                         bar().frame(height: 52, alignment: .top)
@@ -425,23 +435,14 @@ struct ChatView: View {
                 // 0917 她要的：重新做一颗「一键到底」。0907 退休的那颗是圆的、她嫌丑；这次是小椭圆、
                 // iOS 原生玻璃（跟打字框同一种），不做大。出现条件跟以前那颗一样：人不在最新才有，
                 // 语音卡片在时让开（不然压着卡片右上角的垃圾桶）。底下那条点击窄缝原样留着，不碰。
-                if !atBottom && store.pendingVoice == nil {
-                    Button { jumpToTail(proxy) } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(theme.textDim)
-                            .frame(width: 46, height: 28)
-                            .modifier(TailPillGlassModifier(fallbackTint: theme.glassTint,
-                                                            fallbackBorder: theme.glassBorder))
-                            .contentShape(Capsule())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("回到最新")
+                // 0919 她看真机：0918 那版把信息主题的底部留白改成 0，结果这颗直接压在发送键上——
+                // 这个 ZStack 浮层不归 safeAreaBar 管，它铺的是整屏。信息主题改挂在列表自己的 overlay 上
+                //（见下面 tailPillOverlay），那层在 safeAreaBar 里面，系统会替它避开打字框。这里只画其他主题的。
+                if !theme.isMessages && !atBottom && store.pendingVoice == nil {
+                    tailPill(proxy)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
-                    // 0918 她看真机：信息主题里这颗飘得太高。信息主题的打字框挂在安全区那一栏，系统已经把
-                    // 整块画布往上推过了，再加一份打字框高度就是双份；跟列表底下留白同一个算法。其他主题不动。
-                    .padding(.bottom, (theme.isMessages ? 0 : bottomChromeHeight) + 12)
+                    .padding(.bottom, bottomChromeHeight + 12)
                     .transition(.opacity)
                 }
 
@@ -885,6 +886,21 @@ struct ChatView: View {
             .filter { $0.role == "assistant" && $0.turnID == turnID && !$0.displayText.isEmpty }
             .map(\.displayText)
             .joined(separator: "\n\n")
+    }
+
+    /// 0917 她要的那颗小椭圆玻璃「一键到底」本体；信息主题挂列表 overlay，其他主题挂 ZStack 浮层
+    private func tailPill(_ proxy: ScrollViewProxy) -> some View {
+        Button { jumpToTail(proxy) } label: {
+            Image(systemName: "chevron.down")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundColor(theme.textDim)
+                .frame(width: 46, height: 28)
+                .modifier(TailPillGlassModifier(fallbackTint: theme.glassTint,
+                                                fallbackBorder: theme.glassBorder))
+                .contentShape(Capsule())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("回到最新")
     }
 
     /// 回到最新一条。翻着历史的时候先把最新那页拉回来再落底。
