@@ -7142,7 +7142,7 @@ private struct NativeStudioView: View {
                             LazyHStack(spacing: gap) {
                                 ForEach(item.group, id: \.studioMessageID) { m in thumb(m, side: side) }
                             }
-                        }.frame(width: side * 2 + gap, height: side)
+                        }.frame(width: side * 2 + gap * 2 + 52, height: side)  // 0920 跟主聊天一样露第三张一截
                     } else {
                         HStack(spacing: gap) {
                             ForEach(item.group, id: \.studioMessageID) { m in thumb(m, side: side) }

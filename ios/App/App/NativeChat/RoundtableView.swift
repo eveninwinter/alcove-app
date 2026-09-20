@@ -1070,8 +1070,8 @@ private struct RoundtableRow: View {
                         .foregroundColor(theme.textDim)
                 }
                 if photoURLs.count > 1 {
-                    PhotoStackMessageView(urls: photoURLs, messageID: "rt-\(msg.id)",
-                                          onOpen: onTapImages)
+                    OfficialPhotoGridMessageView(urls: photoURLs, messageID: "rt-\(msg.id)",
+                                                 onOpen: onTapImages)
                         .matchedTransitionSource(id: "rt-\(msg.id)", in: photoNamespace)
                 } else if msg.attachmentType == "image", let raw = msg.attachmentURL {
                     RoundtableRemoteImage(

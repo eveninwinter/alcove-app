@@ -5250,70 +5250,30 @@ struct PhotoViewerSelection: Identifiable {
     let sourceID: String
 }
 
-// 主聊天双方共用：少图横排；多图横滑，左侧可展开为两列全览。圆桌仍保留叠牌。
+// 主聊天双方共用：少图横排；多图一横排横滑（0920 她要的：不再有展开成两列那套）。圆桌仍保留叠牌。
 struct OfficialPhotoGridMessageView: View {
     let urls: [URL]
     let messageID: String
     let onOpen: ([URL], Binding<Int>) -> Void
 
     @State private var currentIndex = 0
-    @State private var isExpanded = false
     private let side: CGFloat = 124
     private let gap: CGFloat = 8
+    /// 第三张露出来的一截，提示还能往右滑
+    private let peek: CGFloat = 52
 
     var body: some View {
-        HStack(alignment: .top, spacing: gap) {
-            if urls.count > 2 {
-                Button {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.84)) {
-                        isExpanded.toggle()
-                    }
-                } label: {
-                    VStack(spacing: 3) {
-                        Image(systemName: isExpanded ? "chevron.up" : "chevron.down")
-                        Text(isExpanded ? "收起" : "展开")
-                    }
-                    .font(.system(size: 10, weight: .medium))
-                    .foregroundColor(Color.secondary)
-                    .frame(width: 44, height: 44)
-                    .background(Color(uiColor: .systemGray5).opacity(0.78), in: Capsule())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(isExpanded ? "收起全部照片" : "展开全部照片")
-            }
-            if isExpanded {
-                grid
-            } else {
-                strip
-            }
-        }
-        .id(messageID)
-    }
-
-    private var strip: some View {
         Group {
             if urls.count > 2 {
-                ScrollView(.horizontal, showsIndicators: false) { lazyPhotoRow }
-                    .frame(width: side * 2 + gap)
+                ScrollView(.horizontal, showsIndicators: false) {
+                    LazyHStack(spacing: gap) { photos }
+                }
+                .frame(width: side * 2 + gap * 2 + peek)
             } else {
                 HStack(spacing: gap) { photos }
             }
         }
-    }
-
-    private var lazyPhotoRow: some View {
-        LazyHStack(spacing: gap) {
-            photos
-        }
-    }
-
-    private var grid: some View {
-        LazyVGrid(columns: [GridItem(.fixed(side), spacing: gap),
-                            GridItem(.fixed(side), spacing: gap)],
-                  alignment: .leading, spacing: gap) {
-            photos
-        }
-        .frame(width: side * 2 + gap, alignment: .leading)
+        .id(messageID)
     }
 
     @ViewBuilder private var photos: some View {
@@ -5354,198 +5314,6 @@ struct OfficialPhotoGridMessageView: View {
                 Task { await PhotoLibrarySaver.save(url) }
             } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
         }
-    }
-}
-
-// 一条消息只保留三张可见卡。翻牌只改轻量几何状态，AsyncImage 的 URL 身份不变，
-// 所以拖动和换位期间不会重新解码或把卡片尺寸撑开。
-struct PhotoStackMessageView: View {
-    let urls: [URL]
-    let messageID: String
-    let onOpen: ([URL], Binding<Int>) -> Void
-
-    private let cardSize = CGSize(width: 143, height: 179)
-    @State private var currentIndex = 0
-    @State private var dragX: CGFloat = 0
-    @State private var isHorizontalDrag = false
-    @State private var isAnimatingOut = false
-    @State private var isExpanded = false
-
-    var body: some View {
-        HStack(alignment: .top, spacing: 8) {
-            Button {
-                withAnimation(.spring(response: 0.42, dampingFraction: 0.84)) {
-                    isExpanded.toggle()
-                    if !isExpanded { currentIndex = 0 }
-                }
-            } label: {
-                Text(isExpanded ? "收起" : "展开 \(urls.count)")
-                    .font(.system(size: 11, weight: .medium))
-                    .foregroundColor(Color(uiColor: .darkGray))
-                    .padding(.horizontal, 10)
-                    .frame(height: 28)
-                    .background(Color(uiColor: .systemGray5).opacity(0.82), in: Capsule())
-            }
-            .buttonStyle(.plain)
-            .padding(.top, (cardSize.height - 28) / 2)
-
-            if isExpanded {
-                VStack(spacing: 8) {
-                    ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-                        photoCard(url: url)
-                            .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                            .onTapGesture { openPhoto(at: index) }
-                            .transition(.offset(y: -CGFloat(index) * (cardSize.height * 0.72))
-                                .combined(with: .opacity))
-                    }
-                }
-            } else {
-                collapsedStack
-                    .transition(.opacity.combined(with: .scale(scale: 0.96, anchor: .top)))
-            }
-        }
-        .id(messageID)
-        .animation(.spring(response: 0.42, dampingFraction: 0.84), value: isExpanded)
-        .onChange(of: urls) { _ in
-            if currentIndex >= urls.count { currentIndex = 0 }
-        }
-    }
-
-    private var collapsedStack: some View {
-        ZStack(alignment: .topTrailing) {
-            ZStack {
-                ForEach(Array(visibleSlots.reversed()), id: \.self) { slot in
-                    photoCard(url: url(at: slot))
-                        .offset(layerOffset(slot))
-                        .rotationEffect(.degrees(layerRotation(slot)))
-                        .scaleEffect(layerScale(slot))
-                        .zIndex(Double(3 - slot))
-                        .allowsHitTesting(slot == 0)
-                        .offset(x: slot == 0 ? dragX : 0)
-                        .rotationEffect(.degrees(slot == 0
-                            ? Double(dragX / cardSize.width) * 4 : 0))
-                        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                        .onTapGesture {
-                            guard !isHorizontalDrag && !isAnimatingOut else { return }
-                            openPhoto(at: currentIndex)
-                        }
-                        .simultaneousGesture(dragGesture)
-                }
-            }
-            if urls.count > 3 { countBadge }
-        }
-        .frame(width: cardSize.width + 14, height: cardSize.height + 13)
-    }
-
-    private var countBadge: some View {
-        Text("\(urls.count)")
-            .font(.system(size: 12, weight: .semibold, design: .rounded))
-            .foregroundStyle(.primary.opacity(0.82))
-            .padding(.horizontal, 8)
-            .frame(height: 24)
-            .background(.ultraThinMaterial, in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.22), lineWidth: 0.5))
-            .padding(.top, 9)
-            .padding(.trailing, 8)
-            .zIndex(10)
-            .allowsHitTesting(false)
-    }
-
-    private func openPhoto(at index: Int) {
-        currentIndex = min(max(index, 0), urls.count - 1)
-        onOpen(urls, Binding(
-            get: { currentIndex },
-            set: { currentIndex = min(max($0, 0), urls.count - 1) }
-        ))
-    }
-
-    private var visibleSlots: Range<Int> { 0..<min(3, urls.count) }
-
-    private func url(at slot: Int) -> URL {
-        urls[(currentIndex + slot) % urls.count]
-    }
-
-    private func photoCard(url: URL) -> some View {
-        let previewURL: URL = {
-            let path = url.path
-            guard let range = path.range(of: "/attachments/") else { return url }
-            return AlcoveAPI.attachmentThumbnailURL("/attachments/" + String(path[range.upperBound...]))
-        }()
-        return CachedPhaseImage(url: previewURL) { phase in
-            switch phase {
-            case .success(let image):
-                image.resizable().scaledToFill()
-            case .failure:
-                Color(.tertiarySystemFill).overlay(Image(systemName: "photo"))
-            default:
-                Color(.tertiarySystemFill).overlay(ProgressView())
-            }
-        }
-        .frame(width: cardSize.width, height: cardSize.height)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .contextMenu {
-            Button {
-                Task { await PhotoLibrarySaver.save(url) }
-            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
-        }
-    }
-
-    private func layerOffset(_ slot: Int) -> CGSize {
-        let progress = min(abs(dragX) / (cardSize.width * 0.75), 1)
-        switch slot {
-        case 1: return CGSize(width: 7 * (1 - progress), height: -7 * (1 - progress))
-        case 2: return CGSize(width: -5 + 12 * progress, height: -5 - 2 * progress)
-        default: return .zero
-        }
-    }
-
-    private func layerRotation(_ slot: Int) -> Double {
-        let progress = min(abs(dragX) / (cardSize.width * 0.75), 1)
-        if slot == 1 { return 1.5 * Double(1 - progress) }
-        if slot == 2 { return -1 + 2.5 * Double(progress) }
-        return 0
-    }
-
-    private func layerScale(_ slot: Int) -> CGFloat {
-        guard slot > 0 else { return 1 }
-        let progress = min(abs(dragX) / (cardSize.width * 0.75), 1)
-        return 0.995 + (slot == 1 ? 0.005 * progress : 0)
-    }
-
-    private var dragGesture: some Gesture {
-        DragGesture(minimumDistance: 10, coordinateSpace: .local)
-            .onChanged { value in
-                guard !isAnimatingOut else { return }
-                let horizontal = abs(value.translation.width) > abs(value.translation.height) * 1.15
-                if !isHorizontalDrag && !horizontal { return }
-                isHorizontalDrag = true
-                dragX = value.translation.width
-            }
-            .onEnded { value in
-                guard isHorizontalDrag else { return }
-                let projected = value.predictedEndTranslation.width
-                let shouldAdvance = abs(dragX) > cardSize.width * 0.25 || abs(projected) > cardSize.width * 0.48
-                if shouldAdvance {
-                    isAnimatingOut = true
-                    let direction: CGFloat = (dragX == 0 ? projected : dragX) >= 0 ? 1 : -1
-                    withAnimation(.easeOut(duration: 0.20)) {
-                        dragX = direction * (cardSize.width + 80)
-                    }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.20) {
-                        var transaction = Transaction()
-                        transaction.disablesAnimations = true
-                        withTransaction(transaction) {
-                            currentIndex = (currentIndex + 1) % urls.count
-                            dragX = 0
-                            isAnimatingOut = false
-                            isHorizontalDrag = false
-                        }
-                    }
-                } else {
-                    withAnimation(.spring(response: 0.32, dampingFraction: 0.82)) { dragX = 0 }
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.34) { isHorizontalDrag = false }
-                }
-            }
     }
 }
 
