@@ -233,8 +233,8 @@ private struct EffectToken: View {
                     ExplodedText(text: token.text, font: uiFont, color: color, u: u)
                 } else if loop || t < EffectText.playDuration {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
-                    // 放大缩小走整体缩放（位置已按最大留好，排版不动，字距一致）
-                    styled(weight: f.weight).foregroundColor(color)
+                    // 她要的：气泡跟着动。放大缩小真改字号，整段重排，气泡随字鼓缩；别的效果不动排版
+                    styled(weight: f.weight, size: f.fontScale == 1 ? nil : baseSize * f.fontScale).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
                         .rotation3DEffect(.degrees(f.tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
                         .rotationEffect(.degrees(f.spin))
@@ -254,6 +254,7 @@ private struct EffectToken: View {
     fileprivate struct Frame {
         var weight: Font.Weight = .regular
         var scale: Double = 1
+        var fontScale: Double = 1
         var anchor: UnitPoint = .center
         var opacity: Double = 1
         var dx: Double = 0
@@ -323,15 +324,13 @@ private struct EffectToken: View {
                 let big: Double
                 if p < 0.25 { big = ease(p / 0.25) } else if p < 1.5 { big = 1 }
                 else if p < 1.75 { big = 1 - ease((p - 1.5) / 0.25) } else { big = 0 }
-                f.scale = 1 + big * 0.45
-                f.anchor = .leading
+                f.fontScale = 1 + big * 0.45
             case .small:
                 let p = t.truncatingRemainder(dividingBy: 2.6)
                 let small: Double
                 if p < 0.25 { small = ease(p / 0.25) } else if p < 1.5 { small = 1 }
                 else if p < 1.75 { small = 1 - ease((p - 1.5) / 0.25) } else { small = 0 }
-                f.scale = 1 - small * 0.3
-                f.anchor = .leading
+                f.fontScale = 1 - small * 0.3
             case .ripple:
                 // 一道浪从左往右过去，每个字抬起三分之一个字高再落下
                 let p = t.truncatingRemainder(dividingBy: 1.7)
