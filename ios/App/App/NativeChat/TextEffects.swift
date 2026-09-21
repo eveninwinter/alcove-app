@@ -149,6 +149,15 @@ struct EffectText: View {
         .fixedSize(horizontal: false, vertical: true)
         .contentShape(Rectangle())
         .onTapGesture { if !loop { play() } }
+        // 0921 她抓的：带效果的字不是文本框，长按没有复制。补一个菜单
+        .contextMenu {
+            if !loop {
+                Button { UIPasteboard.general.string = segments.map(\.text).joined() } label: {
+                    Label("复制", systemImage: "doc.on.doc")
+                }
+                Button { play() } label: { Label("再动一遍", systemImage: "arrow.clockwise") }
+            }
+        }
         // 0921 她抓的：面板里八个预览字是 loop 模式，这层点击把 Button 的点击吃掉了，按钮点不动。预览不接点击
         .allowsHitTesting(!loop)
         // 0921 她抓的「发出去没动」：气泡刚插进列表那一帧 onAppear 可能先于真正露面，稍等一下再起跳
@@ -279,7 +288,9 @@ private struct EffectToken: View {
             switch kind {
             case .shake:
                 // 0921 她说的：要真的左右摇。整段字当一块牌子绕竖轴左右摆，带透视像贴在圆柱上，越摆越小
-                let decay = loopDecay(t, period: 3.0)
+                // 她要的：比别的短一丢丢——2.6 秒摆到停，之后不动
+                let p = t.truncatingRemainder(dividingBy: 3.2)
+                let decay = p < 2.6 ? (1 - p / 2.6) * 0.8 + 0.2 : 0
                 let ang = sin(t * 2 * .pi * 1.7) * 32 * decay
                 f.tiltY = ang
                 f.dx = sin(t * 2 * .pi * 1.7) * 3 * decay
