@@ -200,10 +200,7 @@ private struct EffectToken: View {
     let start: Date?        // nil = 停着不动
     let loop: Bool
 
-    private var baseSize: CGFloat {
-        if token.effects.contains(.big) { return fontSize * 1.45 }   // 位置按大字留，动画在大和普通之间缩放
-        return fontSize                                              // 缩小按普通字留位，往小了缩
-    }
+    private var baseSize: CGFloat { fontSize }   // 放大缩小都按普通字排版，动的时候整段缩放，停下回到普通大小
 
     private func styled(weight: Font.Weight, size: CGFloat? = nil) -> Text {
         var t = Text(token.text).font(.system(size: size ?? baseSize, weight: weight))
@@ -218,10 +215,9 @@ private struct EffectToken: View {
         token.effects.last { !$0.isStyle }
     }
 
-    /// 不动的时候长什么样：缩小停在小字（位置按普通字留的，缩着画），别的原样
+    /// 不动的时候就是普通字
     private var restingText: some View {
         styled(weight: .regular).foregroundColor(color)
-            .scaleEffect(token.effects.contains(.small) ? 0.72 : 1, anchor: .leading)
     }
 
     private var uiFont: UIFont {
@@ -322,19 +318,19 @@ private struct EffectToken: View {
                 f.tiltX = sin(t * 2 * .pi * 1.7) * 34 * decay
                 f.dy = sin(t * 2 * .pi * 1.7) * 3 * decay
             case .big:
-                // 大字撑着，缩回去停一下，再长回来
-                let p = t.truncatingRemainder(dividingBy: 2.0)
+                // 普通 → 鼓到 1.45 倍撑一会儿 → 缩回普通。停下就是普通大小
+                let p = t.truncatingRemainder(dividingBy: 2.6)
                 let big: Double
-                if p < 0.9 { big = 1 } else if p < 1.1 { big = 1 - ease((p - 0.9) / 0.2) }
-                else if p < 1.8 { big = 0 } else { big = ease((p - 1.8) / 0.2) }
-                f.scale = 0.69 + big * 0.31        // 位置按大字留的，在大字和普通字之间来回
+                if p < 0.25 { big = ease(p / 0.25) } else if p < 1.5 { big = 1 }
+                else if p < 1.75 { big = 1 - ease((p - 1.5) / 0.25) } else { big = 0 }
+                f.scale = 1 + big * 0.45
                 f.anchor = .leading
             case .small:
-                let p = t.truncatingRemainder(dividingBy: 2.0)
+                let p = t.truncatingRemainder(dividingBy: 2.6)
                 let small: Double
-                if p < 0.6 { small = 0 } else if p < 0.8 { small = ease((p - 0.6) / 0.2) }
-                else if p < 1.6 { small = 1 } else { small = 1 - ease((p - 1.6) / 0.2) }
-                f.scale = 1 - small * 0.28         // 位置按普通字留的，在普通字和小字之间来回
+                if p < 0.25 { small = ease(p / 0.25) } else if p < 1.5 { small = 1 }
+                else if p < 1.75 { small = 1 - ease((p - 1.5) / 0.25) } else { small = 0 }
+                f.scale = 1 - small * 0.3
                 f.anchor = .leading
             case .ripple:
                 // 一道浪从左往右过去，每个字抬起三分之一个字高再落下
