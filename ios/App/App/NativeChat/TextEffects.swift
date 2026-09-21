@@ -173,11 +173,13 @@ private struct EffectToken: View {
     let start: Date?        // nil = 停着不动
     let loop: Bool
 
-    private var styled: Text {
+    private var styled: Text { styled(weight: nil) }
+
+    private func styled(weight: Font.Weight?) -> Text {
         var size = fontSize
         if token.effects.contains(.big) { size = fontSize * 1.45 }
         if token.effects.contains(.small) { size = fontSize * 0.72 }
-        var t = Text(token.text).font(.system(size: size))
+        var t = Text(token.text).font(.system(size: size, weight: weight ?? .regular))
         if token.effects.contains(.bold) { t = t.bold() }
         if token.effects.contains(.italic) { t = t.italic() }
         if token.effects.contains(.underline) { t = t.underline() }
@@ -194,13 +196,31 @@ private struct EffectToken: View {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
                 let t = ctx.date.timeIntervalSince(start)
                 if loop || t < EffectText.playDuration {
-                    styled.foregroundColor(color).modifier(Motion(kind: motion, t: t, index: token.index))
+                    if motion == .shake {
+                        // 0921 照她录的 iMessage：摇晃＝笔画粗细一个字一个字轮着鼓起来，从左往右扫
+                        let w = max(0, sin(t * 4.2 - Double(token.index) * 0.9))
+                        styled(weight: Self.weight(for: w)).foregroundColor(color)
+                            .scaleEffect(1 + w * 0.06)
+                    } else {
+                        styled.foregroundColor(color).modifier(Motion(kind: motion, t: t, index: token.index))
+                    }
                 } else {
                     styled.foregroundColor(color)
                 }
             }
         } else {
             styled.foregroundColor(color)
+        }
+    }
+
+    private static func weight(for w: Double) -> Font.Weight {
+        switch w {
+        case ..<0.15: return .regular
+        case ..<0.35: return .medium
+        case ..<0.55: return .semibold
+        case ..<0.75: return .bold
+        case ..<0.9: return .heavy
+        default: return .black
         }
     }
 
@@ -216,11 +236,7 @@ private struct EffectToken: View {
         func body(content: Content) -> some View {
             switch kind {
             case .shake:
-                // 0921 她描述的 iMessage 摇晃：像贴在半个圆柱上，一道波从左往右扫，每个字依次绕竖轴翻过去
-                let phase = t * 5.5 - Double(index) * 0.55
-                content
-                    .rotation3DEffect(.degrees(sin(phase) * 38), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
-                    .offset(x: sin(phase) * 2.5)
+                content   // 摇晃在外面按粗细画，不走这里
             case .nod:
                 content.offset(y: sin(t * 7) * 3)
             case .ripple:
