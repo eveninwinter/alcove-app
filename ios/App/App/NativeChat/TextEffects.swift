@@ -180,8 +180,8 @@ private struct EffectToken: View {
         return fontSize
     }
 
-    private func styled(weight: Font.Weight) -> Text {
-        var t = Text(token.text).font(.system(size: baseSize, weight: weight))
+    private func styled(weight: Font.Weight, size: CGFloat? = nil) -> Text {
+        var t = Text(token.text).font(.system(size: size ?? baseSize, weight: weight))
         if token.effects.contains(.bold) { t = t.bold() }
         if token.effects.contains(.italic) { t = t.italic() }
         if token.effects.contains(.underline) { t = t.underline() }
@@ -206,7 +206,8 @@ private struct EffectToken: View {
                     ExplodedText(text: token.text, font: uiFont, color: color, u: u)
                 } else if loop || t < EffectText.playDuration {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
-                    styled(weight: f.weight).foregroundColor(color)
+                    // 放大缩小走字号（整段重排，字距一致），别的走变形
+                    styled(weight: f.weight, size: baseSize * f.fontScale).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
                         .rotation3DEffect(.degrees(f.tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
                         .rotationEffect(.degrees(f.spin))
@@ -226,6 +227,7 @@ private struct EffectToken: View {
     fileprivate struct Frame {
         var weight: Font.Weight = .regular
         var scale: Double = 1
+        var fontScale: Double = 1
         var opacity: Double = 1
         var dx: Double = 0
         var dy: Double = 0
@@ -292,13 +294,13 @@ private struct EffectToken: View {
                 let big: Double
                 if p < 0.9 { big = 1 } else if p < 1.1 { big = 1 - ease((p - 0.9) / 0.2) }
                 else if p < 1.8 { big = 0 } else { big = ease((p - 1.8) / 0.2) }
-                f.scale = 0.69 + big * 0.31        // 布局按大字算，缩到普通字大小再回来
+                f.fontScale = 0.69 + big * 0.31    // 字号在大字和普通字之间来回，整段一起重排
             case .small:
                 let p = t.truncatingRemainder(dividingBy: 2.0)
                 let small: Double
                 if p < 0.6 { small = 0 } else if p < 0.8 { small = ease((p - 0.6) / 0.2) }
                 else if p < 1.6 { small = 1 } else { small = 1 - ease((p - 1.6) / 0.2) }
-                f.scale = 1.39 - small * 0.39      // 布局按小字算，普通大小缩到小字再回来
+                f.fontScale = 1.39 - small * 0.39  // 字号在普通字和小字之间来回，整段一起重排
             case .ripple:
                 // 一道浪从左往右过去，每个字抬起三分之一个字高再落下
                 let p = t.truncatingRemainder(dividingBy: 1.7)
