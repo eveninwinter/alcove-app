@@ -125,6 +125,9 @@ struct EffectText: View {
     var lineSpacing: CGFloat = 5
     /// 面板预览用：一直动。气泡里默认照 iMessage：出现时动一阵就停，点一下再动一遍
     var loop = false
+    /// 0921 她抓的「一滑屏幕又动」：列表滚动会把气泡重新造一遍，onAppear 又来。记住哪条已经放过，只有第一次自动放
+    var playKey: String? = nil
+    static var played = Set<String>()
 
     static let playDuration: TimeInterval = 3.2
     @State private var playStart: Date?
@@ -161,7 +164,15 @@ struct EffectText: View {
         // 0921 她抓的：面板里八个预览字是 loop 模式，这层点击把 Button 的点击吃掉了，按钮点不动。预览不接点击
         .allowsHitTesting(!loop)
         // 0921 她抓的「发出去没动」：气泡刚插进列表那一帧 onAppear 可能先于真正露面，稍等一下再起跳
-        .onAppear { if !loop { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { play() } } }
+        .onAppear {
+            guard !loop else { return }
+            if let k = playKey {
+                if Self.played.contains(k) { return }
+                Self.played.insert(k)
+                if Self.played.count > 2000 { Self.played.removeAll() }
+            }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { play() }
+        }
         .onDisappear { stopTask?.cancel() }
     }
 

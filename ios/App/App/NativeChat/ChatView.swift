@@ -3171,7 +3171,8 @@ struct MessageRow: View {
                     fontSize: CGFloat(fontSize),
                     color: isUser ? (theme.textUser ?? (theme.isMessages ? .white : theme.text))
                                   : (msg.asleepAtSend ? theme.textDim : (theme.textAI ?? theme.text)),
-                    lineSpacing: theme.isPaper ? 7 : 5
+                    lineSpacing: theme.isPaper ? 7 : 5,
+                    playKey: msg.ts
                 )
             } else {
             SelectableMessageText(
