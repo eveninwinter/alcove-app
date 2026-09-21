@@ -228,11 +228,11 @@ private struct EffectToken: View {
         if let motion, let start {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { ctx in
                 let t = ctx.date.timeIntervalSince(start)
-                if motion == .explode, loop || t < EffectText.playDuration, let u = Frame.explodeU(t) {
+                if motion == .explode, loop || t < EffectText.playDuration, let u = Frame.explodeU(t, loop: loop) {
                     // 0921 她抓的：爆炸是每一根笔画各自炸开。拆轮廓画
                     ExplodedText(text: token.text, font: uiFont, color: color, u: u)
                 } else if loop || t < EffectText.playDuration {
-                    let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
+                    let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize, loop: loop)
                     // 她要的：气泡跟着动。放大缩小真改字号，整段重排，气泡随字鼓缩；别的效果不动排版
                     styled(weight: f.weight, size: f.fontScale == 1 ? nil : baseSize * f.fontScale).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
@@ -289,8 +289,8 @@ private struct EffectToken: View {
             }
         }
         /// 爆炸的进度：0 拼好、1 全飞散；nil = 这会儿就是普通字，不用拆
-        static func explodeU(_ t: Double) -> Double? {
-            let p = t.truncatingRemainder(dividingBy: 3.2)
+        static func explodeU(_ t: Double, loop: Bool) -> Double? {
+            let p = loop ? t.truncatingRemainder(dividingBy: 3.2) : t
             if p < 0.65 { return ease(p / 0.65) }
             if p < 1.8 { return 1 }
             if p < 2.4 { return 1 - ease((p - 1.8) / 0.6) }
@@ -301,43 +301,46 @@ private struct EffectToken: View {
             return h - floor(h)
         }
 
-        static func compute(kind: TextEffectKind, t: Double, index: Int, fontSize: CGFloat) -> Frame {
+        static func compute(kind: TextEffectKind, t: Double, index: Int, fontSize: CGFloat, loop: Bool) -> Frame {
             var f = Frame()
             let i = Double(index)
+            // 0921 她抓的「放大自己重复两次」：气泡里只放一遍，到点就歇着；面板预览才循环
+            func cycle(_ period: Double) -> Double { loop ? t.truncatingRemainder(dividingBy: period) : t }
             switch kind {
             case .shake:
                 // 0921 她说的：要真的左右摇。整段字当一块牌子绕竖轴左右摆，带透视像贴在圆柱上，越摆越小
                 // 她要的：比别的短一丢丢——2.6 秒摆到停，之后不动
-                let p = t.truncatingRemainder(dividingBy: 3.2)
+                let p = cycle(3.2)
                 let decay = p < 2.6 ? (1 - p / 2.6) * 0.8 + 0.2 : 0
                 let ang = sin(t * 2 * .pi * 1.7) * 32 * decay
                 f.tiltY = ang
                 f.dx = sin(t * 2 * .pi * 1.7) * 3 * decay
             case .nod:
                 // 她说的：点头＝上下摆，跟摇晃一样的动作换成横轴。上沿往前倒再往后仰，来回摆着停下
-                let decay = loopDecay(t, period: 3.0)
+                let p = cycle(3.0)
+                let decay = p < 2.6 ? (1 - p / 2.6) * 0.8 + 0.2 : 0
                 f.tiltX = sin(t * 2 * .pi * 1.7) * 34 * decay
                 f.dy = sin(t * 2 * .pi * 1.7) * 3 * decay
             case .big:
                 // 普通 → 鼓到 1.45 倍撑一会儿 → 缩回普通。停下就是普通大小
-                let p = t.truncatingRemainder(dividingBy: 2.6)
+                let p = cycle(2.6)
                 let big: Double
                 if p < 0.25 { big = ease(p / 0.25) } else if p < 1.5 { big = 1 }
                 else if p < 1.75 { big = 1 - ease((p - 1.5) / 0.25) } else { big = 0 }
                 f.fontScale = 1 + big * 0.45
             case .small:
-                let p = t.truncatingRemainder(dividingBy: 2.6)
+                let p = cycle(2.6)
                 let small: Double
                 if p < 0.25 { small = ease(p / 0.25) } else if p < 1.5 { small = 1 }
                 else if p < 1.75 { small = 1 - ease((p - 1.5) / 0.25) } else { small = 0 }
                 f.fontScale = 1 - small * 0.3
             case .ripple:
                 // 一道浪从左往右过去，每个字抬起三分之一个字高再落下
-                let p = t.truncatingRemainder(dividingBy: 1.7)
-                f.dy = -bump((p - i * 0.12) / 0.38) * Double(fontSize) * 0.36
+                let p = cycle(1.7)
+                f.dy = -bump((p - 0.15 - i * 0.12) / 0.38) * Double(fontSize) * 0.36
             case .bloom:
                 // 先整体淡下去，再一个字一个字变粗亮回来
-                let p = t.truncatingRemainder(dividingBy: 2.4)
+                let p = cycle(2.4)
                 if p < 0.5 {
                     f.opacity = 1 - ease(p / 0.5) * 0.55
                 } else {
