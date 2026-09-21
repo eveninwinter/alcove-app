@@ -226,8 +226,8 @@ private struct EffectToken: View {
                     ExplodedText(text: token.text, font: uiFont, color: color, u: u)
                 } else if loop || t < EffectText.playDuration {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
-                    // 放大缩小走字号（整段重排，字距一致），别的走变形
-                    styled(weight: f.weight, size: baseSize * f.fontScale).foregroundColor(color)
+                    // 放大缩小的一鼓一鼓只在面板预览里做（loop）；气泡里字号固定不动，免得一点屏幕跟着跳
+                    styled(weight: f.weight, size: loop ? baseSize * f.fontScale : baseSize).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
                         .rotation3DEffect(.degrees(f.tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
                         .rotationEffect(.degrees(f.spin))
@@ -364,6 +364,8 @@ private struct GlyphPieces {
         let line = CTLineCreateWithAttributedString(attr)
         var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
         let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+        // 框按 UIFont 的行高算、基线放在 ascender，跟 SwiftUI Text 排出来的一样高，换来换去不跳
+        ascent = font.ascender
         var contours: [Path] = []
         for run in (CTLineGetGlyphRuns(line) as! [CTRun]) {
             let attrs = CTRunGetAttributes(run) as NSDictionary
@@ -381,7 +383,7 @@ private struct GlyphPieces {
                 contours += split(cg.copy(using: &tf) ?? cg)
             }
         }
-        let made = GlyphPieces(contours: contours, size: CGSize(width: width, height: ascent + descent))
+        let made = GlyphPieces(contours: contours, size: CGSize(width: width, height: font.lineHeight))
         if cache.count > 300 { cache.removeAll() }
         cache[key] = made
         return made
