@@ -194,7 +194,7 @@ private struct EffectToken: View {
 
     var body: some View {
         if let motion, let start {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { ctx in
                 let t = ctx.date.timeIntervalSince(start)
                 if loop || t < EffectText.playDuration {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
@@ -289,9 +289,10 @@ private struct EffectToken: View {
                     f.opacity = 0.45 + ease((p - 0.5) / 0.6) * 0.55
                 }
             case .jitter:
-                let step = floor(t * 16)
-                f.dx = (noise(step, i) - 0.5) * 2.4
-                f.dy = (noise(step + 7, i * 3) - 0.5) * 2.4
+                // 她要的：要很快。每秒换 40 个位置，画面能刷多快抖多快
+                let step = floor(t * 40)
+                f.dx = (noise(step, i) - 0.5) * 2.6
+                f.dy = (noise(step + 7, i * 3) - 0.5) * 2.6
             case .explode:
                 // 每个字各自歪着飞出去淡掉，空一会儿，再淡回来站好
                 let p = t.truncatingRemainder(dividingBy: 3.2)
