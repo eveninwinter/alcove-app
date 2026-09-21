@@ -4979,7 +4979,7 @@ struct TypingIndicator: View {
                 // 工具原文她要留着：Bash — 追头像变量aa的赋值来源
                 Text(tool)
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(theme.textLight)
+                    .foregroundColor((theme.textAI ?? theme.textDim).opacity(0.8))   // 0921 她抓的：浅灰在壁纸上看不清，跟他正文色走
                     .lineLimit(1)
                     .padding(.leading, 4)
             }
