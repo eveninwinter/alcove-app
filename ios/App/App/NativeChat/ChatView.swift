@@ -4971,7 +4971,7 @@ struct TypingIndicator: View {
                 // 0921 任务#2485 她要的：信息主题也把「正在X中…」和工具原文显示回来（原来只留三个点）
                 Text("\(name)正在\(line)中…")
                     .font(.system(size: 12))
-                    .foregroundColor(theme.textDim)
+                    .foregroundColor(theme.textAI ?? theme.textDim)   // 0921 她要的：跟他正文调色盘一个色
                 Spacer()
             }
             if let tool, !tool.isEmpty {

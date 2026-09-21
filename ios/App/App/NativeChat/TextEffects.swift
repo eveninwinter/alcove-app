@@ -125,7 +125,7 @@ struct EffectText: View {
     /// 面板预览用：一直动。气泡里默认照 iMessage：出现时动一阵就停，点一下再动一遍
     var loop = false
 
-    static let playDuration: TimeInterval = 2.2
+    static let playDuration: TimeInterval = 2.6
     @State private var playStart: Date?
     @State private var stopTask: Task<Void, Never>?
 
@@ -136,7 +136,7 @@ struct EffectText: View {
                 if tokens.isEmpty {
                     Text(" ").font(.system(size: fontSize))
                 } else {
-                    FlowLayout(spacing: 0, lineSpacing: lineSpacing) {
+                    EffectFlowLayout(lineSpacing: lineSpacing) {
                         ForEach(tokens) { tok in
                             EffectToken(token: tok, fontSize: fontSize, color: color,
                                         start: loop ? Date(timeIntervalSinceReferenceDate: 0) : playStart, loop: loop)
@@ -150,7 +150,8 @@ struct EffectText: View {
         .onTapGesture { if !loop { play() } }
         // 0921 她抓的：面板里八个预览字是 loop 模式，这层点击把 Button 的点击吃掉了，按钮点不动。预览不接点击
         .allowsHitTesting(!loop)
-        .onAppear { if !loop { play() } }
+        // 0921 她抓的「发出去没动」：气泡刚插进列表那一帧 onAppear 可能先于真正露面，稍等一下再起跳
+        .onAppear { if !loop { DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { play() } } }
         .onDisappear { stopTask?.cancel() }
     }
 
@@ -344,5 +345,50 @@ extension UIResponder {
     }
     @objc private func alcoveCaptureFirstResponder() {
         UIResponder.alcoveCaptured = self
+    }
+}
+
+
+// 0921 她抓的「怎么这么长一条」：GlassKit 的 FlowLayout 有多宽占多宽，气泡被撑成整行。
+// 这份按实际最长的一行算宽，气泡就跟普通文字一样贴着字走。
+private struct EffectFlowLayout: Layout {
+    var lineSpacing: CGFloat = 5
+
+    private func arrange(_ subviews: Subviews, maxWidth: CGFloat) -> (frames: [CGRect], size: CGSize) {
+        var frames: [CGRect] = []
+        var x: CGFloat = 0, y: CGFloat = 0, lineHeight: CGFloat = 0, widest: CGFloat = 0
+        var lineStart = 0
+        func closeLine() {
+            // 同一行里字号不同（放大/缩小）时贴行底对齐
+            for i in lineStart..<frames.count { frames[i].origin.y = y + lineHeight - frames[i].height }
+            lineStart = frames.count
+        }
+        for view in subviews {
+            let size = view.sizeThatFits(.unspecified)
+            if x > 0 && x + size.width > maxWidth {
+                closeLine()
+                widest = max(widest, x)
+                x = 0
+                y += lineHeight + lineSpacing
+                lineHeight = 0
+            }
+            frames.append(CGRect(x: x, y: y, width: size.width, height: size.height))
+            x += size.width
+            lineHeight = max(lineHeight, size.height)
+        }
+        closeLine()
+        widest = max(widest, x)
+        return (frames, CGSize(width: min(widest, maxWidth), height: y + lineHeight))
+    }
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        arrange(subviews, maxWidth: proposal.width ?? .infinity).size
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        let (frames, _) = arrange(subviews, maxWidth: bounds.width)
+        for (view, f) in zip(subviews, frames) {
+            view.place(at: CGPoint(x: bounds.minX + f.minX, y: bounds.minY + f.minY), proposal: .unspecified)
+        }
     }
 }
