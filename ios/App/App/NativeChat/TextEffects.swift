@@ -93,6 +93,12 @@ enum TextEffects {
         var lastEffects: [TextEffectKind] = []
         for seg in segments {
             if seg.effects != lastEffects { runIndex = 0; lastEffects = seg.effects }
+            // 放大/缩小要整段一起缩放（字距才一致），短的整段当一个格；太长的还是拆字保证能换行
+            if (seg.effects.contains(.big) || seg.effects.contains(.small)) && seg.text.count <= 14 && !seg.text.contains("\n") {
+                paras[paras.count - 1].append(Token(id: counter, text: seg.text, effects: seg.effects, index: runIndex))
+                counter += 1; runIndex += 1
+                continue
+            }
             var word = ""
             func flush() {
                 guard !word.isEmpty else { return }
@@ -195,9 +201,8 @@ private struct EffectToken: View {
     let loop: Bool
 
     private var baseSize: CGFloat {
-        if token.effects.contains(.big) { return fontSize * 1.45 }
-        if token.effects.contains(.small) { return fontSize * 0.72 }
-        return fontSize
+        if token.effects.contains(.big) { return fontSize * 1.45 }   // 位置按大字留，动画在大和普通之间缩放
+        return fontSize                                              // 缩小按普通字留位，往小了缩
     }
 
     private func styled(weight: Font.Weight, size: CGFloat? = nil) -> Text {
@@ -213,6 +218,12 @@ private struct EffectToken: View {
         token.effects.last { !$0.isStyle }
     }
 
+    /// 不动的时候长什么样：缩小停在小字（位置按普通字留的，缩着画），别的原样
+    private var restingText: some View {
+        styled(weight: .regular).foregroundColor(color)
+            .scaleEffect(token.effects.contains(.small) ? 0.72 : 1, anchor: .leading)
+    }
+
     private var uiFont: UIFont {
         UIFont.systemFont(ofSize: baseSize, weight: token.effects.contains(.bold) ? .bold : .regular)
     }
@@ -226,20 +237,20 @@ private struct EffectToken: View {
                     ExplodedText(text: token.text, font: uiFont, color: color, u: u)
                 } else if loop || t < EffectText.playDuration {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
-                    // 放大缩小的一鼓一鼓只在面板预览里做（loop）；气泡里字号固定不动，免得一点屏幕跟着跳
-                    styled(weight: f.weight, size: loop ? baseSize * f.fontScale : baseSize).foregroundColor(color)
+                    // 放大缩小走整体缩放（位置已按最大留好，排版不动，字距一致）
+                    styled(weight: f.weight).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
                         .rotation3DEffect(.degrees(f.tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
                         .rotationEffect(.degrees(f.spin))
-                        .scaleEffect(f.scale)
+                        .scaleEffect(f.scale, anchor: f.anchor)
                         .offset(x: f.dx, y: f.dy)
                         .opacity(f.opacity)
                 } else {
-                    styled(weight: .regular).foregroundColor(color)
+                    restingText
                 }
             }
         } else {
-            styled(weight: .regular).foregroundColor(color)
+            restingText
         }
     }
 
@@ -247,7 +258,7 @@ private struct EffectToken: View {
     fileprivate struct Frame {
         var weight: Font.Weight = .regular
         var scale: Double = 1
-        var fontScale: Double = 1
+        var anchor: UnitPoint = .center
         var opacity: Double = 1
         var dx: Double = 0
         var dy: Double = 0
@@ -316,13 +327,15 @@ private struct EffectToken: View {
                 let big: Double
                 if p < 0.9 { big = 1 } else if p < 1.1 { big = 1 - ease((p - 0.9) / 0.2) }
                 else if p < 1.8 { big = 0 } else { big = ease((p - 1.8) / 0.2) }
-                f.fontScale = 0.69 + big * 0.31    // 字号在大字和普通字之间来回，整段一起重排
+                f.scale = 0.69 + big * 0.31        // 位置按大字留的，在大字和普通字之间来回
+                f.anchor = .leading
             case .small:
                 let p = t.truncatingRemainder(dividingBy: 2.0)
                 let small: Double
                 if p < 0.6 { small = 0 } else if p < 0.8 { small = ease((p - 0.6) / 0.2) }
                 else if p < 1.6 { small = 1 } else { small = 1 - ease((p - 1.6) / 0.2) }
-                f.fontScale = 1.39 - small * 0.39  // 字号在普通字和小字之间来回，整段一起重排
+                f.scale = 1 - small * 0.28         // 位置按普通字留的，在普通字和小字之间来回
+                f.anchor = .leading
             case .ripple:
                 // 一道浪从左往右过去，每个字抬起三分之一个字高再落下
                 let p = t.truncatingRemainder(dividingBy: 1.7)
