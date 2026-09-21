@@ -4919,12 +4919,13 @@ struct TypingIndicator: View {
                 .padding(.vertical, 11)
                 .background(theme.bubbleAI,
                             in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-                if !theme.isMessages { Text("\(name)正在\(line)中…")
+                // 0921 任务#2485 她要的：信息主题也把「正在X中…」和工具原文显示回来（原来只留三个点）
+                Text("\(name)正在\(line)中…")
                     .font(.system(size: 12))
-                    .foregroundColor(theme.textDim) }
+                    .foregroundColor(theme.textDim)
                 Spacer()
             }
-            if let tool, !tool.isEmpty, !theme.isMessages {
+            if let tool, !tool.isEmpty {
                 // 工具原文她要留着：Bash — 追头像变量aa的赋值来源
                 Text(tool)
                     .font(.system(size: 11, design: .monospaced))
