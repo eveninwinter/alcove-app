@@ -216,7 +216,11 @@ private struct EffectToken: View {
         func body(content: Content) -> some View {
             switch kind {
             case .shake:
-                content.rotationEffect(.degrees(sin(t * 22) * 7))
+                // 0921 她描述的 iMessage 摇晃：像贴在半个圆柱上，一道波从左往右扫，每个字依次绕竖轴翻过去
+                let phase = t * 5.5 - Double(index) * 0.55
+                content
+                    .rotation3DEffect(.degrees(sin(phase) * 38), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+                    .offset(x: sin(phase) * 2.5)
             case .nod:
                 content.offset(y: sin(t * 7) * 3)
             case .ripple:
