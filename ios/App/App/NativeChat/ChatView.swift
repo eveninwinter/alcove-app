@@ -20,6 +20,9 @@ struct ChatView: View {
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @State private var draft = ""
     @State private var previousDraft = ""
+    // 0921 任务#2505 文字效果：长按菜单点「文字效果」时记下选中的范围，面板选完套标记
+    @State private var effectRange: NSRange?
+    @State private var showEffectPanel = false
     @State private var handlingReturn = false
     @State private var selectedQuote: String?
     @State private var showStickers = false
@@ -153,6 +156,21 @@ struct ChatView: View {
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .sheet(isPresented: $showStickers) { stickerSheet }
+        .sheet(isPresented: $showEffectPanel) {
+            TextEffectPanel(selection: effectSelectionText, onPick: applyTextEffect)
+                .presentationDetents([.fraction(0.55)])
+                .presentationDragIndicator(.hidden)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: TextEffectBridge.requested)) { note in
+            // 只认聊天打字框：菜单回来的整段文本必须就是眼前的草稿
+            guard let text = note.userInfo?["text"] as? String, text == draft,
+                  let loc = note.userInfo?["location"] as? Int,
+                  let len = note.userInfo?["length"] as? Int else { return }
+            effectRange = NSRange(location: loc, length: len)
+            showEffectPanel = true
+        }
+        .onChange(of: inputFocused) { focused in TextEffectBridge.chatInputFocused = focused }
         .sheet(isPresented: $showMusicPlayer) {
             MusicPlayerSheet(model: music)
                 .presentationDetents([.fraction(0.72)])
@@ -1470,6 +1488,26 @@ struct ChatView: View {
         // 0905 她报的：攒气泡时引用不跟着走。攒的这条就把引用带上（outgoingText 拼完会清掉引用条）
         store.sendHold(outgoingText(text))
         inputFocused = true
+    }
+
+    /// 文字效果：面板要预览的那几个字（没选就是空，面板会写「套整条」）
+    private var effectSelectionText: String {
+        guard let r = effectRange, r.length > 0, NSMaxRange(r) <= (draft as NSString).length else { return "" }
+        return (draft as NSString).substring(with: r)
+    }
+
+    /// 文字效果：把标记套到选中的字上；没选就套整条。走 handlingReturn 免得被当成回车/链接处理
+    private func applyTextEffect(_ kind: TextEffectKind) {
+        let ns = draft as NSString
+        var r = effectRange ?? NSRange(location: 0, length: ns.length)
+        if r.length == 0 || NSMaxRange(r) > ns.length { r = NSRange(location: 0, length: ns.length) }
+        guard ns.length > 0 else { return }
+        let wrapped = TextEffects.wrap(ns.substring(with: r), in: kind)
+        handlingReturn = true
+        draft = ns.replacingCharacters(in: r, with: wrapped)
+        previousDraft = draft
+        effectRange = nil
+        DispatchQueue.main.async { handlingReturn = false }
     }
 
     private func handleDraftChange(_ value: String) {
@@ -3126,6 +3164,16 @@ struct MessageRow: View {
 
     private var bubbleContents: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
+            // 0921 任务#2505：带 [摇晃]…[/摇晃] 这类标记的正文逐字画、会动；没标记照旧
+            if let segs = TextEffects.segments(msg.textWithoutLink) {
+                EffectText(
+                    segments: segs,
+                    fontSize: CGFloat(fontSize),
+                    color: isUser ? (theme.textUser ?? (theme.isMessages ? .white : theme.text))
+                                  : (msg.asleepAtSend ? theme.textDim : (theme.textAI ?? theme.text)),
+                    lineSpacing: theme.isPaper ? 7 : 5
+                )
+            } else {
             SelectableMessageText(
                 text: msg.textWithoutLink,
                 fontSize: CGFloat(fontSize),
@@ -3140,6 +3188,7 @@ struct MessageRow: View {
                         ? msg.displayText : wholeTurnText
                 }
             )
+            }
         }
     }
 

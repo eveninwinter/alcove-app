@@ -31,6 +31,14 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
     var window: UIWindow?
 
+    /// 0921 任务#2505 文字效果：给全 app 的编辑菜单（拷贝/粘贴那排）加一项「文字效果」。
+    /// 只在聊天打字框聚焦时才塞（TextEffectBridge.chatInputFocused），点了由 ChatView 接手。
+    override func buildMenu(with builder: UIMenuBuilder) {
+        super.buildMenu(with: builder)
+        guard builder.system == .context, let action = TextEffectBridge.menuAction() else { return }
+        builder.insertChild(UIMenu(options: .displayInline, children: [action]), atStartOfMenu: .standardEdit)
+    }
+
     func application(_ application: UIApplication,
                      supportedInterfaceOrientationsFor window: UIWindow?) -> UIInterfaceOrientationMask {
         AlcoveOrientation.landscapeLocked ? .landscape : .allButUpsideDown
