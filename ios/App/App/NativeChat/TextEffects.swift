@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 // 0921 任务#2505 她要的 iMessage 式「文字效果」。
 //
@@ -192,11 +193,18 @@ private struct EffectToken: View {
         token.effects.last { !$0.isStyle }
     }
 
+    private var uiFont: UIFont {
+        UIFont.systemFont(ofSize: baseSize, weight: token.effects.contains(.bold) ? .bold : .regular)
+    }
+
     var body: some View {
         if let motion, let start {
             TimelineView(.animation(minimumInterval: 1.0 / 60.0)) { ctx in
                 let t = ctx.date.timeIntervalSince(start)
-                if loop || t < EffectText.playDuration {
+                if motion == .explode, loop || t < EffectText.playDuration, let u = Frame.explodeU(t) {
+                    // 0921 她抓的：爆炸是每一根笔画各自炸开。拆轮廓画
+                    ExplodedText(text: token.text, font: uiFont, color: color, u: u)
+                } else if loop || t < EffectText.playDuration {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
                     styled(weight: f.weight).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
@@ -215,7 +223,7 @@ private struct EffectToken: View {
     }
 
     /// 一帧里这个字该长什么样。全部照 0921 她录的 iMessage 面板一帧帧对出来的。
-    private struct Frame {
+    fileprivate struct Frame {
         var weight: Font.Weight = .regular
         var scale: Double = 1
         var opacity: Double = 1
@@ -249,6 +257,14 @@ private struct EffectToken: View {
             case ..<0.9: return .heavy
             default: return .black
             }
+        }
+        /// 爆炸的进度：0 拼好、1 全飞散；nil = 这会儿就是普通字，不用拆
+        static func explodeU(_ t: Double) -> Double? {
+            let p = t.truncatingRemainder(dividingBy: 3.2)
+            if p < 0.65 { return ease(p / 0.65) }
+            if p < 1.8 { return 1 }
+            if p < 2.4 { return 1 - ease((p - 1.8) / 0.6) }
+            return nil
         }
         static func noise(_ a: Double, _ b: Double) -> Double {
             let h = sin(a * 12.9898 + b * 78.233) * 43758.5453
@@ -302,28 +318,100 @@ private struct EffectToken: View {
                 let step = floor(t * 40)
                 f.dx = (noise(step, i) - 0.5) * 2.6
                 f.dy = (noise(step + 7, i * 3) - 0.5) * 2.6
-            case .explode:
-                // 每个字各自歪着飞出去淡掉，空一会儿，再淡回来站好
-                let p = t.truncatingRemainder(dividingBy: 3.2)
-                let ang = noise(i, 1) * 2 * .pi
-                let dir = noise(i, 2) > 0.5 ? 1.0 : -1.0
-                if p < 0.55 {
-                    let u = ease(p / 0.55)
-                    f.dx = cos(ang) * u * Double(fontSize) * 1.6
-                    f.dy = sin(ang) * u * Double(fontSize) * 1.2 - u * Double(fontSize) * 0.4
-                    f.spin = dir * u * (35 + noise(i, 3) * 40)
-                    f.scale = 1 + u * 0.35
-                    f.opacity = 1 - u
-                } else if p < 1.7 {
-                    f.opacity = 0
-                } else if p < 2.1 {
-                    f.opacity = ease((p - 1.7) / 0.4)
-                }
             default:
                 break
             }
             return f
         }
+    }
+}
+
+// MARK: - 爆炸：把字拆成笔画轮廓
+
+private struct GlyphPieces {
+    let contours: [Path]
+    let size: CGSize
+    static var cache: [String: GlyphPieces] = [:]
+
+    static func make(text: String, font: UIFont) -> GlyphPieces {
+        let key = "\(text)|\(font.pointSize)|\(font.fontName)"
+        if let hit = cache[key] { return hit }
+        let attr = NSAttributedString(string: text, attributes: [.font: font])
+        let line = CTLineCreateWithAttributedString(attr)
+        var ascent: CGFloat = 0, descent: CGFloat = 0, leading: CGFloat = 0
+        let width = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, &leading))
+        var contours: [Path] = []
+        for run in (CTLineGetGlyphRuns(line) as! [CTRun]) {
+            let attrs = CTRunGetAttributes(run) as NSDictionary
+            let runFont = (attrs[kCTFontAttributeName as String] as! CTFont)
+            let count = CTRunGetGlyphCount(run)
+            guard count > 0 else { continue }
+            var glyphs = [CGGlyph](repeating: 0, count: count)
+            var positions = [CGPoint](repeating: .zero, count: count)
+            CTRunGetGlyphs(run, CFRangeMake(0, 0), &glyphs)
+            CTRunGetPositions(run, CFRangeMake(0, 0), &positions)
+            for (g, pos) in zip(glyphs, positions) {
+                guard let cg = CTFontCreatePathForGlyph(runFont, g, nil) else { continue }
+                // 字形坐标 y 朝上、基线在 0；翻成 SwiftUI 的 y 朝下、基线在 ascent
+                var tf = CGAffineTransform(translationX: pos.x, y: ascent).scaledBy(x: 1, y: -1)
+                contours += split(cg.copy(using: &tf) ?? cg)
+            }
+        }
+        let made = GlyphPieces(contours: contours, size: CGSize(width: width, height: ascent + descent))
+        if cache.count > 300 { cache.removeAll() }
+        cache[key] = made
+        return made
+    }
+
+    /// 一个 moveTo 起一段，一段就是一根笔画（或一个孔）
+    static func split(_ path: CGPath) -> [Path] {
+        var out: [Path] = []
+        var cur = Path()
+        path.applyWithBlock { el in
+            let e = el.pointee
+            switch e.type {
+            case .moveToPoint:
+                if !cur.isEmpty { out.append(cur) }
+                cur = Path(); cur.move(to: e.points[0])
+            case .addLineToPoint: cur.addLine(to: e.points[0])
+            case .addQuadCurveToPoint: cur.addQuadCurve(to: e.points[1], control: e.points[0])
+            case .addCurveToPoint: cur.addCurve(to: e.points[2], control1: e.points[0], control2: e.points[1])
+            case .closeSubpath: cur.closeSubpath()
+            @unknown default: break
+            }
+        }
+        if !cur.isEmpty { out.append(cur) }
+        return out
+    }
+}
+
+private struct ExplodedText: View {
+    let text: String
+    let font: UIFont
+    let color: Color
+    let u: Double       // 0 拼好，1 全飞散
+
+    var body: some View {
+        let pieces = GlyphPieces.make(text: text, font: font)
+        let w = max(pieces.size.width, 1), h = max(pieces.size.height, 1)
+        ZStack(alignment: .topLeading) {
+            ForEach(pieces.contours.indices, id: \.self) { i in
+                let path = pieces.contours[i]
+                let c = path.boundingRect
+                let n1 = EffectToken.Frame.noise(Double(i), 1.0)
+                let n2 = EffectToken.Frame.noise(Double(i), 2.0)
+                let n3 = EffectToken.Frame.noise(Double(i), 3.0)
+                // 从字中心往外飞，方向再随机偏一点，飞多远也各不一样
+                let ang = atan2(c.midY - h / 2, c.midX - w / 2) + (n1 - 0.5) * 1.4
+                let dist = Double(font.pointSize) * (0.8 + n2 * 1.4) * u
+                path.fill(color)
+                    .rotationEffect(.degrees((n3 - 0.5) * 260 * u),
+                                    anchor: UnitPoint(x: c.midX / w, y: c.midY / h))
+                    .offset(x: cos(ang) * dist, y: sin(ang) * dist - u * Double(font.pointSize) * 0.25)
+                    .opacity(1 - u * u)
+            }
+        }
+        .frame(width: w, height: h)
     }
 }
 
