@@ -148,6 +148,8 @@ struct EffectText: View {
         .fixedSize(horizontal: false, vertical: true)
         .contentShape(Rectangle())
         .onTapGesture { if !loop { play() } }
+        // 0921 她抓的：面板里八个预览字是 loop 模式，这层点击把 Button 的点击吃掉了，按钮点不动。预览不接点击
+        .allowsHitTesting(!loop)
         .onAppear { if !loop { play() } }
         .onDisappear { stopTask?.cancel() }
     }
