@@ -173,13 +173,14 @@ private struct EffectToken: View {
     let start: Date?        // nil = 停着不动
     let loop: Bool
 
-    private var styled: Text { styled(weight: nil) }
+    private var baseSize: CGFloat {
+        if token.effects.contains(.big) { return fontSize * 1.45 }
+        if token.effects.contains(.small) { return fontSize * 0.72 }
+        return fontSize
+    }
 
-    private func styled(weight: Font.Weight?) -> Text {
-        var size = fontSize
-        if token.effects.contains(.big) { size = fontSize * 1.45 }
-        if token.effects.contains(.small) { size = fontSize * 0.72 }
-        var t = Text(token.text).font(.system(size: size, weight: weight ?? .regular))
+    private func styled(weight: Font.Weight) -> Text {
+        var t = Text(token.text).font(.system(size: baseSize, weight: weight))
         if token.effects.contains(.bold) { t = t.bold() }
         if token.effects.contains(.italic) { t = t.italic() }
         if token.effects.contains(.underline) { t = t.underline() }
@@ -188,7 +189,7 @@ private struct EffectToken: View {
     }
 
     private var motion: TextEffectKind? {
-        token.effects.last { [.shake, .nod, .explode, .ripple, .bloom, .jitter].contains($0) }
+        token.effects.last { !$0.isStyle }
     }
 
     var body: some View {
@@ -196,68 +197,122 @@ private struct EffectToken: View {
             TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { ctx in
                 let t = ctx.date.timeIntervalSince(start)
                 if loop || t < EffectText.playDuration {
-                    if motion == .shake {
-                        // 0921 照她录的 iMessage：摇晃＝笔画粗细一个字一个字轮着鼓起来，从左往右扫
-                        let w = max(0, sin(t * 4.2 - Double(token.index) * 0.9))
-                        styled(weight: Self.weight(for: w)).foregroundColor(color)
-                            .scaleEffect(1 + w * 0.06)
-                    } else {
-                        styled.foregroundColor(color).modifier(Motion(kind: motion, t: t, index: token.index))
-                    }
+                    let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
+                    styled(weight: f.weight).foregroundColor(color)
+                        .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+                        .rotationEffect(.degrees(f.spin))
+                        .scaleEffect(f.scale)
+                        .offset(x: f.dx, y: f.dy)
+                        .opacity(f.opacity)
                 } else {
-                    styled.foregroundColor(color)
+                    styled(weight: .regular).foregroundColor(color)
                 }
             }
         } else {
-            styled.foregroundColor(color)
+            styled(weight: .regular).foregroundColor(color)
         }
     }
 
-    private static func weight(for w: Double) -> Font.Weight {
-        switch w {
-        case ..<0.15: return .regular
-        case ..<0.35: return .medium
-        case ..<0.55: return .semibold
-        case ..<0.75: return .bold
-        case ..<0.9: return .heavy
-        default: return .black
+    /// 一帧里这个字该长什么样。全部照 0921 她录的 iMessage 面板一帧帧对出来的。
+    private struct Frame {
+        var weight: Font.Weight = .regular
+        var scale: Double = 1
+        var opacity: Double = 1
+        var dx: Double = 0
+        var dy: Double = 0
+        var spin: Double = 0
+        var tiltX: Double = 0
+
+        /// 0→1→0 的一个鼓包，u 在 0..1 之外为 0
+        static func bump(_ u: Double) -> Double {
+            guard u > 0, u < 1 else { return 0 }
+            return sin(u * .pi)
         }
-    }
-
-    private struct Motion: ViewModifier {
-        let kind: TextEffectKind
-        let t: Double
-        let index: Int
-
-        private func loopPhase(_ t: Double, period: Double) -> Double {
-            t.truncatingRemainder(dividingBy: period)
+        static func ease(_ u: Double) -> Double {
+            let c = min(max(u, 0), 1)
+            return c * c * (3 - 2 * c)
+        }
+        static func weight(for w: Double) -> Font.Weight {
+            switch w {
+            case ..<0.15: return .regular
+            case ..<0.35: return .medium
+            case ..<0.55: return .semibold
+            case ..<0.75: return .bold
+            case ..<0.9: return .heavy
+            default: return .black
+            }
+        }
+        static func noise(_ a: Double, _ b: Double) -> Double {
+            let h = sin(a * 12.9898 + b * 78.233) * 43758.5453
+            return h - floor(h)
         }
 
-        func body(content: Content) -> some View {
+        static func compute(kind: TextEffectKind, t: Double, index: Int, fontSize: CGFloat) -> Frame {
+            var f = Frame()
+            let i = Double(index)
             switch kind {
             case .shake:
-                content   // 摇晃在外面按粗细画，不走这里
+                // 粗细一个字一个字轮着鼓起来，从左往右扫一遍，歇一下再来
+                let p = t.truncatingRemainder(dividingBy: 1.5)
+                let w = bump((p - i * 0.16) / 0.5)
+                f.weight = weight(for: w)
+                f.scale = 1 + w * 0.05
             case .nod:
-                content.offset(y: sin(t * 7) * 3)
+                // 整个词一起往前俯一下再抬起来（录屏里看着像整体变粗那一下）
+                let p = t.truncatingRemainder(dividingBy: 2.0)
+                f.tiltX = -bump(p / 0.9) * 32
+            case .big:
+                // 大字撑着，缩回去停一下，再长回来
+                let p = t.truncatingRemainder(dividingBy: 2.0)
+                let big: Double
+                if p < 0.9 { big = 1 } else if p < 1.1 { big = 1 - ease((p - 0.9) / 0.2) }
+                else if p < 1.8 { big = 0 } else { big = ease((p - 1.8) / 0.2) }
+                f.scale = 0.69 + big * 0.31        // 布局按大字算，缩到普通字大小再回来
+            case .small:
+                let p = t.truncatingRemainder(dividingBy: 2.0)
+                let small: Double
+                if p < 0.6 { small = 0 } else if p < 0.8 { small = ease((p - 0.6) / 0.2) }
+                else if p < 1.6 { small = 1 } else { small = 1 - ease((p - 1.6) / 0.2) }
+                f.scale = 1.39 - small * 0.39      // 布局按小字算，普通大小缩到小字再回来
             case .ripple:
-                content.offset(y: sin(t * 5 - Double(index) * 0.7) * 3.5)
+                // 一道浪从左往右过去，每个字抬起三分之一个字高再落下
+                let p = t.truncatingRemainder(dividingBy: 1.7)
+                f.dy = -bump((p - i * 0.12) / 0.38) * Double(fontSize) * 0.36
             case .bloom:
-                let s = 1 + 0.12 * sin(t * 2.2)
-                content.scaleEffect(s).opacity(0.85 + 0.15 * sin(t * 2.2 + 1))
+                // 先整体淡下去，再一个字一个字变粗亮回来
+                let p = t.truncatingRemainder(dividingBy: 2.4)
+                if p < 0.5 {
+                    f.opacity = 1 - ease(p / 0.5) * 0.55
+                } else {
+                    let w = bump((p - 0.55 - i * 0.22) / 0.5)
+                    f.weight = weight(for: w)
+                    f.opacity = 0.45 + ease((p - 0.5) / 0.6) * 0.55
+                }
             case .jitter:
-                let step = floor(t * 14)
-                let h = sin(step * 12.9898 + Double(index) * 78.233) * 43758.5453
-                let f = h - floor(h)
-                let h2 = sin(step * 4.1414 + Double(index) * 7.919) * 22578.145
-                let f2 = h2 - floor(h2)
-                content.offset(x: (f - 0.5) * 3, y: (f2 - 0.5) * 3)
+                let step = floor(t * 16)
+                f.dx = (noise(step, i) - 0.5) * 2.4
+                f.dy = (noise(step + 7, i * 3) - 0.5) * 2.4
             case .explode:
-                let p = loopPhase(t, period: 4)
-                let burst = p < 0.55 ? (1 - p / 0.55) : 0
-                content.scaleEffect(1 + burst * 1.3).opacity(1 - burst * 0.75)
+                // 每个字各自歪着飞出去淡掉，空一会儿，再淡回来站好
+                let p = t.truncatingRemainder(dividingBy: 3.2)
+                let ang = noise(i, 1) * 2 * .pi
+                let dir = noise(i, 2) > 0.5 ? 1.0 : -1.0
+                if p < 0.55 {
+                    let u = ease(p / 0.55)
+                    f.dx = cos(ang) * u * Double(fontSize) * 1.6
+                    f.dy = sin(ang) * u * Double(fontSize) * 1.2 - u * Double(fontSize) * 0.4
+                    f.spin = dir * u * (35 + noise(i, 3) * 40)
+                    f.scale = 1 + u * 0.35
+                    f.opacity = 1 - u
+                } else if p < 1.7 {
+                    f.opacity = 0
+                } else if p < 2.1 {
+                    f.opacity = ease((p - 1.7) / 0.4)
+                }
             default:
-                content
+                break
             }
+            return f
         }
     }
 }
