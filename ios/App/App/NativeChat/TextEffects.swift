@@ -125,7 +125,7 @@ struct EffectText: View {
     /// 面板预览用：一直动。气泡里默认照 iMessage：出现时动一阵就停，点一下再动一遍
     var loop = false
 
-    static let playDuration: TimeInterval = 2.6
+    static let playDuration: TimeInterval = 3.2
     @State private var playStart: Date?
     @State private var stopTask: Task<Void, Never>?
 
@@ -200,6 +200,7 @@ private struct EffectToken: View {
                     let f = Frame.compute(kind: motion, t: t, index: token.index, fontSize: baseSize)
                     styled(weight: f.weight).foregroundColor(color)
                         .rotation3DEffect(.degrees(f.tiltX), axis: (x: 1, y: 0, z: 0), perspective: 0.5)
+                        .rotation3DEffect(.degrees(f.tiltY), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
                         .rotationEffect(.degrees(f.spin))
                         .scaleEffect(f.scale)
                         .offset(x: f.dx, y: f.dy)
@@ -222,6 +223,13 @@ private struct EffectToken: View {
         var dy: Double = 0
         var spin: Double = 0
         var tiltX: Double = 0
+        var tiltY: Double = 0
+
+        /// 循环模式里每 period 秒重来一遍、每遍从 1 衰减到 0.35
+        static func loopDecay(_ t: Double, period: Double) -> Double {
+            let p = t.truncatingRemainder(dividingBy: period) / period
+            return 1 - p * 0.65
+        }
 
         /// 0→1→0 的一个鼓包，u 在 0..1 之外为 0
         static func bump(_ u: Double) -> Double {
@@ -252,11 +260,11 @@ private struct EffectToken: View {
             let i = Double(index)
             switch kind {
             case .shake:
-                // 粗细一个字一个字轮着鼓起来，从左往右扫一遍，歇一下再来
-                let p = t.truncatingRemainder(dividingBy: 1.5)
-                let w = bump((p - i * 0.16) / 0.5)
-                f.weight = weight(for: w)
-                f.scale = 1 + w * 0.05
+                // 0921 她说的：要真的左右摇。整段字当一块牌子绕竖轴左右摆，带透视像贴在圆柱上，越摆越小
+                let decay = loopDecay(t, period: 3.0)
+                let ang = sin(t * 2 * .pi * 1.7) * 32 * decay
+                f.tiltY = ang
+                f.dx = sin(t * 2 * .pi * 1.7) * 3 * decay
             case .nod:
                 // 整个词一起往前俯一下再抬起来（录屏里看着像整体变粗那一下）
                 let p = t.truncatingRemainder(dividingBy: 2.0)
