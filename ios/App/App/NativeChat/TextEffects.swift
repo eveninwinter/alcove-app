@@ -266,9 +266,10 @@ private struct EffectToken: View {
                 f.tiltY = ang
                 f.dx = sin(t * 2 * .pi * 1.7) * 3 * decay
             case .nod:
-                // 整个词一起往前俯一下再抬起来（录屏里看着像整体变粗那一下）
-                let p = t.truncatingRemainder(dividingBy: 2.0)
-                f.tiltX = -bump(p / 0.9) * 32
+                // 她说的：点头＝上下摆，跟摇晃一样的动作换成横轴。上沿往前倒再往后仰，来回摆着停下
+                let decay = loopDecay(t, period: 3.0)
+                f.tiltX = sin(t * 2 * .pi * 1.7) * 34 * decay
+                f.dy = sin(t * 2 * .pi * 1.7) * 3 * decay
             case .big:
                 // 大字撑着，缩回去停一下，再长回来
                 let p = t.truncatingRemainder(dividingBy: 2.0)
