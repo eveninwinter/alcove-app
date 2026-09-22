@@ -18,6 +18,9 @@ final class ChatStore: ObservableObject {
     @Published var loadingOlder = false
     @Published var hasOlder = true
     @Published private(set) var isViewingHistory = false
+    // 0922 任务#2572：她是不是就在最底下（ChatView 的 atBottom 同步过来）。只有在底下才敢把表顶上的老消息扔掉，
+    // 她往上翻着看的时候扔，屏幕会跳。不发布，纯给 appendNew 看。
+    var viewerAtBottom = true
     @Published var connectionError = false
     @Published var heldCount = 0
     @Published var stagingImages = false
@@ -371,6 +374,8 @@ final class ChatStore: ObservableObject {
 
     func loadOlder() {
         guard !loadingOlder, hasOlder, let first = messages.first else { return }
+        // 0922 任务#2572：往上翻最多攒到 900 条，再往上不堆了（要看更早的走搜索/时间跳转那条换窗的路）
+        guard messages.count < 900 else { return }
         loadingOlder = true
         Task {
             defer { loadingOlder = false }
@@ -773,6 +778,13 @@ final class ChatStore: ObservableObject {
             } else {
                 out.append(rec)
             }
+        }
+        // 0922 任务#2572 她报的「越聊越卡」：表只增不减，每来一条都要把整张表比一遍。
+        // 在底下正常聊的时候超过 400 条就把最老的扔到只剩 300，往上翻随时能再加载回来。
+        // 翻历史的窗（isViewingHistory）不动，那边由 loadOlder 的 900 封顶管。
+        if !isViewingHistory, viewerAtBottom, out.count > 400 {
+            out.removeFirst(out.count - 300)
+            hasOlder = true
         }
         messages = applyTemporaryHides(out)
     }

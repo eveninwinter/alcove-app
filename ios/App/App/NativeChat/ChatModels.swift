@@ -66,7 +66,10 @@ struct ChatMessage: Identifiable, Equatable {
     var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
 
-    var id: UUID { uid }
+    // 0922 任务#2572 她抓的「一键到底顿一下」：id 原来是 uid（每次从服务器拿一次就重新发一遍号），
+    // 整表一换 300 条全是新面孔，SwiftUI 把气泡全拆了重画。改成时间戳+角色，拉几次都是同一个号
+    //（库里 8 万条 ts+role 没有重复，appendNew 也一直拿它当同一条的判据）。uid 留给多选那套用。
+    var id: String { ts + "|" + role }
 
     let date: Date
 

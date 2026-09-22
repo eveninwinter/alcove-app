@@ -508,8 +508,10 @@ struct ChatView: View {
                 // 0904：工作室那些整页盖在上面时弹的键盘不是我的，别跟着滚
                 guard AlcoveNotify.shared.chatVisible else { return }
                 guard shouldFollowTail else { return }
-                scrollToTail(proxy, delays: [0, 0.12, 0.3], animated: true)
+                // 0922 任务#2572：原来 0/0.12/0.3 秒连滚三次，整张表跟着重排三回；只留键盘快到位的那一次
+                scrollToTail(proxy, delays: [0.12], animated: true)
             }
+            .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
             .onReceive(NotificationCenter.default.publisher(for: .alcoveHouseClosed)) { _ in
                 // 0904 她报的：整页盖着时键盘把列表撑高又收走，我不在屏幕上没跟着回落。
                 // 回来时本来就在底部的话，无动画校正回底；她在翻历史就不动
@@ -572,7 +574,7 @@ struct ChatView: View {
             // 0904 她报的：晨报 / Inside 卡展开几屏再收起，内容一帧缩没，滚动位置还停在空处，页面白掉要拉很久。
             // 卡收起时发这个通知，等布局落稳后无动画把那张卡拉回屏幕中间；跑两次是给 LazyVStack 重排一个机会。
             .onReceive(NotificationCenter.default.publisher(for: .alcoveRecenterMessage)) { note in
-                guard let id = note.object as? UUID else { return }
+                guard let id = note.object as? String else { return }   // 0922：消息 id 改成 ts|role 字符串
                 for delay in [0.05, 0.3] {
                     DispatchQueue.main.asyncAfter(deadline: .now() + delay) {
                         var t = Transaction(); t.disablesAnimations = true
@@ -4459,7 +4461,7 @@ private struct InsideMessageCard: View {
     let text: String
     let date: Date
     let theme: AlcoveTheme
-    let messageID: UUID
+    let messageID: String
     @State private var expanded = false
     private static let time: DateFormatter = {
         let value = DateFormatter(); value.dateFormat = "HH:mm"; return value
@@ -4504,7 +4506,7 @@ private struct InsideMessageCard: View {
 private struct MorningPaperMessageCard: View {
     let date: String
     let theme: AlcoveTheme
-    let messageID: UUID
+    let messageID: String
     @State private var expanded = false
 
     // 收起不做动画：整份晨报一帧撤掉，再让列表把这张卡拉回屏幕中间（见 .alcoveRecenterMessage）

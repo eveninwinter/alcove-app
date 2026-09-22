@@ -5,7 +5,7 @@ extension Notification.Name {
     static let alcoveShowPermissions = Notification.Name("alcoveShowPermissions")
     static let alcoveJumpToMessage = Notification.Name("alcoveJumpToMessage")
     static let alcoveRequestJumpToMessage = Notification.Name("alcoveRequestJumpToMessage")
-    // 0904 长卡片（晨报 / Inside）收起后把那条消息滚回屏幕中间，object 是 ChatMessage.id（UUID）
+    // 0904 长卡片（晨报 / Inside）收起后把那条消息滚回屏幕中间，object 是 ChatMessage.id（0922 起是 ts|role 字符串）
     static let alcoveRecenterMessage = Notification.Name("alcoveRecenterMessage")
     // 0904 整页（工作室 / 共读室…）关掉回到主聊天：主聊天在被盖住时收不到键盘收起，列表停在被键盘撑高的位置
     static let alcoveHouseClosed = Notification.Name("alcoveHouseClosed")
