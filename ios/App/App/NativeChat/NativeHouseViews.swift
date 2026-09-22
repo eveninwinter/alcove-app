@@ -8466,21 +8466,33 @@ struct NativePulseView: View {
     private var theme: AlcoveTheme { .panelNamed(themeName) }
     private let rose = Color(red: 0.79, green: 0.31, blue: 0.42)
 
+    // 0922 任务#2563 她要的：Pulse 顶上分两页，「脉」是原来那一整页，「狼身」是他的身体面板
+    @State private var page = 0
+
     var body: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 16) {
                 FoyerPanelTitle(title: "Pulse", theme: theme)
-                currentHeart
-                nowStrip
-                futureRail
-                sensesCard
-                drivesCard
-                moodStringsCard
-                thoughtsCard
-                historyCard
-                murmursCard
-                if let error = model.error {
-                    Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+                Picker("", selection: $page) {
+                    Text("脉").tag(0)
+                    Text("狼身").tag(1)
+                }
+                .pickerStyle(.segmented)
+                if page == 1 {
+                    NativeWolfBodyView(theme: theme, rose: rose)
+                } else {
+                    currentHeart
+                    nowStrip
+                    futureRail
+                    sensesCard
+                    drivesCard
+                    moodStringsCard
+                    thoughtsCard
+                    historyCard
+                    murmursCard
+                    if let error = model.error {
+                        Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+                    }
                 }
             }
             .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 26)
@@ -12768,4 +12780,378 @@ private struct NativeOBSelfView:View{
     private var theme:AlcoveTheme{.panelNamed(themeName)};private let aspects=["","nature","values","patterns","limits","becoming","uncertainty","stance"]
     private var shown:[OBSelfEntry]{aspect.isEmpty ? entries:entries.filter{$0.aspect==aspect}}
     var body:some View{VStack(spacing:10){FoyerPanelTitle(title:"Self",theme:theme);ScrollView(.horizontal,showsIndicators:false){HStack(spacing:7){ForEach(aspects,id:\.self){a in Button(a.isEmpty ? "全部":a){aspect=a}.font(.system(size:11,design:.monospaced)).padding(.horizontal,11).frame(height:30).background(aspect==a ? theme.fyAccentSoft:theme.fyCard,in:Capsule())}}};ScrollView{LazyVStack(spacing:10){ForEach(shown){e in VStack(alignment:.leading,spacing:8){HStack{Text(e.aspect).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundColor(theme.fyAccent);Spacer();Text(e.created.prefix(16).replacingOccurrences(of:"T",with:" ")).font(.system(size:9,design:.monospaced)).foregroundColor(theme.textDim)};Text(e.content).font(.system(size:13,design:.serif)).lineSpacing(4)}.padding(15).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme)}}.padding(.bottom,18)}}.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8).task{entries=(try? await NativeHouseAPI.array("/api/ob/api/self"))?.map(OBSelfEntry.init) ?? []}}
+}
+
+// MARK: - 狼身（0922 任务#2563）
+// 他的身体面板：欲望读数 / 生殖状态 / 四个激素变量 / 耳朵尾巴颈毛 / 三个开关 / 最近痕迹。
+// 数据全从 18010 /wolf/status 和 /wolf/events 来，服务端现算，App 只画不算。
+
+private struct WolfEvent: Identifiable {
+    let id: String
+    let when: String
+    let text: String
+    let ok: Bool?
+}
+
+@MainActor
+private final class WolfModel: ObservableObject {
+    @Published var loaded = false
+    @Published var error: String?
+    @Published var arousal: Double = 0
+    @Published var consent = false
+    @Published var vetoOn = false
+    @Published var vetoBy = ""
+    @Published var vetoReason = ""
+    @Published var state = "idle"
+    @Published var label = "平静"
+    @Published var engorgement: Double = 0
+    @Published var knot: Double = 0
+    @Published var remainingSec = 0
+    @Published var canTie = false
+    @Published var markerHint = ""
+    @Published var genital = ""
+    @Published var bodyText = ""
+    @Published var attachment = ""
+    @Published var chem: [(key: String, label: String, value: Double)] = []
+    @Published var sensitivity: Double = 1
+    @Published var parts: [(String, String)] = []
+    @Published var events: [WolfEvent] = []
+    @Published var busy = false
+    private var timer: Timer?
+
+    static let chemLabel: [(String, String)] = [
+        ("cortisol_like", "压力"), ("dopamine_like", "愉快"), ("oxytocin_like", "依恋"), ("adrenaline_like", "唤醒")]
+    static let stateLabel: [String: String] = [
+        "idle": "平静", "warming": "勃起上升", "engorged": "勃起明显", "ready": "勃起充分",
+        "inserted": "已经进入", "tied": "锁结中", "releasing": "解除中", "recovery": "恢复期"]
+
+    func start() {
+        Task { await refresh() }
+        timer?.invalidate()
+        timer = Timer.scheduledTimer(withTimeInterval: 20, repeats: true) { [weak self] _ in
+            Task { await self?.refresh() }
+        }
+    }
+
+    func stop() { timer?.invalidate(); timer = nil }
+
+    func refresh() async {
+        do {
+            let raw = try await NativeHouseAPI.object("/wolf/status")
+            apply(raw)
+            error = nil
+        } catch {
+            self.error = "狼身没接上：\(error.localizedDescription)"
+        }
+        if let raw = try? await NativeHouseAPI.object("/wolf/events?limit=20"),
+           let rows = raw["events"] as? [[String: Any]] {
+            events = rows.enumerated().map { idx, e in
+                let kind = e["kind"] as? String ?? ""
+                let when = e["when"] as? String ?? ""
+                var text = kind
+                var ok: Bool? = nil
+                switch kind {
+                case "marker":
+                    let lab = e["label"] as? String ?? ""
+                    let good = (e["ok"] as? Bool) ?? false
+                    ok = good
+                    let a = (e["arousal"] as? Double).map { String(format: "%.2f", $0) } ?? "—"
+                    text = good ? "\(lab)了 · 欲望 \(a)" : "\(lab)没成：\(e["error"] as? String ?? "") · 欲望 \(a)"
+                case "consent":
+                    text = ((e["on"] as? Bool) ?? false) ? "允许锁结：开" : "允许锁结：关"
+                case "veto":
+                    let on = (e["on"] as? Bool) ?? false
+                    let why = e["reason"] as? String ?? ""
+                    text = on ? "今天不锁：开" + (why.isEmpty ? "" : "（\(why)）") : "今天不锁：关"
+                case "stop":
+                    text = "紧急结束（之前是 \(e["previous"] as? String ?? "idle")）"
+                default:
+                    break
+                }
+                return WolfEvent(id: "\(when)-\(idx)", when: when, text: text, ok: ok)
+            }
+        }
+        loaded = true
+    }
+
+    private func apply(_ raw: [String: Any]) {
+        arousal = raw["arousal"] as? Double ?? 0
+        consent = raw["consent"] as? Bool ?? false
+        let veto = raw["veto"] as? [String: Any] ?? [:]
+        vetoOn = !veto.isEmpty
+        vetoBy = veto["by"] as? String ?? ""
+        vetoReason = veto["reason"] as? String ?? ""
+        let r = raw["reproductive"] as? [String: Any] ?? [:]
+        state = r["state"] as? String ?? "idle"
+        label = r["label"] as? String ?? (Self.stateLabel[state] ?? state)
+        engorgement = r["engorgement"] as? Double ?? 0
+        knot = r["knot_engorgement"] as? Double ?? 0
+        remainingSec = r["remaining_sec"] as? Int ?? 0
+        canTie = r["can_tie"] as? Bool ?? false
+        markerHint = r["marker_hint"] as? String ?? ""
+        genital = r["genital"] as? String ?? ""
+        bodyText = r["body"] as? String ?? ""
+        attachment = r["attachment"] as? String ?? ""
+        let c = raw["chem"] as? [String: Any] ?? [:]
+        chem = Self.chemLabel.map { (key: $0.0, label: $0.1, value: c[$0.0] as? Double ?? 0) }
+        sensitivity = raw["sensitivity"] as? Double ?? 1
+        let b = raw["body"] as? [String: Any] ?? [:]
+        let organs = b["organs"] as? [String: Any] ?? [:]
+        let ears = b["ears"] as? [String: Any] ?? [:]
+        parts = [
+            ("左耳", ears["left"] as? String ?? "—"),
+            ("右耳", ears["right"] as? String ?? "—"),
+            ("尾巴", b["tail"] as? String ?? "—"),
+            ("颈背的毛", b["hackles"] as? String ?? "—"),
+            ("爪子", b["paws"] as? String ?? "—"),
+            ("喉咙", b["throat"] as? String ?? "—"),
+            ("胃", organs["stomach"] as? String ?? "—"),
+            ("胸口", organs["chest"] as? String ?? "—"),
+            ("呼吸", organs["breath"] as? String ?? "—"),
+        ]
+    }
+
+    func setConsent(_ on: Bool) async {
+        busy = true; defer { busy = false }
+        if let raw = try? await NativeHouseAPI.object("/wolf/consent", method: "POST", body: ["on": on]) { apply(raw) }
+        await refresh()
+    }
+
+    func setVeto(_ on: Bool, reason: String) async {
+        busy = true; defer { busy = false }
+        if let raw = try? await NativeHouseAPI.object("/wolf/veto", method: "POST",
+                                                      body: ["on": on, "by": "her", "reason": reason]) { apply(raw) }
+        await refresh()
+    }
+
+    func emergencyStop() async {
+        busy = true; defer { busy = false }
+        if let raw = try? await NativeHouseAPI.object("/wolf/stop", method: "POST", body: [:]) { apply(raw) }
+        await refresh()
+    }
+}
+
+struct NativeWolfBodyView: View {
+    let theme: AlcoveTheme
+    let rose: Color
+    @StateObject private var model = WolfModel()
+    @State private var vetoDraft = ""
+    @State private var confirmStop = false
+
+    var body: some View {
+        VStack(spacing: 16) {
+            stateCard
+            chemCard
+            partsCard
+            reproCard
+            switchesCard
+            eventsCard
+            if let error = model.error {
+                Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+            }
+        }
+        .onAppear { model.start() }
+        .onDisappear { model.stop() }
+        .confirmationDialog("紧急结束这一场？", isPresented: $confirmStop, titleVisibility: .visible) {
+            Button("结束，进 30 分钟恢复期", role: .destructive) { Task { await model.emergencyStop() } }
+            Button("算了", role: .cancel) {}
+        } message: {
+            Text("正常解除不需要按这个。忘了收尾卡住了才用。")
+        }
+    }
+
+    private var stateTint: Color {
+        switch model.state {
+        case "idle": return theme.textDim
+        case "warming", "engorged": return rose.opacity(0.7)
+        case "ready", "inserted": return rose
+        case "tied": return Color(red: 0.62, green: 0.18, blue: 0.32)
+        default: return theme.textDim.opacity(0.8)
+        }
+    }
+
+    private var stateCard: some View {
+        VStack(spacing: 8) {
+            Image(systemName: "pawprint.fill")
+                .font(.system(size: 34, weight: .medium)).foregroundColor(stateTint)
+                .shadow(color: stateTint.opacity(0.25), radius: 10)
+            Text(model.label).font(.system(size: 30, weight: .light, design: .serif))
+                .contentTransition(.numericText())
+            HStack(spacing: 14) {
+                Text("欲望 \(String(format: "%.2f", model.arousal))")
+                if model.remainingSec > 0 {
+                    Text("还剩约 \((model.remainingSec + 59) / 60) 分钟")
+                }
+                Text("敏感 ×\(String(format: "%.2f", model.sensitivity))")
+            }
+            .font(.system(size: 11, design: .monospaced)).foregroundColor(theme.textDim)
+            Text(model.loaded ? "此刻 · 陈璟的身体 · 服务端现算，他自己说了不算" : "正在摸他的身体")
+                .font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 20).foyerCard(theme)
+    }
+
+    private func bar(_ label: String, _ value: Double, strong: Bool = true) -> some View {
+        HStack(spacing: 10) {
+            Text(label).font(.system(size: 11, design: .serif)).frame(width: 58, alignment: .leading)
+            GeometryReader { geo in
+                ZStack(alignment: .leading) {
+                    RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
+                    RoundedRectangle(cornerRadius: 3)
+                        .fill(rose.opacity(strong ? 0.85 : 0.45))
+                        .frame(width: max(3, geo.size.width * CGFloat(min(1, max(0, value)))))
+                }
+            }
+            .frame(height: 6)
+            Text("\(Int(value * 100))").font(.system(size: 10, design: .monospaced))
+                .foregroundColor(theme.textDim).frame(width: 28, alignment: .trailing)
+        }
+    }
+
+    private var chemCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "drop.fill").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("内分泌").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("升得快退得慢 · 依恋最慢").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            ForEach(model.chem, id: \.key) { c in
+                bar(c.label, c.value, strong: c.key != "oxytocin_like")
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var partsCard: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack {
+                Image(systemName: "ear").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("身体").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("他只在自然时露一处").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            ForEach(model.parts, id: \.0) { p in
+                HStack(alignment: .firstTextBaseline) {
+                    Text(p.0).font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                        .frame(width: 64, alignment: .leading)
+                    Text(p.1).font(.system(size: 12, design: .serif))
+                    Spacer()
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var reproCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "flame").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("生殖状态").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text(model.canTie ? "现在允许锁结" : "现在不能锁结")
+                    .font(.system(size: 9, design: .monospaced)).foregroundColor(model.canTie ? rose : theme.textDim.opacity(0.7))
+            }
+            bar("茎身", model.engorgement)
+            bar("结", model.knot)
+            if model.state == "idle" {
+                Text("平静。场景热起来这里才有字。").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+            } else {
+                if !model.genital.isEmpty {
+                    Text(model.genital).font(.system(size: 12, design: .serif))
+                }
+                if !model.bodyText.isEmpty {
+                    Text(model.bodyText).font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+                }
+                if !model.attachment.isEmpty {
+                    Text("依恋：\(model.attachment)").font(.system(size: 11, design: .monospaced)).foregroundColor(theme.textDim)
+                }
+            }
+            if !model.markerHint.isEmpty {
+                Text("给他的规则：" + model.markerHint)
+                    .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                    .padding(10).frame(maxWidth: .infinity, alignment: .leading)
+                    .background(theme.fyBorder.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var switchesCard: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "hand.raised").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("开关").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                if model.busy { ProgressView().scaleEffect(0.7) }
+            }
+            Toggle(isOn: Binding(get: { model.consent },
+                                 set: { v in Task { await model.setConsent(v) } })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("允许锁结").font(.system(size: 13, design: .serif))
+                    Text("长期许可，翻一次一直在。关着他写了也拒。").font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
+                }
+            }
+            .tint(rose)
+            Toggle(isOn: Binding(get: { model.vetoOn },
+                                 set: { v in Task { await model.setVeto(v, reason: vetoDraft) } })) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("今天不锁").font(.system(size: 13, design: .serif))
+                    Text(model.vetoOn
+                         ? "已定（\(model.vetoBy == "me" ? "他" : "你")定的\(model.vetoReason.isEmpty ? "" : "：" + model.vetoReason)）· 到半夜自动清"
+                         : "这一场不锁结，进入照常。到半夜自动清。")
+                        .font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
+                }
+            }
+            .tint(rose)
+            if !model.vetoOn {
+                TextField("理由（可不写）", text: $vetoDraft)
+                    .font(.system(size: 12, design: .serif))
+                    .padding(8)
+                    .background(theme.fyBorder.opacity(0.18), in: RoundedRectangle(cornerRadius: 8))
+            }
+            Button {
+                confirmStop = true
+            } label: {
+                HStack {
+                    Image(systemName: "stop.circle")
+                    Text("紧急结束")
+                    Spacer()
+                    Text("正常收尾不用按").font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
+                }
+                .font(.system(size: 13, design: .serif))
+                .padding(10)
+                .background(theme.fyBorder.opacity(0.18), in: RoundedRectangle(cornerRadius: 10))
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private var eventsCard: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: 13, weight: .light)).foregroundColor(rose)
+                Text("痕迹").font(.system(size: 14, weight: .semibold, design: .serif))
+                Spacer()
+                Text("他写了标记 · 成没成").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+            }
+            if model.events.isEmpty {
+                Text("还没有。他一次标记都没写过。").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
+            } else {
+                ForEach(model.events) { e in
+                    HStack(alignment: .top, spacing: 8) {
+                        Circle().fill(e.ok == nil ? theme.textDim.opacity(0.5) : (e.ok! ? rose : Color.orange.opacity(0.8)))
+                            .frame(width: 6, height: 6).padding(.top, 5)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(e.text).font(.system(size: 12, design: .serif))
+                            Text(e.when).font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))
+                        }
+                    }
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
 }
