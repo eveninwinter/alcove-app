@@ -192,6 +192,34 @@ enum AlcoveLiveActivityController {
     private static var pulseTask: Task<Void, Never>?
     private static var starting = false
     private static var retryTask: Task<Void, Never>?
+    private static var watched: Set<String> = []
+
+    /// 0922 任务#2587 她报的「岛一天自己没好几次」：把开/结束/被系统收/前后台连时间记到后端
+    /// /island/log（落 logs/island.jsonl），看两天记录再定原因。记不上就算了，绝不影响岛本身。
+    static func report(_ event: String, _ detail: [String: Any] = [:]) {
+        var body: [String: Any] = ["event": event,
+                                   "count": Activity<AlcoveLabAttributes>.activities.count]
+        for (k, v) in detail { body[k] = v }
+        Task { _ = try? await NativeHouseAPI.object("/island/log", method: "POST", body: body) }
+    }
+
+    /// 每块活动挂一个观察者：系统把它结束/收走/标陈旧的时候记一笔（带活了多久）
+    private static func watch(_ activity: Activity<AlcoveLabAttributes>) {
+        guard !watched.contains(activity.id) else { return }
+        watched.insert(activity.id)
+        let started = activity.content.state.startedAt
+        Task {
+            for await state in activity.activityStateUpdates {
+                let age = Int(Date().timeIntervalSince(started))
+                report("state", ["id": String(activity.id.prefix(8)), "state": "\(state)", "age_s": age])
+                if state == .ended || state == .dismissed { watched.remove(activity.id); break }
+            }
+        }
+    }
+
+    private static func watchAll() {
+        for a in Activity<AlcoveLabAttributes>.activities { watch(a) }
+    }
 
     private static func currentBPM() async -> Int {
         guard let raw = try? await AlcoveAPI.getRaw("/pulse/now") else { return 0 }
@@ -215,15 +243,18 @@ enum AlcoveLiveActivityController {
                 let activities = Activity<AlcoveLabAttributes>.activities
                 if activities.isEmpty {
                     // 开关仍开着但活动被 iOS 清掉：App 还活着时直接重建。
+                    report("gone_while_awake")
                     _ = await start()
                     continue
                 }
+                watchAll()
                 // 0922 任务#2585 她报的「胶囊有时自己消失、不更新」：
                 // ① 系统给一次实时活动最多 8 小时，到点就自己没了。快到点（7.5h）App 还醒着就先结束再开一块新的。
                 // ② 原来只在心率变了才写；现在每 15 拍（一分钟）不管变没变都写一次，防止某一块漏掉。
                 // ③ 原来 start()/sync() 只写 activities.first，多出来的那块永远是旧字——这里和下面都改成全写。
                 let expired = activities.filter { Date().timeIntervalSince($0.content.state.startedAt) > 7.5 * 3600 }
                 if !expired.isEmpty {
+                    report("expire_recreate", ["n": expired.count])
                     for activity in expired { await activity.end(nil, dismissalPolicy: .immediate) }
                     _ = await start()
                     continue
@@ -275,12 +306,15 @@ enum AlcoveLiveActivityController {
             // （会回头读 activities 再补试），手点刷新这条却一直在说假话。
             // 回头看一眼真实的活动列表再开口。
             try? await Task.sleep(nanoseconds: 500_000_000)
+            watchAll()
+            report("requested", ["ok": !Activity<AlcoveLabAttributes>.activities.isEmpty])
             if Activity<AlcoveLabAttributes>.activities.isEmpty {
                 scheduleRetry()
                 return "系统收下了请求，但活动没出现——正在补试三次。还是不出来的话：先把这个开关关掉等两秒再开，仍然没有就重启一次手机。"
             }
             return "灵动岛已开启。"
         } catch {
+            report("request_failed", ["error": error.localizedDescription])
             return "灵动岛启动失败：\(error.localizedDescription)"
         }
     }
@@ -289,6 +323,8 @@ enum AlcoveLiveActivityController {
         guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
                 || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        report("foreground")
+        watchAll()
         let existing = Activity<AlcoveLabAttributes>.activities
         if !existing.isEmpty {
             let bpm = await currentBPM()
@@ -370,6 +406,7 @@ enum AlcoveLiveActivityController {
     }
 
     static func stop() async {
+        report("stop_by_switch")
         retryTask?.cancel()
         retryTask = nil
         pulseTask?.cancel()

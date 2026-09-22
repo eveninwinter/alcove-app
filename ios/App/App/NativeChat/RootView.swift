@@ -192,6 +192,7 @@ struct RootView: View {
                 AlcoveNotify.shared.chatVisible = (housePage == nil)
             }
             else {
+                AlcoveLiveActivityController.report("background", ["phase": "\(phase)"])   // 0922 灵动岛日志
                 SensorReporter.shared.appBackground()
                 AlcoveNotify.shared.chatVisible = false
                 // 0829 锁屏保活：进后台瞬间起无声音频，轮询不断，来电和横幅照收
