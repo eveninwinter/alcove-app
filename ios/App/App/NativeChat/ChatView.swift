@@ -3011,7 +3011,9 @@ struct MessageRow: View {
         }
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil && !isTarotRow ? 12 : 0)
         .padding(.top, 2)
-        .padding(.bottom, showTime ? 12 : 5)
+        // 0922 任务#2578 她量的：他连着的气泡之间比她的宽 3 点上下（截图按 3px/pt 量：他约 19、她约 17）。
+        // 代码里两边行结构一样，源头没找到，先把他那边不带时间戳的行底边收 3 点，对齐到她的。
+        .padding(.bottom, showTime ? 12 : (isUser ? 5 : 2))
         .sheet(item: Binding(get: { openedThink.map { OneThought(text: $0) } },
                              set: { openedThink = $0?.text })) { one in
             NavigationStack {
