@@ -203,6 +203,7 @@ enum AlcoveLiveActivityController {
     private static func ensurePulseUpdates() {
         guard pulseTask == nil else { return }
         pulseTask = Task {
+            var tick = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
                 guard !Task.isCancelled else { break }
@@ -217,8 +218,19 @@ enum AlcoveLiveActivityController {
                     _ = await start()
                     continue
                 }
+                // 0922 任务#2585 她报的「胶囊有时自己消失、不更新」：
+                // ① 系统给一次实时活动最多 8 小时，到点就自己没了。快到点（7.5h）App 还醒着就先结束再开一块新的。
+                // ② 原来只在心率变了才写；现在每 15 拍（一分钟）不管变没变都写一次，防止某一块漏掉。
+                // ③ 原来 start()/sync() 只写 activities.first，多出来的那块永远是旧字——这里和下面都改成全写。
+                let expired = activities.filter { Date().timeIntervalSince($0.content.state.startedAt) > 7.5 * 3600 }
+                if !expired.isEmpty {
+                    for activity in expired { await activity.end(nil, dismissalPolicy: .immediate) }
+                    _ = await start()
+                    continue
+                }
+                tick += 1
                 guard bpm > 0 else { continue }
-                for activity in activities where activity.content.state.bpm != bpm {
+                for activity in activities where activity.content.state.bpm != bpm || tick % 15 == 0 {
                     var state = activity.content.state
                     state.bpm = bpm
                     await activity.update(ActivityContent(state: state, staleDate: nil))
@@ -239,8 +251,11 @@ enum AlcoveLiveActivityController {
         let state = AlcoveLabAttributes.ContentState(
             message: "等待任务", startedAt: .now, bpm: await currentBPM()
         )
-        if let activity = Activity<AlcoveLabAttributes>.activities.first {
-            await activity.update(ActivityContent(state: state, staleDate: nil))
+        let existing = Activity<AlcoveLabAttributes>.activities
+        if !existing.isEmpty {
+            for activity in existing {   // 0922：全写，别只写 first
+                await activity.update(ActivityContent(state: state, staleDate: nil))
+            }
             ensurePulseUpdates()
             return "灵动岛已开启。"
         }
@@ -274,9 +289,10 @@ enum AlcoveLiveActivityController {
         guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
                 || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else { return }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        if let activity = Activity<AlcoveLabAttributes>.activities.first {
+        let existing = Activity<AlcoveLabAttributes>.activities
+        if !existing.isEmpty {
             let bpm = await currentBPM()
-            if bpm > 0, bpm != activity.content.state.bpm {
+            for activity in existing where bpm > 0 {   // 0922：回前台每块都刷一遍
                 var state = activity.content.state
                 state.bpm = bpm
                 await activity.update(ActivityContent(state: state, staleDate: nil))
@@ -336,8 +352,11 @@ enum AlcoveLiveActivityController {
         let state = AlcoveLabAttributes.ContentState(
             message: message, startedAt: .now, bpm: await currentBPM()
         )
-        if let activity = Activity<AlcoveLabAttributes>.activities.first {
-            await activity.update(ActivityContent(state: state, staleDate: nil))
+        let existing = Activity<AlcoveLabAttributes>.activities
+        if !existing.isEmpty {
+            for activity in existing {   // 0922：全写，别只写 first
+                await activity.update(ActivityContent(state: state, staleDate: nil))
+            }
             ensurePulseUpdates()
             return
         }
