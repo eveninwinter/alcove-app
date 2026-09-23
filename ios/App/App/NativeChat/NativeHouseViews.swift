@@ -31,6 +31,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case factory
     case crosstalk, radio, coread, cowatch, liao, daddyDay, lab, qipai
     case search, favorites, forge, roundtable, surf, letterbox
+    case window         // 0923 世界之窗：每天九幅开放图库的图配中文讲解
 
     var id: String { rawValue }
 
@@ -84,6 +85,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .roundtable: return "圆桌"
         case .surf: return "冲浪收藏"
         case .letterbox: return "信箱"
+        case .window: return "世界之窗"
         }
     }
 
@@ -91,7 +93,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album: return true
+             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window: return true
         default: return false
         }
     }
@@ -145,6 +147,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .roundtable: return "person.3.sequence"
         case .surf: return "safari"
         case .letterbox: return "envelope.badge"
+        case .window: return "books.vertical"
         default: return "sparkles"
         }
     }
@@ -269,6 +272,8 @@ struct NativeHouseSheet: View {
                     NativeAlbumView()
                 case .letterbox:
                     NativeLetterboxView()
+                case .window:
+                    NativeWindowView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -573,6 +578,7 @@ struct NativeHouseDrawer: View {
                     VStack(spacing: 7) {
                         drawerRow(.nowhere, detail: "足迹与明信片")
                         drawerRow(.surf, detail: "X、小红书、B站与 YouTube")
+                        drawerRow(.window, detail: "每天九幅：宇宙、文物、生物与风景")
                     }
 
                     drawerTitle("工具与游戏", note: "little things")

@@ -82,6 +82,7 @@
 		CA0000000000000000000027 /* WidgetAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000014 /* WidgetAssets.xcassets */; };
 		AB0911000000000000000111 /* AlbumModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000122 /* AlbumModels.swift */; };
 		AB0911000000000000000211 /* AlbumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000222 /* AlbumView.swift */; };
+		AB0923000000000000000311 /* WindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000322 /* WindowView.swift */; };
 		AB0911000000000000000311 /* AlbumCards.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000322 /* AlbumCards.swift */; };
 /* End PBXBuildFile section */
 
@@ -184,6 +185,7 @@
 		CA0000000000000000000014 /* WidgetAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WidgetAssets.xcassets; sourceTree = "<group>"; };
 		AB0911000000000000000122 /* AlbumModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumModels.swift; sourceTree = "<group>"; };
 		AB0911000000000000000222 /* AlbumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumView.swift; sourceTree = "<group>"; };
+		AB0923000000000000000322 /* WindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowView.swift; sourceTree = "<group>"; };
 		AB0911000000000000000322 /* AlbumCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumCards.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
@@ -290,6 +292,7 @@
 				9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */,
 				AB0911000000000000000322 /* AlbumCards.swift */,
 				AB0911000000000000000222 /* AlbumView.swift */,
+				AB0923000000000000000322 /* WindowView.swift */,
 				AB0911000000000000000122 /* AlbumModels.swift */,
 				9A11C0DE000C4F8CA3D60B22 /* QipaiDaifugoTableView.swift */,
 				9A11C0DE000B4F8CA3D60B22 /* QipaiUnoTableView.swift */,
@@ -514,6 +517,7 @@
 				9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */,
 				AB0911000000000000000311 /* AlbumCards.swift in Sources */,
 				AB0911000000000000000211 /* AlbumView.swift in Sources */,
+				AB0923000000000000000311 /* WindowView.swift in Sources */,
 				AB0911000000000000000111 /* AlbumModels.swift in Sources */,
 				9A11C0DE000C4F8CA3D60B11 /* QipaiDaifugoTableView.swift in Sources */,
 				9A11C0DE000B4F8CA3D60B11 /* QipaiUnoTableView.swift in Sources */,
