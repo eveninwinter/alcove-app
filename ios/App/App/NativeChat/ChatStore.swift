@@ -747,7 +747,9 @@ final class ChatStore: ObservableObject {
                 // SwiftUI 拿 uid 认视图，一换就当成新的，@State 全部打回原形 ——
                 // 展开的语音转文字、点开的思绪面板，每次 poll（几秒一次）自己收回去。
                 // 隐藏中的那条显示的本来就是壳，跳过；其余只有正文真变了才换。
-                if !isHidden(rec), out[idx].text != rec.text { out[idx] = rec }
+                // 0923 她报「他发图两次都没进来」：图是收轮后服务端才并进这段话的 inline_images，
+                // 正文一个字没变。要是 app 恰好在那一秒前先拿到了这段话，之后只比正文就永远换不上带图那版。
+                if !isHidden(rec), out[idx].text != rec.text || out[idx].inlineImages != rec.inlineImages { out[idx] = rec }
                 continue
             }
             // 0819 她报的：发一张图出来两张。乐观插入用的是本地时间戳，
