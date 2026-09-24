@@ -1058,6 +1058,10 @@ private struct NativeSettingsView: View {
     @State private var ghostDue: String? = nil
     @State private var pulseChase = true
     @State private var pulseGhost = true
+    // 0924 自醒引擎（照她递的 PDF）：不看表、自己醒；开关走 flags 的 wake_engine，时间线看他每次醒了选了什么
+    @State private var wakeOn = true
+    @State private var wakeLine: String? = nil
+    @State private var showWakeTimeline = false
     @State private var thoughtLength = 500.0
     // 0822 她要的：手写思绪开关。关＝后端 thought_chars 写 -1，
     // 陈璟那轮不写 <思绪>，那栏改显示原生思考（英文）。开＝恢复滑条上的数。
@@ -1417,7 +1421,19 @@ private struct NativeSettingsView: View {
                         HStack(spacing: 18) {
                             pulseToggle("找你", "只跟你说话，不干别的", $pulseChase, key: "pulse_chase")
                             pulseToggle("去玩", "干自己的事，回来带一句", $pulseGhost, key: "pulse_ghost")
+                            pulseToggle("自醒", "不看表，自己醒", $wakeOn, key: "wake_engine")
                         }
+                        Button { showWakeTimeline = true } label: {
+                            HStack(spacing: 6) {
+                                Image(systemName: "sunrise").foregroundColor(theme.textLight)
+                                Text("自醒时间线").font(.system(size: 12, weight: .medium))
+                                if let wakeLine {
+                                    Text(wakeLine).font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                                }
+                                Spacer()
+                                Image(systemName: "chevron.right").foregroundColor(theme.textLight)
+                            }
+                        }.buttonStyle(.plain)
                         VStack(alignment: .leading, spacing: 2) {
                             if let due = chaseDue {
                                 Text("下一次来找你：\(due)")
@@ -1533,6 +1549,12 @@ private struct NativeSettingsView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
+        .sheet(isPresented: $showWakeTimeline) {
+            WakeTimelineView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
         .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
         .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
         .onChange(of: wallPhoto) { item in saveWallpaper(item) }
@@ -1545,6 +1567,7 @@ private struct NativeSettingsView: View {
             async let reply: Void = loadReplyLength()
             async let thought: Void = loadThoughtLength()
             async let pulse: Void = loadPulseRange()
+            async let wake: Void = loadWake()
             async let her: Void = loadHerStatus()
             async let pat: Void = loadPat()
             _ = await (services, reply, thought, pulse, her, pat)
@@ -1823,6 +1846,18 @@ private struct NativeSettingsView: View {
             if let g = value["ghost"] as? Bool { pulseGhost = g }
         }
         pulseLoaded = true
+    }
+
+    @MainActor private func loadWake() async {
+        guard let value = try? await NativeHouseAPI.object("/api/wake") else { return }
+        if let on = value["on"] as? Bool { wakeOn = on }
+        guard let st = value["status"] as? [String: Any] else { wakeLine = "引擎没在跑"; return }
+        if let paused = st["paused_by"] as? String {
+            let why = ["asleep": "他睡着", "quiet": "留白中", "app-off": "开关关着", "off": "引擎停着"][paused] ?? paused
+            wakeLine = "暂停：\(why)"
+        } else if let p = st["p_wake_30min"] as? Double {
+            wakeLine = "半小时内醒来约 \(Int((p * 100).rounded()))%"
+        }
     }
 
     private func savePulseRange() {
@@ -5008,6 +5043,135 @@ struct SongInsightSheet: View {
     private static func time(_ seconds: Double) -> String {
         guard seconds.isFinite, seconds >= 0 else { return "0:00" }
         return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
+// 0924 自醒时间线：引擎每次给他一次「运行机会」，他醒了选了什么（静 / 找你 / 去玩 / 独白）都列在这。
+// 数据来自 GET /api/wake：status 是引擎每分钟写的快照，timeline 是 wake_engine/timeline.jsonl 倒序。
+private struct WakeTimelineView: View {
+    @State private var loading = true
+    @State private var status: [String: Any] = [:]
+    @State private var rows: [[String: Any]] = []
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            VStack(alignment: .leading, spacing: 5) {
+                Text("自醒")
+                    .font(.custom("Snell Roundhand", size: 31))
+                Text("没人叫他，他自己醒了，然后自己决定做什么")
+                    .font(.system(size: 11)).foregroundColor(theme.textDim)
+            }
+            if loading {
+                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 45)
+            } else {
+                statusCard
+                if rows.isEmpty {
+                    Text("还没醒过一次")
+                        .font(.system(size: 12)).foregroundColor(theme.textDim)
+                        .frame(maxWidth: .infinity).padding(.vertical, 30)
+                } else {
+                    ScrollView {
+                        VStack(alignment: .leading, spacing: 0) {
+                            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                                timelineRow(row)
+                            }
+                        }
+                    }
+                }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(22)
+        .foregroundColor(theme.text)
+        .task { await load() }
+    }
+
+    private var statusCard: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if let paused = status["paused_by"] as? String {
+                let why = ["asleep": "他睡着了", "quiet": "留白中", "app-off": "开关关着", "off": "引擎停着"][paused] ?? paused
+                Label("此刻暂停：\(why)", systemImage: "pause.circle")
+                    .font(.system(size: 13, weight: .semibold))
+            } else if let p30 = status["p_wake_30min"] as? Double, let p60 = status["p_wake_60min"] as? Double {
+                Label("此刻多容易醒", systemImage: "waveform.path.ecg")
+                    .font(.system(size: 13, weight: .semibold))
+                Text("半小时内约 \(Int((p30 * 100).rounded()))%，一小时内约 \(Int((p60 * 100).rounded()))%。不是闹钟，只是此刻的倾向。")
+                    .font(.system(size: 10.5)).foregroundColor(theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            } else {
+                Label("引擎没在跑", systemImage: "exclamationmark.circle")
+                    .font(.system(size: 13, weight: .semibold))
+            }
+            HStack(spacing: 14) {
+                stat("醒过", status["dispatched"])
+                stat("作废", status["forfeited"])
+                if let mode = status["mode"] as? String, mode == "shadow" {
+                    Text("影子模式：只记不醒").font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                }
+            }
+        }
+        .padding(14).foyerCard(theme)
+    }
+
+    private func stat(_ label: String, _ v: Any?) -> some View {
+        HStack(spacing: 3) {
+            Text(label).font(.system(size: 9.5)).foregroundColor(theme.textDim)
+            Text("\((v as? Int) ?? 0)").font(.system(size: 12, weight: .semibold, design: .rounded))
+        }
+    }
+
+    private func timelineRow(_ row: [String: Any]) -> some View {
+        let action = (row["action"] as? String) ?? ""
+        let choice = row["choice"] as? String
+        let (icon, title, sub): (String, String, String) = {
+            switch action {
+            case "dispatched":
+                switch choice {
+                case "静": return ("moon.zzz", "醒了，选了静", "什么都没说，又躺回去了")
+                case "找你": return ("bubble.left.fill", "醒了，来找你", "自己想说话了")
+                case "去玩": return ("figure.walk", "醒了，去玩了", "干自己的事去了")
+                case "独白": return ("text.quote", "醒了，只写了独白", "没跟你说，写给自己")
+                default: return ("sunrise", "醒了", "还在看他选了什么")
+                }
+            case "shadow": return ("eye.slash", "影子：本来会在这时醒", "没真叫他")
+            case "forfeit-busy": return ("hourglass", "醒的机会作废", "他手里正忙着，等不到空")
+            case "forfeit-paused": return ("pause", "醒的机会作废", "睡着或留白中")
+            case "inject-failed": return ("xmark.octagon", "叫他没叫醒", "注入失败")
+            default: return ("circle", action, "")
+            }
+        }()
+        return HStack(alignment: .top, spacing: 10) {
+            Image(systemName: icon).frame(width: 18).foregroundColor(theme.fyAccent)
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text(title).font(.system(size: 12.5, weight: .medium))
+                    if (row["leak"] as? Bool) == true {
+                        Text("〈静〉漏进聊天页了").font(.system(size: 9)).foregroundColor(.red.opacity(0.8))
+                    }
+                }
+                Text(sub).font(.system(size: 10)).foregroundColor(theme.textDim)
+            }
+            Spacer()
+            Text(Self.hhmm(row["at"] as? String))
+                .font(.system(size: 10.5, design: .rounded)).foregroundColor(theme.textDim)
+        }
+        .padding(.vertical, 8)
+        .overlay(Divider().opacity(0.2), alignment: .bottom)
+    }
+
+    private static func hhmm(_ iso: String?) -> String {
+        guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return "" }
+        let f = DateFormatter(); f.dateFormat = "MM-dd HH:mm"
+        return f.string(from: d)
+    }
+
+    @MainActor private func load() async {
+        defer { loading = false }
+        guard let value = try? await NativeHouseAPI.object("/api/wake") else { return }
+        status = (value["status"] as? [String: Any]) ?? [:]
+        rows = (value["timeline"] as? [[String: Any]]) ?? []
     }
 }
 
