@@ -2923,21 +2923,26 @@ struct MessageRow: View {
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
             if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
-                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
+                // 0924 她定的：名字在头像上面。名字固定占 40 宽、允许往右溢出，头像那一列宽度不变，续条才对得齐
+                VStack(alignment: .leading, spacing: 4) {
+                    if kakaoHead {
+                        Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                            .font(.system(size: 12))
+                            .foregroundColor(theme.textDim)
+                            .fixedSize()
+                            .frame(width: 40, alignment: .leading)
+                    }
+                    KakaoAvatarView(visible: kakaoHead)
+                }
+                .padding(.trailing, 8)
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
-                if theme.isKakao && !isUser && kakaoHead && !isTarotRow && kakaoShowAvatar {   // 0924 她定的：头像关了名字一起收
-                    Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                        .font(.system(size: 12))
-                        .foregroundColor(theme.textDim)
-                        .padding(.bottom, 5)
-                }
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
                     messagesProcessBlock
-                        .padding(.leading, theme.isKakao ? max(0, kakaoTextLeading(head: kakaoHead) - 4) : 0)   // 0924 Kakao：对齐气泡第一个字（块里自带 4 的左距）
+                        .padding(.leading, theme.isKakao ? kakaoTextLeading(head: kakaoHead) - 4 : 0)   // 0924 Kakao：对齐气泡左边缘往里 6（块里自带 4 的左距）
                 } else if !isUser && !turnBlocks.isEmpty {
                     ForEach(turnBlocks) { blk in
                         switch blk {
@@ -3293,14 +3298,11 @@ struct MessageRow: View {
         }
     }
 
-    /// 0924 她要的：Kakao 下思绪块和气泡底下那排小图标，左边对齐气泡里第一个字（不管头像开没开）。
-    /// 第一个字的位置 = 气泡整块左移量 + 这张气泡图的字距左边。
+    /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边对齐气泡左边缘、往里缩 6（头像开关都一样）。
+    /// 气泡左边缘 = 列左边 − 气泡整块左移量。
     private func kakaoTextLeading(head: Bool) -> CGFloat {
-        let pack = KakaoPackStore.shared.current
-        let spec = pack?.bubbles[head ? "recv1" : "recv2"] ?? pack?.bubbles["recv1"]
-        let inset = spec?.textInsets.leading ?? 14
         let shift = kakaoShowAvatar ? Self.kakaoBubbleShiftLeft : 0
-        return inset - shift
+        return 6 - shift
     }
 
     private var kakaoSideMeta: some View {
