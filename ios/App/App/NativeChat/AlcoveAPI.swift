@@ -508,6 +508,16 @@ enum AlcoveAPI {
         return (obj["hidden_ts"] as? [String]) ?? []
     }
 
+    /// 0925 编辑她的气泡：后端让 claude 退回到这句之前（不重发），再把这句和它下面的气泡藏掉。
+    /// 改好的字不走这里，成功后照常 send。失败带原因（他正忙、菜单对不上、换窗之前的……）。
+    static func editRewind(ts: String) async throws {
+        let obj = try await postJSON("/api/chat/edit-rewind", body: ["ts": ts])
+        guard obj["ok"] as? Bool == true else {
+            throw NSError(domain: "alcove.edit", code: 409,
+                          userInfo: [NSLocalizedDescriptionKey: (obj["error"] as? String) ?? "编辑没成"])
+        }
+    }
+
     static func deleteMessage(ts: String, textOnly: Bool = false) async throws {
         _ = try await postJSON("/api/chat/delete", body: [
             "ts": ts, "text_only": textOnly

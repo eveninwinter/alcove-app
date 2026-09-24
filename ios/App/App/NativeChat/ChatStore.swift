@@ -850,6 +850,35 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    // 0925 她要的「编辑我的气泡」（官方 App 那样）：后端先让 claude 退回到这句之前、把这句和它下面的气泡藏掉，
+    // 成功了这边收掉那些气泡，再把改好的字照平时发消息那条路发出去；失败把原因放 editNote 弹一下，气泡不动。
+    @Published var editNote: String? = nil
+    @Published var editingBusy = false
+    func editAndResend(_ msg: ChatMessage, newText: String, done: @escaping (Bool) -> Void) {
+        var body = newText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !body.isEmpty, !editingBusy else { return }
+        // 原来那句带着引用的，改的只是正文，引用照原样挂回去（格式跟 outgoingText 一样）
+        if msg.text.hasPrefix("[QUOTE]"), let end = msg.text.range(of: "[/QUOTE]") {
+            body = String(msg.text[..<end.upperBound]) + "\n" + body
+        }
+        editingBusy = true
+        Task { @MainActor in
+            defer { editingBusy = false }
+            do {
+                try await AlcoveAPI.editRewind(ts: msg.ts)
+                if let idx = messages.firstIndex(where: { $0.uid == msg.uid }) {
+                    for m in messages[idx...] { deletedMessageTs.insert(m.ts) }
+                    messages.removeSubrange(idx...)
+                }
+                done(true)
+                sendText(body)
+            } catch {
+                editNote = error.localizedDescription
+                done(false)
+            }
+        }
+    }
+
     func deleteMessage(_ msg: ChatMessage) {
         deletedMessageTs.insert(msg.ts)
         // 0818 她说删我第一句会把 thought 一起删掉——思绪不是那句话的一部分，是这一轮的。

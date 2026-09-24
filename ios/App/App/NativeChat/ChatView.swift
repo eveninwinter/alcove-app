@@ -26,6 +26,9 @@ struct ChatView: View {
     @State private var showEffectPanel = false
     @State private var handlingReturn = false
     @State private var selectedQuote: String?
+    // 0925「编辑」：正在编辑哪条（她那条的 ts）和输入框里的字
+    @State private var editingTs: String?
+    @State private var editDraft = ""
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
@@ -553,6 +556,11 @@ struct ChatView: View {
             } message: {
                 Text(store.rerollNote ?? "")
             }
+            .alert("编辑没成", isPresented: editAlertShown) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(store.editNote ?? "")
+            }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveHouseClosed)) { _ in
                 // 0904 她报的：整页盖着时键盘把列表撑高又收走，我不在屏幕上没跟着回落。
                 // 回来时本来就在底部的话，无动画校正回底；她在翻历史就不动
@@ -819,6 +827,30 @@ struct ChatView: View {
         return { s.rerollLastReply() }
     }
 
+    /// 0925 她要的「编辑」：只给她自己的文字气泡（CLI 房间、没在翻历史、已经落库的）。
+    /// 跟 rerollAction 一样抽成函数，别在 MessageRow 那一长串参数里内联，编译器扛不住
+    private func editAction(for message: ChatMessage) -> (() -> Void)? {
+        guard message.role == "user", store.room == "cli", !store.isViewingHistory, !message.pending,
+              (message.msgType ?? "text") == "text", (message.attachmentUrl ?? "").isEmpty,
+              !message.isSticker, !message.isAudio, !message.displayText.isEmpty else { return nil }
+        return {
+            editDraft = message.displayText
+            editingTs = message.ts
+        }
+    }
+
+    private func sendEdit(_ message: ChatMessage) {
+        store.editAndResend(message, newText: editDraft) { ok in
+            if ok { editingTs = nil }
+        }
+    }
+
+    /// 0925：「编辑没成」弹窗的开关
+    private var editAlertShown: Binding<Bool> {
+        Binding(get: { store.editNote != nil },
+                set: { if !$0 { store.editNote = nil } })
+    }
+
     /// 0924：「重来没成」弹窗的开关，抽出来别在 body 链里内联 Binding
     private var rerollAlertShown: Binding<Bool> {
         Binding(get: { store.rerollNote != nil },
@@ -961,6 +993,12 @@ struct ChatView: View {
                     },
                     onResend: { text in store.sendText(text) },
                     onReroll: rerollAction(for: message),
+                    onEdit: editAction(for: message),
+                    isEditing: editingTs == message.ts,
+                    editDraft: $editDraft,
+                    editBusy: store.editingBusy,
+                    onEditCancel: { editingTs = nil },
+                    onEditSend: { sendEdit(message) },
                     kakaoHead: kakaoHead,
                     kakaoFirstBubble: theme.isKakao ? kakaoFirstBubble(at: index) : kakaoHead,
                     kakaoUnread: message.role == "user" && next == nil,
@@ -2756,6 +2794,8 @@ private struct SDKShadowChatView: View {
 private final class AskSelectableTextView: UITextView {
     var onAsk: ((String) -> Void)?
     var onCopyTurn: (() -> Void)?
+    /// 0925 她要的「编辑」：只有她自己的文字气泡才给，长按选字冒出来的那排菜单里跟「询问」挨着
+    var onEdit: (() -> Void)?
 
     override func buildMenu(with builder: UIMenuBuilder) {
         super.buildMenu(with: builder)
@@ -2770,7 +2810,15 @@ private final class AskSelectableTextView: UITextView {
         let copyTurn = UIAction(title: "复制整轮", image: UIImage(systemName: "doc.on.doc")) {
             [weak self] _ in self?.onCopyTurn?()
         }
-        builder.insertChild(UIMenu(options: .displayInline, children: [ask, copyTurn]),
+        var children: [UIMenuElement] = [ask, copyTurn]
+        if onEdit != nil {
+            children.append(UIAction(title: "编辑", image: UIImage(systemName: "pencil")) { [weak self] _ in
+                guard let self else { return }
+                self.selectedRange = NSRange(location: 0, length: 0)   // 收掉选区再进编辑，菜单不留在屏幕上
+                self.onEdit?()
+            })
+        }
+        builder.insertChild(UIMenu(options: .displayInline, children: children),
                             atStartOfMenu: .standardEdit)
     }
 }
@@ -2786,6 +2834,8 @@ private struct SelectableMessageText: UIViewRepresentable {
     let onCopyTurn: () -> Void
     /// 0924 Kakao 主题的字体（PostScript 名）：nil = 系统字
     var fontName: String? = nil
+    /// 0925 她的气泡才传：长按菜单里多一个「编辑」
+    var onEdit: (() -> Void)? = nil
 
     final class Coordinator {
         var renderedKey: String?
@@ -2808,6 +2858,7 @@ private struct SelectableMessageText: UIViewRepresentable {
     func updateUIView(_ view: AskSelectableTextView, context: Context) {
         view.onAsk = onAsk
         view.onCopyTurn = onCopyTurn
+        view.onEdit = onEdit
         // 后台每 2.5 秒轮询会让 SwiftUI 重跑 updateUIView。正文其实没变，
         // 但重新赋 attributedText 会强制收掉 iOS 的选区和复制菜单。
         // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
@@ -2888,6 +2939,13 @@ struct MessageRow: View {
     var onResend: ((String) -> Void)? = nil
     // 0924 她要的「重来」：只有他最后一轮的消息才传这个；按了撤这一轮、claude 回退到她上一句之前重答
     var onReroll: (() -> Void)? = nil
+    // 0925 她要的「编辑」（官方 App 那样）：她的文字气泡才传 onEdit；编辑中这条气泡原地变成输入框，下面取消 / 发送
+    var onEdit: (() -> Void)? = nil
+    var isEditing: Bool = false
+    var editDraft: Binding<String>? = nil
+    var editBusy: Bool = false
+    var onEditCancel: (() -> Void)? = nil
+    var onEditSend: (() -> Void)? = nil
     // 0924 Kakao：这条是不是一串的头（露头像 / 名字 / 01 图）；她最后一条没被他读过就挂个小「1」
     var kakaoHead: Bool = true
     // 0924 晚：这条用不用带图案的 01 图——一串里第一条真画气泡的才用（kakaoHead 管头像，这个管气泡图）
@@ -2903,6 +2961,7 @@ struct MessageRow: View {
     // 0822 iMessage 主题：思绪+脚印合成一条过程线，默认只露一个点
     @State private var processOpen = false
     @State private var showTranscript = false   // 0822 语音条默认不露文字，长按「转文字」才展开
+    @FocusState private var editFocused: Bool
     @AppStorage("imsgShowProcess") private var showProcessDots = true
     // 0924 她报的「气泡间距有的贴在一起」：一条消息里图 / 语音 / 正文 / 链接卡之间原来是 0，
     // 脚印那行又是另一个数。现在一律用设置里那个「气泡间距」，跟列表里气泡和气泡之间同一个数。
@@ -3157,6 +3216,8 @@ struct MessageRow: View {
                             }
                             .contentShape(Rectangle())
                             .onTapGesture { onToggleParagraphSelection?() }
+                        } else if isEditing, let editDraft = editDraft {
+                            editBox(editDraft)
                         } else {
                             bubble
                         }
@@ -3490,6 +3551,55 @@ struct MessageRow: View {
 
     }
 
+    /// 0925「编辑」：她这条气泡原地变成输入框（白 / 深底、主题点缀色描边），下面一排取消 / 发送。
+    /// 发送 = 后端先把他退回到这句之前、这句和下面的气泡藏掉，再把改好的字照常发出去。
+    private func editBox(_ draft: Binding<String>) -> some View {
+        let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
+        let ink = theme.isDark ? Color.white : Color.black
+        let empty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        return VStack(alignment: .trailing, spacing: 8) {
+            TextField("", text: draft, axis: .vertical)
+                .focused($editFocused)
+                .lineLimit(1...10)
+                .font(.system(size: CGFloat(fontSize)))
+                .foregroundColor(ink)
+                .tint(theme.fyAccent)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .frame(minWidth: 200, alignment: .leading)
+                .background(face, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .stroke(theme.fyAccent, lineWidth: 1.2))
+                .disabled(editBusy)
+                .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { editFocused = true } }
+            HStack(spacing: 10) {
+                Button { onEditCancel?() } label: {
+                    Text("取消")
+                        .foregroundColor(theme.isDark ? Color.white.opacity(0.75) : Color.black.opacity(0.6))
+                        .padding(.horizontal, 16).frame(height: 32)
+                        .background(face, in: Capsule())
+                }
+                .disabled(editBusy)
+                Button { onEditSend?() } label: {
+                    Group {
+                        if editBusy {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Text("发送").fontWeight(.semibold)
+                        }
+                    }
+                    .foregroundColor(theme.textUser ?? (theme.isMessages ? .white : theme.text))
+                    .padding(.horizontal, 16).frame(height: 32)
+                    .background(theme.bubbleUser, in: Capsule())
+                    .opacity(empty ? 0.45 : 1)
+                }
+                .disabled(editBusy || empty)
+            }
+            .font(.system(size: 14))
+            .buttonStyle(.plain)
+        }
+    }
+
     private var bubbleContents: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
             // 0921 任务#2505：带 [摇晃]…[/摇晃] 这类标记的正文逐字画、会动；没标记照旧
@@ -3517,7 +3627,8 @@ struct MessageRow: View {
                     UIPasteboard.general.string = wholeTurnText.isEmpty
                         ? msg.displayText : wholeTurnText
                 },
-                fontName: KakaoPackStore.shared.fontName
+                fontName: KakaoPackStore.shared.fontName,
+                onEdit: isUser ? onEdit : nil
             )
             }
         }
