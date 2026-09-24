@@ -688,8 +688,19 @@ struct ChatFontPicker: View {
                     }
                 }
             }
+            thoughtFontStatus
         }
-        .onAppear { if store.fonts.isEmpty { store.refresh() } }
+        .onAppear {
+            if store.fonts.isEmpty { store.refresh() }
+            store.ensureFont(id: KakaoPackStore.thoughtFontID)
+        }
+    }
+
+    /// 0924：思绪用的宋体到底装没装，摆在这儿看，不猜
+    private var thoughtFontStatus: some View {
+        let ok = ThoughtFont.registeredName != nil
+        return Text(ok ? "思绪宋体：已装" : (store.fonts.contains { $0.id == KakaoPackStore.thoughtFontID } ? "思绪宋体：没装，正在下" : "思绪宋体：名单里没有，点刷新"))
+            .font(.system(size: 10.5)).foregroundColor(ok ? theme.textDim : Color.orange)
     }
 
     private func fontChip(id: String, label: String, font: Font) -> some View {
