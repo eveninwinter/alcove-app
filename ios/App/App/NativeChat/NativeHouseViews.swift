@@ -7306,8 +7306,9 @@ private struct NativeStudioView: View {
                             // Kakao：一串同一边的消息只有第一条露头像 / 名字 / 带尾巴的 01 图
                             let head = prev.map { $0.string("role") != item.primary.string("role") } ?? true
                             Group {
+                                // 0924 晚她定的：跟主聊天 Kakao 对齐——只跟紧挨着的上一条比，隔超过 15 分钟就插胶囊（原来只在跨天时插）
                                 if isKakao, let d = studioDate(item.primary),
-                                   prev.map({ p in !Calendar.current.isDate(studioDate(p) ?? d, inSameDayAs: d) }) ?? true {
+                                   prev.map({ p in d.timeIntervalSince(studioDate(p) ?? d) > 900 }) ?? true {
                                     KakaoDateDivider(date: d)
                                 }
                                 if item.group.count > 1 {

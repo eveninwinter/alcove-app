@@ -17,6 +17,7 @@ struct KakaoBubbleSpec: Decodable {
     let cap_left: Double
     let cap_top: Double
     let inset: [Double]
+    let body_left: Double?     // 0924 晚：看得见的气泡左边离图片左边多少（后端量的），小按钮 / 思绪块按它对齐
 
     /// 字离四边：上 左 下 右
     var textInsets: EdgeInsets {

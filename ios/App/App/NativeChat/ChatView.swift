@@ -843,7 +843,11 @@ struct ChatView: View {
             let splittable = rowHasPhoto && !message.displayText.isEmpty
                 && !message.isAudio && !message.isSticker
 
-            let divided = needsDivider(at: index)
+            // 0924 晚她定的：Kakao 统一只跟紧挨着的上一条比，不管上一条是什么消息，隔超过 15 分钟就插胶囊
+            // （跳过拍一拍那套算法让互相拍一拍中间插了三次截断）。别的主题照旧。
+            let divided = theme.isKakao
+                ? needsDivider(prev: previous, cur: message, gap: 900)
+                : needsDivider(at: index)
             if divided {
                 if theme.isKakao {
                     KakaoDateDivider(date: message.date)
@@ -936,6 +940,7 @@ struct ChatView: View {
                     onResend: { text in store.sendText(text) },
                     onReroll: rerollAction(for: message),
                     kakaoHead: kakaoHead,
+                    kakaoFirstBubble: theme.isKakao ? kakaoFirstBubble(at: index) : kakaoHead,
                     kakaoUnread: message.role == "user" && next == nil,
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
@@ -1033,10 +1038,42 @@ struct ChatView: View {
         }
     }
 
-    private func needsDivider(prev: ChatMessage?, cur: ChatMessage) -> Bool {
+    private func needsDivider(prev: ChatMessage?, cur: ChatMessage, gap: TimeInterval = 1200) -> Bool {
         guard let prev else { return true }
-        // 三套主题统一：安静超过 20 分钟再插一条时间分割。
-        return cur.date.timeIntervalSince(prev.date) > 1200
+        // 只跟紧挨着的上一行比；Kakao 传 900（15 分钟）
+        return cur.date.timeIntervalSince(prev.date) > gap
+    }
+
+    /// 0924 晚她要的：带图案的「第一条」气泡（01 图）给这一串里第一条真画气泡的消息。卡片、照片、语音、表情不算，
+    /// 不然图案被卡片吞了；删了第一条（整条拿掉或只清正文）也按眼下还画气泡的算，图案自己顺移到下一条。
+    /// 一串的边界跟 kakaoHead 同一条规矩（换人 / 换轮 / 中间有时间胶囊）。
+    private func kakaoFirstBubble(at index: Int) -> Bool {
+        var k = index
+        while k > 0 && !kakaoStartsGroup(k) {
+            k -= 1
+            if Self.kakaoDrawsBubble(store.messages[k]) { return false }
+        }
+        return true
+    }
+
+    private func kakaoStartsGroup(_ k: Int) -> Bool {
+        guard k > 0 else { return true }
+        let prev = store.messages[k - 1], cur = store.messages[k]
+        return needsDivider(prev: prev, cur: cur, gap: 900) || isGroupTail(cur: prev, next: cur)
+    }
+
+    /// 跟消息行里那一长串 if / else 对齐：这些卡片、贴纸、语音、音乐都不画九宫格气泡
+    static func kakaoDrawsBubble(_ m: ChatMessage) -> Bool {
+        let t = m.msgType ?? "text"
+        if t == "pat_incoming" || t == "pat_outgoing" || t == "divider" || t == "api_error"
+            || t == "tarot_answer" || t == "choice_answer" { return false }
+        if m.morningPaperDate != nil || m.insideText != nil || m.ghostCard != nil || m.playCard != nil
+            || m.favoriteForward != nil || m.readingCard != nil || m.tarotCard != nil || m.tarotOffer != nil
+            || m.workCard != nil || m.albumSavedCard != nil || m.buyCard != nil || m.paidCard != nil
+            || m.ticketCard != nil || m.choiceCard != nil || m.letterCard != nil || m.journeyCard != nil
+            || m.callSummary != nil || m.musicCard != nil { return false }
+        if m.isSticker || m.isAudio || m.isBareLink { return false }
+        return !m.displayText.isEmpty
     }
 
     /// 0924 她报的「隔一小时没截断、隔二十分钟有」：原来只跟紧挨着的上一行比，中间要是夹了一条切歌线、
@@ -2806,6 +2843,8 @@ struct MessageRow: View {
     var onReroll: (() -> Void)? = nil
     // 0924 Kakao：这条是不是一串的头（露头像 / 名字 / 01 图）；她最后一条没被他读过就挂个小「1」
     var kakaoHead: Bool = true
+    // 0924 晚：这条用不用带图案的 01 图——一串里第一条真画气泡的才用（kakaoHead 管头像，这个管气泡图）
+    var kakaoFirstBubble: Bool = true
     var kakaoUnread: Bool = false
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
@@ -2932,7 +2971,7 @@ struct MessageRow: View {
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
                     messagesProcessBlock
-                        .padding(.leading, theme.isKakao ? kakaoTextLeading(head: kakaoHead) - 4 : 0)   // 0924 Kakao：对齐气泡左边缘往里 6（块里自带 4 的左距）
+                        .padding(.leading, theme.isKakao ? kakaoTextLeading() - 4 : 0)   // 0924 Kakao：看得见的气泡左边往里 4（块里自带 4 的左距，所以减掉）
                 } else if !isUser && !turnBlocks.isEmpty {
                     ForEach(turnBlocks) { blk in
                         switch blk {
@@ -3072,7 +3111,7 @@ struct MessageRow: View {
                         .italic()
                         // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
                         .foregroundColor(theme.thoughtColor.opacity(0.82))
-                        .padding(.leading, theme.isKakao ? kakaoTextLeading(head: kakaoHead) : 3)
+                        .padding(.leading, theme.isKakao ? kakaoTextLeading() : 3)
                         .padding(.top, CGFloat(chatBubbleGap))
                 }
                 if shouldShowMetaRow {
@@ -3144,7 +3183,7 @@ struct MessageRow: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.leading, isUser ? 0 : (theme.isKakao ? kakaoTextLeading(head: kakaoHead) : timestampTextInset))
+                    .padding(.leading, isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset))
                     .padding(.trailing, isUser ? timestampTextInset : 0)
                     .padding(.top, rowPartGap)
                 }
@@ -3288,11 +3327,15 @@ struct MessageRow: View {
         }
     }
 
-    /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边对齐气泡左边缘、往里缩 6（头像开关都一样）。
-    /// 气泡左边缘 = 列左边 − 气泡整块左移量。
-    private func kakaoTextLeading(head: Bool) -> CGFloat {
+    /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边在「看得见的气泡左边」往里缩 4（头像开关都一样）。
+    /// 0924 晚她抓的「小按钮在气泡外面」：气泡图四周有透明边、有的左边带小人，图片左边不是看得见的左边。
+    /// 看得见的左边由后端拆包时量好（body_left，按这条用的 01 / 02 图取）；老缓存没有这个数就按 2 算（等于原来的 6）。
+    private func kakaoTextLeading() -> CGFloat {
         let shift = kakaoShowAvatar ? Self.kakaoBubbleShiftLeft : 0
-        return 6 - shift
+        let pack = KakaoPackStore.shared.current
+        let spec = pack?.bubbles[kakaoFirstBubble ? "recv1" : "recv2"] ?? pack?.bubbles["recv1"]
+        let edge = CGFloat(spec?.body_left ?? 2)
+        return edge + 4 - shift
     }
 
     private var kakaoSideMeta: some View {
@@ -3329,7 +3372,7 @@ struct MessageRow: View {
             Group {
                 if theme.isKakao {
                     // 0924 Kakao：气泡是主题包里的九宫格图，字离四边按包里写的来
-                    KakaoBubbleView(isUser: isUser, first: kakaoHead) { bubbleContents }
+                    KakaoBubbleView(isUser: isUser, first: kakaoFirstBubble) { bubbleContents }
                 } else if theme.isPaper && !isUser {
                     bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
                 } else {
