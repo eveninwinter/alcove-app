@@ -1090,14 +1090,22 @@ private struct NativeSettingsView: View {
     // 0826 她说一点进去闪白再变黑：UITraitCollection.current 在 SwiftUI 求值那一刻
     // 还可能停在 light，第二帧才对，于是白闪一下。环境里的 colorScheme 首帧就准。
     private var interfaceDark: Bool { houseAppearance != "light" }
-    private var theme: AlcoveTheme { interfaceDark ? .messagesDark : .messages }
-    private var pal: YanxiaPal { YanxiaPal(night: interfaceDark) }
+    // 0924 她要的：这页的配色跟侧边栏一样跟主体主题走（原来钉死在信息主题 + 檐下那套皮）
+    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private struct PanelPal {
+        let ink: Color; let ink2: Color; let ink3: Color; let accent: Color
+        let card: Color; let card2: Color; let line: Color
+    }
+    private var pal: PanelPal {
+        PanelPal(ink: theme.text, ink2: theme.textDim, ink3: theme.textLight, accent: theme.fyAccent,
+                 card: theme.fyCard, card2: theme.fyCardSub, line: theme.fyBorder)
+    }
 
     // 0826 她说设置页没全屏、顶上透出壁纸：这页现在自己铺满、自己做头，
     // 皮也换成檐下那套，跟共读室一个屋檐下。
     var body: some View {
         ZStack {
-            CoreadYanxiaBackground(isNight: interfaceDark).ignoresSafeArea()
+            Color.clear   // 0924：底子交给抽屉那层面板壁纸，跟侧边栏一个样
             VStack(spacing: 0) {
                 settingsHeader
                 if page == nil { settingsIndex } else { settingsControls }
@@ -1107,7 +1115,7 @@ private struct NativeSettingsView: View {
     }
 
     private var settingsHeader: some View {
-        let pal = YanxiaPal(night: interfaceDark)
+        let pal = self.pal
         return HStack(spacing: 2) {
             Button {
                 if page == nil { dismiss() }
@@ -1492,7 +1500,7 @@ private struct NativeSettingsView: View {
                 } }
                 if page == .appearance { section("Kakao 主题") {
                     // 布局照 KakaoTalk，颜色和图从别人做的主题包里来
-                    familyChoice("Kakao", "套别人的包", "kakao", [
+                    familyChoice("Kakao", "", "kakao", [
                         Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255),
                         .white,
                         Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
