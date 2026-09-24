@@ -2874,8 +2874,16 @@ struct MessageRow: View {
         // 跟上一条的时间戳对不齐。
         return 12
     }
+    /// 0924 晚她抓的：Kakao 下时间贴在气泡旁边，小按钮又跟着思绪开关藏了，这一行里一个东西都没有，
+    /// 却还占着一截高度（空 HStack + 上边距），卡片和下一条中间空一大块。改成里面真有东西才画这一行；
+    /// 别的主题里时间本来就在这一行，行为不变。条件跟下面那一行里每个元素的条件一一对上。
     private var shouldShowMetaRow: Bool {
-        msg.msgType != "choice_answer" && (msg.pending || msg.asleepAtSend || showTime)
+        guard msg.msgType != "choice_answer" else { return false }
+        let dotsOK = !(theme.isMessages && !showProcessDots)
+        // 非 Kakao：跟原来一样（pending / 睡着 / 有时间就画）；Kakao：只有他那排小按钮真露出来才画
+        return msg.pending
+            || msg.asleepAtSend
+            || (showTime && (!theme.isKakao || (!isUser && dotsOK)))
     }
 
     /// 这条消息头上要挂的轨迹：轮首拿整轮的，其他消息不挂。
