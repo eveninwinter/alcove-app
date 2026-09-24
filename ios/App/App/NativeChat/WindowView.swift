@@ -275,6 +275,15 @@ struct NativeWindowView: View {
     @State private var showDays = false
     private var paper: WindowPaper { .of(AlcoveTheme.named(themeName).isDark) }
 
+    /// 0925 她抓的「世界之窗又没做安全区」：这间屋是 ownsFullScreen，外面那层把安全区全吃了，
+    /// 头顶到灵动岛、页码贴着 Home 横条。全屏房间第一件事：安全区问 app 主窗（跟占星室、育儿室一样）。
+    private var safeTop: CGFloat {
+        FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0
+    }
+    private var safeBottom: CGFloat {
+        FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0
+    }
+
     var body: some View {
         ZStack(alignment: .top) {
             paper.paper.ignoresSafeArea()
@@ -327,7 +336,7 @@ struct NativeWindowView: View {
         }
         .foregroundColor(paper.ink)
         .padding(.horizontal, 8)
-        .padding(.top, 4)
+        .padding(.top, max(safeTop, 20))
         .padding(.bottom, 6)
     }
 
@@ -340,7 +349,7 @@ struct NativeWindowView: View {
             Rectangle().fill(paper.rule).frame(height: 0.6)
         }
         .padding(.horizontal, 28)
-        .padding(.bottom, 10)
+        .padding(.bottom, max(safeBottom, 10))
     }
 
     private var emptyState: some View {
