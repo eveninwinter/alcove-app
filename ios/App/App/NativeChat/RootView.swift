@@ -31,7 +31,8 @@ struct RootView: View {
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
-    @AppStorage("chatFontSize") private var chatFontSize = 14   // 0924 晚：Kakao 顶栏名字跟正文字号一样大   // 0924 Kakao 换包重画顶栏颜色
+    // ↑ 0924 Kakao 换包重画顶栏颜色
+    @AppStorage("chatFontSize") private var chatFontSize = 14   // 0924 晚：Kakao 顶栏名字跟正文字号一样大
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
 

@@ -7278,16 +7278,20 @@ private struct NativeStudioView: View {
     /// Kakao 气泡：包里的九宫格图，时间贴外侧下角
     private func kakaoTextBubble(_ text: String, mine: Bool, head: Bool, date: Date?) -> some View {
         let kt = AlcoveTheme.kakaoTheme()
-        return HStack(alignment: .bottom, spacing: 5) {
-            if mine, let date {
-                Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
-            }
-            KakaoBubbleView(isUser: mine, first: head) {
-                Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
-                    .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
-            }
-            if !mine, let date {
-                Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
+        // 0924 晚她抓的「你的气泡宽度？」：工作室每条都挂时间，时间原来跟气泡并排占掉一截宽度，气泡比主聊天窄。
+        // 改成时间挂在气泡外侧的空白里（overlay 贴着气泡边），不占排版宽度，气泡最宽跟主聊天一样。
+        return KakaoBubbleView(isUser: mine, first: head) {
+            Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
+                .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
+        }
+        .overlay(alignment: mine ? .bottomLeading : .bottomTrailing) {
+            if let date {
+                Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp)
+                    .fixedSize()
+                    .padding(.bottom, 2)
+                    .alignmentGuide(mine ? HorizontalAlignment.leading : HorizontalAlignment.trailing) { d in
+                        mine ? d[.trailing] + 5 : d[.leading] - 5
+                    }
             }
         }
         // 0924 她要的：他的气泡整块往左下挪一点（跟聊天页同一个数），头像名字不动
