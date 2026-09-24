@@ -104,6 +104,8 @@ struct ChatView: View {
     /// 0902 信息主题调色板：她在设置页改一项，msgPaletteStamp 一变这里就重算
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
+    /// 0925：弹出的面板用这套——Kakao 下跟全屋白天 / 黑夜开关走（聊天主题恒白天），别的主题就是聊天主题本身
+    private var sheetTheme: AlcoveTheme { theme.isKakao ? .kakaoSheet(dark: AlcoveAppearance.isDark) : theme }
     private var bubbleGlassStyle: BubbleGlassStyle {
         BubbleGlassStyle(
             strength: CGFloat(bubbleGlassStrength),
@@ -161,9 +163,10 @@ struct ChatView: View {
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
-        .sheet(isPresented: $showStickers) { stickerSheet }
+        .sheet(isPresented: $showStickers) { stickerSheet.modifier(HouseColorScheme()) }
         .sheet(isPresented: $showEffectPanel) {
             TextEffectPanel(selection: effectSelectionText, onPick: applyTextEffect)
+                .modifier(HouseColorScheme())
                 .presentationDetents([.fraction(0.55)])
                 .presentationDragIndicator(.hidden)
                 .presentationBackground(.ultraThinMaterial)
@@ -179,22 +182,25 @@ struct ChatView: View {
         .onChange(of: inputFocused) { focused in TextEffectBridge.chatInputFocused = focused }
         .sheet(isPresented: $showMusicPlayer) {
             MusicPlayerSheet(model: music)
+                .modifier(HouseColorScheme())
                 .presentationDetents([.fraction(0.72)])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
         .sheet(isPresented: $showModelPicker, onDismiss: { showMoreModels = false }) {
             modelPickerSheet
+                .modifier(HouseColorScheme())
                 .task { await loadModelPanelState() }
                 .presentationDetents([.fraction(0.72), .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
         .sheet(isPresented: $showSDKShadow) {
-            SDKShadowChatView()
+            SDKShadowChatView().modifier(HouseColorScheme())
         }
         .sheet(isPresented: $showChannelPanel) {
             ChatChannelPanel(activeChannel: $activeChatChannel)
+                .modifier(HouseColorScheme())
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
@@ -203,6 +209,7 @@ struct ChatView: View {
             ChatRoomPicker(activeChannel: $activeChatChannel, currentRoom: store.room,
                            onPickRoom: { store.switchRoom($0) },
                            onOpenChannelPanel: { showRoomPicker = false; showChannelPanel = true })
+                .modifier(HouseColorScheme())
                 .presentationDetents([.height(320), .medium])
                 .presentationDragIndicator(.visible)
         }
@@ -1848,17 +1855,17 @@ struct ChatView: View {
                 } label: {
                     Image(systemName: showMoreModels ? "chevron.left" : "xmark")
                         .font(.system(size: 18, weight: .light))
-                        .foregroundColor(theme.text)
+                        .foregroundColor(sheetTheme.text)
                         .frame(width: 44, height: 44)
-                        .background(theme.glassTint.opacity(0.52), in: Circle())
-                        .overlay(Circle().stroke(theme.glassBorder, lineWidth: 1))
+                        .background(sheetTheme.glassTint.opacity(0.52), in: Circle())
+                        .overlay(Circle().stroke(sheetTheme.glassBorder, lineWidth: 1))
                 }
                 .buttonStyle(.plain)
 
                 Spacer()
                 Text(showMoreModels ? "More models" : "Select model")
                     .font(.system(size: 18, weight: .semibold))
-                    .foregroundColor(theme.text)
+                    .foregroundColor(sheetTheme.text)
                 Spacer()
                 Color.clear.frame(width: 44, height: 44)
             }
@@ -1867,10 +1874,10 @@ struct ChatView: View {
             HStack(spacing: 10) {
                 Text("当前通道")
                     .font(.system(size: 12))
-                    .foregroundColor(theme.textDim)
+                    .foregroundColor(sheetTheme.textDim)
                 Text(activeChatChannel.uppercased())
                     .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                    .foregroundColor(theme.text)
+                    .foregroundColor(sheetTheme.text)
                 Spacer()
                 HStack(spacing: 2) {
                     ForEach(["cli", "sdk"], id: \.self) { p in
@@ -1879,16 +1886,16 @@ struct ChatView: View {
                         } label: {
                             Text(p)
                                 .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                                .foregroundColor(modelPanel == p ? theme.text : theme.textDim)
+                                .foregroundColor(modelPanel == p ? sheetTheme.text : sheetTheme.textDim)
                                 .padding(.horizontal, 11).padding(.vertical, 5)
-                                .background(modelPanel == p ? theme.fyCard.opacity(0.95) : .clear, in: Capsule())
+                                .background(modelPanel == p ? sheetTheme.fyCard.opacity(0.95) : .clear, in: Capsule())
                         }
                         .buttonStyle(.plain)
                     }
                 }
                 .padding(2)
-                .background(theme.glassTint.opacity(0.4), in: Capsule())
-                .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
+                .background(sheetTheme.glassTint.opacity(0.4), in: Capsule())
+                .overlay(Capsule().stroke(sheetTheme.glassBorder, lineWidth: 1))
             }
             .padding(.horizontal, 4)
 
@@ -1914,7 +1921,7 @@ struct ChatView: View {
                                 .font(.system(size: 16, weight: .medium))
                             Text("让陈璟把思考留在心里")
                                 .font(.system(size: 11))
-                                .foregroundColor(theme.textDim)
+                                .foregroundColor(sheetTheme.textDim)
                         }
                         Spacer()
                         if switchingThinking {
@@ -1922,7 +1929,7 @@ struct ChatView: View {
                                 .frame(width: 42)
                         } else {
                             Capsule()
-                                .fill(thinkingEnabled ? theme.sendTop : theme.textDim.opacity(0.22))
+                                .fill(thinkingEnabled ? sheetTheme.sendTop : sheetTheme.textDim.opacity(0.22))
                                 .frame(width: 42, height: 24)
                                 .overlay(alignment: thinkingEnabled ? .trailing : .leading) {
                                     Circle().fill(.white).frame(width: 20, height: 20).padding(2)
@@ -1931,10 +1938,10 @@ struct ChatView: View {
                                 .animation(.spring(response: 0.24, dampingFraction: 0.8), value: thinkingEnabled)
                         }
                     }
-                    .foregroundColor(theme.text)
+                    .foregroundColor(sheetTheme.text)
                     .padding(.horizontal, 18)
                     .frame(height: 66)
-                    .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                    .background(sheetTheme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
                 }
                 .buttonStyle(.plain)
                 .disabled(switchingThinking || !thinkingKnown)
@@ -1949,7 +1956,7 @@ struct ChatView: View {
         }
         .padding(.horizontal, 18)
         .padding(.top, 8)
-        .foregroundColor(theme.text)
+        .foregroundColor(sheetTheme.text)
     }
 
     private var moreModelsButton: some View {
@@ -1962,12 +1969,12 @@ struct ChatView: View {
                 Spacer()
                 Image(systemName: "chevron.right")
                     .font(.system(size: 13, weight: .semibold))
-                    .foregroundColor(theme.textDim)
+                    .foregroundColor(sheetTheme.textDim)
             }
-            .foregroundColor(theme.text)
+            .foregroundColor(sheetTheme.text)
             .padding(.horizontal, 18)
             .frame(height: 58)
-            .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .background(sheetTheme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         }
         .buttonStyle(.plain)
     }
@@ -1979,25 +1986,25 @@ struct ChatView: View {
                 Text("effort").font(.system(size: 16, weight: .medium))
                 Spacer()
                 if switchingEffort { ProgressView().controlSize(.small) }
-                else { Text(current.isEmpty ? "未知" : current).font(.system(size: 12, design: .monospaced)).foregroundColor(theme.textDim) }
+                else { Text(current.isEmpty ? "未知" : current).font(.system(size: 12, design: .monospaced)).foregroundColor(sheetTheme.textDim) }
             }
             HStack(spacing: 6) {
                 ForEach(effortLevels, id: \.self) { lvl in
                     Button { onPick(lvl) } label: {
                         Text(lvl)
                             .font(.system(size: 12, weight: .semibold, design: .monospaced))
-                            .foregroundColor(current == lvl ? .white : theme.text)
+                            .foregroundColor(current == lvl ? .white : sheetTheme.text)
                             .frame(maxWidth: .infinity).frame(height: 30)
-                            .background(current == lvl ? theme.sendTop : theme.textDim.opacity(0.14), in: Capsule())
+                            .background(current == lvl ? sheetTheme.sendTop : sheetTheme.textDim.opacity(0.14), in: Capsule())
                     }
                     .buttonStyle(.plain)
                 }
             }
-            Text(hint).font(.system(size: 11)).foregroundColor(theme.textDim)
+            Text(hint).font(.system(size: 11)).foregroundColor(sheetTheme.textDim)
         }
-        .foregroundColor(theme.text)
+        .foregroundColor(sheetTheme.text)
         .padding(.horizontal, 18).padding(.vertical, 12)
-        .background(theme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+        .background(sheetTheme.fyCard.opacity(0.72), in: RoundedRectangle(cornerRadius: 18, style: .continuous))
         .disabled(switchingEffort)
     }
 
@@ -2847,6 +2854,8 @@ struct MessageRow: View {
     let msg: ChatMessage
     let sticker: Sticker?
     var theme: AlcoveTheme = .haven
+    /// 0925：思绪 / 工具这些弹出面板用这套——Kakao 下跟全屋白天 / 黑夜开关走，别的主题就是聊天主题本身
+    private var sheetTheme: AlcoveTheme { theme.isKakao ? .kakaoSheet(dark: AlcoveAppearance.isDark) : theme }
     var fontSize: Int = 14
     var showTime: Bool = true
     var recall: RecallItem? = nil
@@ -3256,19 +3265,20 @@ struct MessageRow: View {
                              set: { openedThink = $0?.text })) { one in
             NavigationStack {
                 ScrollView {
-                    ObliqueText(text: one.text, size: 15, color: UIColor(theme.text), lineSpacing: 7)
+                    ObliqueText(text: one.text, size: 15, color: UIColor(sheetTheme.text), lineSpacing: 7)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 30)
                 }
-                .background(theme.fyCardSub.ignoresSafeArea())
+                .background(sheetTheme.fyCardSub.ignoresSafeArea())
                 .navigationTitle("Thought process")
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { openedThink = nil } } }
             }
+            .modifier(HouseColorScheme())
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-            .presentationBackground(theme.fyCardSub)
+            .presentationBackground(sheetTheme.fyCardSub)
         }
         .sheet(item: Binding(get: { openedTools.map { OneTrail(items: $0) } },
                              set: { openedTools = $0?.items })) { one in
@@ -3280,21 +3290,21 @@ struct MessageRow: View {
                             HStack(alignment: .top, spacing: 11) {
                                 Image(systemName: item.icon)
                                     .font(.system(size: 11, weight: .light))
-                                    .foregroundColor(theme.fyAccent)
+                                    .foregroundColor(sheetTheme.fyAccent)
                                     .frame(width: 18).padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 2) {
                                     Text(item.toolName == "Bash" ? "Ran" : "Used")
                                         .font(.system(size: 13.5, weight: .medium))
-                                        .foregroundColor(theme.text)
+                                        .foregroundColor(sheetTheme.text)
                                     Text(item.desc.isEmpty ? item.content : item.desc)
                                             .font(.system(size: 12))
-                                            .foregroundColor(theme.textDim)
+                                            .foregroundColor(sheetTheme.textDim)
                                             .fixedSize(horizontal: false, vertical: true)
                                 }
                                 Spacer(minLength: 0)
                                 Image(systemName: "chevron.right")
                                     .font(.system(size: 10, weight: .semibold))
-                                    .foregroundColor(theme.textDim)
+                                    .foregroundColor(sheetTheme.textDim)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.vertical, 9)
@@ -3304,26 +3314,29 @@ struct MessageRow: View {
                     }
                     .padding(.horizontal, 22).padding(.bottom, 30)
                 }
-                .background(theme.fyCardSub.ignoresSafeArea())
+                .background(sheetTheme.fyCardSub.ignoresSafeArea())
                 .navigationTitle(trailLabel(one.items))
                 .navigationBarTitleDisplayMode(.inline)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { openedTools = nil } } }
             }
             .sheet(item: $openedToolDetail) { item in
                 commandDetailPanel(item)
+                    .modifier(HouseColorScheme())
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
-                    .presentationBackground(theme.fyCardSub)
+                    .presentationBackground(sheetTheme.fyCardSub)
             }
+            .modifier(HouseColorScheme())
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
-            .presentationBackground(theme.fyCardSub)
+            .presentationBackground(sheetTheme.fyCardSub)
         }
         .sheet(isPresented: $showThinking) {
             paperThinkingPanel
+                .modifier(HouseColorScheme())
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(theme.fyCardSub)
+                .presentationBackground(sheetTheme.fyCardSub)
         }
         .fullScreenCover(isPresented: $showPulse) {
             ZStack(alignment: .topTrailing) {
@@ -3556,9 +3569,10 @@ struct MessageRow: View {
         .padding(.leading, theme.isPaper ? 0 : 10)
         .sheet(isPresented: $showActivity) {
             paperTrailPanel
+                .modifier(HouseColorScheme())
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(theme.fyCardSub)
+                .presentationBackground(sheetTheme.fyCardSub)
         }
     }
 
@@ -3573,22 +3587,22 @@ struct MessageRow: View {
                         HStack(alignment: .top, spacing: 11) {
                             Image(systemName: item.icon)
                                 .font(.system(size: 11, weight: .light))
-                                .foregroundColor(theme.fyAccent)
+                                .foregroundColor(sheetTheme.fyAccent)
                                 .frame(width: 18)
                                 .padding(.top, 2)
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.toolName == "Bash" ? "Ran" : "Used")
                                     .font(.system(size: 13.5, weight: .medium))
-                                    .foregroundColor(theme.text)
+                                    .foregroundColor(sheetTheme.text)
                                 Text(item.desc.isEmpty ? item.content : item.desc)
                                         .font(.system(size: 12))
-                                        .foregroundColor(theme.textDim)
+                                        .foregroundColor(sheetTheme.textDim)
                                         .fixedSize(horizontal: false, vertical: true)
                             }
                             Spacer(minLength: 0)
                             Image(systemName: "chevron.right")
                                 .font(.system(size: 10, weight: .semibold))
-                                .foregroundColor(theme.textDim)
+                                .foregroundColor(sheetTheme.textDim)
                         }
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.vertical, 9)
@@ -3599,17 +3613,18 @@ struct MessageRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22).padding(.bottom, 30)
             }
-            .background(theme.fyCardSub.ignoresSafeArea())
-            .foregroundColor(theme.text)
+            .background(sheetTheme.fyCardSub.ignoresSafeArea())
+            .foregroundColor(sheetTheme.text)
             .navigationTitle(trailEntryLabel)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showActivity = false } } }
         }
         .sheet(item: $openedToolDetail) { item in
             commandDetailPanel(item)
+                .modifier(HouseColorScheme())
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(theme.fyCardSub)
+                .presentationBackground(sheetTheme.fyCardSub)
         }
     }
 
@@ -3837,7 +3852,7 @@ struct MessageRow: View {
                 // 0820 她定的：跟命令栏剥开之后就不需要那条竖线了 ——
                 // 这里只剩一段话，跟官方那个面板一样干净。
                 VStack(alignment: .leading, spacing: 0) {
-                    ObliqueText(text: visibleChatThought ?? cuteThinkingPlaceholder, size: 15, color: UIColor(theme.text), lineSpacing: 7)
+                    ObliqueText(text: visibleChatThought ?? cuteThinkingPlaceholder, size: 15, color: UIColor(sheetTheme.text), lineSpacing: 7)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 6)
@@ -3845,8 +3860,8 @@ struct MessageRow: View {
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.horizontal, 22).padding(.bottom, 30)
             }
-            .background(theme.fyCardSub.ignoresSafeArea())
-            .foregroundColor(theme.text)
+            .background(sheetTheme.fyCardSub.ignoresSafeArea())
+            .foregroundColor(sheetTheme.text)
             .navigationTitle("Thought process")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("关闭") { showThinking = false } } }
@@ -3868,7 +3883,7 @@ struct MessageRow: View {
                 }
                 .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 36)
             }
-            .background(theme.fyCardSub.ignoresSafeArea())
+            .background(sheetTheme.fyCardSub.ignoresSafeArea())
             .navigationTitle(item.toolName.isEmpty ? "Tool" : item.toolName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -3877,7 +3892,7 @@ struct MessageRow: View {
                         Image(systemName: "xmark")
                             .font(.system(size: 17, weight: .medium))
                             .frame(width: 38, height: 38)
-                            .background(theme.fyCard, in: Circle())
+                            .background(sheetTheme.fyCard, in: Circle())
                     }
                 }
             }
@@ -3888,20 +3903,20 @@ struct MessageRow: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(title)
                 .font(.system(size: 15, weight: .semibold))
-                .foregroundColor(isError ? .red : theme.textDim)
+                .foregroundColor(isError ? .red : sheetTheme.textDim)
             ScrollView(.horizontal, showsIndicators: false) {
                 Text(text)
                     .font(.system(size: 14, design: .monospaced))
-                    .foregroundColor(theme.text)
+                    .foregroundColor(sheetTheme.text)
                     .textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(12)
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .background(sheetTheme.fyCard, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                .stroke(theme.textDim.opacity(0.16), lineWidth: 0.7))
+                .stroke(sheetTheme.textDim.opacity(0.16), lineWidth: 0.7))
         }
     }
 
@@ -3923,7 +3938,7 @@ struct MessageRow: View {
                 .foregroundColor(theme.thoughtColor)
         }
         .sheet(isPresented: $showRecall) {
-            if let recall { RecallPop(item: recall) }
+            if let recall { RecallPop(item: recall).modifier(HouseColorScheme()) }
         }
     }
 
@@ -6188,6 +6203,7 @@ private struct FavoriteForwardMessageCard: View {
                 .navigationTitle(card.label)
                 .toolbar { ToolbarItem(placement: .confirmationAction) { Button("完成") { opened = false } } }
             }
+            .modifier(HouseColorScheme())
         }
     }
 }

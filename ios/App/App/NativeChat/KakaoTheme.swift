@@ -402,6 +402,50 @@ extension AlcoveTheme {
         copy.divider = sub
         return copy
     }
+
+    /// 0925 她要「Kakao 下面板也跟黑白」：聊天页弹出的面板（思绪、工具记录、换模型……）原来用上面那套，恒白天。
+    /// 面板改用这套：白天就是上面那套不变；黑夜底和字换成 iOS 黑夜那种黑灰白，点缀色还是包的主色、往白里提一点免得压在黑底上看不见。
+    static func kakaoSheet(dark: Bool) -> AlcoveTheme {
+        guard dark else { return kakaoTheme() }
+        let c = KakaoPackStore.shared.current?.colors
+        let main = Color.kakaoHex(c?.main, Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255))
+        var accent = main
+        if let m = c.flatMap({ UIColor.kakaoHex($0.main) }) {
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            m.getRed(&r, green: &g, blue: &b, alpha: &a)
+            accent = Color(red: Double(r + (1 - r) * 0.35), green: Double(g + (1 - g) * 0.35), blue: Double(b + (1 - b) * 0.35))
+        }
+        let bg = Color(red: 28/255, green: 28/255, blue: 30/255)      // iOS 黑夜面板底 #1C1C1E
+        let card = Color(red: 44/255, green: 44/255, blue: 46/255)    // #2C2C2E
+        let ink = Color.white
+        let dim = Color(red: 142/255, green: 142/255, blue: 147/255)  // systemGray
+        let line = Color.white.opacity(0.12)
+        var copy = AlcoveTheme(
+            isDark: true, isPaper: false, usesWallImage: false,
+            wallGradient: [bg, bg],
+            bubbleUser: main, bubbleAI: card,
+            text: ink, textDim: dim, textLight: dim.opacity(0.8), timestamp: dim,
+            glassTint: card, glassBorder: line,
+            capsuleTint: card, capsuleBorder: line,
+            sendTop: main, sendBottom: main,
+            fade: bg, splashBg: [bg, bg],
+            splashBarTop: main, splashBarBottom: main.opacity(0.8),
+            splashGlowA: .clear, splashGlowB: .clear,
+            splashPetal: main.opacity(0.3), splashTitle: main,
+            fyAccent: accent, fyAccentSoft: accent.opacity(0.18), fyCard: card,
+            fyCardSub: bg,
+            fyBorder: line,
+            fyShadow: Color.black.opacity(0.30),
+            fyFold: line, fyDash: dim.opacity(0.3),
+            panelTextureAsset: "PaperDark")
+        copy.isMessages = true
+        copy.isKakao = true
+        copy.textUser = ink
+        copy.textAI = ink
+        copy.thought = dim
+        copy.divider = dim
+        return copy
+    }
 }
 
 /// 九宫格气泡：图从包里来，四个角不变形、中间随字数拉。
