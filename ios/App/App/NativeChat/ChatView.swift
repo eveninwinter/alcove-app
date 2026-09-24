@@ -2643,6 +2643,8 @@ private struct SelectableMessageText: UIViewRepresentable {
     var onTruncationChange: ((Bool) -> Void)? = nil
     let onAsk: (String) -> Void
     let onCopyTurn: () -> Void
+    /// 0924 Kakao 主题的字体（PostScript 名）：nil = 系统字
+    var fontName: String? = nil
 
     final class Coordinator {
         var renderedKey: String?
@@ -2670,22 +2672,23 @@ private struct SelectableMessageText: UIViewRepresentable {
         // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
         view.textContainer.maximumNumberOfLines = maximumNumberOfLines
         view.textContainer.lineBreakMode = maximumNumberOfLines > 0 ? .byTruncatingTail : .byWordWrapping
-        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)\u{1f}\(maximumNumberOfLines)"
+        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)\u{1f}\(maximumNumberOfLines)\u{1f}\(fontName ?? "")"
         guard context.coordinator.renderedKey != renderedKey else { return }
         guard view.selectedRange.length == 0 else { return }
         let source = alcoveMarkdown(text)
         let rendered = NSMutableAttributedString(attributedString: NSAttributedString(source))
         let all = NSRange(location: 0, length: rendered.length)
         rendered.addAttribute(.foregroundColor, value: color, range: all)
+        let baseFont = fontName.flatMap { UIFont(name: $0, size: fontSize) } ?? UIFont.systemFont(ofSize: fontSize)
         rendered.enumerateAttribute(.font, in: all) { value, range, _ in
             let old = value as? UIFont
-            var traits = old?.fontDescriptor.symbolicTraits ?? []
-            let descriptor = UIFont.systemFont(ofSize: fontSize).fontDescriptor.withSymbolicTraits(traits)
-            rendered.addAttribute(.font, value: UIFont(descriptor: descriptor ?? UIFont.systemFont(ofSize: fontSize).fontDescriptor,
+            let traits = old?.fontDescriptor.symbolicTraits ?? []
+            let descriptor = baseFont.fontDescriptor.withSymbolicTraits(traits)
+            rendered.addAttribute(.font, value: UIFont(descriptor: descriptor ?? baseFont.fontDescriptor,
                                                        size: fontSize), range: range)
         }
         if rendered.length > 0 && rendered.attribute(.font, at: 0, effectiveRange: nil) == nil {
-            rendered.addAttribute(.font, value: UIFont.systemFont(ofSize: fontSize), range: all)
+            rendered.addAttribute(.font, value: baseFont, range: all)
         }
         let paragraph = NSMutableParagraphStyle()
         paragraph.lineSpacing = lineSpacing
@@ -3296,7 +3299,8 @@ struct MessageRow: View {
                     color: isUser ? (theme.textUser ?? (theme.isMessages ? .white : theme.text))
                                   : (msg.asleepAtSend ? theme.textDim : (theme.textAI ?? theme.text)),
                     lineSpacing: theme.isPaper ? 7 : 5,
-                    playKey: msg.ts
+                    playKey: msg.ts,
+                    fontName: theme.isKakao ? KakaoPackStore.shared.fontName : nil
                 )
             } else {
             SelectableMessageText(
@@ -3311,7 +3315,8 @@ struct MessageRow: View {
                 onCopyTurn: {
                     UIPasteboard.general.string = wholeTurnText.isEmpty
                         ? msg.displayText : wholeTurnText
-                }
+                },
+                fontName: theme.isKakao ? KakaoPackStore.shared.fontName : nil
             )
             }
         }

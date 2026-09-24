@@ -133,6 +133,8 @@ struct EffectText: View {
     var loop = false
     /// 0921 她抓的「一滑屏幕又动」：列表滚动会把气泡重新造一遍，onAppear 又来。记住哪条已经放过，只有第一次自动放
     var playKey: String? = nil
+    /// 0924 Kakao 主题的字体：nil = 系统字
+    var fontName: String? = nil
     static var played = Set<String>()
 
     static let playDuration: TimeInterval = 3.2
@@ -149,7 +151,8 @@ struct EffectText: View {
                     EffectFlowLayout(lineSpacing: lineSpacing) {
                         ForEach(tokens) { tok in
                             EffectToken(token: tok, fontSize: fontSize, color: color,
-                                        start: loop ? Date(timeIntervalSinceReferenceDate: 0) : playStart, loop: loop)
+                                        start: loop ? Date(timeIntervalSinceReferenceDate: 0) : playStart, loop: loop,
+                                        fontName: fontName)
                         }
                     }
                 }
@@ -199,11 +202,13 @@ private struct EffectToken: View {
     let color: Color
     let start: Date?        // nil = 停着不动
     let loop: Bool
+    var fontName: String? = nil
 
     private var baseSize: CGFloat { fontSize }   // 放大缩小都按普通字排版，动的时候整段缩放，停下回到普通大小
 
     private func styled(weight: Font.Weight, size: CGFloat? = nil) -> Text {
-        var t = Text(token.text).font(.system(size: size ?? baseSize, weight: weight))
+        let sz = size ?? baseSize
+        var t = Text(token.text).font(fontName.map { Font.custom($0, size: sz) } ?? .system(size: sz, weight: weight))
         if token.effects.contains(.bold) { t = t.bold() }
         if token.effects.contains(.italic) { t = t.italic() }
         if token.effects.contains(.underline) { t = t.underline() }
@@ -221,7 +226,8 @@ private struct EffectToken: View {
     }
 
     private var uiFont: UIFont {
-        UIFont.systemFont(ofSize: baseSize, weight: token.effects.contains(.bold) ? .bold : .regular)
+        fontName.flatMap { UIFont(name: $0, size: baseSize) }
+            ?? UIFont.systemFont(ofSize: baseSize, weight: token.effects.contains(.bold) ? .bold : .regular)
     }
 
     var body: some View {

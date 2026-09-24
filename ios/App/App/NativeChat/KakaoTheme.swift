@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 // 0924 她要的 Kakao 主题：布局照 KakaoTalk 聊天室，颜色和图从别人做好的主题包里来。
 // 主题包由后端 kakao_theme.py 拆好，这边只认 /api/kakao/themes 那张表：
@@ -61,6 +62,17 @@ struct KakaoPack: Decodable, Identifiable {
     }
 }
 
+/// 0924 她递的字体：后端 /api/kakao/fonts 那张名单，ttf 下到 Application Support 后用 CoreText 当场注册，不用构建
+struct KakaoFont: Decodable, Identifiable {
+    let id: String
+    let name: String
+    let file: String
+    let family: String?
+    let ps_name: String?
+    let size: Int?
+    var url: URL { AlcoveAPI.fullURL("/api/kakao/fonts/\(file)") }
+}
+
 extension Color {
     /// "#986374" → Color；坏字符串给 fallback
     static func kakaoHex(_ hex: String?, _ fallback: Color) -> Color {
@@ -88,6 +100,14 @@ final class KakaoPackStore: ObservableObject {
     static let selectedKey = "kakaoPackID"
     static let cacheKey = "kakaoPacksJSON"
     static let usePackAvatarKey = "kakaoUsePackAvatar"
+    static let fontKey = "kakaoFontID"
+    static let fontsCacheKey = "kakaoFontsJSON"
+
+    @Published private(set) var fonts: [KakaoFont] = []
+    @Published private(set) var selectedFontID: String = ""     // "" = 系统字
+    @Published private(set) var fontLoading = false
+    private var registeredFonts: [String: String] = [:]          // 字体 id → 注册后的 PostScript 名
+    private var fontDownloading: Set<String> = []
 
     @Published private(set) var packs: [KakaoPack] = []
     @Published private(set) var selectedID: String
@@ -106,6 +126,78 @@ final class KakaoPackStore: ObservableObject {
             packs = list
         }
         if selectedID.isEmpty, let first = packs.first { selectedID = first.id }
+        selectedFontID = UserDefaults.standard.string(forKey: Self.fontKey) ?? ""
+        if let data = UserDefaults.standard.data(forKey: Self.fontsCacheKey),
+           let list = try? JSONDecoder().decode([KakaoFont].self, from: data) {
+            fonts = list
+        }
+        ensureFont()   // 本地已经有文件就当场注册，开门第一帧就是那个字
+    }
+
+    // MARK: 字体
+
+    /// 选中字体注册好之后的 PostScript 名；没选 / 还没下到 → nil（用系统字）
+    var fontName: String? {
+        guard !selectedFontID.isEmpty else { return nil }
+        return registeredFonts[selectedFontID]
+    }
+    func registeredName(_ fontID: String) -> String? { registeredFonts[fontID] }
+    func chatFont(_ size: CGFloat) -> Font {
+        fontName.map { Font.custom($0, size: size) } ?? .system(size: size)
+    }
+
+    func selectFont(_ id: String) {
+        guard id != selectedFontID else { return }
+        selectedFontID = id
+        UserDefaults.standard.set(id, forKey: Self.fontKey)
+        bump()
+        ensureFont()
+    }
+
+    private static var fontsDir: URL {
+        let base = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("kakao_fonts", isDirectory: true)
+        try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
+        return base
+    }
+
+    /// 用 CoreText 把文件注册进本进程，返回 PostScript 名（重复注册会报错，忽略，名字照样能取）
+    private static func register(_ url: URL) -> String? {
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
+        guard let descs = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+              let d = descs.first else { return nil }
+        return CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute) as? String
+    }
+
+    /// 选中的字体：本地有就注册，没有就下载再注册；每次都拨 stamp 让界面重画
+    func ensureFont() {
+        guard !selectedFontID.isEmpty, registeredFonts[selectedFontID] == nil,
+              let font = fonts.first(where: { $0.id == selectedFontID }) else { return }
+        let local = Self.fontsDir.appendingPathComponent(font.file)
+        if FileManager.default.fileExists(atPath: local.path) {
+            if let name = Self.register(local) {
+                registeredFonts[font.id] = name
+                bump()
+                return
+            }
+            try? FileManager.default.removeItem(at: local)   // 坏文件，重新下
+        }
+        guard !fontDownloading.contains(font.id) else { return }
+        fontDownloading.insert(font.id)
+        DispatchQueue.main.async { self.fontLoading = true }
+        Task {
+            defer { DispatchQueue.main.async { self.fontDownloading.remove(font.id); self.fontLoading = false } }
+            guard let (data, resp) = try? await URLSession.shared.data(from: font.url),
+                  let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  data.count > 1024 else { return }
+            try? data.write(to: local, options: .atomic)
+            await MainActor.run {
+                if let name = Self.register(local) {
+                    self.registeredFonts[font.id] = name
+                    self.stamp = Date().timeIntervalSince1970
+                }
+            }
+        }
     }
 
     var current: KakaoPack? {
@@ -135,9 +227,20 @@ final class KakaoPackStore: ObservableObject {
                 guard let raw = obj["themes"] else { return }
                 let data = try JSONSerialization.data(withJSONObject: raw)
                 let list = try JSONDecoder().decode([KakaoPack].self, from: data)
+                var fontList: [KakaoFont] = []
+                var fontData: Data? = nil
+                if let rawFonts = obj["fonts"], let fd = try? JSONSerialization.data(withJSONObject: rawFonts),
+                   let fl = try? JSONDecoder().decode([KakaoFont].self, from: fd) {
+                    fontList = fl; fontData = fd
+                }
                 await MainActor.run {
                     self.packs = list
                     UserDefaults.standard.set(data, forKey: Self.cacheKey)
+                    if let fontData {
+                        self.fonts = fontList
+                        UserDefaults.standard.set(fontData, forKey: Self.fontsCacheKey)
+                        self.ensureFont()
+                    }
                     if self.current == nil, let first = list.first { self.selectedID = first.id }
                     self.lastError = nil
                     self.stamp = Date().timeIntervalSince1970
@@ -392,6 +495,23 @@ struct KakaoPackPicker: View {
             .tint(theme.fyAccent)
             Text(usePackAvatar ? "关掉就用你在「他的头像」里给他挑的那张" : "现在用的是你给他挑的那张，没挑就回落到包里的")
                 .font(.system(size: 10.5)).foregroundColor(theme.textLight)
+            // 0924 她递的字体：选了就下载注册，上面的预览、聊天正文、工作室一起换字
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("字体").font(.system(size: 12)).foregroundColor(theme.text)
+                    if store.fontLoading { ProgressView().scaleEffect(0.6) }
+                    Spacer()
+                }
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        fontChip(id: "", label: "系统", font: .system(size: 13))
+                        ForEach(store.fonts) { f in
+                            fontChip(id: f.id, label: f.name,
+                                     font: store.registeredName(f.id).map { Font.custom($0, size: 13) } ?? .system(size: 13))
+                        }
+                    }
+                }
+            }
             HStack {
                 Text("发我一个主题包链接就能多一套")
                     .font(.system(size: 10.5)).foregroundColor(theme.textLight)
@@ -407,6 +527,17 @@ struct KakaoPackPicker: View {
             }
         }
         .onAppear { if store.packs.isEmpty { store.refresh() } }
+    }
+
+    private func fontChip(id: String, label: String, font: Font) -> some View {
+        let on = store.selectedFontID == id
+        return Button { store.selectFont(id) } label: {
+            Text(label).font(font).foregroundColor(on ? theme.text : theme.textDim)
+                .padding(.horizontal, 11).padding(.vertical, 5)
+                .background(on ? theme.fyAccent.opacity(0.18) : theme.fyCardSub, in: Capsule())
+                .overlay(Capsule().stroke(on ? theme.fyAccent : theme.fyBorder, lineWidth: on ? 1.4 : 0.8))
+        }
+        .buttonStyle(.plain)
     }
 
     @ViewBuilder private func thumb(_ pack: KakaoPack) -> some View {
@@ -443,7 +574,7 @@ struct KakaoPackPreview: View {
                         HStack(alignment: .bottom, spacing: 5) {
                             KakaoBubbleView(isUser: false, first: true) {
                                 Text("今天想吃什么")
-                                    .font(.system(size: 14)).foregroundColor(t.textAI ?? t.text)
+                                    .font(store.chatFont(14)).foregroundColor(t.textAI ?? t.text)
                             }
                             Text(KakaoClock.fmt.string(from: Date()))
                                 .font(.system(size: 10)).foregroundColor(t.timestamp).padding(.bottom, 2)
@@ -461,7 +592,7 @@ struct KakaoPackPreview: View {
                     .padding(.bottom, 2)
                     KakaoBubbleView(isUser: true, first: true) {
                         Text("你做的都行")
-                            .font(.system(size: 14)).foregroundColor(t.textUser ?? t.text)
+                            .font(store.chatFont(14)).foregroundColor(t.textUser ?? t.text)
                     }
                 }
             }

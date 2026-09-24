@@ -7236,7 +7236,7 @@ private struct NativeStudioView: View {
                 Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
             }
             KakaoBubbleView(isUser: mine, first: head) {
-                Text(alcoveMarkdown(text)).font(.system(size: 14)).lineSpacing(5).textSelection(.enabled)
+                Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(14)).lineSpacing(5).textSelection(.enabled)
                     .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
             }
             .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
