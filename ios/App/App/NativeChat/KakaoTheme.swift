@@ -87,6 +87,7 @@ final class KakaoPackStore: ObservableObject {
     static let shared = KakaoPackStore()
     static let selectedKey = "kakaoPackID"
     static let cacheKey = "kakaoPacksJSON"
+    static let usePackAvatarKey = "kakaoUsePackAvatar"
 
     @Published private(set) var packs: [KakaoPack] = []
     @Published private(set) var selectedID: String
@@ -280,13 +281,18 @@ struct KakaoAvatarView: View {
     let visible: Bool
     @ObservedObject var store = KakaoPackStore.shared
     @AppStorage("assistantAvatarDataURL") var assistantAvatar = ""
+    // 0924 她问能不能换头像：开着用包里自带的（兔子、吉伊），关了用她在设置里给他挑的那张
+    @AppStorage(KakaoPackStore.usePackAvatarKey) var usePackAvatar = true
 
     var body: some View {
+        let mine = Self.decode(assistantAvatar)
         Group {
             if visible {
-                if let img = store.profileImage {
+                if !usePackAvatar, let img = mine {
                     Image(uiImage: img).resizable().scaledToFill()
-                } else if let img = Self.decode(assistantAvatar) {
+                } else if let img = store.profileImage {
+                    Image(uiImage: img).resizable().scaledToFill()
+                } else if let img = mine {
                     Image(uiImage: img).resizable().scaledToFill()
                 } else if let c = store.current?.profile_color {
                     Color.kakaoHex(c, Color(red: 0.9, green: 0.85, blue: 0.6))
@@ -342,6 +348,7 @@ enum KakaoClock {
 struct KakaoPackPicker: View {
     let theme: AlcoveTheme
     @ObservedObject var store = KakaoPackStore.shared
+    @AppStorage(KakaoPackStore.usePackAvatarKey) var usePackAvatar = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -378,6 +385,13 @@ struct KakaoPackPicker: View {
                     .padding(.vertical, 2)
                 }
             }
+            Toggle(isOn: $usePackAvatar) {
+                Text("他的头像用包里自带的")
+                    .font(.system(size: 12)).foregroundColor(theme.text)
+            }
+            .tint(theme.fyAccent)
+            Text(usePackAvatar ? "关掉就用你在「他的头像」里给他挑的那张" : "现在用的是你给他挑的那张，没挑就回落到包里的")
+                .font(.system(size: 10.5)).foregroundColor(theme.textLight)
             HStack {
                 Text("发我一个主题包链接就能多一套")
                     .font(.system(size: 10.5)).foregroundColor(theme.textLight)
