@@ -543,7 +543,7 @@ struct KakaoPackPicker: View {
                         } label: {
                             VStack(spacing: 6) {
                                 Color.clear
-                                    .aspectRatio(58.0 / 104.0, contentMode: .fit)
+                                    .aspectRatio(1, contentMode: .fit)   // 0925 她要正方形，长条太占位子
                                     .overlay(thumb(pack))
                                     .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                                     .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
