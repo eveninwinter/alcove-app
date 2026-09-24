@@ -416,8 +416,8 @@ struct KakaoAvatarView: View {
                 Color.clear
             }
         }
-        .frame(width: 40, height: 40)
-        .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+        .frame(width: 34, height: 34)   // 0924 她要的：头像小一号，气泡往左靠
+        .clipShape(RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 
     private static func decode(_ value: String) -> UIImage? {

@@ -2874,7 +2874,7 @@ struct MessageRow: View {
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
             if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
-                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
+                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 4)   // 0924 缝收窄，气泡往左靠
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
@@ -2882,7 +2882,7 @@ struct MessageRow: View {
                     Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
                         .font(.system(size: 12))
                         .foregroundColor(theme.textDim)
-                        .padding(.bottom, 5)
+                        .padding(.bottom, 7)
                 }
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
