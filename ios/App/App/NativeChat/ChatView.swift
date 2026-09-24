@@ -2874,7 +2874,7 @@ struct MessageRow: View {
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
             if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
-                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 4)   // 0924 缝收窄，气泡往左靠
+                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
@@ -2882,7 +2882,7 @@ struct MessageRow: View {
                     Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
                         .font(.system(size: 12))
                         .foregroundColor(theme.textDim)
-                        .padding(.bottom, 7)
+                        .padding(.bottom, 5)
                 }
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
@@ -3226,6 +3226,10 @@ struct MessageRow: View {
     }
 
     /// 0924 Kakao：时间（和未读的小「1」）贴在气泡外侧的下角，不在气泡底下另起一行
+    /// 0924 她要的：头像显示时，他的气泡整块往左下挪一点（头像、名字不动，气泡右边到屏幕的距离不动，所以能更宽一点）
+    static let kakaoBubbleShiftLeft: CGFloat = 14
+    static let kakaoBubbleShiftDown: CGFloat = 6
+
     private var bubble: some View {
         Group {
             if theme.isKakao {
@@ -3234,6 +3238,8 @@ struct MessageRow: View {
                     bubbleCore
                     if !isUser { kakaoSideMeta }
                 }
+                .padding(.leading, (!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : 0)
+                .padding(.top, (!isUser && kakaoShowAvatar) ? Self.kakaoBubbleShiftDown : 0)
             } else {
                 bubbleCore
             }

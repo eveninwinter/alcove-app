@@ -7262,6 +7262,9 @@ private struct NativeStudioView: View {
                 Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
             }
         }
+        // 0924 她要的：他的气泡整块往左下挪一点（跟聊天页同一个数），头像名字不动
+        .padding(.leading, (!mine && kakaoShowAvatar) ? -MessageRow.kakaoBubbleShiftLeft : 0)
+        .padding(.top, (!mine && kakaoShowAvatar) ? MessageRow.kakaoBubbleShiftDown : 0)
     }
 
     var body: some View {
@@ -7407,7 +7410,7 @@ private struct NativeStudioView: View {
         let gap: CGFloat = 8
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
-            if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 4) }
+            if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 if isKakao && !mine && head {
                     Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
@@ -7459,7 +7462,7 @@ private struct NativeStudioView: View {
         let thought = message.string("thinking")
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
-            if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 4) }
+            if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
                 if isKakao && !mine && head {
                     Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
