@@ -19,6 +19,9 @@ struct ChatWallpaperDescriptor {
 
 @MainActor
 final class ChatWallpaperStore: ObservableObject {
+    /// 0925：聊天页用的这一份。房间页的毛玻璃底下铺同一张壁纸，借它读好的图，不再另读一遍。
+    static let shared = ChatWallpaperStore()
+
     @Published private(set) var descriptor = ChatWallpaperDescriptor(
         source: .asset("ChatWall")
     )

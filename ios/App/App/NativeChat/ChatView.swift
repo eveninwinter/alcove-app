@@ -17,7 +17,7 @@ struct ChatView: View {
     var messagesTopBar: (() -> AnyView)? = nil
 
     @StateObject private var store = ChatStore()
-    @StateObject private var wallpaperStore = ChatWallpaperStore()
+    @ObservedObject private var wallpaperStore = ChatWallpaperStore.shared
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared   // 0924 Kakao 主题包换了/图到了就重画
     @State private var draft = ""
     @State private var previousDraft = ""
@@ -5246,6 +5246,7 @@ struct StreamingAssistantRow: View {
                     Button("关闭") { showThought = false }
                 }}
             }
+            .modifier(HouseColorScheme())
             .presentationDetents([.medium, .large])
             .presentationDragIndicator(.visible)
         }
@@ -6251,6 +6252,17 @@ private struct NativeThinkingButton: View {
     }
 }
 
+/// 0925 她问「黑夜模式的这个面板怎么不变黑」：这类面板用的是系统白 / 黑，跟着整页的深浅走；
+/// Kakao 的聊天主题没有夜版，整页恒按白天，面板就一直是白的。改成跟全屋白天 / 黑夜开关走（侧边栏同一个开关）。
+private struct HouseColorScheme: ViewModifier {
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
+    private var dark: Bool { _ = houseAppearance; return AlcoveAppearance.isDark }
+
+    func body(content: Content) -> some View {
+        content.preferredColorScheme(dark ? .dark : .light)
+    }
+}
+
 @available(iOS 18.0, *)
 private struct NativeThinkingSheet: View {
     let text: String
@@ -6348,6 +6360,7 @@ private struct NativeThinkingSheet: View {
         .foregroundStyle(Color.primary)
         .background(Color(uiColor: .systemBackground))
         .tint(.primary)
+        .modifier(HouseColorScheme())
         .onDisappear { aiTask?.cancel() }
         .translationTask(configuration) { session in
             do {

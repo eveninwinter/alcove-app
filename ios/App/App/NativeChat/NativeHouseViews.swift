@@ -151,6 +151,7 @@ struct NativeHouseSheet: View {
     @State private var preparedTexture: UIImage?
     @State private var preparedTextureName: String
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @ObservedObject private var chatWall = ChatWallpaperStore.shared
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
     @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
     @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
@@ -317,9 +318,11 @@ struct NativeHouseSheet: View {
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .presentationBackground {
             // 0924 晚设置页先换：原来铺的是一张写死的花影图（DrawerLight / DrawerDark）。
-            // 0925 她要所有房间都一样：一块毛玻璃透出后面聊天页的壁纸（跟主题走），再压一层很薄的亮 / 暗纱保字清楚。
-            // 自己铺了底的房间（共读室、棋牌室、钱包……）照旧盖在上面。
+            // 0925 她要所有房间都一样：毛玻璃底下自己铺一张聊天页正在用的壁纸（借聊天页读好的那张），
+            // 不再往后面透——后面是开着的侧边栏和聊天页，透出来全是侧边栏的颜色（她截图抓的）。
+            // 再压一层很薄的亮 / 暗纱保字清楚。自己铺了底的房间（共读室、棋牌室、钱包……）照旧盖在上面。
             ZStack {
+                ChatWallpaperRenderer(descriptor: chatWall.descriptor)
                 Rectangle().fill(.ultraThinMaterial)
                 (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.22 : 0.16)
             }
