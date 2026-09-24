@@ -829,9 +829,7 @@ struct ChatView: View {
                 : message.inlineImages.map(AlcoveAPI.attachmentURL)
             let groupEnd = index + max(photos.count, 1) - 1
             let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
-            let recall = message.role == "assistant" && previous?.role == "user"
-                ? store.recall(forUserText: previous?.text ?? "")
-                : nil
+            let recall = recallFor(index: index)
             let selectionEnd = message.inlineImages.isEmpty
                 ? min(groupEnd, store.messages.count - 1) : index
             let rowSelectionIDs = Set(store.messages[index...selectionEnd].map(\.uid))
@@ -1058,6 +1056,34 @@ struct ChatView: View {
         guard let prev else { return true }
         // 只跟紧挨着的上一行比；Kakao 传 900（15 分钟）
         return cur.date.timeIntervalSince(prev.date) > gap
+    }
+
+    /// 0925 她要的：记忆召回的「✦」尽量跟思绪（圆点、小脑袋）在同一行。
+    /// 召回属于她那句话后面他这一轮的第一条；新时间线的轮次里思绪常挂在后面某条（想在哪段就挂哪段），
+    /// 「✦」就挪到这一轮第一条带思绪的消息上。老格式的轮次思绪本来就提到轮首，不挪。找不到带思绪的也不挪。
+    private func recallFor(index k: Int) -> RecallItem? {
+        let msgs = store.messages
+        guard k < msgs.count, msgs[k].role == "assistant" else { return nil }
+        let turn = msgs[k].turnID ?? ""
+        func sameTurn(_ i: Int) -> Bool {
+            i >= 0 && i < msgs.count && msgs[i].role == "assistant" && !turn.isEmpty && msgs[i].turnID == turn
+        }
+        var first = k
+        while first > 0 && sameTurn(first - 1) { first -= 1 }
+        guard first > 0, msgs[first - 1].role == "user" else { return nil }
+        var last = first
+        while sameTurn(last + 1) { last += 1 }
+        var host = first
+        if (first...last).contains(where: { !msgs[$0].segments.isEmpty }) {
+            func showsProcess(_ m: ChatMessage) -> Bool {
+                if m.segments.contains(where: { ($0.kind == "think" || $0.kind == "thinking") ? !$0.content.isEmpty : $0.kind == "tool" }) { return true }
+                if !(m.thinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return true }
+                return !(m.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+            }
+            if let j = (first...last).first(where: { showsProcess(msgs[$0]) }) { host = j }
+        }
+        guard host == k else { return nil }
+        return store.recall(forUserText: msgs[first - 1].text)
     }
 
     /// 0924 晚她要的：带图案的「第一条」气泡（01 图）给这一串里第一条真画气泡的消息。卡片、照片、语音、表情不算，
