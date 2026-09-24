@@ -253,7 +253,7 @@ struct ChatView: View {
                 wallStamp: wallStamp
             )
             store.start()
-            if theme.isKakao { KakaoPackStore.shared.refresh() }   // 0924 开门就把主题包列表拉一遍
+            if theme.isKakao || !KakaoPackStore.shared.selectedFontID.isEmpty { KakaoPackStore.shared.refresh() }   // 0924 开门就把主题包 / 字体名单拉一遍
             music.startRemotePolling()
             Task {
                 if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") {
@@ -3300,7 +3300,7 @@ struct MessageRow: View {
                                   : (msg.asleepAtSend ? theme.textDim : (theme.textAI ?? theme.text)),
                     lineSpacing: theme.isPaper ? 7 : 5,
                     playKey: msg.ts,
-                    fontName: theme.isKakao ? KakaoPackStore.shared.fontName : nil
+                    fontName: KakaoPackStore.shared.fontName   // 0924 她定的：字体全局，哪个主题都吃
                 )
             } else {
             SelectableMessageText(
@@ -3316,7 +3316,7 @@ struct MessageRow: View {
                     UIPasteboard.general.string = wholeTurnText.isEmpty
                         ? msg.displayText : wholeTurnText
                 },
-                fontName: theme.isKakao ? KakaoPackStore.shared.fontName : nil
+                fontName: KakaoPackStore.shared.fontName
             )
             }
         }

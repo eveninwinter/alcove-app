@@ -1486,6 +1486,10 @@ private struct NativeSettingsView: View {
                         ])
                     }
                 } }
+                // 0924 她定的：字体全局，哪个主题都吃，单独一栏
+                if page == .appearance { section("字体") {
+                    ChatFontPicker(theme: theme)
+                } }
                 if page == .appearance { section("Kakao 主题") {
                     // 布局照 KakaoTalk，颜色和图从别人做的主题包里来
                     familyChoice("Kakao", "套别人的包", "kakao", [
@@ -7411,7 +7415,7 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(caption, mine: mine, head: head, date: studioDate(item.primary))
                     } else {
-                    Text(alcoveMarkdown(caption)).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, size: 14) } ?? .system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
@@ -7496,7 +7500,7 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(message.string("text"), mine: mine, head: head, date: studioDate(message))
                     } else {
-                    Text(alcoveMarkdown(message.string("text"))).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, size: 14) } ?? .system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)

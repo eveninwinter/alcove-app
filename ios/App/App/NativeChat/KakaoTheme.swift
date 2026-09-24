@@ -495,23 +495,6 @@ struct KakaoPackPicker: View {
             .tint(theme.fyAccent)
             Text(usePackAvatar ? "关掉就用你在「他的头像」里给他挑的那张" : "现在用的是你给他挑的那张，没挑就回落到包里的")
                 .font(.system(size: 10.5)).foregroundColor(theme.textLight)
-            // 0924 她递的字体：选了就下载注册，上面的预览、聊天正文、工作室一起换字
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text("字体").font(.system(size: 12)).foregroundColor(theme.text)
-                    if store.fontLoading { ProgressView().scaleEffect(0.6) }
-                    Spacer()
-                }
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 8) {
-                        fontChip(id: "", label: "系统", font: .system(size: 13))
-                        ForEach(store.fonts) { f in
-                            fontChip(id: f.id, label: f.name,
-                                     font: store.registeredName(f.id).map { Font.custom($0, size: 13) } ?? .system(size: 13))
-                        }
-                    }
-                }
-            }
             HStack {
                 Text("发我一个主题包链接就能多一套")
                     .font(.system(size: 10.5)).foregroundColor(theme.textLight)
@@ -527,17 +510,6 @@ struct KakaoPackPicker: View {
             }
         }
         .onAppear { if store.packs.isEmpty { store.refresh() } }
-    }
-
-    private func fontChip(id: String, label: String, font: Font) -> some View {
-        let on = store.selectedFontID == id
-        return Button { store.selectFont(id) } label: {
-            Text(label).font(font).foregroundColor(on ? theme.text : theme.textDim)
-                .padding(.horizontal, 11).padding(.vertical, 5)
-                .background(on ? theme.fyAccent.opacity(0.18) : theme.fyCardSub, in: Capsule())
-                .overlay(Capsule().stroke(on ? theme.fyAccent : theme.fyBorder, lineWidth: on ? 1.4 : 0.8))
-        }
-        .buttonStyle(.plain)
     }
 
     @ViewBuilder private func thumb(_ pack: KakaoPack) -> some View {
@@ -603,5 +575,58 @@ struct KakaoPackPreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .stroke(Color.black.opacity(0.08), lineWidth: 0.6))
+    }
+}
+
+/// 0924 她定的：字体是全局的，哪个聊天主题都吃。设置·外观 里单独一栏「字体」，
+/// 选了就下载注册，聊天正文、工作室、Kakao 预览一起换字；「系统」= 不动。
+struct ChatFontPicker: View {
+    let theme: AlcoveTheme
+    @ObservedObject var store = KakaoPackStore.shared
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 6) {
+                if store.fontLoading {
+                    ProgressView().scaleEffect(0.6)
+                    Text("在下字体…").font(.system(size: 11)).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Button { store.refresh() } label: {
+                    HStack(spacing: 4) {
+                        Image(systemName: "arrow.clockwise").font(.system(size: 10, weight: .semibold))
+                        Text("刷新").font(.system(size: 11))
+                    }
+                    .foregroundColor(theme.fyAccent)
+                }
+                .buttonStyle(.plain)
+            }
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    fontChip(id: "", label: "系统", font: .system(size: 13))
+                    ForEach(store.fonts) { f in
+                        fontChip(id: f.id, label: f.name,
+                                 font: store.registeredName(f.id).map { Font.custom($0, size: 13) } ?? .system(size: 13))
+                    }
+                }
+            }
+            Text("陈璟今天想吃什么呀？兔兔早点睡")
+                .font(store.chatFont(16)).foregroundColor(theme.text)
+                .padding(.top, 2)
+            Text("正文、工作室、Kakao 预览一起换；第一次点要等它下完")
+                .font(.system(size: 10.5)).foregroundColor(theme.textLight)
+        }
+        .onAppear { if store.fonts.isEmpty { store.refresh() } }
+    }
+
+    private func fontChip(id: String, label: String, font: Font) -> some View {
+        let on = store.selectedFontID == id
+        return Button { store.selectFont(id) } label: {
+            Text(label).font(font).foregroundColor(on ? theme.text : theme.textDim)
+                .padding(.horizontal, 11).padding(.vertical, 5)
+                .background(on ? theme.fyAccent.opacity(0.18) : theme.fyCardSub, in: Capsule())
+                .overlay(Capsule().stroke(on ? theme.fyAccent : theme.fyBorder, lineWidth: on ? 1.4 : 0.8))
+        }
+        .buttonStyle(.plain)
     }
 }
