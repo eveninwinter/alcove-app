@@ -534,32 +534,33 @@ struct KakaoPackPicker: View {
                         .font(.system(size: 12)).foregroundColor(theme.textDim)
                 }
             } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    HStack(spacing: 12) {
-                        ForEach(store.packs) { pack in
-                            Button {
-                                store.select(pack.id)
-                                if themeName != "kakao" { themeName = "kakao" }
-                            } label: {
-                                VStack(spacing: 6) {
-                                    thumb(pack)
-                                        .frame(width: 58, height: 104)
-                                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                            .stroke(pack.id == store.selectedID ? theme.fyAccent : theme.fyBorder,
-                                                    lineWidth: pack.id == store.selectedID ? 2 : 1))
-                                    Text(pack.name)
-                                        .font(.system(size: 10.5))
-                                        .foregroundColor(pack.id == store.selectedID ? theme.text : theme.textDim)
-                                        .lineLimit(1)
-                                        .frame(width: 64)
-                                }
+                // 0925 她说「太多套了左滑看不过来」：横条改成一排 4 个的格子，往下排，一眼看完
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 10), count: 4), spacing: 12) {
+                    ForEach(store.packs) { pack in
+                        Button {
+                            store.select(pack.id)
+                            if themeName != "kakao" { themeName = "kakao" }
+                        } label: {
+                            VStack(spacing: 6) {
+                                Color.clear
+                                    .aspectRatio(58.0 / 104.0, contentMode: .fit)
+                                    .overlay(thumb(pack))
+                                    .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                        .stroke(pack.id == store.selectedID ? theme.fyAccent : theme.fyBorder,
+                                                lineWidth: pack.id == store.selectedID ? 2 : 1))
+                                Text(pack.name)
+                                    .font(.system(size: 10.5))
+                                    .foregroundColor(pack.id == store.selectedID ? theme.text : theme.textDim)
+                                    .lineLimit(1)
+                                    .frame(maxWidth: .infinity)
                             }
-                            .buttonStyle(.plain)
+                            .contentShape(Rectangle())
                         }
+                        .buttonStyle(.plain)
                     }
-                    .padding(.vertical, 2)
                 }
+                .padding(.vertical, 2)
             }
             Toggle(isOn: $showAvatar) {
                 Text("他的消息带头像")
