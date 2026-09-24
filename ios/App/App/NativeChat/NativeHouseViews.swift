@@ -7276,7 +7276,6 @@ private struct NativeStudioView: View {
                 Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
                     .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
             }
-            .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
             if !mine, let date {
                 Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
             }
@@ -7323,7 +7322,7 @@ private struct NativeStudioView: View {
                                 .font(.system(size: 10)).foregroundColor(theme.textDim).padding(9)
                         }
                         Color.clear.frame(height: 1).id("studio-tail")
-                    }.padding(.horizontal, 15).padding(.bottom, 16)
+                    }.padding(.horizontal, isKakao ? 12 : 15).padding(.bottom, 16)   // 0924 晚：Kakao 下跟主聊天列表一样留 12
                 }
                 .defaultScrollAnchor(.bottom)
                 // 0904 她报的「工作室键盘下不去，只有发一条才收」：往下滑列表跟手收，点列表任何地方也收
@@ -7479,10 +7478,12 @@ private struct NativeStudioView: View {
         let mine = message.string("role") == "user"
         let messageID = message.int("id")
         let thought = message.string("thinking")
-        return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
-            if mine { Spacer(minLength: 52) }
+        // 0924 晚她要的：Kakao 下工作室气泡跟主聊天一样宽——间距钉成 0、两边空白按主聊天的 48，
+        // 头像后面照旧留 16（原来 8 + 系统默认间距 8），猫图案不挡头像；他那边右侧少留 8 补回来，最宽跟主聊天一样
+        return HStack(alignment: (isKakao && !mine) ? .top : .bottom, spacing: isKakao ? 0 : nil) {
+            if mine { Spacer(minLength: isKakao ? 48 : 52) }
             if isKakao && !mine && kakaoShowAvatar {
-                KakaoAvatarView(visible: head).padding(.trailing, 8)   // 0924 她定的：不带名字
+                KakaoAvatarView(visible: head).padding(.trailing, 16)   // 0924 她定的：不带名字
             }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
                 if !mine && !thought.isEmpty {
@@ -7543,7 +7544,7 @@ private struct NativeStudioView: View {
                 }
                 if !message.string("tool_log").isEmpty { DisclosureGroup("终端记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).textSelection(.enabled) }.font(.system(size: 9)).foregroundColor(theme.textDim) }
             }
-            if !mine { Spacer(minLength: 52) }
+            if !mine { Spacer(minLength: isKakao ? (kakaoShowAvatar ? 40 : 48) : 52) }
         }
     }
 
