@@ -476,7 +476,11 @@ struct KakaoAvatarView: View {
 struct KakaoDateDivider: View {
     let date: Date
     var body: some View {
-        Text(Self.fmt.string(from: date))
+        // 0924 她定的：胶囊不变，里面的字跟信息主题一样（「今天 20:32」那种：相对日期 + 时间）
+        HStack(spacing: 4) {
+            Text(MessagesTimeDivider.dayFmt.string(from: date)).fontWeight(.semibold)
+            Text(MessagesTimeDivider.timeFmt.string(from: date))
+        }
             .font(.system(size: 11))
             .foregroundColor(.white.opacity(0.92))
             .padding(.horizontal, 12).padding(.vertical, 4)
