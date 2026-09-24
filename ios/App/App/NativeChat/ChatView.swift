@@ -1113,7 +1113,9 @@ struct ChatView: View {
         }
     }
 
-    /// 0924 Kakao 用：只有顶部 120 那一截渐隐，底下全亮
+    /// 0924 Kakao 用：只有顶部那一截渐隐，底下全亮。
+    /// 她抓的「圆桌有这么长吗」：圆桌那 120 有一大半藏在顶栏后面，露出来五十来点；
+    /// 这里列表从顶栏底下起，整段都露着，所以只给 60。
     private var topOnlyFadeMask: some View {
         VStack(spacing: 0) {
             LinearGradient(
@@ -1127,7 +1129,7 @@ struct ChatView: View {
                 startPoint: .top,
                 endPoint: .bottom
             )
-            .frame(height: 120)
+            .frame(height: 60)
             Color.black
         }
     }
