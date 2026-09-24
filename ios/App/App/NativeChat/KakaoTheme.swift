@@ -52,6 +52,7 @@ struct KakaoPack: Decodable, Identifiable {
     let wall: String?
     let wall_scale: Double?
     let wall_color: String?
+    let wall_avg: String?      // 壁纸平均色，侧边栏/设置页拿它当底色调
     let profile: String?
     let profile_color: String?
     let bubbles: [String: KakaoBubbleSpec]
@@ -319,6 +320,46 @@ final class KakaoPackStore: ObservableObject {
 }
 
 extension AlcoveTheme {
+    /// 0924 她要的：抽屉（侧边栏）和设置页跟着 Kakao 主题包走——底色取壁纸的平均色，白天往白里调、黑夜往黑里调，换包跟着变
+    static func kakaoPanel(dark: Bool) -> AlcoveTheme {
+        let base = panelNamed(dark ? "midnight" : "haven")
+        let pack = KakaoPackStore.shared.current
+        guard let hex = pack?.wall_avg ?? pack?.wall_color, let avg = UIColor.kakaoHex(hex) else { return base }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        avg.getRed(&r, green: &g, blue: &b, alpha: &a)
+        func mix(_ t: CGFloat, toWhite: Bool) -> Color {
+            let k: CGFloat = toWhite ? 1 : 0
+            return Color(red: Double(r + (k - r) * t), green: Double(g + (k - g) * t), blue: Double(b + (k - b) * t))
+        }
+        let main = Color.kakaoHex(pack?.colors.main, base.fyAccent)
+        if dark {
+            return base.panelCopy(
+                splashBg: [mix(0.70, toWhite: false).opacity(0.92), mix(0.62, toWhite: false).opacity(0.90), mix(0.76, toWhite: false).opacity(0.94)],
+                text: Color(red: 232/255, green: 237/255, blue: 244/255),
+                textDim: Color(red: 205/255, green: 215/255, blue: 228/255),
+                textLight: Color(red: 160/255, green: 174/255, blue: 191/255),
+                accent: mix(0.45, toWhite: true),
+                accentSoft: Color.white.opacity(0.24),
+                card: mix(0.45, toWhite: false).opacity(0.48),
+                cardSub: Color.white.opacity(0.075),
+                border: Color.white.opacity(0.30),
+                shadow: Color.black.opacity(0.42),
+                textureAsset: "WetGlassMidnight")
+        }
+        return base.panelCopy(
+            splashBg: [mix(0.72, toWhite: true).opacity(0.80), mix(0.62, toWhite: true).opacity(0.74), mix(0.68, toWhite: true).opacity(0.78)],
+            text: Color(red: 26/255, green: 25/255, blue: 29/255),
+            textDim: Color(red: 47/255, green: 48/255, blue: 55/255),
+            textLight: Color(red: 91/255, green: 92/255, blue: 101/255),
+            accent: mix(0.35, toWhite: false),
+            accentSoft: main.opacity(0.30),
+            card: Color.white.opacity(0.52),
+            cardSub: Color.white.opacity(0.36),
+            border: Color.white.opacity(0.60),
+            shadow: mix(0.30, toWhite: false).opacity(0.18),
+            textureAsset: "WetGlassHaven")
+    }
+
     /// Kakao 家族：挂在「信息」那套骨架上（纯色底 / 顶栏 / 浮动输入框都现成），
     /// 只换颜色 —— 壁纸和气泡是图，在 ChatWallpaperStore 和 KakaoBubbleView 里贴。
     static func kakaoTheme() -> AlcoveTheme {

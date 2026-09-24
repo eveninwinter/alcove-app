@@ -155,7 +155,7 @@ struct AlcoveTheme {
         // iMessage 主题只改聊天页；抽屉/面板沿用玻璃系（白天 haven、黑夜 midnight），其他地方一律不动
         case "imessage": return panelNamed("haven")
         case "imessage-dark": return panelNamed("midnight")
-        case "kakao": return panelNamed(AlcoveAppearance.isDark ? "midnight" : "haven")   // 0924 Kakao 没夜版，抽屉/设置页跟全屋日夜开关走
+        case "kakao": return AlcoveTheme.kakaoPanel(dark: AlcoveAppearance.isDark)   // 0924 她要的：抽屉/设置页的底色跟主题包壁纸走
         case "midnight":
             return midnight.panelCopy(
                 splashBg: [
@@ -213,7 +213,7 @@ struct AlcoveTheme {
         }
     }
 
-    private func panelCopy(
+    func panelCopy(
         splashBg: [Color],
         text: Color,
         textDim: Color,
