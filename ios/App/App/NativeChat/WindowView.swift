@@ -217,10 +217,54 @@ struct DropCapText: UIViewRepresentable {
     }
 }
 
+/// 首字（大字）自己画：量字形墨迹摆位置，不靠字号猜。
+/// 0925 她抓的「第一个大字位置不对、偏下」：原来是 UILabel 按字号摆，宋体字身上方留白大，
+/// 字形被往下推了一截，顶比第一行矮、底压到第四行。
+final class DropCapGlyphView: UIView {
+    var line: CTLine?
+    var baseline: CGFloat = 0   // 基线离本 view 顶边多远
+    var inkLeft: CGFloat = 0    // 画的时候往左挪多少，让墨迹左边落在 pad 处
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        isOpaque = false
+        backgroundColor = .clear
+        isUserInteractionEnabled = false
+    }
+
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+    override func draw(_ rect: CGRect) {
+        guard let line, let ctx = UIGraphicsGetCurrentContext() else { return }
+        ctx.saveGState()
+        ctx.translateBy(x: 0, y: bounds.height)
+        ctx.scaleBy(x: 1, y: -1)
+        ctx.textMatrix = .identity
+        ctx.textPosition = CGPoint(x: -inkLeft, y: bounds.height - baseline)
+        CTLineDraw(line, ctx)
+        ctx.restoreGState()
+    }
+}
+
 final class DropCapTextView: UITextView {
-    private let cap = UILabel()
+    private let cap = DropCapGlyphView()
     private var capSize: CGSize = .zero
     private var key = ""
+    private var bodyAscender: CGFloat = 0
+    private var bodyInkTop: CGFloat = 0     // 正文一个汉字的墨迹顶离基线多高
+    private let capPad: CGFloat = 4
+
+    /// 一串字的墨迹框（基线坐标，y 朝上）
+    private static func ink(_ line: CTLine) -> CGRect {
+        let ctx = CGContext(data: nil, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpaceCreateDeviceRGB(),
+                            bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        return CTLineGetImageBounds(line, ctx)
+    }
+
+    private static func ink(of text: String, font: UIFont) -> CGRect {
+        ink(CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: [.font: font]) as CFAttributedString))
+    }
 
     func configure(text: String, paper: WindowPaper, bodySize: CGFloat, lines: Int) {
         let newKey = "\(text.hashValue)|\(bodySize)|\(lines)|\(paper.uiInk.hash)"
@@ -242,17 +286,42 @@ final class DropCapTextView: UITextView {
         attributedText = NSAttributedString(string: rest, attributes: [
             .font: body, .foregroundColor: paper.uiInk, .paragraphStyle: para, .kern: 0.4,
         ])
+        bodyAscender = body.ascender
 
-        // 首字的字号：让它的字身正好占 lines 行
-        let capFont = WindowFont.ui(lineHeight * CGFloat(lines) * 0.92, bold: false)
-        cap.attributedText = NSAttributedString(string: first, attributes: [.font: capFont, .foregroundColor: paper.uiRubric])
-        cap.sizeToFit()
+        // 首字的大小：墨迹从第一行汉字的顶，一直到第 lines 行汉字的底（拿「国」量正文汉字的墨迹）
+        let probe = Self.ink(of: "国", font: body)
+        bodyInkTop = probe.maxY
+        let target = lineHeight * CGFloat(lines - 1) + probe.maxY - probe.minY
+        let ref = Self.ink(of: first, font: WindowFont.ui(100))
+        let capPt = ref.height > 0 ? 100 * target / ref.height : lineHeight * CGFloat(lines) * 0.92
+        let capLine = CTLineCreateWithAttributedString(NSAttributedString(string: first, attributes: [
+            .font: WindowFont.ui(capPt),
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): paper.uiRubric.cgColor,
+        ]) as CFAttributedString)
+        let capInk = Self.ink(capLine)
+        cap.line = capLine
+        cap.inkLeft = capInk.minX - capPad
+        cap.baseline = capPad + capInk.maxY
+        cap.frame.size = CGSize(width: ceil(capInk.width) + capPad * 2, height: ceil(capInk.height) + capPad * 2)
+        cap.setNeedsDisplay()
         if cap.superview == nil { addSubview(cap) }
-        capSize = CGSize(width: ceil(cap.bounds.width) + bodySize * 0.45,
+        capSize = CGSize(width: ceil(capInk.width) + bodySize * 0.7,
                          height: lineHeight * CGFloat(lines) - para.lineSpacing * 0.5)
-        cap.frame.origin = CGPoint(x: -1, y: -capFont.ascender * 0.06)
         textContainer.exclusionPaths = [UIBezierPath(rect: CGRect(origin: .zero, size: capSize))]
         invalidateIntrinsicContentSize()
+        setNeedsLayout()
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        // 第一行的基线问排版器要（宋体上沿留白大，自己按字号算会偏）；没正文就按字体上沿兜底
+        var baseline1 = bodyAscender
+        if layoutManager.numberOfGlyphs > 0 {
+            let frag = layoutManager.lineFragmentRect(forGlyphAt: 0, effectiveRange: nil)
+            baseline1 = frag.minY + layoutManager.location(forGlyphAt: 0).y
+        }
+        // 大字墨迹顶对齐第一行汉字墨迹顶，左边贴正文左边
+        cap.frame.origin = CGPoint(x: -capPad, y: baseline1 - bodyInkTop - capPad)
     }
 
     func height(for width: CGFloat) -> CGFloat {
