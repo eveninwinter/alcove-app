@@ -1022,7 +1022,7 @@ private struct NativeSettingsView: View {
         var title: String {
             switch self {
             case .people: return "你们两个"
-            case .chat: return "聊天与回复"
+            case .chat: return "陈璟的回复"
             case .appearance: return "外观"
             case .relationship: return "相处与发条"
             case .storage: return "数据与存储"
@@ -1218,8 +1218,8 @@ private struct NativeSettingsView: View {
     private func settingsSummary(_ page: Page) -> String {
         switch page {
         case .people: return "名字、头像与我此刻"
-        case .chat: return "正文、思绪与气泡文字"
-        case .appearance: return "功能页明暗、聊天主题与壁纸"
+        case .chat: return "正文长度、手写思绪"
+        case .appearance: return "明暗、主题、字体、气泡与壁纸"
         case .relationship: return "留白、两张表与完整发条"
         case .storage: return cacheCount == 0 ? "图片缓存与清理" : "\(cacheCount) 张 · \(ImageDiskCache.format(cacheBytes))"
         case .system: return "权限、灵动岛与屏幕控制"
@@ -1307,15 +1307,6 @@ private struct NativeSettingsView: View {
                             .multilineTextAlignment(.trailing).frame(width: 105)
                             .onChange(of: patHimSuffix) { _ in schedulePatSave() }
                     }
-                } }
-                if page == .chat { section("聊天外观") {
-                    Button(action: showBubbleAppearance) {
-                        settingRow("气泡与文字", "在聊天壁纸上实时预览并调节") {
-                            Image(systemName: "chevron.right")
-                                .foregroundColor(theme.textLight)
-                        }
-                    }
-                    .buttonStyle(.plain)
                 } }
                 if page == .chat { section("陈璟的回复") {
                     VStack(alignment: .leading, spacing: 11) {
@@ -1478,6 +1469,11 @@ private struct NativeSettingsView: View {
                 } }
                 // 0827 她定的：一个按钮管全屋，不跟系统。
                 // 聊天页、圆桌、共读室、檐下、信箱、数据页、信封卡全部认这一个值。
+                // 0925 她要的：「气泡与文字」并进外观页，不能乱。最上面一块预览跟当前主题画，下面怎么调它就怎么变；
+                // 只跟当前主题有关的设置才露面（信息主题才有气泡颜色，Kakao 才有主题包）
+                if page == .appearance {
+                    BubbleAppearanceSettingsView(part: .preview)
+                }
                 if page == .appearance { section("白天 / 黑夜") {
                     Picker("全屋", selection: appearanceBinding) {
                         Text("白天").tag(false)
@@ -1486,8 +1482,8 @@ private struct NativeSettingsView: View {
                     Text("整个 app 一起翻，不跟手机的深色模式走")
                         .font(.system(size: 10.5)).foregroundColor(theme.textLight)
                 } }
-                // 0924 她要的分两栏：上面 Alcove 自己的三套，下面 Kakao 一栏（按钮 + 主题包一排）
-                if page == .appearance { section("Alcove 主题") {
+                // 0925：玻璃删了，纸页 / 信息 / Kakao 三个按钮一排；选了 Kakao 下面才出主题包格子和头像开关
+                if page == .appearance { section("主题") {
                     HStack(spacing: 8) {
                         familyChoice("纸页", "话落下来", "paper", [
                             Color(red: 243/255, green: 241/255, blue: 236/255),
@@ -1499,20 +1495,26 @@ private struct NativeSettingsView: View {
                             Color(red: 0x57/255, green: 0xA1/255, blue: 0xF3/255),
                             Color(red: 233/255, green: 233/255, blue: 235/255)
                         ])
+                        // 布局照 KakaoTalk，颜色和图从别人做的主题包里来
+                        familyChoice("Kakao", " ", "kakao", [   // 她 0924 删过这行小字，留个空格跟旁边两个按钮一样高
+                            Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255),
+                            .white,
+                            Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
+                        ])
+                    }
+                    if themeFamily == "kakao" {
+                        KakaoPackPicker(theme: theme)
                     }
                 } }
-                // 0924 她定的：字体全局，哪个主题都吃，单独一栏
-                if page == .appearance { section("字体") {
+                // 0924 她定的：字体全局，哪个主题都吃；0925 字号、气泡间距从「气泡与文字」搬来，三样一栏
+                if page == .appearance { section("文字") {
                     ChatFontPicker(theme: theme)
+                    Divider().opacity(0.25)
+                    BubbleAppearanceSettingsView(part: .text)
                 } }
-                if page == .appearance { section("Kakao 主题") {
-                    // 布局照 KakaoTalk，颜色和图从别人做的主题包里来
-                    familyChoice("Kakao", "", "kakao", [
-                        Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255),
-                        .white,
-                        Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
-                    ])
-                    KakaoPackPicker(theme: theme)
+                // 0902 信息主题自己调颜色，只在信息主题下露面
+                if page == .appearance && themeFamily == "imessage" { section("气泡颜色") {
+                    BubbleAppearanceSettingsView(part: .colors)
                 } }
                 if page == .appearance { section("聊天壁纸") {
                     HStack {
@@ -1983,6 +1985,12 @@ private struct NativeSettingsView: View {
 
 
 private struct BubbleAppearanceSettingsView: View {
+    /// 0925 她要的「气泡与文字并进外观页」：整页之外还能只画一块——预览 / 字号和间距 / 信息主题的颜色，
+    /// 外观页按块摆进去；整页（all）那条路留着，入口已经撤了
+    enum Part { case all, preview, text, colors }
+    let part: Part
+    init(part: Part = .all) { self.part = part }
+
     @StateObject private var wallpaperStore = ChatWallpaperStore()
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -2013,7 +2021,37 @@ private struct BubbleAppearanceSettingsView: View {
         )
     }
 
-    var body: some View {
+    @ViewBuilder var body: some View {
+        switch part {
+        case .all: fullPage
+        case .preview:
+            Group {
+                if chatTheme.isKakao {
+                    if KakaoPackStore.shared.current != nil { KakaoPackPreview() }
+                } else {
+                    livePreview
+                }
+            }
+            .onAppear { refreshWallpaper() }
+            .onChange(of: themeName) { _ in refreshWallpaper() }
+            .onChange(of: wallStamp) { _ in refreshWallpaper() }
+        case .text:
+            VStack(spacing: 12) {
+                fontSizeSlider
+                bubbleGapSlider
+            }
+        case .colors:
+            VStack(spacing: 12) {
+                ForEach(MessagesPalette.Item.allCases) { item in colorRow(item) }
+            }
+            Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走，现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textLight)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    private var fullPage: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
                 Text("气泡与文字")
@@ -2042,25 +2080,6 @@ private struct BubbleAppearanceSettingsView: View {
                     }
                 }
 
-                section("液态玻璃气泡") {
-                    VStack(spacing: 10) {
-                        glassSliderRow("扭曲", "strength", $bubbleGlassStrength, 0...60)
-                        glassSliderRow("色散", "dispersion", $bubbleGlassDispersion, 0...3)
-                        glassSliderRow("过渡", "rimWidth", $bubbleGlassRimWidth, 0.2...0.95)
-                        glassSliderRow("放大", "magnify", $bubbleGlassMagnify, 0...1.5)
-                        glassSliderRow("背景模糊", "blur", $bubbleGlassBlur, 0...8)
-                        glassSliderRow("直径", "size", $bubbleGlassSize, 80...340)
-                    }
-                    Divider().opacity(0.25)
-                    HStack {
-                        Text("上方预览与聊天页同步生效")
-                            .font(.system(size: 10))
-                            .foregroundColor(panelTheme.textLight)
-                        Spacer()
-                        Button("恢复默认") { resetAppearance() }
-                            .font(.system(size: 11, weight: .medium))
-                    }
-                }
             }
             .padding(.horizontal, 16)
             .padding(.bottom, 30)
@@ -2205,11 +2224,10 @@ private struct BubbleAppearanceSettingsView: View {
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
                 .background {
-                    BubbleGlassBackground(
-                        tintColor: isUser ? chatTheme.bubbleUser : chatTheme.bubbleAI,
-                        tintOpacity: isUser ? 0.14 : 0.09,
-                        style: bubbleStyle
-                    )
+                    // 0925 玻璃删了，走到这里的只有纸页：她的气泡实心，他的只有字，跟纸页聊天页一样
+                    if isUser {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous).fill(chatTheme.bubbleUser)
+                    }
                 }
 
             if !isUser { Spacer(minLength: 40) }

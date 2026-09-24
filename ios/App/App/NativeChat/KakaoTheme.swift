@@ -525,8 +525,7 @@ struct KakaoPackPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            // 0924 她要的预览：选中那套的壁纸 + 一来一回两条真气泡，跟聊天页一个画法
-            if store.current != nil { KakaoPackPreview() }
+            // 0924 她要的预览（选中那套的壁纸 + 一来一回两条真气泡）0925 挪到外观页最上面那块了
             if store.packs.isEmpty {
                 HStack(spacing: 8) {
                     if store.loading { ProgressView().scaleEffect(0.7) }
