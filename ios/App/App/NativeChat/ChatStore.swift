@@ -835,6 +835,21 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    // 0924 她要的「重来」：后端先把他最后一轮藏起来并让 claude 回退重答，成功了这边再收气泡；
+    // 失败把原因放 rerollNote，聊天页弹一下。不做乐观删除——回退菜单对不上号时后端会取消，气泡不该先没了。
+    @Published var rerollNote: String? = nil
+    func rerollLastReply() {
+        Task { @MainActor in
+            do {
+                let hidden = try await AlcoveAPI.rerollLastReply()
+                for t in hidden { deletedMessageTs.insert(t) }
+                messages.removeAll { $0.role == "assistant" && hidden.contains($0.ts) }
+            } catch {
+                rerollNote = error.localizedDescription
+            }
+        }
+    }
+
     func deleteMessage(_ msg: ChatMessage) {
         deletedMessageTs.insert(msg.ts)
         // 0818 她说删我第一句会把 thought 一起删掉——思绪不是那句话的一部分，是这一轮的。

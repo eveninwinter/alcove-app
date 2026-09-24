@@ -524,6 +524,14 @@ struct ChatView: View {
                 scrollToTail(proxy, delays: [0.12], animated: true)
             }
             .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
+            // 0924「重来」没成时说一声为什么（他正忙、回退菜单对不上号、SDK 通道……）
+            .alert("重来没成", isPresented: Binding(
+                get: { store.rerollNote != nil },
+                set: { if !$0 { store.rerollNote = nil } })) {
+                Button("好", role: .cancel) {}
+            } message: {
+                Text(store.rerollNote ?? "")
+            }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveHouseClosed)) { _ in
                 // 0904 她报的：整页盖着时键盘把列表撑高又收走，我不在屏幕上没跟着回落。
                 // 回来时本来就在底部的话，无动画校正回底；她在翻历史就不动
@@ -773,6 +781,14 @@ struct ChatView: View {
     }
 
     @ViewBuilder
+    /// 0924「重来」只挂在他最后一轮上：这条是 assistant，且排在她最后一句后面；翻历史时不给
+    private func isLatestAssistantTurn(_ message: ChatMessage) -> Bool {
+        guard message.role == "assistant", !store.isViewingHistory else { return false }
+        guard let idx = store.messages.firstIndex(where: { $0.uid == message.uid }) else { return false }
+        let lastUser = store.messages.lastIndex(where: { $0.role == "user" }) ?? -1
+        return idx > lastUser
+    }
+
     private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
         if !isPhotoGroupContinuation(at: index) {
             let previous = index > 0 ? store.messages[index - 1] : nil
@@ -880,6 +896,7 @@ struct ChatView: View {
                         inputFocused = true
                     },
                     onResend: { text in store.sendText(text) },
+                    onReroll: isLatestAssistantTurn(message) ? { store.rerollLastReply() } : nil,
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
                 )
@@ -2696,6 +2713,8 @@ struct MessageRow: View {
     var onToggleParagraphSelection: (() -> Void)? = nil
     var onQuote: ((String) -> Void)? = nil
     var onResend: ((String) -> Void)? = nil
+    // 0924 她要的「重来」：只有他最后一轮的消息才传这个；按了撤这一轮、claude 回退到她上一句之前重答
+    var onReroll: (() -> Void)? = nil
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
@@ -2993,6 +3012,16 @@ struct MessageRow: View {
                             }
                             .buttonStyle(.plain)
                             .accessibilityLabel("选择正文段落")
+                        }
+                        // 0924 她要的「重来」（像官方 app 那种重 roll）：只在他最后一轮的尾巴上出现
+                        if showTime, !isUser, let onReroll {
+                            Button { onReroll() } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(theme.timestamp.opacity(0.72))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("重来")
                         }
                         // 0822 她定的：信息主题下心率跟过程线（思绪/脚印/记忆）一个开关，关了一起藏
                         if showTime, !isUser, let bpm = msg.heartRate, !(theme.isMessages && !showProcessDots) {

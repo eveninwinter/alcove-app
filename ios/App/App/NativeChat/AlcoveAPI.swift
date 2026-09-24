@@ -498,6 +498,16 @@ enum AlcoveAPI {
         ])
     }
 
+    /// 0924 她要的「重来」：撤掉他最后一轮回复，claude 回退到她上一句之前重答。返回被藏掉那几条的 ts。
+    static func rerollLastReply() async throws -> [String] {
+        let obj = try await postJSON("/api/chat/reroll", body: [:])
+        guard obj["ok"] as? Bool == true else {
+            throw NSError(domain: "alcove.reroll", code: 409,
+                          userInfo: [NSLocalizedDescriptionKey: (obj["error"] as? String) ?? "重来没成"])
+        }
+        return (obj["hidden_ts"] as? [String]) ?? []
+    }
+
     static func deleteMessage(ts: String, textOnly: Bool = false) async throws {
         _ = try await postJSON("/api/chat/delete", body: [
             "ts": ts, "text_only": textOnly
