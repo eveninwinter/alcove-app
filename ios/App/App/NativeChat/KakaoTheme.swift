@@ -504,11 +504,11 @@ struct KakaoDateDivider: View {
 }
 
 enum KakaoClock {
-    /// Kakao 那种「下午 3:24」
+    /// 0925 她要的：24 小时制「00:18」，不要「上午 12:18」（原来是 Kakao 那种「下午 3:24」）
     static let fmt: DateFormatter = {
         let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "a h:mm"
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "HH:mm"
         return f
     }()
 }
