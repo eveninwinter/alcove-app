@@ -846,6 +846,9 @@ struct ChatView: View {
                 // 0822 她要的：切通道留一道线，跟时间分割一个样子
                 ChannelDivider(text: message.text, color: theme.dividerColor)
             } else {
+                // 0924「重来」：闭包和 nil 直接放三目里 Swift 推不出类型（c5bdd8d 构建红了），先标好类型
+                let rerollAction: (() -> Void)? = isLatestAssistantTurn(message)
+                    ? { store.rerollLastReply() } : nil
                 let renderedRow = MessageRow(
                     msg: message,
                     sticker: message.stickerId.flatMap(store.sticker(for:)),
@@ -896,7 +899,7 @@ struct ChatView: View {
                         inputFocused = true
                     },
                     onResend: { text in store.sendText(text) },
-                    onReroll: isLatestAssistantTurn(message) ? { store.rerollLastReply() } : nil,
+                    onReroll: rerollAction,
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
                 )
