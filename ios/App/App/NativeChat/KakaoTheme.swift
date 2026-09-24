@@ -546,10 +546,15 @@ struct KakaoPackPreview: View {
         let t = AlcoveTheme.kakaoTheme()
         let name = UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
         ZStack {
-            if let wall = store.wallImage {
-                Image(uiImage: wall).resizable().scaledToFill()
-            } else {
-                (store.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255))
+            // 0924 她报的「Kakao 按钮和字体栏点不动」：scaledToFill 的壁纸图会撑出 230 那个框，看不见但吃触摸，
+            // 把上面的兄弟视图全盖住。这里按框的尺寸硬裁，整块预览也不吃触摸。
+            GeometryReader { g in
+                if let wall = store.wallImage {
+                    Image(uiImage: wall).resizable().scaledToFill()
+                        .frame(width: g.size.width, height: g.size.height).clipped()
+                } else {
+                    (store.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255))
+                }
             }
             VStack(spacing: 10) {
                 KakaoDateDivider(date: Date()).padding(.vertical, -6)
@@ -589,6 +594,7 @@ struct KakaoPackPreview: View {
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
             .stroke(Color.black.opacity(0.08), lineWidth: 0.6))
+        .allowsHitTesting(false)   // 纯预览，不吃触摸
     }
 }
 
