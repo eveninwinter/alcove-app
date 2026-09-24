@@ -630,11 +630,6 @@ struct ChatFontPicker: View {
                     }
                 }
             }
-            Text("陈璟今天想吃什么呀？兔兔早点睡")
-                .font(store.chatFont(16)).foregroundColor(theme.text)
-                .padding(.top, 2)
-            Text("正文、工作室、Kakao 预览一起换；第一次点要等它下完")
-                .font(.system(size: 10.5)).foregroundColor(theme.textLight)
         }
         .onAppear { if store.fonts.isEmpty { store.refresh() } }
     }

@@ -408,7 +408,14 @@ struct ChatView: View {
                 }
                 .safeAreaBar(edge: .top, spacing: 0) {
                     if theme.isMessages, let bar = messagesTopBar {
-                        bar().frame(height: 52, alignment: .top)
+                        if theme.isKakao {
+                            // 0924 她要的：Kakao 顶栏是一截不透明的壁纸（壁纸最上面那段固定住），
+                            // 消息从底下滑过去被盖住；整条矮一点，贴着灵动岛下面
+                            bar().frame(height: 44, alignment: .top)
+                                .background { kakaoTopStrip.ignoresSafeArea(edges: .top) }
+                        } else {
+                            bar().frame(height: 52, alignment: .top)
+                        }
                     }
                 }
                 .safeAreaBar(edge: .bottom, spacing: 0) {
@@ -967,6 +974,25 @@ struct ChatView: View {
             .filter { $0.role == "assistant" && $0.turnID == turnID && !$0.displayText.isEmpty }
             .map(\.displayText)
             .joined(separator: "\n\n")
+    }
+
+    /// 0924 Kakao 顶栏的底：壁纸按整屏铺满的那套尺寸摆好、只露最上面一截，跟底下的壁纸严丝合缝
+    private var kakaoTopStrip: some View {
+        GeometryReader { g in
+            let full = UIScreen.main.bounds.size
+            ZStack(alignment: .top) {
+                if let wall = kakaoPacks.wallImage {
+                    Image(uiImage: wall).resizable().scaledToFill()
+                        .frame(width: g.size.width, height: max(full.height, g.size.height), alignment: .top)
+                        .frame(width: g.size.width, height: g.size.height, alignment: .top)
+                        .clipped()
+                } else {
+                    (kakaoPacks.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255))
+                }
+                VStack { Spacer(); Rectangle().fill(Color.black.opacity(0.06)).frame(height: 0.5) }
+            }
+        }
+        .allowsHitTesting(false)
     }
 
     /// 0917 她要的那颗小椭圆玻璃「一键到底」本体；信息主题挂列表 overlay，其他主题挂 ZStack 浮层

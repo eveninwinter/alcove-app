@@ -397,7 +397,7 @@ struct RootView: View {
             .padding(.leading, 12)
             .padding(.trailing, 12)
         }
-        .frame(height: 84)
+        .frame(height: theme.isKakao ? 44 : 84)   // 0924 Kakao 顶栏矮一截，贴灵动岛下面
     }
 
     private var kakaoTitle: some View {

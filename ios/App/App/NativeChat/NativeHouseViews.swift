@@ -7208,6 +7208,9 @@ private struct NativeStudioView: View {
     // 顶栏按钮照旧，名字就是「工作室」。别的主题一个像素不变。
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     private var isKakao: Bool { themeName == "kakao" }
+    // 0924 她要的：工作室的字号跟聊天页那个「字号」设置走，字体已经跟全局走了
+    @AppStorage("chatFontSize") private var chatFontSize = 14
+    private var studioFontSize: CGFloat { CGFloat(chatFontSize) }
     private static let isoFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
     }()
@@ -7240,7 +7243,7 @@ private struct NativeStudioView: View {
                 Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
             }
             KakaoBubbleView(isUser: mine, first: head) {
-                Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(14)).lineSpacing(5).textSelection(.enabled)
+                Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
                     .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
             }
             .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
@@ -7415,7 +7418,7 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(caption, mine: mine, head: head, date: studioDate(item.primary))
                     } else {
-                    Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, size: 14) } ?? .system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, size: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
@@ -7500,7 +7503,7 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(message.string("text"), mine: mine, head: head, date: studioDate(message))
                     } else {
-                    Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, size: 14) } ?? .system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, size: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
