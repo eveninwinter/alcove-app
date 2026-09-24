@@ -688,19 +688,8 @@ struct ChatFontPicker: View {
                     }
                 }
             }
-            thoughtFontStatus
         }
-        .onAppear {
-            if store.fonts.isEmpty { store.refresh() }
-            store.ensureFont(id: KakaoPackStore.thoughtFontID)
-        }
-    }
-
-    /// 0924：思绪用的宋体到底装没装，摆在这儿看，不猜
-    private var thoughtFontStatus: some View {
-        let ok = ThoughtFont.uiFont(12) != nil
-        return Text(ok ? "思绪宋体：已装" : (store.fonts.contains { $0.id == KakaoPackStore.thoughtFontID } ? "思绪宋体：没装，正在下" : "思绪宋体：名单里没有，点刷新"))
-            .font(.system(size: 10.5)).foregroundColor(ok ? theme.textDim : Color.orange)
+        .onAppear { if store.fonts.isEmpty { store.refresh() } }
     }
 
     private func fontChip(id: String, label: String, font: Font) -> some View {
@@ -724,20 +713,8 @@ enum ThoughtFont {
     static var registeredName: String? {
         KakaoPackStore.shared.registeredName(KakaoPackStore.thoughtFontID)
     }
-    /// 按 PostScript 名找不到就按家族名再找一遍（LXGW Neo ZhiSong / 霞鹜新致宋），别死在名字上
-    static func uiFont(_ size: CGFloat) -> UIFont? {
-        var names = [songPostScript]
-        if let n = registeredName, n != songPostScript { names.insert(n, at: 0) }
-        for n in names {
-            if let f = UIFont(name: n, size: size) { return f }
-        }
-        for fam in ["LXGW Neo ZhiSong", "霞鹜新致宋"] where UIFont.familyNames.contains(fam) {
-            if let n = UIFont.fontNames(forFamilyName: fam).first, let f = UIFont(name: n, size: size) { return f }
-        }
-        return nil
-    }
     static func font(_ size: CGFloat) -> Font {
-        if let f = uiFont(size) { return Font(f).italic() }
+        if let n = registeredName { return Font.custom(n, fixedSize: size).italic() }
         KakaoPackStore.shared.ensureFont(id: KakaoPackStore.thoughtFontID)
         return Font.system(size: size, design: .serif).italic()
     }
@@ -763,7 +740,7 @@ struct ObliqueText: UIViewRepresentable {
 
     func updateUIView(_ l: UILabel, context: Context) {
         var font = UIFont.systemFont(ofSize: size)
-        if let f = ThoughtFont.uiFont(size) {
+        if let n = ThoughtFont.registeredName, let f = UIFont(name: n, size: size) {
             font = f
         } else {
             KakaoPackStore.shared.ensureFont(id: KakaoPackStore.thoughtFontID)   // 没这款字就去下，下完重画
