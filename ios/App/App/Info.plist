@@ -9,6 +9,12 @@
 		<string>Tanugo-R-TTF.ttf</string>
 		<string>ShigotoMemogaki.ttf</string>
 		<string>Akabara-Cinderella.ttf</string>
+		<string>Fonts/linshiai.ttf</string>
+		<string>Fonts/yuhe.ttf</string>
+		<string>Fonts/huoxuai.ttf</string>
+		<string>Fonts/jianxue.ttf</string>
+		<string>Fonts/chaoyong.ttf</string>
+		<string>Fonts/neozhisong.ttf</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Alcove</string>

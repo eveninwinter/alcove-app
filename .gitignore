@@ -14,3 +14,7 @@ build/
 .env
 .env.*
 alcove.db
+
+# 0924 聊天字体：CI 构建时拉，不进 git
+ios/App/App/Fonts/*.ttf
+ios/App/App/Fonts/*.otf

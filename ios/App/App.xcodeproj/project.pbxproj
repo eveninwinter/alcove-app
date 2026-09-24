@@ -8,6 +8,7 @@
 
 /* Begin PBXBuildFile section */
 		C0DE09080000000000000001 /* MistSplash in Resources */ = {isa = PBXBuildFile; fileRef = C0DE09080000000000000002 /* MistSplash */; };
+		C0DE09240000000000000001 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = C0DE09240000000000000002 /* Fonts */; };
 		2239D73AB32FB5FF31969C0B /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B572F65DE29D384C89D6A5 /* SplashView.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		9A11C0DE00084F8CA3D60B11 /* Akabara-Cinderella.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00084F8CA3D60B22 /* Akabara-Cinderella.ttf */; };
@@ -109,6 +110,7 @@
 
 /* Begin PBXFileReference section */
 		C0DE09080000000000000002 /* MistSplash */ = {isa = PBXFileReference; lastKnownFileType = folder; path = MistSplash; sourceTree = "<group>"; };
+		C0DE09240000000000000002 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Fonts; sourceTree = "<group>"; };
 		0003258CF790522AD36EC318 /* AlcoveAPI.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlcoveAPI.swift; sourceTree = "<group>"; };
 		05AE4790B0A789C3ABEED1B2 /* CapabilityLabView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = CapabilityLabView.swift; path = App/NativeChat/CapabilityLabView.swift; sourceTree = SOURCE_ROOT; };
 		7A1C0821E0F1A2B3C4D5E6F1 /* ImageDiskCache.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = ImageDiskCache.swift; path = App/NativeChat/ImageDiskCache.swift; sourceTree = SOURCE_ROOT; };
@@ -253,6 +255,7 @@
 				504EC3071FED79650016851F /* AppDelegate.swift */,
 				AE8315E30A2147A4EBA22461 /* NativeChat */,
 				C0DE09080000000000000002 /* MistSplash */,
+				C0DE09240000000000000002 /* Fonts */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
 				504EC3101FED79650016851F /* LaunchScreen.storyboard */,
@@ -447,6 +450,7 @@
 			files = (
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				C0DE09080000000000000001 /* MistSplash in Resources */,
+				C0DE09240000000000000001 /* Fonts in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
 				50379B232058CBB4000EE86E /* capacitor.config.json in Resources */,

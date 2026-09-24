@@ -139,9 +139,18 @@ final class KakaoPackStore: ObservableObject {
     /// 选中字体注册好之后的 PostScript 名；没选 / 还没下到 → nil（用系统字）
     var fontName: String? {
         guard !selectedFontID.isEmpty else { return nil }
-        return registeredFonts[selectedFontID]
+        return registeredName(selectedFontID)
     }
-    func registeredName(_ fontID: String) -> String? { registeredFonts[fontID] }
+    /// 0924 她要的：字体打包进 App 之后，装上就有——先看进程里已经有没有这个字（Info.plist UIAppFonts 那些），有就直接用
+    func registeredName(_ fontID: String) -> String? {
+        if let n = registeredFonts[fontID] { return n }
+        if let f = fonts.first(where: { $0.id == fontID }), let ps = f.ps_name, !ps.isEmpty,
+           UIFont(name: ps, size: 12) != nil {
+            registeredFonts[fontID] = ps
+            return ps
+        }
+        return nil
+    }
     func chatFont(_ size: CGFloat) -> Font {
         fontName.map { Font.custom($0, size: size) } ?? .system(size: size)
     }
@@ -171,7 +180,7 @@ final class KakaoPackStore: ObservableObject {
 
     /// 选中的字体：本地有就注册，没有就下载再注册；每次都拨 stamp 让界面重画
     func ensureFont() {
-        guard !selectedFontID.isEmpty, registeredFonts[selectedFontID] == nil,
+        guard !selectedFontID.isEmpty, registeredName(selectedFontID) == nil,
               let font = fonts.first(where: { $0.id == selectedFontID }) else { return }
         let local = Self.fontsDir.appendingPathComponent(font.file)
         if FileManager.default.fileExists(atPath: local.path) {
@@ -623,9 +632,10 @@ struct ChatFontPicker: View {
         let on = store.selectedFontID == id
         return Button { store.selectFont(id) } label: {
             Text(label).font(font).foregroundColor(on ? theme.text : theme.textDim)
-                .padding(.horizontal, 11).padding(.vertical, 5)
+                .padding(.horizontal, 13).padding(.vertical, 8)
                 .background(on ? theme.fyAccent.opacity(0.18) : theme.fyCardSub, in: Capsule())
                 .overlay(Capsule().stroke(on ? theme.fyAccent : theme.fyBorder, lineWidth: on ? 1.4 : 0.8))
+                .contentShape(Capsule())
         }
         .buttonStyle(.plain)
     }
