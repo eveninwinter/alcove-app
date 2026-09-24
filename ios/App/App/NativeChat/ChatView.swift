@@ -35,6 +35,10 @@ struct ChatView: View {
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
+    // 0924 她要的：「回到最新」那颗药丸别一动就冒出来。atBottom（离底 120pt）继续管跟不跟流式输出，
+    // 药丸另看这个：往上翻超过 tailPillRevealScreens 屏才出现。想改灵敏度只动这个数。
+    @State private var farFromTail = false
+    private let tailPillRevealScreens: CGFloat = 1.0
     // 0907 她定的：翻着历史点打字框不许把她拽回最新，只有本来就在最新那儿
     // 才让消息跟着键盘抬起来。难点是键盘顶上来那一瞬底部锚点会被盖住、
     // atBottom 会假性变 false，所以在焦点刚来、键盘还没动之前先拍个快照。
@@ -334,6 +338,7 @@ struct ChatView: View {
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear {
                                 atBottom = true
+                                farFromTail = false
                                 if store.isViewingHistory && !historyJumpInProgress {
                                     Task {
                                         await store.returnToLatest()
@@ -354,6 +359,13 @@ struct ChatView: View {
                 } action: { _, near in
                     if near != atBottom { atBottom = near }
                     if near && (store.live?.active == true || store.isTyping) { followLiveOutput = true }
+                }
+                // 0924：药丸的门槛单独算——离最底超过一整屏才算「翻远了」
+                .onScrollGeometryChange(for: Bool.self) { g in
+                    let distance = g.contentSize.height - (g.contentOffset.y + g.containerSize.height)
+                    return distance > g.containerSize.height * tailPillRevealScreens
+                } action: { _, far in
+                    if far != farFromTail { farFromTail = far }
                 }
                 // 0822 她递的图纸：iMessage 的上下渐进模糊是 iOS 26 系统画的 scroll edge effect，
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
@@ -380,7 +392,7 @@ struct ChatView: View {
                 // 0919：信息主题的「一键到底」挂在这里。这个 overlay 在下面 safeAreaBar 的里面，
                 // 打字框占掉的那块系统会替它让开，按钮永远落在打字框正上方，不压发送键。
                 .overlay(alignment: .bottomTrailing) {
-                    if theme.isMessages && !atBottom && store.pendingVoice == nil {
+                    if theme.isMessages && farFromTail && store.pendingVoice == nil {
                         tailPill(proxy)
                             .padding(.trailing, 16)
                             .padding(.bottom, 12)
@@ -456,7 +468,7 @@ struct ChatView: View {
                 // 0919 她看真机：0918 那版把信息主题的底部留白改成 0，结果这颗直接压在发送键上——
                 // 这个 ZStack 浮层不归 safeAreaBar 管，它铺的是整屏。信息主题改挂在列表自己的 overlay 上
                 //（见下面 tailPillOverlay），那层在 safeAreaBar 里面，系统会替它避开打字框。这里只画其他主题的。
-                if !theme.isMessages && !atBottom && store.pendingVoice == nil {
+                if !theme.isMessages && farFromTail && store.pendingVoice == nil {
                     tailPill(proxy)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing)
                     .padding(.trailing, 16)
