@@ -208,7 +208,8 @@ private struct EffectToken: View {
 
     private func styled(weight: Font.Weight, size: CGFloat? = nil) -> Text {
         let sz = size ?? baseSize
-        var t = Text(token.text).font(fontName.map { Font.custom($0, size: sz) } ?? .system(size: sz, weight: weight))
+        // 0924 她报的：带文字效果那条比他的字小——Font.custom(size:) 会跟着系统字体大小再缩放，fixedSize 才跟正文（UIFont）一样死数
+        var t = Text(token.text).font(fontName.map { Font.custom($0, fixedSize: sz) } ?? .system(size: sz, weight: weight))
         if token.effects.contains(.bold) { t = t.bold() }
         if token.effects.contains(.italic) { t = t.italic() }
         if token.effects.contains(.underline) { t = t.underline() }

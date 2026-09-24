@@ -153,7 +153,7 @@ final class KakaoPackStore: ObservableObject {
         return nil
     }
     func chatFont(_ size: CGFloat) -> Font {
-        fontName.map { Font.custom($0, size: size) } ?? .system(size: size)
+        fontName.map { Font.custom($0, fixedSize: size) } ?? .system(size: size)
     }
 
     func selectFont(_ id: String) {
@@ -636,7 +636,7 @@ struct ChatFontPicker: View {
                     fontChip(id: "", label: "系统", font: .system(size: 13))
                     ForEach(store.fonts) { f in
                         fontChip(id: f.id, label: f.name,
-                                 font: store.registeredName(f.id).map { Font.custom($0, size: 13) } ?? .system(size: 13))
+                                 font: store.registeredName(f.id).map { Font.custom($0, fixedSize: 13) } ?? .system(size: 13))
                     }
                 }
             }

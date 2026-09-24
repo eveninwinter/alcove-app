@@ -7432,7 +7432,7 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(caption, mine: mine, head: head, date: studioDate(item.primary))
                     } else {
-                    Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, size: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, fixedSize: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
@@ -7517,7 +7517,7 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(message.string("text"), mine: mine, head: head, date: studioDate(message))
                     } else {
-                    Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, size: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, fixedSize: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
