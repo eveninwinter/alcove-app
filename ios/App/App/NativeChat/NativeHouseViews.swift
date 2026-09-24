@@ -7264,6 +7264,14 @@ private struct NativeStudioView: View {
                             let prev: [String: Any]? = idx > 0 ? items[idx - 1].primary : nil
                             // Kakao：一串同一边的消息只有第一条露头像 / 名字 / 带尾巴的 01 图
                             let head = prev.map { $0.string("role") != item.primary.string("role") } ?? true
+                            // 0925 她要的：跟主聊天一样，同一个人两分钟内连着发的算一串，只在一串最后一条挂时间
+                            let next: [String: Any]? = idx + 1 < items.count ? items[idx + 1].primary : nil
+                            let showTime: Bool = {
+                                guard let next else { return true }
+                                if next.string("role") != item.primary.string("role") { return true }
+                                guard let a = studioDate(item.primary), let b = studioDate(next) else { return true }
+                                return b.timeIntervalSince(a) > 120
+                            }()
                             Group {
                                 // 0924 晚她定的：跟主聊天 Kakao 对齐——只跟紧挨着的上一条比，隔超过 15 分钟就插胶囊（原来只在跨天时插）
                                 if isKakao, let d = studioDate(item.primary),
@@ -7271,9 +7279,9 @@ private struct NativeStudioView: View {
                                     KakaoDateDivider(date: d)
                                 }
                                 if item.group.count > 1 {
-                                    photoGroupBubble(item, head: head)
+                                    photoGroupBubble(item, head: head, showTime: showTime)
                                 } else {
-                                    messageBubble(item.primary, head: head)
+                                    messageBubble(item.primary, head: head, showTime: showTime)
                                 }
                             }.id("studio-message-\(item.id)")
                         }
@@ -7382,7 +7390,7 @@ private struct NativeStudioView: View {
     }
 
     /// 多图横排气泡：≤2 并排，>2 横滑（跟主聊天一个观感），配文垫在图下面
-    private func photoGroupBubble(_ item: StudioDisplayItem, head: Bool = true) -> some View {
+    private func photoGroupBubble(_ item: StudioDisplayItem, head: Bool = true, showTime: Bool = true) -> some View {
         let mine = item.primary.string("role") == "user"
         let caption = item.group.map { $0.string("text") }.first { !$0.isEmpty } ?? ""
         let side: CGFloat = 124
@@ -7408,7 +7416,7 @@ private struct NativeStudioView: View {
                 }
                 if !caption.isEmpty {
                     if isKakao {
-                        kakaoTextBubble(caption, mine: mine, head: head, date: studioDate(item.primary))
+                        kakaoTextBubble(caption, mine: mine, head: head, date: showTime ? studioDate(item.primary) : nil)
                     } else {
                     Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, fixedSize: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
@@ -7434,7 +7442,7 @@ private struct NativeStudioView: View {
         .onTapGesture { photoViewer = StudioPhotoTarget(url: url) }
     }
 
-    private func messageBubble(_ message: [String: Any], head: Bool = true) -> some View {
+    private func messageBubble(_ message: [String: Any], head: Bool = true, showTime: Bool = true) -> some View {
         let mine = message.string("role") == "user"
         let messageID = message.int("id")
         let thought = message.string("thinking")
@@ -7494,7 +7502,7 @@ private struct NativeStudioView: View {
                 // 只有图没有字的时候不要再吐一个空气泡出来
                 if !message.string("text").isEmpty {
                     if isKakao {
-                        kakaoTextBubble(message.string("text"), mine: mine, head: head, date: studioDate(message))
+                        kakaoTextBubble(message.string("text"), mine: mine, head: head, date: showTime ? studioDate(message) : nil)
                     } else {
                     Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, fixedSize: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
