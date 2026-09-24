@@ -2756,6 +2756,9 @@ struct MessageRow: View {
     @State private var processOpen = false
     @State private var showTranscript = false   // 0822 语音条默认不露文字，长按「转文字」才展开
     @AppStorage("imsgShowProcess") private var showProcessDots = true
+    // 0924 她报的「气泡间距有的贴在一起」：一条消息里图 / 语音 / 正文 / 链接卡之间原来是 0，
+    // 脚印那行又是另一个数。现在一律用设置里那个「气泡间距」，跟列表里气泡和气泡之间同一个数。
+    @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
     @State private var showPulse = false
@@ -2945,6 +2948,7 @@ struct MessageRow: View {
                 } else if msg.isSticker {
                     stickerBody
                 } else {
+                  VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
                     photoBlock
                     if msg.isAudio, let raw = msg.attachmentUrl {
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
@@ -2997,6 +3001,7 @@ struct MessageRow: View {
                     if let link = msg.firstLinkURL, msg.musicCard == nil, !msg.isSticker {
                         LinkPreviewCard(url: link, theme: theme, isUser: isUser)
                     }
+                  }
                 }
                 // 0819 活动脚印（她把活动卡片换掉了）：气泡外面一行浅灰斜体，
                 // 「逛了花园 写了念头」，词之间空格隔开。轻到不特意看就滑过去了。
@@ -3009,7 +3014,7 @@ struct MessageRow: View {
                         // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
                         .foregroundColor(theme.thoughtColor.opacity(0.82))
                         .padding(.leading, 3)
-                        .padding(.top, rowPartGap + 1)
+                        .padding(.top, CGFloat(chatBubbleGap))
                 }
                 if shouldShowMetaRow {
                     // 0822 她要的：信息主题下时间／清单／心率三个之间留呼吸感
