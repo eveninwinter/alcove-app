@@ -249,6 +249,9 @@ struct RoundtableView: View {
     @State private var previewImage: UIImage?
     @State private var photoViewer: PhotoViewerSelection?
     @State private var cachedRTWallpaper: UIImage?
+    // 0925 她要的：圆桌跟着聊天主题走（像工作室跟主聊天）。Kakao 下壁纸用跟聊天页同一张（她换过的优先，没换就是主题包的）
+    @StateObject private var chatWall = ChatWallpaperStore()
+    @AppStorage("wallStamp") private var wallStamp = 0.0
     @State private var cachedRTAvatarUser: UIImage?
     @State private var cachedRTAvatarAssistant: UIImage?
     @State private var cachedRTAvatarGpt: UIImage?
@@ -297,7 +300,12 @@ struct RoundtableView: View {
         )
     }
 
+    private func refreshChatWall() {
+        chatWall.refresh(themeName: themeName, theme: theme, wallStamp: wallStamp)
+    }
+
     private var wallpaperDescriptor: ChatWallpaperDescriptor {
+        if theme.isKakao { return chatWall.descriptor }
         if let image = cachedRTWallpaper {
             return ChatWallpaperDescriptor(source: .image(image))
         }
@@ -341,6 +349,10 @@ struct RoundtableView: View {
         .onChange(of: rtWallpaperMidnight) { _ in refreshRTImageCache() }
         .onChange(of: rtWallpaperPaper) { _ in refreshRTImageCache() }
         .onChange(of: rtWallpaperPaperDark) { _ in refreshRTImageCache() }
+        .onAppear { refreshChatWall() }
+        .onChange(of: themeName) { _ in refreshChatWall() }
+        .onChange(of: wallStamp) { _ in refreshChatWall() }
+        .onReceive(KakaoPackStore.shared.$stamp) { _ in if theme.isKakao { refreshChatWall() } }
         .onChange(of: themeName) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarUser) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarAssistant) { _ in refreshRTImageCache() }
@@ -1114,6 +1126,33 @@ private struct RoundtableRow: View {
         }
     }
 
+    @ViewBuilder private var bubbleBody: some View {
+        let line = Text(alcoveMarkdown(msg.text))
+            .font(KakaoPackStore.shared.chatFont(CGFloat(fontSize)))
+            .lineSpacing(5)
+        if theme.isKakao {
+            KakaoBubbleView(isUser: isUser, first: showAvatar) {
+                line
+                    .foregroundColor(isUser ? (theme.textUser ?? theme.text) : (theme.textAI ?? theme.text))
+                    .textSelection(.enabled)
+            }
+        } else if theme.isPaper && !isUser {
+            line
+                .foregroundColor(theme.textAI ?? theme.text)
+                .textSelection(.enabled)
+                .padding(.vertical, 2)
+        } else {
+            line
+                .foregroundColor(isUser ? (theme.textUser ?? (theme.isMessages ? .white : theme.text))
+                                        : (theme.textAI ?? theme.text))
+                .textSelection(.enabled)
+                .padding(.horizontal, 14)
+                .padding(.vertical, 10)
+                .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
+                    .fill(isUser ? theme.bubbleUser : theme.bubbleAI))
+        }
+    }
+
     private var hiddenLabel: String {
         let roles = Set(msg.hiddenFrom.split(separator: ",").map(String.init))
         let names = [("assistant", "陈璟"), ("gpt", "何渡")]
@@ -1145,22 +1184,10 @@ private struct RoundtableRow: View {
         .frame(width: 30, height: 30)
     }
 
-    // 气泡跟主聊天页统一：同一个玻璃背景，只有 tint 分你我（她定的）
+    // 0925 她要的：圆桌不留玻璃，跟着聊天主题走（像工作室跟主聊天）。
+    // Kakao 用主题包的气泡图（一串第一条用带图案的 01 图），信息主题实心圆角，纸页她实心、别人只有字。字体跟全局走。
     private var bubble: some View {
-        Text(alcoveMarkdown(msg.text))
-            .font(.system(size: CGFloat(fontSize)))
-            .lineSpacing(5)
-            .foregroundColor(theme.text)
-            .textSelection(.enabled)
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
-            .background {
-                BubbleGlassBackground(
-                    tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
-                    tintOpacity: isUser ? 0.14 : 0.09,
-                    style: glassStyle
-                )
-            }
+        bubbleBody
             .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
             .contextMenu {
                 Button {
