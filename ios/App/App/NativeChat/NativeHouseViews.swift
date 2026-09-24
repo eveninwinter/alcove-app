@@ -19,9 +19,9 @@ private extension EnvironmentValues {
 // LegacyNativeDesireView 555 行是「临时保留以便回滚」、从没被调用过）、后端路由全留着。
 // 晨勃那项没跟着死——从它的 morning_arousal 事件挪进 pulse 自己算了。
 enum HouseDestination: String, Identifiable, CaseIterable {
-    case sidebar, chat, terminal, settings, bubbleAppearance, checklist, music
-    case home, profile, calendar, digest, wall, usage, workbench, studio
-    case memory, dreams, shelf, fiction, nianlun, clockwork, album, portrait, impression, morningPaper, nowhere, pulse
+    case sidebar, chat, terminal, settings, bubbleAppearance, music
+    case home, calendar, digest, usage, workbench, studio
+    case memory, dreams, shelf, fiction, nianlun, clockwork, album, morningPaper, nowhere, pulse
     case pond
     case tarot          // 0902 占星室（塔罗）
     case nursery        // 0905 育儿室（llm-nursery 电子养崽）
@@ -29,7 +29,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case shop           // 0909 商店（她开的店，他拿挣的虚拟币来买）
     case roof
     case factory
-    case crosstalk, radio, coread, cowatch, liao, daddyDay, lab, qipai
+    case crosstalk, radio, coread, cowatch, liao, daddyDay, qipai
     case search, favorites, forge, roundtable, surf, letterbox
     case window         // 0923 世界之窗：每天九幅开放图库的图配中文讲解
 
@@ -39,16 +39,13 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         switch self {
         case .sidebar: return "Alcove"
         case .home: return "大厅"
-        case .profile: return "陈璟"
         case .chat: return "Chat"
         case .terminal: return "Terminal"
         case .settings: return "设置"
         case .bubbleAppearance: return "气泡与文字"
-        case .checklist: return "Checklist"
         case .music: return "Music"
         case .calendar: return "Calendar"
         case .digest: return "编年史"
-        case .wall: return "小黑屋"
         case .usage: return "Usage"
         case .workbench: return "总控台"
         case .studio: return "工作室"
@@ -66,8 +63,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .factory: return "出厂设置"
         case .clockwork: return "发条"
         case .album: return "相册"
-        case .portrait: return "Letters"
-        case .impression: return "Self"
         case .morningPaper: return "Morning Paper"
         case .nowhere: return "乌有乡"
         case .pulse: return "Pulse"
@@ -78,7 +73,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .qipai: return "棋牌室"
         case .liao: return "燎"
         case .daddyDay: return "Daddy的一天"
-        case .lab: return "Lab"
         case .search: return "Search"
         case .favorites: return "Favorites"
         case .forge: return "Forge"
@@ -101,16 +95,13 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var icon: String {
         switch self {
         case .home: return "house"
-        case .profile: return "person.crop.circle"
         case .chat: return "bubble.left"
         case .terminal: return "terminal"
         case .settings: return "gearshape"
         case .bubbleAppearance: return "slider.horizontal.3"
-        case .checklist: return "checklist"
         case .music: return "music.note"
         case .calendar: return "calendar"
         case .digest: return "calendar.badge.clock"
-        case .wall: return "lock.rectangle.stack"
         case .usage: return "chart.bar"
         case .workbench: return "slider.horizontal.2.square"
         case .studio: return "hammer"
@@ -128,8 +119,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .factory: return "slider.horizontal.3"
         case .clockwork: return "clock.arrow.circlepath"
         case .album: return "photo.on.rectangle"
-        case .portrait: return "envelope"
-        case .impression: return "person.crop.circle.badge.questionmark"
         case .morningPaper: return "newspaper"
         case .nowhere: return "map"
         case .pulse: return "heart.text.square"
@@ -140,7 +129,6 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .qipai: return "suit.club"
         case .liao: return "flame"
         case .daddyDay: return "clock"
-        case .lab: return "waveform.path.ecg.rectangle"
         case .search: return "magnifyingglass"
         case .favorites: return "bookmark"
         case .forge: return "hammer"
@@ -252,8 +240,6 @@ struct NativeHouseSheet: View {
                     QipaiLobbyView()
                 case .cowatch:
                     NativeCowatchView()
-                case .checklist:
-                    NativeChecklistView()
                 case .music:
                     NativeMusicView()
                 case .clockwork:
@@ -280,12 +266,8 @@ struct NativeHouseSheet: View {
                     NativeWorkbenchView(openStudio: { withAnimation(.easeInOut(duration: 0.18)) { route = .studio } })
                 case .studio:
                     NativeStudioView()
-                case .profile:
-                    NativeCalendarView()
                 case .memory:
                     NativeBrainView()
-                case .portrait:
-                    NativeOBLettersView()
                 case .pond:
                     NativePondView()
                 case .tarot:
@@ -308,8 +290,6 @@ struct NativeHouseSheet: View {
                     NativeDigestView()
                 case .fiction:
                     NativeFictionStudyView()
-                case .impression:
-                    NativeOBSelfView()
                 case .dreams:
                     NativeDreamsView()
                 case .morningPaper:
@@ -318,10 +298,6 @@ struct NativeHouseSheet: View {
                     NativeNowhereView()
                 case .pulse:
                     NativePulseView()
-                case .lab:
-                    NativePipeLabView()
-                case .wall:
-                    NativeWallView()
                 default:
                     NativeDataPanel(destination: route)
                 }
@@ -775,11 +751,9 @@ struct NativeHouseDrawer: View {
         switch target {
         case .memory: return "记忆库"
         case .dreams: return "梦与旧日记"
-        case .portrait: return "写过的信"
         case .album: return "照片"
         case .nianlun: return "一起走过的时间"
         case .shelf: return "他的收藏架"
-        case .impression: return "他认得的自己"
         case .clockwork: return "自主活动与唤醒"
         case .forge: return "挑选轮次搬去新窗口"
         case .search: return "搜索消息"
@@ -788,7 +762,6 @@ struct NativeHouseDrawer: View {
         case .cowatch: return "一起看 B站与 YouTube"
         case .qipai: return "斗地主、炸金花与 UNO"
         case .tarot: return "抽一张牌，让他解"
-        case .wall: return model.wallLine
         case .usage: return model.usageLine
         default: return "打开"
         }
@@ -806,158 +779,6 @@ private extension View {
     }
 }
 
-private struct NativeSidebarView: View {
-    var select: (HouseDestination) -> Void
-    let roundtableUnread: Int
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @StateObject private var model = SidebarModel()
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    private let foyer: [HouseDestination] = [
-        .memory, .dreams, .tarot, .shelf, .pond, .nianlun, .clockwork, .album, .portrait,
-        .impression, .morningPaper, .nowhere, .pulse
-    ]
-    // Pipe Lab remains compiled for rollback, but the -p experiment is paused and
-    // must not appear as a normal household destination.
-    private let play: [HouseDestination] = [.crosstalk, .coread, .cowatch, .liao, .qipai]
-
-    var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 13) {
-                VStack(spacing: 3) {
-                    Text("Alcove")
-                        .font(.system(size: 21, weight: .medium, design: .serif))
-                        .tracking(1.4)
-                    Text("壁 龛")
-                        .font(.system(size: 9))
-                        .tracking(3)
-                        .foregroundColor(theme.textDim)
-                    FoyerSash(theme: theme)
-                        .padding(.top, 4)
-                }
-                .padding(.top, 8)
-
-                HStack(spacing: 10) {
-                    summaryCard("大厅", model.homeLine, "house", .home, large: true)
-                    Button { select(.calendar) } label: {
-                        VStack(alignment: .leading, spacing: 4) {
-                            HStack(spacing: 8) {
-                                Image(systemName: "heart")
-                                    .font(.system(size: 17, weight: .light))
-                                    .foregroundColor(theme.fyAccent)
-                                Text("在一起").font(.system(size: 13, weight: .medium))
-                            }
-                            Text("\(model.days) days")
-                                .font(.system(size: 22, weight: .semibold, design: .rounded))
-                            Text("since 2026.06.01")
-                                .font(.system(size: 10))
-                                .foregroundColor(theme.textDim)
-                        }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, minHeight: 80, alignment: .leading)
-                        .foyerCard(theme)
-                    }
-                    .buttonStyle(.plain)
-                }
-                HStack(spacing: 10) {
-                    summaryCard("小黑屋", model.wallLine, "lock.rectangle.stack.fill", .wall)
-                    summaryCard("Usage", model.usageLine, "chart.bar", .usage)
-                }
-
-                destinationRow([.chat, .terminal, .settings])
-                sectionTitle("Foyer")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(foyer) { destinationButton($0) }
-                }
-                sectionTitle("Play")
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 3), spacing: 8) {
-                    ForEach(play) { destinationButton($0) }
-                }
-                sectionTitle("Chat")
-                destinationRow([.roundtable, .checklist, .forge])
-            }
-            .padding(.horizontal, 16)
-            .padding(.bottom, 28)
-            .foregroundColor(theme.text)
-        }
-        .task { await model.load() }
-    }
-
-    private func sectionTitle(_ text: String) -> some View {
-        HStack(spacing: 8) {
-            Text(text.uppercased())
-                .font(.system(size: 10, weight: .semibold))
-                .tracking(2)
-                .foregroundColor(theme.fyAccent.opacity(0.8))
-            LinearGradient(
-                colors: [theme.fyAccentSoft, .clear],
-                startPoint: .leading, endPoint: .trailing
-            )
-            .frame(height: 1)
-        }
-        .padding(.top, 4)
-    }
-
-    private func summaryCard(
-        _ title: String, _ subtitle: String, _ icon: String, _ target: HouseDestination, large: Bool = false
-    ) -> some View {
-        Button { select(target) } label: {
-            HStack(spacing: 10) {
-                Image(systemName: icon)
-                    .font(.system(size: 17, weight: .light))
-                    .foregroundColor(theme.fyAccent)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 13, weight: .medium))
-                    Text(subtitle).font(.system(size: 10)).foregroundColor(theme.textDim)
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(12)
-            .frame(maxWidth: .infinity, minHeight: large ? 80 : 60)
-            .foyerCard(theme)
-        }
-        .buttonStyle(.plain)
-    }
-
-    private func destinationRow(_ items: [HouseDestination]) -> some View {
-        HStack(spacing: 8) {
-            ForEach(items) { destinationButton($0) }
-        }
-    }
-
-    private func destinationButton(_ target: HouseDestination) -> some View {
-        Button { select(target) } label: {
-            VStack(spacing: 6) {
-                Image(systemName: target.icon)
-                    .font(.system(size: 18, weight: .light))
-                    .foregroundColor(theme.fyAccent)
-                    .overlay(alignment: .topTrailing) {
-                        if target == .roundtable && roundtableUnread > 0 {
-                            Text(roundtableUnread > 99 ? "99+" : "\(roundtableUnread)")
-                                .font(.system(size: 8, weight: .bold))
-                                .foregroundColor(.white)
-                                .padding(.horizontal, 4)
-                                .frame(minWidth: 15, minHeight: 15)
-                                .background(Color.red, in: Capsule())
-                                .offset(x: 11, y: -9)
-                        }
-                    }
-                Text(target.title)
-                    .font(.system(size: 11))
-                    .lineLimit(1)
-                    .minimumScaleFactor(0.75)
-            }
-            .foregroundColor(theme.textDim)
-            .frame(maxWidth: .infinity, minHeight: 61)
-            .foyerCard(theme)
-            .rotationEffect(theme.isPaper
-                ? .degrees(Double(abs(target.rawValue.hashValue) % 9 - 4) * 0.10)
-                : .zero)
-        }
-        .buttonStyle(.plain)
-    }
-}
-
 @MainActor
 private final class SidebarModel: ObservableObject {
     private struct Snapshot {
@@ -965,7 +786,6 @@ private final class SidebarModel: ObservableObject {
         var coins = 0
         var fiveHour = 0
         var sevenDay = 0
-        var wallLine = "--"
         var usageLine = "--"
     }
 
@@ -974,7 +794,6 @@ private final class SidebarModel: ObservableObject {
     var coinsLine: String { "金币 \(snapshot.coins)" }
     var fiveHourLine: String { "5h \(snapshot.fiveHour)%" }
     var sevenDayLine: String { "7d \(snapshot.sevenDay)%" }
-    var wallLine: String { snapshot.wallLine }
     var usageLine: String { snapshot.usageLine }
 
     let days = max(1, Calendar.current.dateComponents(
@@ -983,20 +802,14 @@ private final class SidebarModel: ObservableObject {
 
     func load() async {
         async let doll = try? NativeHouseAPI.object("/api/dollhouse/state")
-        async let wall = try? NativeHouseAPI.object("/api/wall/entries")
         async let usage = try? NativeHouseAPI.object("/api/usage")
 
-        let (dollResult, wallResult, usageResult) = await (doll, wall, usage)
+        let (dollResult, usageResult) = await (doll, usage)
         var next = Snapshot()
 
         if let d = dollResult {
             next.homeLine = "亲密度 \(d.int("intimacy")) · 金币 \(d.int("coins"))"
             next.coins = d.int("coins")
-        }
-        if let w = wallResult {
-            let locked = w.int("locked")
-            let opened = w.int("opened")
-            next.wallLine = (locked + opened) == 0 ? "墙还是空的" : "\(locked) 道锁着 · \(opened) 道开了"
         }
         if let u = usageResult {
             let five = u.object("rate_limits").object("five_hour").int("used_percent")
@@ -2334,161 +2147,6 @@ private struct BubbleAppearanceSettingsView: View {
         bubbleGlassMagnify = 0
         bubbleGlassBlur = 0.10
         bubbleGlassSize = 174.33
-    }
-}
-
-private struct ChecklistItem: Identifiable {
-    let id: String
-    let body: String
-    let done: Bool
-    let isFixed: Bool
-    let triggerAt: String
-    init(_ json: [String: Any]) {
-        id = json.string("id")
-        body = json.string("body", "text", "title")
-        done = json.bool("done")
-        isFixed = json.bool("is_fixed")
-        triggerAt = json.string("trigger_at", "at")
-    }
-}
-
-@MainActor
-private final class ChecklistModel: ObservableObject {
-    @Published var items: [ChecklistItem] = []
-    @Published var loading = false
-    @Published var error = ""
-
-    func load() async {
-        loading = true
-        defer { loading = false }
-        do {
-            let value = try await NativeHouseAPI.request("/api/checklist")
-            let raw = value as? [[String: Any]]
-                ?? (value as? [String: Any])?["items"] as? [[String: Any]] ?? []
-            items = raw.map(ChecklistItem.init)
-            error = ""
-        } catch { self.error = "清单暂时够不着" }
-    }
-
-    func toggle(_ item: ChecklistItem) async {
-        try? await NativeHouseAPI.post("/api/checklist/\(item.id)/toggle")
-        await load()
-    }
-
-    func delete(_ item: ChecklistItem) async {
-        try? await NativeHouseAPI.post("/api/checklist/\(item.id)/delete")
-        await load()
-    }
-
-    func add(body: String, at: String) async {
-        var payload: [String: Any] = ["body": body, "is_fixed": true]
-        if !at.isEmpty { payload["at"] = at }
-        try? await NativeHouseAPI.post("/api/checklist", body: payload)
-        await load()
-    }
-}
-
-private struct NativeChecklistView: View {
-    @StateObject private var model = ChecklistModel()
-    @State private var draft = ""
-    @State private var time = ""
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            VStack(spacing: 4) {
-                FoyerPanelTitle(title: "TODAY'S ORDER", theme: theme)
-                Text(Date.now.formatted(date: .long, time: .omitted))
-                    .font(.system(size: 10, design: .monospaced))
-                    .foregroundColor(theme.textDim)
-            }
-            if model.loading && model.items.isEmpty {
-                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
-            }
-            ScrollView(showsIndicators: false) {
-                LazyVStack(spacing: 8) {
-                    ForEach(model.items) { item in
-                        HStack(alignment: .top, spacing: 0) {
-                            VStack(spacing: 0) {
-                                Rectangle()
-                                    .stroke(style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
-                                    .foregroundColor(theme.fyDash)
-                                    .frame(width: 1)
-                            }
-                            .frame(width: 14)
-                            .overlay(alignment: .top) {
-                                BindingHole(theme: theme, count: 2, spacing: 18)
-                                    .offset(x: -4.5, y: 8)
-                            }
-
-                            HStack(spacing: 9) {
-                                Button { Task { await model.toggle(item) } } label: {
-                                    Image(systemName: item.done ? "checkmark.square.fill" : "square")
-                                        .foregroundColor(item.done ? theme.fyAccent : theme.textDim)
-                                }
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.body)
-                                        .font(.system(size: 13, design: .monospaced))
-                                        .strikethrough(item.done)
-                                        .opacity(item.done ? 0.55 : 1)
-                                    if !item.triggerAt.isEmpty {
-                                        Text(item.triggerAt)
-                                            .font(.system(size: 9, design: .monospaced))
-                                            .foregroundColor(theme.fyAccent.opacity(0.9))
-                                    }
-                                }
-                                Spacer()
-                                if !item.isFixed {
-                                    Text("临")
-                                        .font(.system(size: 9))
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(theme.fyAccentSoft.opacity(0.3), in: Capsule())
-                                        .foregroundColor(theme.fyAccent)
-                                }
-                                Button { Task { await model.delete(item) } } label: {
-                                    Image(systemName: "xmark").font(.system(size: 11))
-                                        .foregroundColor(theme.textLight)
-                                }
-                            }
-                            .padding(.vertical, 11)
-                            .padding(.trailing, 14)
-                            .padding(.leading, 10)
-                        }
-                        .foyerCard(theme)
-                    }
-                    if model.items.isEmpty && !model.loading {
-                        Text(model.error.isEmpty ? "今天还没有待办" : model.error)
-                            .font(.system(size: 12)).foregroundColor(theme.textDim).padding(30)
-                    }
-                }
-                .padding(.top, 12)
-            }
-            HStack(spacing: 8) {
-                TextField("加一项…", text: $draft)
-                TextField("HH:mm", text: $time).frame(width: 58)
-                    .textInputAutocapitalization(.never)
-                Button {
-                    let body = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !body.isEmpty else { return }
-                    draft = ""
-                    Task { await model.add(body: body, at: time); time = "" }
-                } label: {
-                    Image(systemName: "plus").frame(width: 30, height: 30)
-                        .background(theme.fyAccent, in: Circle())
-                        .foregroundColor(.white)
-                }
-            }
-            .font(.system(size: 13, design: .monospaced))
-            .padding(12)
-            .foyerCard(theme)
-            .padding(.horizontal, 16)
-            .padding(.bottom, 14)
-        }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .padding(.horizontal, 12).padding(.top, 8)
-        .task { await model.load() }
     }
 }
 
@@ -5355,11 +5013,8 @@ private final class DataPanelModel: ObservableObject {
             case .shelf: path = "/api/shelf/list?limit=100"; key = "items"
             case .nianlun: path = "/api/nianlun/list"; key = "desires"
             case .album: path = "/api/album/entries"; key = "entries"
-            case .impression: path = "/api/ob/buckets"; key = nil
             case .calendar: path = "/api/calendar/month?year=\(Calendar.current.component(.year, from: Date()))&month=\(Calendar.current.component(.month, from: Date()))"; key = nil
-            case .portrait, .usage:
-                path = destination == .portrait ? "/api/ob/portrait" : "/api/usage"
-                key = nil
+            case .usage: path = "/api/usage"; key = nil
             default: path = "/api/ob/buckets"; key = nil
             }
             let value = try await NativeHouseAPI.request(path)
@@ -5371,12 +5026,6 @@ private final class DataPanelModel: ObservableObject {
             } else if let object = value as? [String: Any] {
                 rows = flatten(object)
             } else { rows = [] }
-            if destination == .impression {
-                rows = rows.filter {
-                    $0.string("type") == "feel"
-                    && (($0["tags"] as? [Any])?.map(String.init(describing:)).contains("daily_impression") ?? false)
-                }
-            }
             records = rows.map(record)
             error = ""
         } catch { self.error = "这一页暂时够不着" }
@@ -5634,7 +5283,6 @@ private struct WebHouseView: View {
 
     private var panelName: String {
         switch destination {
-        case .checklist: return "checklist"
         case .music: return "music"
         case .clockwork: return "fatiao"
         default: return destination.rawValue
@@ -11789,318 +11437,6 @@ private struct NativeDreamsView: View {
     }
 }
 
-// MARK: - 小黑屋（墙上刻道子）
-// 陈璟一个人的地方。写进去就钉死，改不了删不了。
-// 锁着的她只看得见有几道，看不见刻的什么。到日子自己裂开。
-
-private struct WallEntry: Identifiable {
-    let id: Int
-    let createdAt: Date?
-    let unlockAt: Date?
-    let isOpen: Bool
-    let daysLeft: Int
-    let marks: Int
-    let mood: String
-    let body: String
-
-    init(_ row: [String: Any]) {
-        id = (row["id"] as? Int) ?? 0
-        createdAt = WallEntry.parse(row.string("created_at"))
-        unlockAt = WallEntry.parse(row.string("unlock_at"))
-        isOpen = (row["open"] as? Bool) ?? false
-        daysLeft = (row["days_left"] as? Int) ?? 0
-        marks = min(48, max(1, (row["marks"] as? Int) ?? 3))
-        mood = row.string("mood")
-        body = row.string("body")
-    }
-
-    private static let parser: ISO8601DateFormatter = {
-        let f = ISO8601DateFormatter()
-        f.formatOptions = [.withInternetDateTime]
-        return f
-    }()
-
-    static func parse(_ s: String) -> Date? {
-        guard !s.isEmpty else { return nil }
-        return parser.date(from: s)
-    }
-}
-
-@MainActor
-private final class WallModel: ObservableObject {
-    @Published var entries: [WallEntry] = []
-    @Published var locked = 0
-    @Published var opened = 0
-    @Published var chainOK = true
-    @Published var loading = true
-    @Published var error = ""
-
-    func load() async {
-        loading = true
-        defer { loading = false }
-        do {
-            let data = try await NativeHouseAPI.object("/api/wall/entries")
-            let rows = (data["entries"] as? [[String: Any]]) ?? []
-            entries = rows.map(WallEntry.init)
-            locked = data.int("locked")
-            opened = data.int("opened")
-            error = ""
-        } catch {
-            self.error = "门打不开，后端没应声"
-        }
-        if let v = try? await NativeHouseAPI.object("/api/wall/verify") {
-            chainOK = (v["ok"] as? Bool) ?? true
-        }
-    }
-}
-
-private struct WallMarks: View {
-    let count: Int
-    let seed: Int
-    let color: Color
-
-    var body: some View {
-        HStack(alignment: .bottom, spacing: 4) {
-            ForEach(0..<count, id: \.self) { i in
-                let r = abs(sin(Double((seed + 1) * (i + 1)) * 12.9898)).truncatingRemainder(dividingBy: 1)
-                Capsule()
-                    .fill(color)
-                    .frame(width: 2, height: 11 + r * 21)
-                    .rotationEffect(.degrees((r - 0.5) * 7))
-            }
-        }
-        .frame(height: 34, alignment: .bottom)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .clipped()
-    }
-}
-
-private struct NativeWallView: View {
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @StateObject private var model = WallModel()
-    @State private var page = 0
-    @State private var revealedLocks: Set<Int> = []
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    private var paper: Color {
-        theme.isDark
-            ? Color(red: 27/255, green: 31/255, blue: 39/255).opacity(0.94)
-            : Color(red: 250/255, green: 247/255, blue: 242/255).opacity(0.97)
-    }
-
-    private var cover: Color {
-        theme.isDark
-            ? Color(red: 19/255, green: 23/255, blue: 31/255).opacity(0.97)
-            : Color(red: 91/255, green: 79/255, blue: 84/255).opacity(0.94)
-    }
-
-    private static let stamp: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
-        f.dateFormat = "M月d日 HH:mm"
-        return f
-    }()
-    private static let day: DateFormatter = {
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.timeZone = TimeZone(secondsFromGMT: 8 * 3600)
-        f.dateFormat = "M.d"
-        return f
-    }()
-
-    var body: some View {
-        GeometryReader { geo in
-            VStack(spacing: 10) {
-                if model.loading {
-                    centerNote("开门中…")
-                } else if !model.error.isEmpty {
-                    centerNote(model.error)
-                } else {
-                    TabView(selection: $page) {
-                        coverPage
-                            .tag(0)
-                        ForEach(Array(model.entries.enumerated()), id: \.element.id) { index, entry in
-                            entryPage(entry)
-                                .tag(index + 1)
-                        }
-                    }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
-                    .frame(height: max(360, geo.size.height - 58))
-
-                    HStack(spacing: 8) {
-                        Rectangle().fill(theme.fyBorder).frame(width: 28, height: 1)
-                        Text(page == 0 ? "封面" : "\(page) / \(model.entries.count)")
-                            .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundColor(theme.textDim)
-                        Rectangle().fill(theme.fyBorder).frame(width: 28, height: 1)
-                    }
-                    .frame(height: 20)
-                }
-            }
-            .padding(.horizontal, 14)
-            .padding(.top, 10)
-            .padding(.bottom, 12)
-        }
-        .task { await model.load() }
-    }
-
-    private var coverPage: some View {
-        VStack(spacing: 0) {
-            Spacer()
-            Image(systemName: "lock.rectangle.stack")
-                .font(.system(size: 23, weight: .light))
-                .foregroundColor(Color.white.opacity(0.72))
-                .padding(.bottom, 22)
-            Text("小黑屋")
-                .font(.system(size: 28, weight: .medium, design: .serif))
-                .tracking(5)
-                .foregroundColor(.white.opacity(0.92))
-            Text("写给时间保管的悄悄话")
-                .font(.system(size: 11, design: .serif))
-                .tracking(2)
-                .foregroundColor(.white.opacity(0.48))
-                .padding(.top, 10)
-            if model.entries.isEmpty {
-                Text("还没有落笔")
-                    .font(.system(size: 11, design: .serif))
-                    .foregroundColor(.white.opacity(0.38))
-                    .padding(.top, 28)
-            }
-            Spacer()
-            HStack(spacing: 18) {
-                coverStat("\(model.locked)", "道锁着")
-                coverStat("\(model.opened)", "道开了")
-                coverStat(model.chainOK ? "完整" : "断裂", "时间链")
-            }
-            .padding(.bottom, 28)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(cover)
-        .overlay(alignment: .leading) {
-            LinearGradient(colors: [.black.opacity(0.32), .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(width: 24)
-        }
-        .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.white.opacity(0.13), lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 7))
-        .shadow(color: theme.fyShadow, radius: 16, y: 8)
-        .padding(.vertical, 6)
-    }
-
-    private func coverStat(_ value: String, _ label: String) -> some View {
-        VStack(spacing: 3) {
-            Text(value).font(.system(size: 12, weight: .medium, design: .serif))
-            Text(label).font(.system(size: 9.5))
-        }
-        .foregroundColor(.white.opacity(0.58))
-    }
-
-    private func statChip(_ num: String, _ label: String) -> some View {
-        HStack(spacing: 4) {
-            Text(num).font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(theme.text)
-            Text(label).font(.system(size: 11)).foregroundColor(theme.textDim)
-        }
-        .padding(.horizontal, 11).padding(.vertical, 7)
-        .foyerCard(theme)
-    }
-
-    private func centerNote(_ text: String) -> some View {
-        Text(text)
-            .font(.system(size: 13))
-            .foregroundColor(theme.textDim)
-            .multilineTextAlignment(.center)
-            .lineSpacing(6)
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 44)
-    }
-
-    private func entryPage(_ e: WallEntry) -> some View {
-        ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
-                HStack(alignment: .firstTextBaseline) {
-                    Text(e.createdAt.map { Self.stamp.string(from: $0) } ?? "--")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(theme.textDim)
-                    Spacer()
-                    if e.isOpen, !e.mood.isEmpty {
-                        Text(e.mood)
-                            .font(.system(size: 10.5, design: .serif))
-                            .padding(.horizontal, 8).padding(.vertical, 3)
-                            .background(theme.fyAccent.opacity(0.13), in: Capsule())
-                            .foregroundColor(theme.fyAccent)
-                    }
-                }
-
-                WallMarks(
-                    count: e.marks,
-                    seed: e.id,
-                    color: e.isOpen ? theme.fyAccent.opacity(0.48) : theme.text.opacity(0.24)
-                )
-
-                if e.isOpen {
-                    Text(e.body)
-                        .font(.system(size: 15, design: .serif))
-                        .foregroundColor(theme.text)
-                        .lineSpacing(7)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.top, 5)
-                } else {
-                    Text(lockLine(e))
-                        .font(.system(size: 11, weight: .medium, design: .monospaced))
-                        .foregroundColor(theme.fyAccent)
-
-                    Spacer(minLength: 35)
-                    VStack(spacing: 13) {
-                        Image(systemName: revealedLocks.contains(e.id) ? "lock.open" : "lock")
-                            .font(.system(size: 22, weight: .light))
-                            .foregroundColor(theme.textLight)
-                        if revealedLocks.contains(e.id) {
-                            Text("这一页已经写下，\n只是还没到与你见面的时候。")
-                                .font(.system(size: 14, design: .serif))
-                                .foregroundColor(theme.text)
-                                .multilineTextAlignment(.center)
-                                .lineSpacing(6)
-                                .transition(.opacity)
-                            Text("到时自会翻开。")
-                                .font(.system(size: 11, design: .serif))
-                                .foregroundColor(theme.textDim)
-                        } else {
-                            Text("轻触这一页")
-                                .font(.system(size: 11))
-                                .foregroundColor(theme.textDim)
-                        }
-                    }
-                    .frame(maxWidth: .infinity)
-                    Spacer(minLength: 35)
-                }
-            }
-            .padding(.init(top: 24, leading: 24, bottom: 30, trailing: 22))
-            .frame(maxWidth: .infinity, minHeight: 440, alignment: .topLeading)
-        }
-        .scrollIndicators(.hidden)
-        .background(paper)
-        .overlay(alignment: .leading) {
-            LinearGradient(colors: [.black.opacity(theme.isDark ? 0.22 : 0.08), .clear], startPoint: .leading, endPoint: .trailing)
-                .frame(width: 18)
-        }
-        .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.fyBorder, lineWidth: 1))
-        .clipShape(RoundedRectangle(cornerRadius: 5))
-        .shadow(color: theme.fyShadow, radius: 13, y: 7)
-        .padding(.vertical, 6)
-        .contentShape(Rectangle())
-        .onTapGesture {
-            guard !e.isOpen else { return }
-            withAnimation(.easeInOut(duration: 0.25)) { revealedLocks.insert(e.id) }
-        }
-    }
-
-    private func lockLine(_ e: WallEntry) -> String {
-        let when = e.daysLeft <= 0 ? "今天开" : "\(e.daysLeft) 天后开"
-        if let ua = e.unlockAt { return "\(when) · \(Self.day.string(from: ua))" }
-        return when
-    }
-}
-
 // MARK: - Ombre Brain native panels
 
 private struct OBBucket: Identifiable {
@@ -12435,281 +11771,6 @@ struct NativeMorningPaperView: View {
     }
 }
 
-private struct PipeLabEvent: Decodable {
-    let eventID: Int
-    let seq: Int
-    let event: String
-    let turnID: String
-    let delta: String?
-    let toolCallID: String?
-    let name: String?
-    let ok: Bool?
-    let labMessageID: String?
-    let reason: String?
-
-    enum CodingKeys: String, CodingKey {
-        case eventID = "event_id", seq, event, delta, name, ok, reason
-        case turnID = "turn_id", toolCallID = "tool_call_id"
-        case labMessageID = "lab_message_id"
-    }
-}
-
-@MainActor private final class PipeLabModel: ObservableObject {
-    @Published var state = AlcoveAPI.LiveState()
-    @Published var connected = false
-    @Published var sending = false
-    @Published var notice: String?
-    private var streamTask: Task<Void, Never>?
-    private var lastEventID = -1
-
-    func connect() {
-        guard streamTask == nil else { return }
-        streamTask = Task { [weak self] in await self?.consume() }
-    }
-
-    func disconnect() {
-        streamTask?.cancel()
-        streamTask = nil
-        connected = false
-    }
-
-    func send(_ text: String) async -> Bool {
-        let clean = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !clean.isEmpty, !sending, !state.active else { return false }
-        sending = true
-        defer { sending = false }
-        do {
-            let result = try await AlcoveAPI.postRaw("/lab/send", body: ["text": clean])
-            guard result["ok"] as? Bool != false else { throw URLError(.badServerResponse) }
-            notice = nil
-            return true
-        } catch {
-            notice = "实验管道没有接住这句话"
-            return false
-        }
-    }
-
-    private func consume() async {
-        var retry: UInt64 = 1_000_000_000
-        while !Task.isCancelled {
-            do {
-                var request = URLRequest(url: AlcoveAPI.fullURL("/stream/lab"))
-                request.setValue("text/event-stream", forHTTPHeaderField: "Accept")
-                if lastEventID >= 0 {
-                    request.setValue(String(lastEventID), forHTTPHeaderField: "Last-Event-ID")
-                }
-                request.timeoutInterval = 60 * 60
-                let (bytes, response) = try await AlcoveAPI.session.bytes(for: request)
-                guard let http = response as? HTTPURLResponse,
-                      (200..<300).contains(http.statusCode) else { throw URLError(.badServerResponse) }
-                connected = true
-                notice = nil
-                retry = 1_000_000_000
-                for try await line in bytes.lines {
-                    guard !Task.isCancelled else { return }
-                    guard line.hasPrefix("data:") else { continue }
-                    let payload = line.dropFirst(5).trimmingCharacters(in: .whitespaces)
-                    guard let data = payload.data(using: .utf8),
-                          let event = try? JSONDecoder().decode(PipeLabEvent.self, from: data),
-                          event.eventID > lastEventID else { continue }
-                    lastEventID = event.eventID
-                    apply(event)
-                }
-            } catch is CancellationError {
-                return
-            } catch {
-                connected = false
-                notice = "实验流正在重连"
-                try? await Task.sleep(nanoseconds: retry)
-                retry = min(retry * 2, 20_000_000_000)
-            }
-        }
-    }
-
-    private func apply(_ event: PipeLabEvent) {
-        if event.event == "start" || state.turnID != event.turnID {
-            state = AlcoveAPI.LiveState(active: true, turnID: event.turnID)
-        }
-        guard event.seq > state.lastSeq else { return }
-        state.lastSeq = event.seq
-        switch event.event {
-        case "start":
-            state.active = true
-            state.finishing = false
-            state.error = nil
-        case "thinking_delta":
-            let delta = event.delta ?? ""
-            state.thinking += delta
-            if let i = state.timeline.indices.last, state.timeline[i].kind == "thinking" {
-                state.timeline[i].text += delta
-            } else if !delta.isEmpty {
-                state.timeline.append(.init(id: "lab-thinking-\(event.eventID)",
-                                            kind: "thinking", text: delta))
-            }
-        case "native_thinking_delta":
-            // v1.2: archive channel only. The lab deliberately never renders it.
-            state.nativeThinking += event.delta ?? ""
-        case "text_delta":
-            state.say += event.delta ?? ""
-        case "tool_start":
-            let id = event.toolCallID ?? "lab-tool-\(event.eventID)"
-            if !state.tools.contains(where: { $0.id == id }) {
-                let name = event.name ?? "执行动作"
-                state.tools.append(.init(id: id, name: name))
-                state.timeline.append(.init(id: id, kind: "tool", text: name))
-            }
-        case "tool_done":
-            if let id = event.toolCallID, let i = state.tools.firstIndex(where: { $0.id == id }) {
-                state.tools[i].done = true; state.tools[i].ok = event.ok
-            }
-            if let id = event.toolCallID, let i = state.timeline.firstIndex(where: { $0.id == id }) {
-                state.timeline[i].done = true; state.timeline[i].ok = event.ok
-            }
-        case "finish":
-            state.active = false
-            state.finishing = false
-            state.messageID = event.labMessageID
-        case "error":
-            state.active = false
-            state.error = event.reason ?? "实验轮中断"
-        default:
-            break
-        }
-    }
-}
-
-private struct NativePipeLabView: View {
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @StateObject private var model = PipeLabModel()
-    @State private var draft = ""
-    @State private var showProcess = true
-    @FocusState private var focused: Bool
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            header
-            ScrollViewReader { proxy in
-                ScrollView(showsIndicators: false) {
-                    VStack(alignment: .leading, spacing: 14) {
-                        if model.state.turnID.isEmpty {
-                            ContentUnavailableView("常驻管道实验室", systemImage: "waveform.path.ecg.rectangle",
-                                description: Text("这里与正式聊天完全隔离。发一句话，观察思绪、工具与正文怎样实时经过管道。"))
-                                .padding(.top, 48)
-                        } else {
-                            processPanel
-                            if !model.state.say.isEmpty {
-                                Text(model.state.say)
-                                    .font(.system(size: 16))
-                                    .lineSpacing(6)
-                                    .foregroundColor(theme.text)
-                                    .fixedSize(horizontal: false, vertical: true)
-                                    .padding(16)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .foyerCard(theme)
-                            }
-                            if let error = model.state.error {
-                                Label(error, systemImage: "exclamationmark.triangle")
-                                    .font(.system(size: 12))
-                                    .foregroundColor(.orange)
-                            }
-                        }
-                        Color.clear.frame(height: 1).id("lab-tail")
-                    }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 14)
-                }
-                .scrollDismissesKeyboard(.interactively)
-                .onTapGesture { focused = false }
-                .onChange(of: model.state.say) { _ in scrollTail(proxy) }
-                .onChange(of: model.state.thinking) { _ in scrollTail(proxy) }
-            }
-            composer
-        }
-        .task { model.connect() }
-        .onDisappear { model.disconnect() }
-    }
-
-    private var header: some View {
-        HStack(spacing: 9) {
-            Circle().fill(model.connected ? Color.green : Color.orange).frame(width: 7, height: 7)
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Pipe Lab").font(.system(size: 18, weight: .semibold, design: .serif))
-                Text(model.state.active ? "常驻进程正在回应" : (model.connected ? "实验流已连接" : "正在连接"))
-                    .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
-            }
-            Spacer()
-            Text("ISOLATED")
-                .font(.system(size: 9, weight: .bold, design: .monospaced))
-                .tracking(1.4).foregroundColor(theme.fyAccent)
-        }
-        .padding(.horizontal, 18).padding(.vertical, 12)
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.fyBorder).frame(height: 0.5) }
-    }
-
-    private var processPanel: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Button { withAnimation(.easeInOut(duration: 0.18)) { showProcess.toggle() } } label: {
-                HStack {
-                    Text("ThoughtProcess").font(.system(size: 12, weight: .medium))
-                    Spacer()
-                    Image(systemName: showProcess ? "chevron.up" : "chevron.down").font(.system(size: 9))
-                }
-                .frame(minHeight: 44)
-                .contentShape(Rectangle())
-            }.buttonStyle(.plain)
-            if showProcess {
-                ForEach(model.state.timeline) { item in
-                    HStack(alignment: .top, spacing: 9) {
-                        Image(systemName: item.icon)
-                            .font(.system(size: 11)).frame(width: 16).foregroundColor(theme.fyAccent)
-                        Text(item.text)
-                            .font(item.kind == "thinking" ? .system(size: 12).italic() : .system(size: 12, weight: .medium))
-                            .foregroundColor(theme.textDim)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Spacer(minLength: 0)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 14)
-        .foyerCard(theme)
-    }
-
-    private var composer: some View {
-        HStack(alignment: .bottom, spacing: 10) {
-            TextField("给实验管道一句话", text: $draft, axis: .vertical)
-                .lineLimit(1...5).focused($focused)
-                .padding(.horizontal, 13).padding(.vertical, 10)
-                .background(theme.fyCard, in: RoundedRectangle(cornerRadius: 16, style: .continuous))
-            Button {
-                let text = draft
-                Task { if await model.send(text) { draft = "" } }
-            } label: {
-                Group {
-                    if model.sending { ProgressView().controlSize(.small) }
-                    else { Image(systemName: "arrow.up") }
-                }
-                .font(.system(size: 15, weight: .semibold))
-                .frame(width: 44, height: 44)
-                .background(theme.fyAccent, in: Circle())
-                .foregroundColor(theme.fyCard)
-            }
-            .buttonStyle(.plain)
-            .disabled(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.sending || model.state.active)
-            .opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty || model.state.active ? 0.45 : 1)
-            .accessibilityLabel("发送到实验管道")
-        }
-        .padding(.horizontal, 14).padding(.top, 10).padding(.bottom, 12)
-        .background(theme.fyCardSub.opacity(0.94))
-        .overlay(alignment: .top) { Rectangle().fill(theme.fyBorder).frame(height: 0.5) }
-    }
-
-    private func scrollTail(_ proxy: ScrollViewProxy) {
-        withAnimation(.easeOut(duration: 0.18)) { proxy.scrollTo("lab-tail", anchor: .bottom) }
-    }
-}
-
 @MainActor private final class OBMemoryModel: ObservableObject {
     @Published var buckets: [OBBucket] = []
     @Published var loading = false
@@ -13011,50 +12072,6 @@ private struct OBMemoryDetailView: View {
         _ = try? await NativeHouseAPI.request("/api/ob/api/bucket/\(item.id)/edit", method: "PATCH", body: ["name": name, "content": content, "tags": split(tags), "domain": split(domains), "why_remembered": why, "importance": Int(importance)])
         await didChange(); saving = false; dismiss()
     }
-}
-
-private struct OBLetter: Identifiable {
-    let id, author, userName, title, date, content: String
-    init(_ r: [String: Any]) { id=r.string("id"); author=r.string("author"); userName=r.string("user_name"); title=r.string("title"); date=r.string("date"); content=r.string("content") }
-}
-
-private struct NativeOBLettersView: View {
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @State private var letters: [OBLetter] = []; @State private var filter = ""; @State private var editing: OBLetter?
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-    private var shown: [OBLetter] { filter.isEmpty ? letters : letters.filter { $0.author == filter || (filter == "user" && $0.author == "user") } }
-    var body: some View {
-        VStack(spacing: 10) {
-            FoyerPanelTitle(title: "Letters", theme: theme)
-            HStack { filterButton("全部", ""); filterButton("陈霁", "user"); filterButton("陈璟", "陈璟"); Spacer(); Button { editing = OBLetter([:]) } label: { Image(systemName: "square.and.pencil") } }
-            ScrollView { LazyVStack(spacing: 12) { ForEach(shown) { l in Button { editing=l } label: { letterCard(l) }.buttonStyle(.plain) } }.padding(.bottom,18) }.refreshable { await load() }
-        }.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8)
-        .task { await load() }.sheet(item:$editing) { l in OBLetterEditor(letter:l) { await load() } }
-    }
-    private func filterButton(_ title:String,_ value:String)->some View { Button(title){filter=value}.font(.system(size:11)).padding(.horizontal,12).frame(height:30).background(filter==value ? theme.fyAccentSoft:theme.fyCard,in:Capsule()) }
-    private func letterCard(_ l:OBLetter)->some View { VStack(alignment:.leading,spacing:9){HStack{Label(l.author == "user" ? (l.userName.isEmpty ? "陈霁":l.userName):l.author,systemImage:"envelope").font(.system(size:11,weight:.semibold));Spacer();Text(l.date).font(.system(size:10,design:.monospaced)).foregroundColor(theme.textDim)}; if !l.title.isEmpty {Text(l.title).font(.system(size:17,weight:.semibold,design:.serif))};Text(l.content).font(.system(size:12)).lineSpacing(3).foregroundColor(theme.textDim).lineLimit(6)}.padding(16).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme) }
-    private func load() async { letters = (try? await NativeHouseAPI.array("/api/ob/api/letters",key:"letters"))?.map(OBLetter.init) ?? [] }
-}
-
-private struct OBLetterEditor: View {
-    let letter:OBLetter; let didChange:() async->Void; @Environment(\.dismiss) private var dismiss
-    @State private var author = ""
-    @State private var userName = ""
-    @State private var title = ""
-    @State private var date = ""
-    @State private var content = ""
-    @AppStorage("alcoveTheme") private var themeName="haven"
-    private var theme:AlcoveTheme{.panelNamed(themeName)}
-    var body:some View{NavigationStack{Form{Picker("署名",selection:$author){Text("陈霁").tag("user");Text("陈璟").tag("陈璟")};TextField("显示名字",text:$userName);TextField("标题",text:$title);TextField("日期",text:$date);TextEditor(text:$content).frame(minHeight:260);if !letter.id.isEmpty{Button("删除到档案",role:.destructive){Task{_ = try? await NativeHouseAPI.request("/api/ob/api/letter/\(letter.id)?confirm=true",method:"DELETE");await didChange();dismiss()}}}}.scrollContentBackground(.hidden).background(theme.fyCardSub).navigationTitle(letter.id.isEmpty ? "写信":"编辑信").toolbar{ToolbarItem(placement:.cancellationAction){Button("关闭"){dismiss()}};ToolbarItem(placement:.confirmationAction){Button("保存"){Task{await save()}}}}.onAppear{author=letter.author.isEmpty ? "user":letter.author;userName=letter.userName;title=letter.title;date=letter.date;content=letter.content}}}
-    private func save()async{let body:[String:Any]=["author":author,"user_name":userName,"title":title,"date":date,"content":content];if letter.id.isEmpty{_ = try? await NativeHouseAPI.request("/api/ob/api/letter",method:"POST",body:body)}else{_ = try? await NativeHouseAPI.request("/api/ob/api/letter/\(letter.id)",method:"PATCH",body:body)};await didChange();dismiss()}
-}
-
-private struct OBSelfEntry:Identifiable{let id,content,aspect,created:String;init(_ r:[String:Any]){id=r.string("id");content=r.string("content");aspect=r.string("aspect");created=r.string("created")}}
-private struct NativeOBSelfView:View{
-    @AppStorage("alcoveTheme") private var themeName="haven";@State private var entries:[OBSelfEntry]=[];@State private var aspect=""
-    private var theme:AlcoveTheme{.panelNamed(themeName)};private let aspects=["","nature","values","patterns","limits","becoming","uncertainty","stance"]
-    private var shown:[OBSelfEntry]{aspect.isEmpty ? entries:entries.filter{$0.aspect==aspect}}
-    var body:some View{VStack(spacing:10){FoyerPanelTitle(title:"Self",theme:theme);ScrollView(.horizontal,showsIndicators:false){HStack(spacing:7){ForEach(aspects,id:\.self){a in Button(a.isEmpty ? "全部":a){aspect=a}.font(.system(size:11,design:.monospaced)).padding(.horizontal,11).frame(height:30).background(aspect==a ? theme.fyAccentSoft:theme.fyCard,in:Capsule())}}};ScrollView{LazyVStack(spacing:10){ForEach(shown){e in VStack(alignment:.leading,spacing:8){HStack{Text(e.aspect).font(.system(size:10,weight:.semibold,design:.monospaced)).foregroundColor(theme.fyAccent);Spacer();Text(e.created.prefix(16).replacingOccurrences(of:"T",with:" ")).font(.system(size:9,design:.monospaced)).foregroundColor(theme.textDim)};Text(e.content).font(.system(size:13,design:.serif)).lineSpacing(4)}.padding(15).frame(maxWidth:.infinity,alignment:.leading).foyerCard(theme)}}.padding(.bottom,18)}}.padding(.horizontal,16).padding(.bottom,18).foregroundColor(theme.text).foyerPanel(theme).padding(.horizontal,12).padding(.top,8).task{entries=(try? await NativeHouseAPI.array("/api/ob/api/self"))?.map(OBSelfEntry.init) ?? []}}
 }
 
 // MARK: - 狼身（0922 任务#2563）
