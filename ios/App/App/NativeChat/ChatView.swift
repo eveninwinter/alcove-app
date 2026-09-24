@@ -3093,7 +3093,8 @@ struct MessageRow: View {
                             .accessibilityLabel("选择正文段落")
                         }
                         // 0924 她要的「重来」（像官方 app 那种重 roll）：只在他最后一轮的尾巴上出现
-                        if showTime, !isUser, let onReroll = onReroll {
+                        // 0924 她要的：重来箭头跟过程点一个开关，思绪藏了它也藏
+                        if showTime, !isUser, let onReroll = onReroll, !(theme.isMessages && !showProcessDots) {
                             Button { onReroll() } label: {
                                 Image(systemName: "arrow.counterclockwise")
                                     .font(.system(size: 11, weight: .medium))
