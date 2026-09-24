@@ -3120,7 +3120,7 @@ struct MessageRow: View {
             NavigationStack {
                 ScrollView {
                     Text(one.text)
-                        .font(.system(size: 15))
+                        .font(ThoughtFont.font(15))
                         .lineSpacing(7)
                         .foregroundColor(theme.text)
                         .fixedSize(horizontal: false, vertical: true)
@@ -3465,7 +3465,7 @@ struct MessageRow: View {
                     // .italic(Bool) 是 iOS16+ 的签名，这里走老 API 免得吃部署目标的亏
                     Text(it.content)
                         .font(it.kind == "thinking"
-                              ? .system(size: 11).italic()
+                              ? ThoughtFont.font(11)
                               : .system(size: 11))
                         .foregroundColor(theme.textDim.opacity(it.kind == "thinking" ? 0.72 : 0.9))
                         .fixedSize(horizontal: false, vertical: true)
@@ -3561,8 +3561,7 @@ struct MessageRow: View {
 
     private func processThought(_ text: String) -> some View {
         Text(text)
-            .font(.system(size: 12.5))
-            .italic()
+            .font(ThoughtFont.font(12.5))   // 0924 她要的：思绪用宋体斜体
             .foregroundColor(theme.thoughtColor)
             .lineSpacing(3)
             .textSelection(.enabled)
@@ -3675,7 +3674,7 @@ struct MessageRow: View {
                 // 这里只剩一段话，跟官方那个面板一样干净。
                 VStack(alignment: .leading, spacing: 0) {
                     Text(visibleChatThought ?? cuteThinkingPlaceholder)
-                        .font(.system(size: 15))
+                        .font(ThoughtFont.font(15))
                         .lineSpacing(7)
                         .foregroundColor(theme.text)
                         .fixedSize(horizontal: false, vertical: true)
@@ -4964,8 +4963,7 @@ struct LiveSayBand: View {
         VStack(alignment: .leading, spacing: 3) {
             if !state.thinking.isEmpty {
                 Text(state.thinking)
-                    .font(.system(size: 11))
-                    .italic()
+                    .font(ThoughtFont.font(11))
                     .foregroundColor(theme.textDim.opacity(0.62))
                     .fixedSize(horizontal: false, vertical: true)
             }

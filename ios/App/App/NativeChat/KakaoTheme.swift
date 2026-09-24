@@ -656,3 +656,15 @@ struct ChatFontPicker: View {
         .buttonStyle(.plain)
     }
 }
+
+/// 0924 她要的：思绪里的字用衬线宋体的斜体。宋体用架子上打包进 App 的「霞鹜新致宋」（LXGWNeoZhiSong），
+/// 没打进来就退到系统衬线；斜体是 SwiftUI 合成的斜。
+enum ThoughtFont {
+    static let songPostScript = "LXGWNeoZhiSong"
+    static func font(_ size: CGFloat) -> Font {
+        if UIFont(name: songPostScript, size: size) != nil {
+            return Font.custom(songPostScript, fixedSize: size).italic()
+        }
+        return Font.system(size: size, design: .serif).italic()
+    }
+}
