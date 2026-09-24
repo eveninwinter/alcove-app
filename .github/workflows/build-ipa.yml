@@ -26,7 +26,10 @@ jobs:
               url = 'https://alcove.ob-memory.uk/api/kakao/fonts/' + f['file']
               out = 'ios/App/App/Fonts/' + f['id'] + '.ttf'
               try:
-                  urllib.request.urlretrieve(url, out)
+                  # 0924 晚查出来的：Python 默认身份（Python-urllib）会被 Cloudflare 直接 403，六款一款都没进包；报成 curl 就放行
+                  req = urllib.request.Request(url, headers={'User-Agent': 'curl/8.5.0'})
+                  with urllib.request.urlopen(req, timeout=120) as r, open(out, 'wb') as fp:
+                      fp.write(r.read())
                   print('font', f['id'], os.path.getsize(out))
               except Exception as e:
                   print('skip', f['id'], e)
