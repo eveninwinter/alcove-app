@@ -340,24 +340,14 @@ struct NativeHouseSheet: View {
         .ignoresSafeArea(.container, edges: .all)
         .preferredColorScheme(theme.isDark ? .dark : .light)
         .presentationBackground {
-            if route == .settings || route == .bubbleAppearance {
-                // 0924 晚她问「设置页有没有像侧边栏一样透主题颜色」——没有：这里原来铺的是一张写死的灰石纹图。
-                // 改成跟侧边栏同一个做法：一块毛玻璃透出后面聊天页的壁纸，再压一层很薄的亮 / 暗纱保字清楚。
-                ZStack {
-                    Rectangle().fill(.ultraThinMaterial)
-                    (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.22 : 0.16)
-                }
-                .ignoresSafeArea()
-            } else {
-                GeometryReader { backgroundGeo in
-                    Image(theme.isDark ? "DrawerDark" : "DrawerLight")
-                        .resizable()
-                        .scaledToFill()
-                        .frame(width: backgroundGeo.size.width, height: backgroundGeo.size.height)
-                        .clipped()
-                        .ignoresSafeArea()
-                }
+            // 0924 晚设置页先换：原来铺的是一张写死的花影图（DrawerLight / DrawerDark）。
+            // 0925 她要所有房间都一样：一块毛玻璃透出后面聊天页的壁纸（跟主题走），再压一层很薄的亮 / 暗纱保字清楚。
+            // 自己铺了底的房间（共读室、棋牌室、钱包……）照旧盖在上面。
+            ZStack {
+                Rectangle().fill(.ultraThinMaterial)
+                (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.22 : 0.16)
             }
+            .ignoresSafeArea()
         }
         .onAppear { prepareTextureIfNeeded() }
         .onChange(of: themeName) { _ in prepareTextureIfNeeded() }
