@@ -1061,6 +1061,8 @@ private struct NativeSettingsView: View {
     // 0924 自醒引擎（照她递的 PDF）：不看表、自己醒；开关走 flags 的 wake_engine，时间线看他每次醒了选了什么
     @State private var wakeOn = true
     @State private var wakeLine: String? = nil
+    @State private var wakeEta: String? = nil
+    @State private var wakeOdds: String? = nil
     @State private var showWakeTimeline = false
     @State private var thoughtLength = 500.0
     // 0822 她要的：手写思绪开关。关＝后端 thought_chars 写 -1，
@@ -1434,6 +1436,18 @@ private struct NativeSettingsView: View {
                                 Image(systemName: "chevron.right").foregroundColor(theme.textLight)
                             }
                         }.buttonStyle(.plain)
+                        // 0924 她要的：开关下面说清楚下一次大概几点醒、怎么算的。不是闹钟，是按此刻的倾向估的。
+                        VStack(alignment: .leading, spacing: 3) {
+                            Text("下一次大概：\(wakeEta ?? "还没算出来")")
+                                .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                            if let wakeOdds {
+                                Text(wakeOdds)
+                                    .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                            }
+                            Text("怎么算的：他身上有个桶，每分钟往里滴一点。滴多快看他此刻多容易醒：刚跑完一轮滴得慢，这阵子整体活跃滴得快，再加一点随机的漂。每一轮开始时偷偷抽一个门槛，桶满过门槛就醒一次，醒了做什么他自己定。你说话不会把桶倒掉，所以上面那个「大概几点」只是按此刻的速度估的，速度一直在变。")
+                                .font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
                         VStack(alignment: .leading, spacing: 2) {
                             if let due = chaseDue {
                                 Text("下一次来找你：\(due)")
@@ -1851,12 +1865,18 @@ private struct NativeSettingsView: View {
     @MainActor private func loadWake() async {
         guard let value = try? await NativeHouseAPI.object("/api/wake") else { return }
         if let on = value["on"] as? Bool { wakeOn = on }
-        guard let st = value["status"] as? [String: Any] else { wakeLine = "引擎没在跑"; return }
+        guard let st = value["status"] as? [String: Any] else { wakeLine = "引擎没在跑"; wakeEta = "引擎没在跑"; return }
         if let paused = st["paused_by"] as? String {
             let why = ["asleep": "他睡着", "quiet": "留白中", "app-off": "开关关着", "off": "引擎停着"][paused] ?? paused
             wakeLine = "暂停：\(why)"
-        } else if let p = st["p_wake_30min"] as? Double {
-            wakeLine = "半小时内醒来约 \(Int((p * 100).rounded()))%"
+            wakeEta = "暂停中（\(why)），桶不滴"
+            wakeOdds = nil
+        } else {
+            wakeLine = nil
+            wakeEta = Self.pulseDueText(st["eta_if_lambda_holds"] as? String).map { $0 + "，按此刻的速度估" } ?? "还没算出来"
+            if let p30 = st["p_wake_30min"] as? Double, let p60 = st["p_wake_60min"] as? Double {
+                wakeOdds = "半小时内约 \(Int((p30 * 100).rounded()))%，一小时内约 \(Int((p60 * 100).rounded()))%"
+            }
         }
     }
 
