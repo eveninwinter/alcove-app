@@ -2963,7 +2963,8 @@ struct MessageRow: View {
             // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
             if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
                 // 0924 她定的：不带名字，只有头像
-                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
+                // 0924 晚她要的：跟工作室一样头像后面留 16，左挪 14 之后猫图案不压头像（右侧少留 8 补回来，最宽不变）
+                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 16)
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
@@ -3191,7 +3192,8 @@ struct MessageRow: View {
             if !isUser {
                 // 晨报和旅行卡片是整行居中的东西，不吃我这边气泡的右侧留白
                 Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil || isTarotRow) ? 0
-                       : (msg.choiceCard != nil ? 34 : (theme.isPaper ? 15 : 48)))
+                       : (msg.choiceCard != nil ? 34 : (theme.isPaper ? 15
+                          : ((theme.isKakao && kakaoShowAvatar) ? 40 : 48))))
             }
         }
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil && !isTarotRow ? 12 : 0)
