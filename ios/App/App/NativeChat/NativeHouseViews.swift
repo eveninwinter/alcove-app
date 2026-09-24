@@ -1470,7 +1470,8 @@ private struct NativeSettingsView: View {
                     Text("整个 app 一起翻，不跟手机的深色模式走")
                         .font(.system(size: 10.5)).foregroundColor(theme.textLight)
                 } }
-                if page == .appearance { section("聊天主题") {
+                // 0924 她要的分两栏：上面 Alcove 自己的三套，下面 Kakao 一栏（按钮 + 主题包一排）
+                if page == .appearance { section("Alcove 主题") {
                     HStack(spacing: 8) {
                         familyChoice("玻璃", "光穿过去", "glass", [.white, .pink.opacity(0.42), .gray])
                         familyChoice("纸页", "话落下来", "paper", [
@@ -1483,15 +1484,15 @@ private struct NativeSettingsView: View {
                             Color(red: 0x57/255, green: 0xA1/255, blue: 0xF3/255),
                             Color(red: 233/255, green: 233/255, blue: 235/255)
                         ])
-                        // 0924 她要的：布局照 KakaoTalk，颜色和图从别人做的主题包里来
-                        familyChoice("Kakao", "套别人的包", "kakao", [
-                            Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255),
-                            .white,
-                            Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
-                        ])
                     }
                 } }
-                if page == .appearance && themeFamily == "kakao" { section("Kakao 主题包") {
+                if page == .appearance { section("Kakao 主题") {
+                    // 布局照 KakaoTalk，颜色和图从别人做的主题包里来
+                    familyChoice("Kakao", "套别人的包", "kakao", [
+                        Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255),
+                        .white,
+                        Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
+                    ])
                     KakaoPackPicker(theme: theme)
                 } }
                 if page == .appearance { section("聊天壁纸") {
