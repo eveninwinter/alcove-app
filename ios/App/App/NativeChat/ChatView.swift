@@ -842,11 +842,9 @@ struct ChatView: View {
             let splittable = rowHasPhoto && !message.displayText.isEmpty
                 && !message.isAudio && !message.isSticker
 
-            // 0924 晚她定的：Kakao 统一只跟紧挨着的上一条比，不管上一条是什么消息，隔超过 15 分钟就插胶囊
-            // （跳过拍一拍那套算法让互相拍一拍中间插了三次截断）。别的主题照旧。
-            let divided = theme.isKakao
-                ? needsDivider(prev: previous, cur: message, gap: 900)
-                : needsDivider(at: index)
+            // 0925 她定的：三个主题一样，只跟紧挨着的上一条比，不管上一条是什么消息，隔超过 15 分钟就插时间
+            // （0924 那套「跳过拍一拍往前找」让互相拍一拍中间插了三次截断，删了）。
+            let divided = needsDivider(prev: previous, cur: message, gap: 900)
             if divided {
                 if theme.isKakao {
                     KakaoDateDivider(date: message.date)
@@ -1055,9 +1053,9 @@ struct ChatView: View {
         }
     }
 
-    private func needsDivider(prev: ChatMessage?, cur: ChatMessage, gap: TimeInterval = 1200) -> Bool {
+    private func needsDivider(prev: ChatMessage?, cur: ChatMessage, gap: TimeInterval = 900) -> Bool {
         guard let prev else { return true }
-        // 只跟紧挨着的上一行比；Kakao 传 900（15 分钟）
+        // 只跟紧挨着的上一行比，隔超过 15 分钟就插（三个主题一样）
         return cur.date.timeIntervalSince(prev.date) > gap
     }
 
@@ -1123,20 +1121,6 @@ struct ChatView: View {
             || m.callSummary != nil || m.musicCard != nil { return false }
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
-    }
-
-    /// 0924 她报的「隔一小时没截断、隔二十分钟有」：原来只跟紧挨着的上一行比，中间要是夹了一条切歌线、
-    /// 拍一拍、报错行，一小时就被切成两个十几分钟，谁都不够 20 分钟。现在往前找到上一条真正的对话再比。
-    private func needsDivider(at index: Int) -> Bool {
-        let cur = store.messages[index]
-        var i = index - 1
-        while i >= 0 {
-            let m = store.messages[i]
-            let t = m.msgType ?? "text"
-            if t == "divider" || t == "pat_incoming" || t == "pat_outgoing" || t == "api_error" { i -= 1; continue }
-            return cur.date.timeIntervalSince(m.date) > 1200
-        }
-        return true
     }
 
     // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
