@@ -2910,6 +2910,7 @@ struct MessageRow: View {
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
                     messagesProcessBlock
+                        .padding(.leading, theme.isKakao ? max(0, kakaoTextLeading(head: kakaoHead) - 4) : 0)   // 0924 Kakao：对齐气泡第一个字（块里自带 4 的左距）
                 } else if !isUser && !turnBlocks.isEmpty {
                     ForEach(turnBlocks) { blk in
                         switch blk {
@@ -3049,7 +3050,7 @@ struct MessageRow: View {
                         .italic()
                         // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
                         .foregroundColor(theme.thoughtColor.opacity(0.82))
-                        .padding(.leading, 3)
+                        .padding(.leading, theme.isKakao ? kakaoTextLeading(head: kakaoHead) : 3)
                         .padding(.top, CGFloat(chatBubbleGap))
                 }
                 if shouldShowMetaRow {
@@ -3121,7 +3122,7 @@ struct MessageRow: View {
                             .buttonStyle(.plain)
                         }
                     }
-                    .padding(.leading, isUser ? 0 : timestampTextInset)
+                    .padding(.leading, isUser ? 0 : (theme.isKakao ? kakaoTextLeading(head: kakaoHead) : timestampTextInset))
                     .padding(.trailing, isUser ? timestampTextInset : 0)
                     .padding(.top, rowPartGap)
                 }
@@ -3263,6 +3264,16 @@ struct MessageRow: View {
                 bubbleCore
             }
         }
+    }
+
+    /// 0924 她要的：Kakao 下思绪块和气泡底下那排小图标，左边对齐气泡里第一个字（不管头像开没开）。
+    /// 第一个字的位置 = 气泡整块左移量 + 这张气泡图的字距左边。
+    private func kakaoTextLeading(head: Bool) -> CGFloat {
+        let pack = KakaoPackStore.shared.current
+        let spec = pack?.bubbles[head ? "recv1" : "recv2"] ?? pack?.bubbles["recv1"]
+        let inset = spec?.textInsets.leading ?? 14
+        let shift = kakaoShowAvatar ? Self.kakaoBubbleShiftLeft : 0
+        return inset - shift
     }
 
     private var kakaoSideMeta: some View {
