@@ -2772,6 +2772,7 @@ struct MessageRow: View {
     // 0924 她报的「气泡间距有的贴在一起」：一条消息里图 / 语音 / 正文 / 链接卡之间原来是 0，
     // 脚印那行又是另一个数。现在一律用设置里那个「气泡间距」，跟列表里气泡和气泡之间同一个数。
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
+    @AppStorage(KakaoPackStore.showAvatarKey) private var kakaoShowAvatar = true   // 0924 她要的：Kakao 下他的消息带不带头像
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
     @State private var showPulse = false
@@ -2872,7 +2873,7 @@ struct MessageRow: View {
             // 0903 她要的：塔罗卡不管谁发的都在屏幕正中间，两侧留白都不吃
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
-            if theme.isKakao && !isUser && !isTarotRow {
+            if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
                 KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
             }
             VStack(alignment: isUser ? .trailing : .leading,

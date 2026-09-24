@@ -7221,6 +7221,7 @@ private struct NativeStudioView: View {
     // 0924 她要的：工作室的字号跟聊天页那个「字号」设置走，字体已经跟全局走了
     @AppStorage("chatFontSize") private var chatFontSize = 14
     private var studioFontSize: CGFloat { CGFloat(chatFontSize) }
+    @AppStorage(KakaoPackStore.showAvatarKey) private var kakaoShowAvatar = true
     private static let isoFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
     }()
@@ -7406,7 +7407,7 @@ private struct NativeStudioView: View {
         let gap: CGFloat = 8
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
-            if isKakao && !mine { KakaoAvatarView(visible: head).padding(.trailing, 8) }
+            if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 if isKakao && !mine && head {
                     Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
@@ -7458,7 +7459,7 @@ private struct NativeStudioView: View {
         let thought = message.string("thinking")
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
-            if isKakao && !mine { KakaoAvatarView(visible: head).padding(.trailing, 8) }
+            if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
                 if isKakao && !mine && head {
                     Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)

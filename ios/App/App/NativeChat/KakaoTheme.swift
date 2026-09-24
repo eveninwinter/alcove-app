@@ -100,6 +100,7 @@ final class KakaoPackStore: ObservableObject {
     static let selectedKey = "kakaoPackID"
     static let cacheKey = "kakaoPacksJSON"
     static let usePackAvatarKey = "kakaoUsePackAvatar"
+    static let showAvatarKey = "kakaoShowAvatar"   // 0924 她要的：Kakao 下他的消息带不带头像
     static let fontKey = "kakaoFontID"
     static let fontsCacheKey = "kakaoFontsJSON"
 
@@ -463,6 +464,7 @@ struct KakaoPackPicker: View {
     // 0924 她报的「换了主题包聊天页没变」：她只点了包没点上面的 Kakao 按钮。点包就等于选 Kakao 家族，一步到位
     @AppStorage("alcoveTheme") var themeName = "haven"
     @AppStorage(KakaoPackStore.usePackAvatarKey) var usePackAvatar = true
+    @AppStorage(KakaoPackStore.showAvatarKey) var showAvatar = true
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -502,11 +504,18 @@ struct KakaoPackPicker: View {
                     .padding(.vertical, 2)
                 }
             }
+            Toggle(isOn: $showAvatar) {
+                Text("他的消息带头像")
+                    .font(.system(size: 12)).foregroundColor(theme.text)
+            }
+            .tint(theme.fyAccent)
+            if showAvatar {
             Toggle(isOn: $usePackAvatar) {
                 Text("他的头像用包里自带的")
                     .font(.system(size: 12)).foregroundColor(theme.text)
             }
             .tint(theme.fyAccent)
+            }
             Text(usePackAvatar ? "关掉就用你在「他的头像」里给他挑的那张" : "现在用的是你给他挑的那张，没挑就回落到包里的")
                 .font(.system(size: 10.5)).foregroundColor(theme.textLight)
             HStack {
@@ -541,6 +550,7 @@ struct KakaoPackPicker: View {
 /// 全走聊天页那几个零件，所见即所得
 struct KakaoPackPreview: View {
     @ObservedObject var store = KakaoPackStore.shared
+    @AppStorage(KakaoPackStore.showAvatarKey) var showAvatar = true
 
     var body: some View {
         let t = AlcoveTheme.kakaoTheme()
@@ -559,7 +569,7 @@ struct KakaoPackPreview: View {
             VStack(spacing: 10) {
                 KakaoDateDivider(date: Date()).padding(.vertical, -6)
                 HStack(alignment: .top, spacing: 8) {
-                    KakaoAvatarView(visible: true)
+                    if showAvatar { KakaoAvatarView(visible: true) }
                     VStack(alignment: .leading, spacing: 0) {
                         Text(name).font(.system(size: 12)).foregroundColor(t.textDim).padding(.bottom, 5)
                         HStack(alignment: .bottom, spacing: 5) {
