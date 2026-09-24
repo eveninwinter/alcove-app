@@ -7200,6 +7200,51 @@ private struct NativeStudioView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
+    // 0924 她要的：聊天页选了 Kakao，工作室半屏也跟着那套包走——壁纸、九宫格气泡、头像名字、时间贴气泡旁、日期胶囊。
+    // 顶栏按钮照旧，名字就是「工作室」。别的主题一个像素不变。
+    @ObservedObject private var kakaoPacks = KakaoPackStore.shared
+    private var isKakao: Bool { themeName == "kakao" }
+    private static let isoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }()
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+    }()
+    private func studioDate(_ m: [String: Any]) -> Date? {
+        let raw = m.string("ts")
+        return Self.isoFrac.date(from: raw) ?? Self.isoPlain.date(from: raw)
+    }
+    @ViewBuilder private var studioBackground: some View {
+        if isKakao {
+            GeometryReader { g in
+                if let wall = kakaoPacks.wallImage {
+                    Image(uiImage: wall).resizable().scaledToFill()
+                        .frame(width: g.size.width, height: g.size.height).clipped()
+                } else {
+                    (kakaoPacks.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255))
+                }
+            }
+        } else {
+            LinearGradient(colors: theme.isDark ? [Color(red: 0.075, green: 0.068, blue: 0.09), Color(red: 0.13, green: 0.105, blue: 0.14)] : [Color(red: 0.985, green: 0.955, blue: 0.945), Color(red: 0.94, green: 0.91, blue: 0.90)], startPoint: .top, endPoint: .bottom)
+        }
+    }
+    /// Kakao 气泡：包里的九宫格图，时间贴外侧下角
+    private func kakaoTextBubble(_ text: String, mine: Bool, head: Bool, date: Date?) -> some View {
+        let kt = AlcoveTheme.kakaoTheme()
+        return HStack(alignment: .bottom, spacing: 5) {
+            if mine, let date {
+                Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
+            }
+            KakaoBubbleView(isUser: mine, first: head) {
+                Text(alcoveMarkdown(text)).font(.system(size: 14)).lineSpacing(5).textSelection(.enabled)
+                    .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
+            }
+            .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+            if !mine, let date {
+                Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp).padding(.bottom, 2)
+            }
+        }
+    }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -7215,12 +7260,20 @@ private struct NativeStudioView: View {
                         // scrollTo，LazyVStack 内容高度一抖 contentOffset 停在旧值上，
                         // 屏幕就白了。现在按 id 稳定身份、只追加新消息、只在真有新消息时滚一次。
                         // 0829：同组图片（att_group）合并成一条横排气泡，跟主聊天一致
-                        ForEach(displayItems) { item in
+                        let items = displayItems
+                        ForEach(Array(items.enumerated()), id: \.element.id) { idx, item in
+                            let prev: [String: Any]? = idx > 0 ? items[idx - 1].primary : nil
+                            // Kakao：一串同一边的消息只有第一条露头像 / 名字 / 带尾巴的 01 图
+                            let head = prev.map { $0.string("role") != item.primary.string("role") } ?? true
                             Group {
+                                if isKakao, let d = studioDate(item.primary),
+                                   prev.map({ p in !Calendar.current.isDate(studioDate(p) ?? d, inSameDayAs: d) }) ?? true {
+                                    KakaoDateDivider(date: d)
+                                }
                                 if item.group.count > 1 {
-                                    photoGroupBubble(item)
+                                    photoGroupBubble(item, head: head)
                                 } else {
-                                    messageBubble(item.primary)
+                                    messageBubble(item.primary, head: head)
                                 }
                             }.id("studio-message-\(item.id)")
                         }
@@ -7244,7 +7297,7 @@ private struct NativeStudioView: View {
             }
             inputBar
         }
-        .background(LinearGradient(colors: theme.isDark ? [Color(red: 0.075, green: 0.068, blue: 0.09), Color(red: 0.13, green: 0.105, blue: 0.14)] : [Color(red: 0.985, green: 0.955, blue: 0.945), Color(red: 0.94, green: 0.91, blue: 0.90)], startPoint: .top, endPoint: .bottom).ignoresSafeArea())
+        .background(studioBackground.ignoresSafeArea())
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
@@ -7329,14 +7382,18 @@ private struct NativeStudioView: View {
     }
 
     /// 多图横排气泡：≤2 并排，>2 横滑（跟主聊天一个观感），配文垫在图下面
-    private func photoGroupBubble(_ item: StudioDisplayItem) -> some View {
+    private func photoGroupBubble(_ item: StudioDisplayItem, head: Bool = true) -> some View {
         let mine = item.primary.string("role") == "user"
         let caption = item.group.map { $0.string("text") }.first { !$0.isEmpty } ?? ""
         let side: CGFloat = 124
         let gap: CGFloat = 8
-        return HStack(alignment: .bottom) {
+        return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
+            if isKakao && !mine { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
+                if isKakao && !mine && head {
+                    Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
+                }
                 Group {
                     if item.group.count > 2 {
                         ScrollView(.horizontal, showsIndicators: false) {
@@ -7351,10 +7408,14 @@ private struct NativeStudioView: View {
                     }
                 }
                 if !caption.isEmpty {
+                    if isKakao {
+                        kakaoTextBubble(caption, mine: mine, head: head, date: studioDate(item.primary))
+                    } else {
                     Text(alcoveMarkdown(caption)).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+                    }
                 }
             }
             if !mine { Spacer(minLength: 52) }
@@ -7374,13 +7435,17 @@ private struct NativeStudioView: View {
         .onTapGesture { photoViewer = StudioPhotoTarget(url: url) }
     }
 
-    private func messageBubble(_ message: [String: Any]) -> some View {
+    private func messageBubble(_ message: [String: Any], head: Bool = true) -> some View {
         let mine = message.string("role") == "user"
         let messageID = message.int("id")
         let thought = message.string("thinking")
-        return HStack(alignment: .bottom) {
+        return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
+            if isKakao && !mine { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
+                if isKakao && !mine && head {
+                    Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
+                }
                 if !mine && !thought.isEmpty {
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) {
@@ -7428,10 +7493,14 @@ private struct NativeStudioView: View {
                 }
                 // 只有图没有字的时候不要再吐一个空气泡出来
                 if !message.string("text").isEmpty {
+                    if isKakao {
+                        kakaoTextBubble(message.string("text"), mine: mine, head: head, date: studioDate(message))
+                    } else {
                     Text(alcoveMarkdown(message.string("text"))).font(.system(size: 14, design: .serif)).lineSpacing(5).textSelection(.enabled)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
+                    }
                 }
                 if !message.string("tool_log").isEmpty { DisclosureGroup("终端记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).textSelection(.enabled) }.font(.system(size: 9)).foregroundColor(theme.textDim) }
             }
