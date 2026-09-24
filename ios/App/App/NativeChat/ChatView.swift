@@ -6357,7 +6357,8 @@ private struct FavoriteForwardMemberView: View {
 
 
 // Native summaries are a separate source, never synthesized from handwritten thoughts.
-private struct NativeThinkingButton: View {
+/// 0925 工作室也用这个大脑按钮（原生思考面板），放开成 internal
+struct NativeThinkingButton: View {
     let text: String
     let color: Color
     @State private var presented = false

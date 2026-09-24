@@ -6803,6 +6803,35 @@ private extension View {
 
 // MARK: - Chenjing Studio
 
+/// 0925 工作室一步工具：后端 workroom.turn_end 从工作室记录本里抠出来存进 tool_log（JSON 列表 [{"name","desc"}]）
+struct StudioToolStep {
+    let name: String
+    let desc: String
+
+    /// mcp__browser__browser_click 这种只留最后一截
+    private var shortName: String {
+        name.hasPrefix("mcp__") ? (name.components(separatedBy: "__").last ?? name) : name
+    }
+    var verb: String { name == "Bash" ? "Ran" : "Used \(shortName)" }
+    var icon: String {
+        switch name {
+        case "Bash": return "terminal"
+        case "Read": return "doc.text"
+        case "Edit", "Write", "NotebookEdit": return "pencil"
+        case "Grep", "Glob": return "magnifyingglass"
+        case "WebFetch", "WebSearch": return "globe"
+        case "Agent": return "person.2"
+        default: return name.hasPrefix("mcp__") ? "puzzlepiece.extension" : "wrench.and.screwdriver"
+        }
+    }
+
+    static func parse(_ raw: String) -> [StudioToolStep] {
+        guard !raw.isEmpty, let data = raw.data(using: .utf8),
+              let arr = (try? JSONSerialization.jsonObject(with: data)) as? [[String: Any]] else { return [] }
+        return arr.map { StudioToolStep(name: ($0["name"] as? String) ?? "", desc: ($0["desc"] as? String) ?? "") }
+    }
+}
+
 private struct NativeStudioView: View {
     @State private var status: [String: Any] = [:]
     @State private var tasks: [[String: Any]] = []
@@ -7090,10 +7119,64 @@ private struct NativeStudioView: View {
         .onTapGesture { photoViewer = StudioPhotoTarget(url: url) }
     }
 
+    /// 0925 工作室的过程线，照主聊天 messagesProcessBlock：一颗小圆点 + 大脑图标一排；
+    /// 点小圆点在下面展开这一轮用过的工具（左边一根细线），大脑点开是原生思考面板（带翻译，跟主聊天同一个）。
+    @ViewBuilder
+    private func studioProcessBlock(messageID: Int, thought: String, tools: [StudioToolStep]) -> some View {
+        let open = expandedThoughts.contains(messageID)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 14) {
+                if !tools.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) {
+                            if open { expandedThoughts.remove(messageID) } else { expandedThoughts.insert(messageID) }
+                        }
+                    } label: {
+                        Circle()
+                            .fill(theme.thoughtColor.opacity(open ? 0.95 : 0.5))
+                            .frame(width: 7, height: 7)
+                            .frame(width: 22, height: 14)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                if !thought.isEmpty {
+                    NativeThinkingButton(text: thought, color: theme.thoughtColor)
+                }
+            }
+            if open && !tools.isEmpty {
+                VStack(alignment: .leading, spacing: 7) {
+                    ForEach(Array(tools.enumerated()), id: \.offset) { _, step in
+                        HStack(alignment: .top, spacing: 7) {
+                            Image(systemName: step.icon)
+                                .font(.system(size: 10, weight: .light))
+                                .frame(width: 14)
+                                .padding(.top, 2)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(step.verb).font(.custom("Georgia", size: 11.5))
+                                if !step.desc.isEmpty {
+                                    Text(step.desc).font(.system(size: 11)).lineLimit(2)
+                                }
+                            }
+                        }
+                    }
+                }
+                .foregroundColor(theme.thoughtColor)
+                .padding(.leading, 10)
+                .overlay(alignment: .leading) {
+                    Capsule().fill(theme.thoughtColor.opacity(0.28)).frame(width: 1.5)
+                }
+                .transition(.opacity)
+            }
+        }
+        .padding(.leading, 4)
+    }
+
     private func messageBubble(_ message: [String: Any], head: Bool = true, showTime: Bool = true) -> some View {
         let mine = message.string("role") == "user"
         let messageID = message.int("id")
         let thought = message.string("thinking")
+        let tools = StudioToolStep.parse(message.string("tool_log"))
         // 0924 晚她要的：Kakao 下工作室气泡跟主聊天一样宽——间距钉成 0、两边空白按主聊天的 48，
         // 头像后面照旧留 16（原来 8 + 系统默认间距 8），猫图案不挡头像；他那边右侧少留 8 补回来，最宽跟主聊天一样
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom, spacing: isKakao ? 0 : nil) {
@@ -7102,31 +7185,10 @@ private struct NativeStudioView: View {
                 KakaoAvatarView(visible: head).padding(.trailing, 16)   // 0924 她定的：不带名字
             }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
-                if !mine && !thought.isEmpty {
-                    Button {
-                        withAnimation(.easeInOut(duration: 0.18)) {
-                            if expandedThoughts.contains(messageID) { expandedThoughts.remove(messageID) }
-                            else { expandedThoughts.insert(messageID) }
-                        }
-                    } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            HStack(spacing: 6) {
-                                Image(systemName: "circle.dotted").font(.system(size: 10))
-                                Text("工作思绪").font(.system(size: 10, weight: .semibold, design: .serif))
-                                Spacer()
-                                Image(systemName: expandedThoughts.contains(messageID) ? "chevron.up" : "chevron.down").font(.system(size: 8))
-                            }
-                            // 收起态只留一行标签，跟主聊天一样——思绪是点开才看的东西，
-                            // 不是挂在气泡上的摘要
-                            if expandedThoughts.contains(messageID) {
-                                Text(thought).font(.system(size: 11, design: .serif)).lineSpacing(4).multilineTextAlignment(.leading)
-                            }
-                        }
-                        .foregroundColor(theme.textDim.opacity(0.86))
-                        .padding(.horizontal, 12).padding(.vertical, 9)
-                        .background(.ultraThinMaterial.opacity(0.62), in: RoundedRectangle(cornerRadius: 15))
-                        .overlay(RoundedRectangle(cornerRadius: 15).stroke(Color.white.opacity(0.30), lineWidth: 0.6))
-                    }.buttonStyle(.plain)
+                // 0925 她要的：跟主聊天一样——小圆点（点开是这一轮用过的工具）＋大脑（原生思考面板），
+                // 换掉原来那张「工作思绪」卡片和最底下的「终端记录」
+                if !mine && (!thought.isEmpty || !tools.isEmpty) {
+                    studioProcessBlock(messageID: messageID, thought: thought, tools: tools)
                 }
                 if !message.string("attachment_url").isEmpty {
                     let attachmentURL = Self.workAttachmentURL(message.string("attachment_url"))
@@ -7158,7 +7220,6 @@ private struct NativeStudioView: View {
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
                     }
                 }
-                if !message.string("tool_log").isEmpty { DisclosureGroup("终端记录") { Text(message.string("tool_log")).font(.system(size: 9, design: .monospaced)).textSelection(.enabled) }.font(.system(size: 9)).foregroundColor(theme.textDim) }
             }
             if !mine { Spacer(minLength: isKakao ? (kakaoShowAvatar ? 40 : 48) : 52) }
         }
