@@ -884,6 +884,9 @@ struct ChatView: View {
             // 0924 Kakao：一串消息的第一条露头像、名字、带尾巴的 01 图；后面几条用 02 图、头像位留空
             let kakaoHead: Bool = {
                 guard let prev = previous else { return true }
+                // 0925 她抓的「这轮怎么没头像」：前面是「他做了一场梦」那种分隔行（也算他发的、隔不到两分钟），
+                // 这条被当成接着上一串。分隔行 / 拍一拍 / 报错行后面那条一律算新一串，露头像
+                if Self.kakaoGroupBreakers.contains(prev.msgType ?? "") { return true }
                 return divided || isGroupTail(cur: prev, next: message)
             }()
             Group {
@@ -1101,8 +1104,12 @@ struct ChatView: View {
     private func kakaoStartsGroup(_ k: Int) -> Bool {
         guard k > 0 else { return true }
         let prev = store.messages[k - 1], cur = store.messages[k]
+        if Self.kakaoGroupBreakers.contains(prev.msgType ?? "") { return true }
         return needsDivider(prev: prev, cur: cur, gap: 900) || isGroupTail(cur: prev, next: cur)
     }
+
+    /// 这几种行后面那条算新一串的开头（分隔线、拍一拍、报错行）
+    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error"]
 
     /// 跟消息行里那一长串 if / else 对齐：这些卡片、贴纸、语音、音乐都不画九宫格气泡
     static func kakaoDrawsBubble(_ m: ChatMessage) -> Bool {
