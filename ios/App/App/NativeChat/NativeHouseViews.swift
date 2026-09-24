@@ -2192,8 +2192,26 @@ private struct BubbleAppearanceSettingsView: View {
         }
     }
 
+    @ViewBuilder
     private func messagesPreviewBubble(_ text: String, isUser: Bool, theme t: AlcoveTheme,
                                        stamp: String) -> some View {
+        if t.isKakao {
+            // 0924 她抓的「气泡呢」：Kakao 下预览也用包里的九宫格气泡，时间贴旁边，跟聊天页一个画法
+            HStack(alignment: .bottom, spacing: 5) {
+                if isUser {
+                    Text(stamp).font(.system(size: 10)).foregroundColor(t.timestamp).padding(.bottom, 2)
+                }
+                KakaoBubbleView(isUser: isUser, first: true) {
+                    Text(text)
+                        .font(kakaoPacks.chatFont(CGFloat(fontSize)))
+                        .foregroundColor(isUser ? (t.textUser ?? t.text) : (t.textAI ?? t.text))
+                }
+                if !isUser {
+                    Text(stamp).font(.system(size: 10)).foregroundColor(t.timestamp).padding(.bottom, 2)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+        } else {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
             Text(text)
                 .font(kakaoPacks.chatFont(CGFloat(fontSize)))
@@ -2207,6 +2225,7 @@ private struct BubbleAppearanceSettingsView: View {
                 .padding(.horizontal, 6)
         }
         .frame(maxWidth: .infinity, alignment: isUser ? .trailing : .leading)
+        }
     }
 
     private func colorRow(_ item: MessagesPalette.Item) -> some View {
