@@ -3376,10 +3376,16 @@ struct MessageRow: View {
     private var bubble: some View {
         Group {
             if theme.isKakao {
-                HStack(alignment: .bottom, spacing: 5) {
-                    if isUser { kakaoSideMeta }
+                // 0925 她觉得他的气泡比工作室窄一点：时间原来跟气泡并排、中间固定垫 5，不显示时间也占着那 5，
+                // 带时间的那条还要再让出时间那么宽。改成跟工作室一样：时间套 0 宽的框往外溢，不占气泡宽度
+                HStack(alignment: .bottom, spacing: 0) {
+                    if isUser {
+                        kakaoSideMeta.padding(.trailing, 5).fixedSize().frame(width: 0, alignment: .trailing)
+                    }
                     bubbleCore
-                    if !isUser { kakaoSideMeta }
+                    if !isUser {
+                        kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
+                    }
                 }
                 .padding(.leading, ((!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : 0) - kakaoCardIndent)
             } else {
