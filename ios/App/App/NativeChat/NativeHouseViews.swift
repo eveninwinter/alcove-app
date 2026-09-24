@@ -6847,6 +6847,8 @@ private struct NativeStudioView: View {
     @State private var studioNotice = ""
     @State private var showStudioNotice = false
     @State private var expandedThoughts: Set<Int> = []
+    // 0925 长按「询问」：选中的字挂到输入框上方，发的时候用「」括起来放在前面
+    @State private var studioQuote: String?
     // 0818 她说工作室发图不能多选、没有预览。这三样跟主聊天对齐：
     // 选完先进待发条（可单张删），跟文字一起发，一次最多九张。
     @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
@@ -6895,7 +6897,35 @@ private struct NativeStudioView: View {
         }
     }
     /// Kakao 气泡：包里的九宫格图，时间贴外侧下角
-    private func kakaoTextBubble(_ text: String, mine: Bool, head: Bool, date: Date?) -> some View {
+    /// 0925 她要的：工作室气泡长按跟主聊天一样——能选字，菜单里「询问」「复制整轮」（跟主聊天同一个组件）
+    private func studioText(_ text: String, message: [String: Any], color: Color) -> some View {
+        SelectableMessageText(
+            text: text,
+            fontSize: studioFontSize,
+            lineSpacing: 5,
+            color: UIColor(color),
+            onAsk: { studioQuote = $0 },
+            onCopyTurn: { UIPasteboard.general.string = studioTurnText(message) },
+            fontName: kakaoPacks.fontName,
+            serif: !isKakao
+        )
+    }
+
+    /// 「复制整轮」：这条和它前后连着的、同一个人同一单（task_id）的气泡，按顺序拼起来
+    private func studioTurnText(_ message: [String: Any]) -> String {
+        guard let idx = messages.firstIndex(where: { $0.int("id") == message.int("id") }) else {
+            return message.string("text")
+        }
+        let role = message.string("role")
+        let task = message.int("task_id")
+        func same(_ m: [String: Any]) -> Bool { task != 0 && m.string("role") == role && m.int("task_id") == task }
+        var lo = idx, hi = idx
+        while lo > 0 && same(messages[lo - 1]) { lo -= 1 }
+        while hi + 1 < messages.count && same(messages[hi + 1]) { hi += 1 }
+        return messages[lo...hi].map { $0.string("text") }.filter { !$0.isEmpty }.joined(separator: "\n\n")
+    }
+
+    private func kakaoTextBubble(_ text: String, message: [String: Any], mine: Bool, head: Bool, date: Date?) -> some View {
         let kt = AlcoveTheme.kakaoTheme()
         // 0924 晚她抓的「你的气泡宽度？」：工作室每条都挂时间，时间原来跟气泡并排占掉一截宽度，气泡比主聊天窄。
         // 0925 她又抓的「？时间戳？？」：上一版用 overlay + alignmentGuide 往外挂，guide 没生效，时间压进了气泡右下角。
@@ -6910,8 +6940,7 @@ private struct NativeStudioView: View {
                 stamp(date).padding(.trailing, 5).frame(width: 0, alignment: .trailing)
             }
             KakaoBubbleView(isUser: mine, first: head) {
-                Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
-                    .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
+                studioText(text, message: message, color: mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
             }
             if !mine, let date {
                 stamp(date).padding(.leading, 5).frame(width: 0, alignment: .leading)
@@ -7093,9 +7122,9 @@ private struct NativeStudioView: View {
                 }
                 if !caption.isEmpty {
                     if isKakao {
-                        kakaoTextBubble(caption, mine: mine, head: head, date: showTime ? studioDate(item.primary) : nil)
+                        kakaoTextBubble(caption, message: item.primary, mine: mine, head: head, date: showTime ? studioDate(item.primary) : nil)
                     } else {
-                    Text(alcoveMarkdown(caption)).font(kakaoPacks.fontName.map { Font.custom($0, fixedSize: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    studioText(caption, message: item.primary, color: theme.text)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
@@ -7212,9 +7241,9 @@ private struct NativeStudioView: View {
                 // 只有图没有字的时候不要再吐一个空气泡出来
                 if !message.string("text").isEmpty {
                     if isKakao {
-                        kakaoTextBubble(message.string("text"), mine: mine, head: head, date: showTime ? studioDate(message) : nil)
+                        kakaoTextBubble(message.string("text"), message: message, mine: mine, head: head, date: showTime ? studioDate(message) : nil)
                     } else {
-                    Text(alcoveMarkdown(message.string("text"))).font(kakaoPacks.fontName.map { Font.custom($0, fixedSize: studioFontSize) } ?? .system(size: studioFontSize, design: .serif)).lineSpacing(5).textSelection(.enabled)
+                    studioText(message.string("text"), message: message, color: theme.text)
                         .padding(.horizontal, 14).padding(.vertical, 11)
                         .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
@@ -7227,6 +7256,7 @@ private struct NativeStudioView: View {
 
     private var inputBar: some View {
         StudioInputBar(pendingImages: $pendingImages,
+                       quote: $studioQuote,
                        accent: theme.fyAccent,
                        onPickPhotos: { showPhotoPicker = true },
                        onPickFile: { showFilePicker = true },
@@ -7401,6 +7431,8 @@ private struct StudioDisplayItem: Identifiable {
 /// （0829 修「打字闪屏」的根子）。发送失败时文字退回草稿框。
 private struct StudioInputBar: View {
     @Binding var pendingImages: [(thumb: UIImage, data: Data, ext: String)]
+    /// 0925 长按「询问」挂上来的那段；发的时候用「」括起来放在正文前面
+    @Binding var quote: String?
     let accent: Color
     var onPickPhotos: () -> Void
     var onPickFile: () -> Void
@@ -7437,6 +7469,18 @@ private struct StudioInputBar: View {
                     }.padding(.init(top: 8, leading: 12, bottom: 2, trailing: 12))
                 }
             }
+            if let q = quote {
+                HStack(spacing: 8) {
+                    Capsule().fill(accent).frame(width: 2.5, height: 24)
+                    Text(q).font(.system(size: 12)).lineLimit(2).foregroundColor(.secondary)
+                    Spacer(minLength: 4)
+                    Button { quote = nil } label: {
+                        Image(systemName: "xmark.circle.fill").font(.system(size: 16)).foregroundColor(.secondary)
+                            .frame(width: 30, height: 30).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+                .padding(.init(top: 8, leading: 16, bottom: 0, trailing: 10))
+            }
             HStack(alignment: .bottom, spacing: 9) {
                 Menu {
                     Button { onPickPhotos() } label: { Label("图片", systemImage: "photo") }
@@ -7445,13 +7489,17 @@ private struct StudioInputBar: View {
                 TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($focused)
                     .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
                 Button {
-                    let text = draft
-                    draft = ""; focused = false
-                    Task { if await onSend(text) == false { draft = text } }
+                    let typed = draft
+                    let q = quote
+                    let text = q.map { "「\($0)」\n" + typed } ?? typed
+                    draft = ""; quote = nil; focused = false
+                    Task { if await onSend(text) == false { draft = typed; quote = q } }
                 } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(accent, in: Circle()) }
                     .disabled(!canSend)
             }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18)
-        }.background(.ultraThinMaterial)
+        }
+        .background(.ultraThinMaterial)
+        .onChange(of: quote) { q in if q != nil { focused = true } }
     }
 }
 

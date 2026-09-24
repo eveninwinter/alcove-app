@@ -2791,7 +2791,8 @@ private struct SDKShadowChatView: View {
 
 // MARK: - 单条消息
 
-private final class AskSelectableTextView: UITextView {
+/// 0925 工作室气泡也用这套长按选字（询问 / 复制整轮），放开成 internal
+final class AskSelectableTextView: UITextView {
     var onAsk: ((String) -> Void)?
     var onCopyTurn: (() -> Void)?
     /// 0925 她要的「编辑」：只有她自己的文字气泡才给，长按选字冒出来的那排菜单里跟「询问」挨着
@@ -2823,7 +2824,7 @@ private final class AskSelectableTextView: UITextView {
     }
 }
 
-private struct SelectableMessageText: UIViewRepresentable {
+struct SelectableMessageText: UIViewRepresentable {
     let text: String
     let fontSize: CGFloat
     let lineSpacing: CGFloat
@@ -2836,6 +2837,8 @@ private struct SelectableMessageText: UIViewRepresentable {
     var fontName: String? = nil
     /// 0925 她的气泡才传：长按菜单里多一个「编辑」
     var onEdit: (() -> Void)? = nil
+    /// 0925 工作室非 Kakao 的气泡是系统衬线字（New York）；没指定字体时用它
+    var serif = false
 
     final class Coordinator {
         var renderedKey: String?
@@ -2864,14 +2867,18 @@ private struct SelectableMessageText: UIViewRepresentable {
         // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
         view.textContainer.maximumNumberOfLines = maximumNumberOfLines
         view.textContainer.lineBreakMode = maximumNumberOfLines > 0 ? .byTruncatingTail : .byWordWrapping
-        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)\u{1f}\(maximumNumberOfLines)\u{1f}\(fontName ?? "")"
+        let renderedKey = "\(text)\u{1f}\(fontSize)\u{1f}\(lineSpacing)\u{1f}\(color.description)\u{1f}\(maximumNumberOfLines)\u{1f}\(fontName ?? "")\u{1f}\(serif)"
         guard context.coordinator.renderedKey != renderedKey else { return }
         guard view.selectedRange.length == 0 else { return }
         let source = alcoveMarkdown(text)
         let rendered = NSMutableAttributedString(attributedString: NSAttributedString(source))
         let all = NSRange(location: 0, length: rendered.length)
         rendered.addAttribute(.foregroundColor, value: color, range: all)
-        let baseFont = fontName.flatMap { UIFont(name: $0, size: fontSize) } ?? UIFont.systemFont(ofSize: fontSize)
+        let systemFont = UIFont.systemFont(ofSize: fontSize)
+        let plainFont = serif
+            ? (systemFont.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: fontSize) } ?? systemFont)
+            : systemFont
+        let baseFont = fontName.flatMap { UIFont(name: $0, size: fontSize) } ?? plainFont
         rendered.enumerateAttribute(.font, in: all) { value, range, _ in
             let old = value as? UIFont
             let traits = old?.fontDescriptor.symbolicTraits ?? []
