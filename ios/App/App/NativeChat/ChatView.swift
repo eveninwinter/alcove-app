@@ -374,6 +374,9 @@ struct ChatView: View {
                 } action: { _, far in
                     if far != farFromTail { farFromTail = far }
                 }
+                // 0924 她抓的：Kakao 的渐隐罩在整个 ScrollView 外面，把顶栏和打字框一起罩淡了。
+                // 改成挂在 safeAreaBar 之前（只罩列表本体），而且只罩顶部那一截，底下不动。
+                .modifier(EdgeFadeMaskModifier(enabled: theme.isKakao, mask: topOnlyFadeMask))
                 // 0822 她递的图纸：iMessage 的上下渐进模糊是 iOS 26 系统画的 scroll edge effect，
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
@@ -436,7 +439,7 @@ struct ChatView: View {
                         if store.live?.active == true { followLiveOutput = false }
                     }
                 )
-                .modifier(EdgeFadeMaskModifier(enabled: !theme.isMessages || theme.isKakao, mask: edgeFadeMask))   // 信息主题不罩遮罩，别挡系统效果；0924 Kakao 要圆桌那种渐隐，罩上
+                .modifier(EdgeFadeMaskModifier(enabled: !theme.isMessages, mask: edgeFadeMask))   // 信息主题不罩遮罩，别挡系统效果（Kakao 的顶部渐隐在上面单独罩）
                 // 0914：罩与不罩是两条不同的分支，切到／切出信息主题时 SwiftUI 会把这个
                 // ScrollView 当成新视图重建，位置掉回最顶上（她原来报的那个 bug）。
                 // 重建发生在这一帧，下一帧再把锚点拉回最新一条。
@@ -1093,6 +1096,25 @@ struct ChatView: View {
                 endPoint: .bottom
             )
             .frame(height: bottomChromeHeight + 12)
+        }
+    }
+
+    /// 0924 Kakao 用：只有顶部 120 那一截渐隐，底下全亮
+    private var topOnlyFadeMask: some View {
+        VStack(spacing: 0) {
+            LinearGradient(
+                stops: [
+                    .init(color: .clear, location: 0),
+                    .init(color: .clear, location: 0.15),
+                    .init(color: .black.opacity(0.3), location: 0.4),
+                    .init(color: .black.opacity(0.7), location: 0.65),
+                    .init(color: .black, location: 1.0),
+                ],
+                startPoint: .top,
+                endPoint: .bottom
+            )
+            .frame(height: 120)
+            Color.black
         }
     }
 
