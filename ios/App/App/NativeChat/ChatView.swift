@@ -93,6 +93,7 @@ struct ChatView: View {
     @AppStorage("chatFontSize") private var chatFontSize = 14
     // 0909 她要的：气泡之间的间距自己调。原来写死 6pt
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
+    @AppStorage(KakaoPackStore.showAvatarKey) private var listKakaoShowAvatar = true   // 0924 晚：换人那截空隙要知道他那边气泡是不是挪过
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
     @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
@@ -867,6 +868,21 @@ struct ChatView: View {
                       let b = message.turnID, !b.isEmpty else { return false }
                 return a != b
             }()
+            // 0924 晚她骂的「谁要你改我跟他之间的间距」：bef772f 只该动同一个人连着的气泡，换人那截被一起缩了。
+            // 换人（她 ↔ 他、中间没有时间线）的这一行顶上把原来那截补回来：原来行上下各垫 2 + 一串末尾 12，
+            // Kakao 他那边气泡还往下挪过 6。同一个人连着的照旧只有设置里的间距。
+            let roleGap: CGFloat = {
+                guard !divided, let prev = previous,
+                      prev.role != message.role,
+                      prev.role == "user" || prev.role == "assistant",
+                      message.role == "user" || message.role == "assistant" else { return 0 }
+                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error"]
+                if quiet.contains(prev.msgType ?? "") || quiet.contains(message.msgType ?? "") { return 0 }
+                if theme.isKakao {
+                    return 12 + 2 + ((message.role == "assistant" && listKakaoShowAvatar) ? 6 : 0)
+                }
+                return 2   // 非 Kakao 一串末尾那 12 还在行底，只补上下各垫的那 2
+            }()
             // 0924 Kakao：一串消息的第一条露头像、名字、带尾巴的 01 图；后面几条用 02 图、头像位留空
             let kakaoHead: Bool = {
                 guard let prev = previous else { return true }
@@ -966,7 +982,7 @@ struct ChatView: View {
                 }
             }
             }
-            .padding(.top, newSoloTurn ? 22 : 0)
+            .padding(.top, (newSoloTurn ? 22 : 0) + roleGap)
             .id(message.id)
         }
     }
