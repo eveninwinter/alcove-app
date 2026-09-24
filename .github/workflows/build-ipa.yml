@@ -14,27 +14,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 0924 聊天字体打包进 App：ttf 太大不进 git，构建时从后端拉到 ios/App/App/Fonts/（蓝色文件夹引用，整包复制）
-      - name: Fetch chat fonts
-        run: |
-          mkdir -p ios/App/App/Fonts
-          curl -sf https://alcove.ob-memory.uk/api/kakao/themes -o /tmp/kakao-fonts.json || { echo "font list unreachable, building without"; exit 0; }
-          python3 - <<'PY'
-          import json, os, urllib.request
-          d = json.load(open('/tmp/kakao-fonts.json'))
-          for f in d.get('fonts', []):
-              url = 'https://alcove.ob-memory.uk/api/kakao/fonts/' + f['file']
-              out = 'ios/App/App/Fonts/' + f['id'] + '.ttf'
-              try:
-                  # 0924 晚查出来的：Python 默认身份（Python-urllib）会被 Cloudflare 直接 403，六款一款都没进包；报成 curl 就放行
-                  req = urllib.request.Request(url, headers={'User-Agent': 'curl/8.5.0'})
-                  with urllib.request.urlopen(req, timeout=120) as r, open(out, 'wb') as fp:
-                      fp.write(r.read())
-                  print('font', f['id'], os.path.getsize(out))
-              except Exception as e:
-                  print('skip', f['id'], e)
-          PY
-          ls -la ios/App/App/Fonts
+      # 0924 晚她定的：字体不打包（包从 30MB 涨到 80MB，她的字体点了就下，一直能用），拉字体那步删了
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
