@@ -103,6 +103,7 @@ final class KakaoPackStore: ObservableObject {
     static let usePackAvatarKey = "kakaoUsePackAvatar"
     static let showAvatarKey = "kakaoShowAvatar"   // 0924 她要的：Kakao 下他的消息带不带头像
     static let fontKey = "kakaoFontID"
+    static let thoughtFontID = "neozhisong"   // 0924 思绪用的宋体：架子上这一款，没打进包就自己下
     static let fontsCacheKey = "kakaoFontsJSON"
 
     @Published private(set) var fonts: [KakaoFont] = []
@@ -134,6 +135,7 @@ final class KakaoPackStore: ObservableObject {
             fonts = list
         }
         ensureFont()   // 本地已经有文件就当场注册，开门第一帧就是那个字
+        ensureFont(id: Self.thoughtFontID)
     }
 
     // MARK: 字体
@@ -181,9 +183,10 @@ final class KakaoPackStore: ObservableObject {
     }
 
     /// 选中的字体：本地有就注册，没有就下载再注册；每次都拨 stamp 让界面重画
-    func ensureFont() {
-        guard !selectedFontID.isEmpty, registeredName(selectedFontID) == nil,
-              let font = fonts.first(where: { $0.id == selectedFontID }) else { return }
+    func ensureFont(id: String? = nil) {
+        let fid = id ?? selectedFontID
+        guard !fid.isEmpty, registeredName(fid) == nil,
+              let font = fonts.first(where: { $0.id == fid }) else { return }
         let local = Self.fontsDir.appendingPathComponent(font.file)
         if FileManager.default.fileExists(atPath: local.path) {
             if let name = Self.register(local) {
@@ -251,6 +254,7 @@ final class KakaoPackStore: ObservableObject {
                         self.fonts = fontList
                         UserDefaults.standard.set(fontData, forKey: Self.fontsCacheKey)
                         self.ensureFont()
+                        self.ensureFont(id: Self.thoughtFontID)
                     }
                     if self.current == nil, let first = list.first { self.selectedID = first.id }
                     self.lastError = nil
@@ -702,10 +706,13 @@ struct ChatFontPicker: View {
 /// 没打进来就退到系统衬线；斜体是 SwiftUI 合成的斜。
 enum ThoughtFont {
     static let songPostScript = "LXGWNeoZhiSong"
+    /// 注册好的名字：打包进 App 的直接有；没打进来就让仓库去下（下完拨 stamp 重画）
+    static var registeredName: String? {
+        KakaoPackStore.shared.registeredName(KakaoPackStore.thoughtFontID)
+    }
     static func font(_ size: CGFloat) -> Font {
-        if UIFont(name: songPostScript, size: size) != nil {
-            return Font.custom(songPostScript, fixedSize: size).italic()
-        }
+        if let n = registeredName { return Font.custom(n, fixedSize: size).italic() }
+        KakaoPackStore.shared.ensureFont(id: KakaoPackStore.thoughtFontID)
         return Font.system(size: size, design: .serif).italic()
     }
 }
@@ -729,7 +736,12 @@ struct ObliqueText: UIViewRepresentable {
     }
 
     func updateUIView(_ l: UILabel, context: Context) {
-        let font = UIFont(name: ThoughtFont.songPostScript, size: size) ?? UIFont.systemFont(ofSize: size)
+        var font = UIFont.systemFont(ofSize: size)
+        if let n = ThoughtFont.registeredName, let f = UIFont(name: n, size: size) {
+            font = f
+        } else {
+            KakaoPackStore.shared.ensureFont(id: KakaoPackStore.thoughtFontID)   // 没这款字就去下，下完重画
+        }
         let para = NSMutableParagraphStyle()
         para.lineSpacing = lineSpacing
         l.attributedText = NSAttributedString(string: text, attributes: [
