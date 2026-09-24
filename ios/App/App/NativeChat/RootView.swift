@@ -30,7 +30,8 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    @ObservedObject private var kakaoPacks = KakaoPackStore.shared   // 0924 Kakao 换包重画顶栏颜色
+    @ObservedObject private var kakaoPacks = KakaoPackStore.shared
+    @AppStorage("chatFontSize") private var chatFontSize = 14   // 0924 晚：Kakao 顶栏名字跟正文字号一样大   // 0924 Kakao 换包重画顶栏颜色
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
 
@@ -403,7 +404,7 @@ struct RootView: View {
     private var kakaoTitle: some View {
         HStack(spacing: 4) {
             Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                .font(topBarNameFont(16, .semibold))
+                .font(topBarNameFont(CGFloat(chatFontSize), .semibold))   // 0924 晚她要的：跟正文字号走（原来写死 16）
             if assistantAsleep { Text("💤").font(.system(size: 13)) }
         }
         .foregroundColor(theme.text)
