@@ -157,6 +157,14 @@ struct RootView: View {
         .blur(radius: housePage == nil || theme.isPaper ? 0 : 2.2)
         .animation(.easeOut(duration: 0.20), value: housePage != nil)
         .onAppear {
+            // 0925 她定的：玻璃主题和「你们两个」那个 App 图标都删了。还停在玻璃主题的换成信息主题（深浅照全屋开关），
+            // 还用着那个图标的换回默认图标
+            if AlcoveAppearance.family(of: themeName) == "glass" {
+                themeName = AlcoveAppearance.themeName(family: "imessage", dark: AlcoveAppearance.isDark)
+            }
+            if UIApplication.shared.supportsAlternateIcons, UIApplication.shared.alternateIconName != nil {
+                UIApplication.shared.setAlternateIconName(nil) { _ in }
+            }
             prewarmPanelTexture()
             // 0829 原生来电与推送：要通知权限、把前台横幅代理挂上
             AlcoveNotify.shared.setup()

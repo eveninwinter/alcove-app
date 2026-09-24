@@ -66,7 +66,6 @@
 		B1BDCAE6D8014E5ECC1F3AF6 /* ChatModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = A3013F89C6DE0E44B26E9DB7 /* ChatModels.swift */; };
 		BF1000000000000000000001 /* BubbleGlassStyle.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF2000000000000000000001 /* BubbleGlassStyle.swift */; };
 		BF1000000000000000000002 /* BubbleGlassBackground.swift in Sources */ = {isa = PBXBuildFile; fileRef = BF2000000000000000000002 /* BubbleGlassBackground.swift */; };
-		BF1000000000000000000003 /* BubbleGlassShader.metal in Sources */ = {isa = PBXBuildFile; fileRef = BF2000000000000000000003 /* BubbleGlassShader.metal */; };
 		C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0D0101790978C3955D31EB1E /* RootView.swift */; };
 		C3524DA5B6D6F1BA5319F756 /* CapabilityLabView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 05AE4790B0A789C3ABEED1B2 /* CapabilityLabView.swift */; };
 		7A1C0821E0F1A2B3C4D5E6F2 /* ImageDiskCache.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7A1C0821E0F1A2B3C4D5E6F1 /* ImageDiskCache.swift */; };
@@ -174,7 +173,6 @@
 		1BF14B3C1EC14000AF0FEF1A /* JourneyCards.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = JourneyCards.swift; sourceTree = "<group>"; };
 		BF2000000000000000000001 /* BubbleGlassStyle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BubbleGlassStyle.swift; sourceTree = "<group>"; };
 		BF2000000000000000000002 /* BubbleGlassBackground.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BubbleGlassBackground.swift; sourceTree = "<group>"; };
-		BF2000000000000000000003 /* BubbleGlassShader.metal */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.metal; path = BubbleGlassShader.metal; sourceTree = "<group>"; };
 		D12D98086598F349D1863F76 /* SensorReporter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensorReporter.swift; sourceTree = "<group>"; };
 		CA110829000000000000C001 /* CallManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallManager.swift; sourceTree = "<group>"; };
 		CA110829000000000000C011 /* CallView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CallView.swift; sourceTree = "<group>"; };
@@ -322,7 +320,6 @@
 				3741E52E6A20447091CC4E7A /* RoundtableView.swift */,
 				BF2000000000000000000001 /* BubbleGlassStyle.swift */,
 				BF2000000000000000000002 /* BubbleGlassBackground.swift */,
-				BF2000000000000000000003 /* BubbleGlassShader.metal */,
 				141B61BBC3ADE771BDF6329B /* WebViewPage.swift */,
 				0D0101790978C3955D31EB1E /* RootView.swift */,
 				91B5E3F41A0D4C2B9E8F7021 /* NativeHouseAPI.swift */,
@@ -549,7 +546,6 @@
 				5FE3B65571604292AE1DA7EA /* RoundtableView.swift in Sources */,
 				BF1000000000000000000001 /* BubbleGlassStyle.swift in Sources */,
 				BF1000000000000000000002 /* BubbleGlassBackground.swift in Sources */,
-				BF1000000000000000000003 /* BubbleGlassShader.metal in Sources */,
 				FC3B74A7638C75994A8D97B7 /* WebViewPage.swift in Sources */,
 				C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */,
 				71A4D2E30F9C4B1A8D7E6F20 /* NativeHouseAPI.swift in Sources */,
@@ -711,7 +707,6 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = FC68EB0AF532CFC21C3344DD /* Pods-App.debug.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = TogetherAppIcon;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
@@ -732,7 +727,6 @@
 			isa = XCBuildConfiguration;
 			baseConfigurationReference = AF51FD2D460BCFE21FA515B2 /* Pods-App.release.xcconfig */;
 			buildSettings = {
-				ASSETCATALOG_COMPILER_ALTERNATE_APPICON_NAMES = TogetherAppIcon;
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;

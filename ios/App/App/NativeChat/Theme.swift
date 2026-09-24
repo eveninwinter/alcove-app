@@ -190,7 +190,7 @@ struct AlcoveTheme {
                 cardSub: Color.white.opacity(0.18),
                 border: Color.white.opacity(0.53),
                 shadow: Color(red: 18/255, green: 54/255, blue: 112/255).opacity(0.20),
-                textureAsset: "WetGlassRain"
+                textureAsset: "WetGlassMidnight"   // 0925 玻璃主题删了，WetGlassRain 图一起删，这套走不到了
             )
         default:
             return haven.panelCopy(

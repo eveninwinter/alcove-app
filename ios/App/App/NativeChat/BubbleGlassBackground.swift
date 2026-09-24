@@ -165,92 +165,31 @@ extension EnvironmentValues {
     }
 }
 
-/// Repaints the exact chat wallpaper behind this bubble, then bends that copy
-/// with a rounded-rectangle Metal lens. Text remains outside the shader.
+/// 0925 她定的「玻璃主题删掉、给 App 减负」：原来这里重画背后的壁纸再用 Metal 着色器实时折射（每个气泡都要显卡一直算），
+/// 着色器文件已删。名字和参数留着，工作室 / 设置预览这些老调用处照样能编译，画成一块普通的半透明圆角底。
 struct BubbleGlassBackground: View {
     let tintColor: Color
     var tintOpacity: CGFloat
     var style: BubbleGlassStyle = .reference
     var cornerRadius: CGFloat = 18
 
-    @Environment(\.chatWallpaperDescriptor) private var wallpaper
-    @Environment(\.chatWallpaperViewportSize) private var viewportSize
-    @Environment(\.chatWallpaperViewportInset) private var viewportInset
     @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     var body: some View {
         GeometryReader { proxy in
             let size = proxy.size
-            let frame = proxy.frame(in: .named("alcoveChatRoot"))
             let radius = min(cornerRadius, min(size.width, size.height) / 2)
-            let shape = RoundedRectangle(
-                cornerRadius: radius,
-                style: .continuous
-            )
-
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
             ZStack {
                 if reduceTransparency {
                     shape.fill(tintColor.opacity(0.88))
                 } else {
-                    refractedWallpaper(size: size, frame: frame, radius: radius)
-                        .clipShape(shape)
-
+                    shape.fill(.ultraThinMaterial)
                     shape.fill(tintColor.opacity(tintOpacity))
                 }
-
-                // A continuous wet-glass rim: the horizontal arcs catch
-                // more light, while the side edges stay present but quieter.
-                shape.stroke(
-                    Color.white.opacity(0.10),
-                    lineWidth: 0.45
-                )
-
-                shape.stroke(
-                    LinearGradient(
-                        stops: [
-                            .init(color: .white.opacity(0.40), location: 0.00),
-                            .init(color: .white.opacity(0.12), location: 0.32),
-                            .init(color: .white.opacity(0.10), location: 0.68),
-                            .init(color: .white.opacity(0.32), location: 1.00)
-                        ],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    ),
-                    lineWidth: 0.95
-                )
+                shape.stroke(Color.white.opacity(0.28), lineWidth: 0.8)
             }
         }
         .allowsHitTesting(false)
-    }
-
-    private func refractedWallpaper(
-        size: CGSize,
-        frame: CGRect,
-        radius: CGFloat
-    ) -> some View {
-        let rootSize = CGSize(
-            width: max(viewportSize.width, size.width),
-            height: max(viewportSize.height, size.height)
-        )
-        let effectiveStrength = style.strength(for: size)
-
-        return ChatWallpaperRenderer(descriptor: wallpaper)
-            .frame(width: rootSize.width, height: rootSize.height)
-            .offset(x: -(frame.minX + viewportInset.width),
-                    y: -(frame.minY + viewportInset.height))
-            .saturation(1.08)
-            .blur(radius: style.backdropBlur)
-            .frame(width: size.width, height: size.height, alignment: .topLeading)
-            .layerEffect(
-                ShaderLibrary.default.roundedRectGlassLens(
-                    .float2(size),
-                    .float(Float(radius)),
-                    .float(Float(effectiveStrength)),
-                    .float(Float(style.dispersion)),
-                    .float(Float(style.magnify)),
-                    .float(Float(style.rimWidth))
-                ),
-                maxSampleOffset: style.maximumSampleOffset(for: size)
-            )
     }
 }

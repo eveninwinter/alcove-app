@@ -1051,8 +1051,6 @@ private struct NativeSettingsView: View {
     @State private var servicesLoading = false
     @State private var showSystemFeatures = false
     @State private var showQuietRoom = false
-    @State private var selectedAppIcon = UIApplication.shared.alternateIconName ?? "default"
-    @State private var appIconError = ""
     @State private var replyLength = 240.0
     @State private var replyLengthLoaded = false
     @State private var replyLengthSaving = false
@@ -1491,7 +1489,6 @@ private struct NativeSettingsView: View {
                 // 0924 她要的分两栏：上面 Alcove 自己的三套，下面 Kakao 一栏（按钮 + 主题包一排）
                 if page == .appearance { section("Alcove 主题") {
                     HStack(spacing: 8) {
-                        familyChoice("玻璃", "光穿过去", "glass", [.white, .pink.opacity(0.42), .gray])
                         familyChoice("纸页", "话落下来", "paper", [
                             Color(red: 243/255, green: 241/255, blue: 236/255),
                             Color(red: 185/255, green: 120/255, blue: 120/255),
@@ -1526,18 +1523,6 @@ private struct NativeSettingsView: View {
                         Button("恢复默认") { resetWallpaper() }
                     }
                     .font(.system(size: 13))
-                } }
-                if page == .appearance { section("App 图标") {
-                    HStack(alignment: .top, spacing: 16) {
-                        appIconChoice("现有图标", asset: "CurrentIcon", alternateName: nil)
-                        appIconChoice("你们两个", asset: "TogetherIcon", alternateName: "TogetherAppIcon")
-                        Spacer(minLength: 0)
-                    }
-                    if !appIconError.isEmpty {
-                        Text(appIconError)
-                            .font(.system(size: 10.5))
-                            .foregroundColor(.red.opacity(0.85))
-                    }
                 } }
                 if page == .services { section("服务") {
                     serviceCard(
@@ -1606,7 +1591,6 @@ private struct NativeSettingsView: View {
         .onChange(of: wallPhoto) { item in saveWallpaper(item) }
         .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
         .onChange(of: thoughtLength) { value in if handwrittenOn { scheduleThoughtLengthSave(value) } }
-        .onAppear { selectedAppIcon = UIApplication.shared.alternateIconName ?? "default" }
         .task {
             refreshCacheStats()
             async let services: Void = loadServices()
@@ -1667,66 +1651,6 @@ private struct NativeSettingsView: View {
             }
             Spacer()
             trailing()
-        }
-    }
-
-    private func appIconChoice(
-        _ title: String, asset: String, alternateName: String?
-    ) -> some View {
-        let key = alternateName ?? "default"
-        let selected = selectedAppIcon == key
-        return Button {
-            switchAppIcon(to: alternateName)
-        } label: {
-            VStack(spacing: 7) {
-                Image(asset)
-                    .resizable()
-                    .scaledToFill()
-                    .frame(width: 72, height: 72)
-                    .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 16, style: .continuous)
-                            .strokeBorder(selected ? theme.fyAccent : pal.line,
-                                          lineWidth: selected ? 2 : 0.5)
-                    }
-                    .overlay(alignment: .bottomTrailing) {
-                        if selected {
-                            Image(systemName: "checkmark.circle.fill")
-                                .font(.system(size: 18, weight: .semibold))
-                                .symbolRenderingMode(.palette)
-                                .foregroundStyle(.white, theme.fyAccent)
-                                .background(Circle().fill(pal.card).padding(2))
-                                .offset(x: 5, y: 5)
-                        }
-                    }
-                Text(title)
-                    .font(.system(size: 11.5, weight: selected ? .semibold : .regular))
-                    .foregroundColor(selected ? theme.fyAccent : theme.text)
-            }
-            .frame(minWidth: 88, minHeight: 104)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("应用图标，\(title)")
-        .accessibilityValue(selected ? "已选择" : "未选择")
-    }
-
-    private func switchAppIcon(to alternateName: String?) {
-        guard UIApplication.shared.supportsAlternateIcons else {
-            appIconError = "这台设备不支持切换应用图标"
-            return
-        }
-        let key = alternateName ?? "default"
-        guard selectedAppIcon != key else { return }
-        appIconError = ""
-        UIApplication.shared.setAlternateIconName(alternateName) { error in
-            DispatchQueue.main.async {
-                if let error {
-                    appIconError = "切换失败：\(error.localizedDescription)"
-                } else {
-                    selectedAppIcon = key
-                }
-            }
         }
     }
 
