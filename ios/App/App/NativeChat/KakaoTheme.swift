@@ -460,6 +460,8 @@ enum KakaoClock {
 struct KakaoPackPicker: View {
     let theme: AlcoveTheme
     @ObservedObject var store = KakaoPackStore.shared
+    // 0924 她报的「换了主题包聊天页没变」：她只点了包没点上面的 Kakao 按钮。点包就等于选 Kakao 家族，一步到位
+    @AppStorage("alcoveTheme") var themeName = "haven"
     @AppStorage(KakaoPackStore.usePackAvatarKey) var usePackAvatar = true
 
     var body: some View {
@@ -476,7 +478,10 @@ struct KakaoPackPicker: View {
                 ScrollView(.horizontal, showsIndicators: false) {
                     HStack(spacing: 12) {
                         ForEach(store.packs) { pack in
-                            Button { store.select(pack.id) } label: {
+                            Button {
+                                store.select(pack.id)
+                                if themeName != "kakao" { themeName = "kakao" }
+                            } label: {
                                 VStack(spacing: 6) {
                                     thumb(pack)
                                         .frame(width: 58, height: 104)
