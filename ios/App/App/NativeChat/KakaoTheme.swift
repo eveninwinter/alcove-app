@@ -18,6 +18,7 @@ struct KakaoBubbleSpec: Decodable {
     let cap_top: Double
     let inset: [Double]
     let body_left: Double?     // 0924 晚：看得见的气泡左边离图片左边多少（后端量的），小按钮 / 思绪块按它对齐
+    let body_edge: Double?     // 0925：气泡本体的左边（跳过站在左边的小人），没头像时他的截图 / 卡片按它对齐
     let body_top: Double?      // 0924 晚：图上下自带的空边 / 虚边（后端量的），用负边距扣掉，看得见的间距 = 她设的数
     let body_bottom: Double?
 

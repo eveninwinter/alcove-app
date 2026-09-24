@@ -2994,6 +2994,10 @@ struct MessageRow: View {
                     .frame(width: 40, height: 0, alignment: .top)
                     .offset(y: -Self.kakaoBubbleShiftDown)
                     .padding(.trailing, 16)
+            } else if kakaoCardIndent > 0 {
+                // 0925 她要的：没头像时，他的截图 / 卡片跟气泡本体左边对齐（带小人的包，小人站在前面那一截）。
+                // 整列往右让开，气泡自己和小按钮再往回挪同样的量，位置不变。
+                Color.clear.frame(width: kakaoCardIndent, height: 0)
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
@@ -3350,7 +3354,7 @@ struct MessageRow: View {
                     bubbleCore
                     if !isUser { kakaoSideMeta }
                 }
-                .padding(.leading, (!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : 0)
+                .padding(.leading, (!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : -kakaoCardIndent)
             } else {
                 bubbleCore
             }
@@ -3365,7 +3369,17 @@ struct MessageRow: View {
         let pack = KakaoPackStore.shared.current
         let spec = pack?.bubbles[kakaoFirstBubble ? "recv1" : "recv2"] ?? pack?.bubbles["recv1"]
         let edge = CGFloat(spec?.body_left ?? 2)
-        return edge + 4 - shift
+        return edge + 4 - shift - kakaoCardIndent   // 没头像时整列让开过 kakaoCardIndent，这里扣回来，小按钮位置不变
+    }
+
+    /// 0925 她要的「没头像的时候卡片怎么办」：没头像时，他那一整列往右让开「气泡本体左边」那么多，
+    /// 截图 / 卡片 / 语音跟气泡本体对齐；有头像、她的消息、整行居中的东西（晨报、旅行卡、塔罗）都是 0
+    private var kakaoCardIndent: CGFloat {
+        guard theme.isKakao, !isUser, !kakaoShowAvatar, !isTarotRow,
+              msg.morningPaperDate == nil, msg.journeyCard == nil else { return 0 }
+        let pack = KakaoPackStore.shared.current
+        let spec = pack?.bubbles["recv2"] ?? pack?.bubbles["recv1"]
+        return CGFloat(spec?.body_edge ?? 0)
     }
 
     private var kakaoSideMeta: some View {
