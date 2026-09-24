@@ -789,9 +789,11 @@ struct ChatView: View {
     /// 0924「重来」只挂在他最后一轮上：这条是 assistant，且排在她最后一句后面；翻历史时不给
     private func isLatestAssistantTurn(_ message: ChatMessage) -> Bool {
         guard message.role == "assistant", !store.isViewingHistory else { return false }
-        guard let idx = store.messages.firstIndex(where: { $0.uid == message.uid }) else { return false }
-        let lastUser = store.messages.lastIndex(where: { $0.role == "user" }) ?? -1
-        return idx > lastUser
+        // 0924 她截到两轮尾巴都有箭头：原来是「她最后一句之后的都算」，他自己醒来连说两轮就两个箭头。
+        // 改成只认他最后一轮（turn_id 相同的那串；老消息没 turn_id 就只认最后一条）
+        guard let last = store.messages.last(where: { $0.role == "assistant" && $0.msgType != "api_error" }) else { return false }
+        if let t = last.turnID, !t.isEmpty { return message.turnID == t }
+        return message.uid == last.uid
     }
 
     /// 0924：给 MessageRow 的「重来」回调。抽成函数是为了别在那个几百行的构造里塞三目＋闭包（编译器算不过来，c5bdd8d/72e3404 两笔红）
