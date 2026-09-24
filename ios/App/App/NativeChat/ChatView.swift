@@ -376,7 +376,7 @@ struct ChatView: View {
                 }
                 // 0924 她抓的：Kakao 的渐隐罩在整个 ScrollView 外面，把顶栏和打字框一起罩淡了。
                 // 改成挂在 safeAreaBar 之前（只罩列表本体），而且只罩顶部那一截，底下不动。
-                .modifier(EdgeFadeMaskModifier(enabled: theme.isKakao, mask: topOnlyFadeMask))
+                .modifier(EdgeFadeMaskModifier(enabled: theme.isKakao, mask: topOnlyFadeMask.ignoresSafeArea()))
                 // 0822 她递的图纸：iMessage 的上下渐进模糊是 iOS 26 系统画的 scroll edge effect，
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
@@ -1117,12 +1117,16 @@ struct ChatView: View {
     /// 她抓的「圆桌有这么长吗」：圆桌那 120 有一大半藏在顶栏后面，露出来五十来点；
     /// 这里列表从顶栏底下起，整段都露着，所以只给 60。
     private var topOnlyFadeMask: some View {
-        VStack(spacing: 0) {
+        // 0924 她抓的「底下被截断」：遮罩默认只铺在安全区里，打字框底下那块不在里面，滑到打字框后面的消息
+        // 直接被切掉。遮罩得铺满整屏（ignoresSafeArea），顶栏那段留空白（隐藏），再接 60 的渐隐，底下全亮，
+        // 消息照常从半透明的打字框后面滑过去。
+        let chromeTop = Self.topSafeInset + 44
+        return VStack(spacing: 0) {
+            Color.clear.frame(height: chromeTop)
             LinearGradient(
                 stops: [
                     .init(color: .clear, location: 0),
-                    .init(color: .clear, location: 0.15),
-                    .init(color: .black.opacity(0.3), location: 0.4),
+                    .init(color: .black.opacity(0.3), location: 0.35),
                     .init(color: .black.opacity(0.7), location: 0.65),
                     .init(color: .black, location: 1.0),
                 ],
@@ -1132,6 +1136,13 @@ struct ChatView: View {
             .frame(height: 60)
             Color.black
         }
+    }
+
+    private static var topSafeInset: CGFloat {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.safeAreaInsets.top ?? 59
     }
 
     private var canSend: Bool {
