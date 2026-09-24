@@ -7412,7 +7412,7 @@ private struct NativeStudioView: View {
             if mine { Spacer(minLength: 52) }
             if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
-                if isKakao && !mine && head {
+                if isKakao && !mine && head && kakaoShowAvatar {
                     Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
                 }
                 Group {
@@ -7464,7 +7464,7 @@ private struct NativeStudioView: View {
             if mine { Spacer(minLength: 52) }
             if isKakao && !mine && kakaoShowAvatar { KakaoAvatarView(visible: head).padding(.trailing, 8) }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
-                if isKakao && !mine && head {
+                if isKakao && !mine && head && kakaoShowAvatar {
                     Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
                 }
                 if !mine && !thought.isEmpty {

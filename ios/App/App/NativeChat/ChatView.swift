@@ -2900,7 +2900,7 @@ struct MessageRow: View {
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
-                if theme.isKakao && !isUser && kakaoHead && !isTarotRow {
+                if theme.isKakao && !isUser && kakaoHead && !isTarotRow && kakaoShowAvatar {   // 0924 她定的：头像关了名字一起收
                     Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
                         .font(.system(size: 12))
                         .foregroundColor(theme.textDim)
