@@ -347,7 +347,7 @@ struct RootView: View {
                 }
                 HStack(spacing: 2) {
                     Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                        .font(.system(size: 12, weight: .medium))
+                        .font(topBarNameFont(12, .medium))
                     Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
                 }
                 .foregroundColor(theme.text)
@@ -403,11 +403,16 @@ struct RootView: View {
     private var kakaoTitle: some View {
         HStack(spacing: 4) {
             Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                .font(.system(size: 16, weight: .semibold))
+                .font(topBarNameFont(16, .semibold))
             if assistantAsleep { Text("💤").font(.system(size: 13)) }
         }
         .foregroundColor(theme.text)
         .frame(height: 40)
+    }
+
+    /// 0924 晚她要的：顶栏上他的名字跟设置里选的全局字体走；选的是「系统」就还是原来的系统字粗细
+    private func topBarNameFont(_ size: CGFloat, _ weight: Font.Weight) -> Font {
+        kakaoPacks.fontName.map { Font.custom($0, fixedSize: size) } ?? .system(size: size, weight: weight)
     }
 
     private var legacyTopBar: some View {
