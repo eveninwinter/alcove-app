@@ -843,7 +843,7 @@ struct ChatView: View {
             let splittable = rowHasPhoto && !message.displayText.isEmpty
                 && !message.isAudio && !message.isSticker
 
-            let divided = needsDivider(prev: previous, cur: message)
+            let divided = needsDivider(at: index)
             if divided {
                 if theme.isKakao {
                     KakaoDateDivider(date: message.date)
@@ -1037,6 +1037,20 @@ struct ChatView: View {
         guard let prev else { return true }
         // 三套主题统一：安静超过 20 分钟再插一条时间分割。
         return cur.date.timeIntervalSince(prev.date) > 1200
+    }
+
+    /// 0924 她报的「隔一小时没截断、隔二十分钟有」：原来只跟紧挨着的上一行比，中间要是夹了一条切歌线、
+    /// 拍一拍、报错行，一小时就被切成两个十几分钟，谁都不够 20 分钟。现在往前找到上一条真正的对话再比。
+    private func needsDivider(at index: Int) -> Bool {
+        let cur = store.messages[index]
+        var i = index - 1
+        while i >= 0 {
+            let m = store.messages[i]
+            let t = m.msgType ?? "text"
+            if t == "divider" || t == "pat_incoming" || t == "pat_outgoing" || t == "api_error" { i -= 1; continue }
+            return cur.date.timeIntervalSince(m.date) > 1200
+        }
+        return true
     }
 
     // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
