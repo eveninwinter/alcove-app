@@ -2046,6 +2046,8 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
+    // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
+    @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
     @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
@@ -2186,7 +2188,7 @@ private struct BubbleAppearanceSettingsView: View {
                                        stamp: String) -> some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 3) {
             Text(text)
-                .font(.system(size: CGFloat(fontSize)))
+                .font(kakaoPacks.chatFont(CGFloat(fontSize)))
                 .foregroundColor(isUser ? (t.textUser ?? .white) : (t.textAI ?? t.text))   // 0903 正文颜色也进预览
                 .padding(.horizontal, 13).padding(.vertical, 8)
                 .background(RoundedRectangle(cornerRadius: 17, style: .continuous)
@@ -2235,7 +2237,7 @@ private struct BubbleAppearanceSettingsView: View {
             if isUser { Spacer(minLength: 40) }
 
             Text(text)
-                .font(.system(size: CGFloat(fontSize)))
+                .font(kakaoPacks.chatFont(CGFloat(fontSize)))
                 .lineSpacing(5)
                 .foregroundColor(isUser ? (chatTheme.textUser ?? (chatTheme.isMessages ? .white : chatTheme.text)) : (chatTheme.textAI ?? chatTheme.text))
                 .multilineTextAlignment(.leading)
