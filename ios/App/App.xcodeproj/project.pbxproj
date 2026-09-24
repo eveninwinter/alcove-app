@@ -25,6 +25,7 @@
 		9A11C0DE00104F8CA3D60B11 /* QipaiMahjongLandscapeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00104F8CA3D60B22 /* QipaiMahjongLandscapeView.swift */; };
 		9A11C0DE00114F8CA3D60B11 /* TarotRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60B22 /* TarotRoomView.swift */; };
 		9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */; };
+		9A11C0DE09244F8CA3D60A11 /* KakaoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE09244F8CA3D60A22 /* KakaoTheme.swift */; };
 		9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */; };
 		9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */; };
 		9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */; };
@@ -147,6 +148,7 @@
 		9A11C0DE00104F8CA3D60B22 /* QipaiMahjongLandscapeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QipaiMahjongLandscapeView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60B22 /* TarotRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TarotRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NurseryRoomView.swift; sourceTree = "<group>"; };
+		9A11C0DE09244F8CA3D60A22 /* KakaoTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTheme.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuyCardView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEffects.swift; sourceTree = "<group>"; };
@@ -287,6 +289,7 @@
 				9A11C0DE00104F8CA3D60B22 /* QipaiMahjongLandscapeView.swift */,
 				9A11C0DE00114F8CA3D60B22 /* TarotRoomView.swift */,
 				9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */,
+				9A11C0DE09244F8CA3D60A22 /* KakaoTheme.swift */,
 				9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */,
 				9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */,
 				9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */,
@@ -512,6 +515,7 @@
 				9A11C0DE00104F8CA3D60B11 /* QipaiMahjongLandscapeView.swift in Sources */,
 				9A11C0DE00114F8CA3D60B11 /* TarotRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */,
+				9A11C0DE09244F8CA3D60A11 /* KakaoTheme.swift in Sources */,
 				9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */,
 				9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */,

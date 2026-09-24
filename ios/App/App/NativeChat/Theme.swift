@@ -40,6 +40,8 @@ struct AlcoveTheme {
     let panelTextureAsset: String
     // 0822 她要的 iMessage 同款：纯色底、实心蓝/灰气泡带尾巴、过程线藏成一个点
     var isMessages: Bool = false
+    // 0924 她要的 Kakao 家族：挂在信息骨架上，壁纸和气泡是主题包里的图（KakaoTheme.swift）
+    var isKakao: Bool = false
     // 0902 她要的两个可调色位：思绪/过程线、各种截断线（时间戳截断、做了一场梦、切歌那一行）。
     // 没调过就是 nil，回落到 textDim——别的主题一个像素不变。
     var thought: Color? = nil
@@ -139,6 +141,7 @@ struct AlcoveTheme {
         case "midnight": return .midnight
         case "imessage": return MessagesPalette.apply(to: .messages, dark: false)
         case "imessage-dark": return MessagesPalette.apply(to: .messagesDark, dark: true)
+        case "kakao": return .kakaoTheme()
         default: return .haven
         }
     }
@@ -152,6 +155,7 @@ struct AlcoveTheme {
         // iMessage 主题只改聊天页；抽屉/面板沿用玻璃系（白天 haven、黑夜 midnight），其他地方一律不动
         case "imessage": return panelNamed("haven")
         case "imessage-dark": return panelNamed("midnight")
+        case "kakao": return panelNamed("haven")
         case "midnight":
             return midnight.panelCopy(
                 splashBg: [
@@ -343,6 +347,7 @@ enum AlcoveAppearance {
         switch name {
         case "paper", "paper-dark": return "paper"
         case "imessage", "imessage-dark": return "imessage"
+        case "kakao": return "kakao"
         default: return "glass"
         }
     }
@@ -351,6 +356,7 @@ enum AlcoveAppearance {
         switch family {
         case "paper": return dark ? "paper-dark" : "paper"
         case "imessage": return dark ? "imessage-dark" : "imessage"
+        case "kakao": return "kakao"   // 主题包自己带颜色，没有夜里那版
         default: return dark ? "midnight" : "haven"
         }
     }

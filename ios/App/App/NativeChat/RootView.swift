@@ -30,6 +30,7 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @ObservedObject private var kakaoPacks = KakaoPackStore.shared   // 0924 Kakao 换包重画顶栏颜色
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
 
@@ -325,6 +326,10 @@ struct RootView: View {
     private var messagesTopBar: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 4) {
+                if theme.isKakao {
+                    // 0924 Kakao 聊天室顶栏：中间只有名字，没有大头像
+                    kakaoTitle
+                } else {
                 ZStack(alignment: .topTrailing) {
                     Group {
                         if let img = avatarImage {
@@ -348,6 +353,7 @@ struct RootView: View {
                 .foregroundColor(theme.text)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(theme.capsuleTint.opacity(theme.isDark ? 0.9 : 0.7), in: Capsule())
+                }
             }
             // 双击先声明才抢得到，单击照旧进终端页
             .contentShape(Rectangle())
@@ -392,6 +398,16 @@ struct RootView: View {
             .padding(.trailing, 12)
         }
         .frame(height: 84)
+    }
+
+    private var kakaoTitle: some View {
+        HStack(spacing: 4) {
+            Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                .font(.system(size: 16, weight: .semibold))
+            if assistantAsleep { Text("💤").font(.system(size: 13)) }
+        }
+        .foregroundColor(theme.text)
+        .frame(height: 40)
     }
 
     private var legacyTopBar: some View {

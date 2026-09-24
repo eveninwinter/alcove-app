@@ -18,6 +18,7 @@ struct ChatView: View {
 
     @StateObject private var store = ChatStore()
     @StateObject private var wallpaperStore = ChatWallpaperStore()
+    @ObservedObject private var kakaoPacks = KakaoPackStore.shared   // 0924 Kakao 主题包换了/图到了就重画
     @State private var draft = ""
     @State private var previousDraft = ""
     // 0921 任务#2505 文字效果：长按菜单点「文字效果」时记下选中的范围，面板选完套标记
@@ -252,6 +253,7 @@ struct ChatView: View {
                 wallStamp: wallStamp
             )
             store.start()
+            if theme.isKakao { KakaoPackStore.shared.refresh() }   // 0924 开门就把主题包列表拉一遍
             music.startRemotePolling()
             Task {
                 if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") {
@@ -262,6 +264,7 @@ struct ChatView: View {
             }
         }
         .onChange(of: themeName) { newThemeName in
+            if newThemeName == "kakao" { KakaoPackStore.shared.refresh() }
             wallpaperStore.refresh(
                 themeName: newThemeName,
                 theme: .named(newThemeName),
@@ -274,6 +277,10 @@ struct ChatView: View {
                 theme: theme,
                 wallStamp: newStamp
             )
+        }
+        .onReceive(KakaoPackStore.shared.$stamp) { _ in
+            guard theme.isKakao else { return }
+            wallpaperStore.refresh(themeName: themeName, theme: theme, wallStamp: wallStamp)
         }
         .onChange(of: scenePhase) { phase in
             if phase == .active { store.refresh() }
@@ -374,7 +381,7 @@ struct ChatView: View {
                 // 0823 她拍板：顶部放弃渐进模糊，改成纸页主题那种顶部渐隐（edgeFadeMask 顶段同一条曲线，120 高）。
                 // 信息主题底是纯色，所以用主题底色做渐变盖上去和纸页的遮罩观感一致，又不碰滚动区（底部系统效果不动）。
                 .overlay(alignment: .top) {
-                    if theme.isMessages {
+                    if theme.isMessages && !theme.isKakao {
                         let bg = theme.wallGradient.first ?? (theme.isDark ? Color.black : Color.white)
                         LinearGradient(stops: [
                             .init(color: bg, location: 0),
@@ -825,7 +832,9 @@ struct ChatView: View {
 
             let divided = needsDivider(prev: previous, cur: message)
             if divided {
-                if theme.isMessages {
+                if theme.isKakao {
+                    KakaoDateDivider(date: message.date)
+                } else if theme.isMessages {
                     MessagesTimeDivider(date: message.date, color: theme.dividerColor)
                 } else {
                     TimeDivider(date: message.date, color: theme.dividerColor)
@@ -840,6 +849,11 @@ struct ChatView: View {
                       let a = prev.turnID, !a.isEmpty,
                       let b = message.turnID, !b.isEmpty else { return false }
                 return a != b
+            }()
+            // 0924 Kakao：一串消息的第一条露头像、名字、带尾巴的 01 图；后面几条用 02 图、头像位留空
+            let kakaoHead: Bool = {
+                guard let prev = previous else { return true }
+                return divided || isGroupTail(cur: prev, next: message)
             }()
             Group {
             if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" {
@@ -908,6 +922,8 @@ struct ChatView: View {
                     },
                     onResend: { text in store.sendText(text) },
                     onReroll: rerollAction(for: message),
+                    kakaoHead: kakaoHead,
+                    kakaoUnread: message.role == "user" && next == nil,
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
                 )
@@ -2726,6 +2742,9 @@ struct MessageRow: View {
     var onResend: ((String) -> Void)? = nil
     // 0924 她要的「重来」：只有他最后一轮的消息才传这个；按了撤这一轮、claude 回退到她上一句之前重答
     var onReroll: (() -> Void)? = nil
+    // 0924 Kakao：这条是不是一串的头（露头像 / 名字 / 01 图）；她最后一条没被他读过就挂个小「1」
+    var kakaoHead: Bool = true
+    var kakaoUnread: Bool = false
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
     @State private var showThinking = false
@@ -2833,11 +2852,21 @@ struct MessageRow: View {
     private var isTarotRow: Bool { msg.tarotCard != nil || msg.tarotOffer != nil }
 
     var body: some View {
-        HStack(alignment: .bottom, spacing: 0) {
+        HStack(alignment: (theme.isKakao && !isUser) ? .top : .bottom, spacing: 0) {
             // 0903 她要的：塔罗卡不管谁发的都在屏幕正中间，两侧留白都不吃
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
+            // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
+            if theme.isKakao && !isUser && !isTarotRow {
+                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
+            }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
+                if theme.isKakao && !isUser && kakaoHead && !isTarotRow {
+                    Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                        .font(.system(size: 12))
+                        .foregroundColor(theme.textDim)
+                        .padding(.bottom, 5)
+                }
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
@@ -2995,12 +3024,12 @@ struct MessageRow: View {
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
-                        if showTime {
+                        if showTime && !theme.isKakao {   // Kakao 的时间贴在气泡旁边（kakaoSideMeta）
                             Text(Self.hm.string(from: msg.date))
                                 .font(.system(size: 10, design: .serif))
                                 .foregroundColor(theme.timestamp)
                         }
-                        if theme.isMessages, isUser, !msg.pending {
+                        if theme.isMessages, !theme.isKakao, isUser, !msg.pending {
                             // 0822 她定的：tg 那种两个勾，发出去就亮，只是个装饰
                             HStack(spacing: -5) {
                                 Image(systemName: "checkmark")
@@ -3176,7 +3205,38 @@ struct MessageRow: View {
         Text(alcoveMarkdown(raw))
     }
 
+    /// 0924 Kakao：时间（和未读的小「1」）贴在气泡外侧的下角，不在气泡底下另起一行
     private var bubble: some View {
+        Group {
+            if theme.isKakao {
+                HStack(alignment: .bottom, spacing: 5) {
+                    if isUser { kakaoSideMeta }
+                    bubbleCore
+                    if !isUser { kakaoSideMeta }
+                }
+            } else {
+                bubbleCore
+            }
+        }
+    }
+
+    private var kakaoSideMeta: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 2) {
+            if kakaoUnread && isUser {
+                Text("1")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(KakaoPackStore.shared.unreadColor)
+            }
+            if showTime {
+                Text(KakaoClock.fmt.string(from: msg.date))
+                    .font(.system(size: 10))
+                    .foregroundColor(theme.timestamp)
+            }
+        }
+        .padding(.bottom, 2)
+    }
+
+    private var bubbleCore: some View {
         return VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {
             if let quote = msg.quotedSelection, !quote.isEmpty {
                 HStack(alignment: .firstTextBaseline, spacing: 6) {
@@ -3186,13 +3246,16 @@ struct MessageRow: View {
                 }
                 .font(.system(size: 12))
                 .foregroundColor(
-                    (theme.isMessages && isUser)
+                    (theme.isMessages && !theme.isKakao && isUser)
                         ? Color.white.opacity(0.72)
                         : (isUser ? Color.black : theme.textDim.opacity(0.94))
                 )
             }
             Group {
-                if theme.isPaper && !isUser {
+                if theme.isKakao {
+                    // 0924 Kakao：气泡是主题包里的九宫格图，字离四边按包里写的来
+                    KakaoBubbleView(isUser: isUser, first: kakaoHead) { bubbleContents }
+                } else if theme.isPaper && !isUser {
                     bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
                 } else {
                     bubbleContents
@@ -3925,7 +3988,7 @@ private struct ChoiceAnswerStrip: View {
     var body: some View {
         Text(text)
             .font(.system(size: 15.5))
-            .foregroundColor(theme.isMessages ? .white : theme.text)
+            .foregroundColor((theme.isMessages && !theme.isKakao) ? .white : theme.text)
             .padding(.horizontal, 13)
             .padding(.vertical, 7)
             .background(theme.bubbleUser,
@@ -5200,7 +5263,7 @@ struct AudioBubble: View {
     /// 拖的时候波纹跟着手指亮，松手再回到播放器的真实进度
     private var shownProgress: Double { scrubFraction ?? progress }
 
-    private var ink: Color { (theme.isMessages && isUser) ? .white : theme.text }
+    private var ink: Color { (theme.isMessages && !theme.isKakao && isUser) ? .white : theme.text }
 
     /// 10 条起步，每秒多一条，封顶 30——一条 4.5pt，最长约 135pt 的波纹，气泡不会撑爆
     /// 0912 她要能拖进度，短语音太窄对不准：起步 10 → 13 条（她说只加宽一点点）

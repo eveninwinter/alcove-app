@@ -1483,7 +1483,16 @@ private struct NativeSettingsView: View {
                             Color(red: 0x57/255, green: 0xA1/255, blue: 0xF3/255),
                             Color(red: 233/255, green: 233/255, blue: 235/255)
                         ])
+                        // 0924 她要的：布局照 KakaoTalk，颜色和图从别人做的主题包里来
+                        familyChoice("Kakao", "套别人的包", "kakao", [
+                            Color(red: 0xF7/255, green: 0xE6/255, blue: 0x00/255),
+                            .white,
+                            Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
+                        ])
                     }
+                } }
+                if page == .appearance && themeFamily == "kakao" { section("Kakao 主题包") {
+                    KakaoPackPicker(theme: theme)
                 } }
                 if page == .appearance { section("聊天壁纸") {
                     HStack {
@@ -1948,7 +1957,8 @@ private struct NativeSettingsView: View {
 
     private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
     private var isMessagesFamily: Bool { themeName == "imessage" || themeName == "imessage-dark" }
-    private var themeFamily: String { isPaperFamily ? "paper" : (isMessagesFamily ? "imessage" : "glass") }
+    private var isKakaoFamily: Bool { themeName == "kakao" }
+    private var themeFamily: String { isPaperFamily ? "paper" : (isMessagesFamily ? "imessage" : (isKakaoFamily ? "kakao" : "glass")) }
     // 0827 全屋只剩这一个开关：按下去同时写 houseInterfaceAppearance（功能页、
     // 共读室、檐下、信箱、信封卡读它）和 alcoveTheme 的深浅后缀（聊天页、圆桌、
     // 根视图读它）。以前这两个各走各的，她按了一边另一边不动。

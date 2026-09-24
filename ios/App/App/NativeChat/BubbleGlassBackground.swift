@@ -32,13 +32,14 @@ final class ChatWallpaperStore: ObservableObject {
         case "paper-dark": return "chatwall_paper_dark.jpg"
         case "imessage": return "chatwall_imessage.jpg"
         case "imessage-dark": return "chatwall_imessage_dark.jpg"
+        case "kakao": return "chatwall_kakao.jpg"
         default: return "chatwall_haven.jpg"
         }
     }
 
     func refresh(themeName: String, theme: AlcoveTheme, wallStamp: Double) {
         let fileName = Self.fileName(for: themeName)
-        let key = "\(themeName)|\(wallStamp)|\(fileName)"
+        let key = "\(themeName)|\(wallStamp)|\(fileName)|\(KakaoPackStore.shared.selectedID)|\(KakaoPackStore.shared.stamp)"
         guard key != loadedKey else { return }
         loadedKey = key
 
@@ -55,6 +56,14 @@ final class ChatWallpaperStore: ObservableObject {
                         source: .image(prepared ?? image)
                     )
                 }
+            }
+        } else if theme.isKakao {
+            // 0924 Kakao：壁纸是主题包里那张图；图还没下到就先铺包里的底色 / Kakao 原版的蓝灰
+            if let wall = KakaoPackStore.shared.wallImage {
+                descriptor = ChatWallpaperDescriptor(source: .image(wall))
+            } else {
+                let c = KakaoPackStore.shared.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255)
+                descriptor = ChatWallpaperDescriptor(source: .gradient([c, c]))
             }
         } else if theme.usesWallImage {
             descriptor = ChatWallpaperDescriptor(source: .asset("ChatWall"))
