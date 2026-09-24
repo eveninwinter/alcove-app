@@ -3524,7 +3524,10 @@ struct MessageRow: View {
             }
             .padding(.leading, 4)
             .padding(.bottom, rowPartGap)
-        } else if showProcessDots {
+        } else if showProcessDots,
+                  recall != nil || !(msg.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            // 0924 她报的「他的气泡间距跟我的不一样」：这一支原来不管有没有东西都画一个空 HStack
+            // 再垫 rowPartGap，他每条消息头上都多出 7 的空白。现在没角标、没原生思考就整块不画。
             HStack(spacing: 14) {
                 if recall != nil { recallBadge }
                 nativeThinkingButton
