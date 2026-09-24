@@ -7279,19 +7279,23 @@ private struct NativeStudioView: View {
     private func kakaoTextBubble(_ text: String, mine: Bool, head: Bool, date: Date?) -> some View {
         let kt = AlcoveTheme.kakaoTheme()
         // 0924 晚她抓的「你的气泡宽度？」：工作室每条都挂时间，时间原来跟气泡并排占掉一截宽度，气泡比主聊天窄。
-        // 改成时间挂在气泡外侧的空白里（overlay 贴着气泡边），不占排版宽度，气泡最宽跟主聊天一样。
-        return KakaoBubbleView(isUser: mine, first: head) {
-            Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
-                .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
+        // 0925 她又抓的「？时间戳？？」：上一版用 overlay + alignmentGuide 往外挂，guide 没生效，时间压进了气泡右下角。
+        // 改成时间还跟气泡排一行，但套一个 0 宽的框、字往外溢出去：不占气泡宽度，也不会压在气泡上。
+        func stamp(_ d: Date) -> some View {
+            Text(KakaoClock.fmt.string(from: d)).font(.system(size: 10)).foregroundColor(kt.timestamp)
+                .fixedSize()
+                .padding(.bottom, 2)
         }
-        .overlay(alignment: mine ? .bottomLeading : .bottomTrailing) {
-            if let date {
-                Text(KakaoClock.fmt.string(from: date)).font(.system(size: 10)).foregroundColor(kt.timestamp)
-                    .fixedSize()
-                    .padding(.bottom, 2)
-                    .alignmentGuide(mine ? HorizontalAlignment.leading : HorizontalAlignment.trailing) { d in
-                        mine ? d[.trailing] + 5 : d[.leading] - 5
-                    }
+        return HStack(alignment: .bottom, spacing: 0) {
+            if mine, let date {
+                stamp(date).padding(.trailing, 5).frame(width: 0, alignment: .trailing)
+            }
+            KakaoBubbleView(isUser: mine, first: head) {
+                Text(alcoveMarkdown(text)).font(kakaoPacks.chatFont(studioFontSize)).lineSpacing(5).textSelection(.enabled)
+                    .foregroundColor(mine ? (kt.textUser ?? kt.text) : (kt.textAI ?? kt.text))
+            }
+            if !mine, let date {
+                stamp(date).padding(.leading, 5).frame(width: 0, alignment: .leading)
             }
         }
         // 0924 她要的：他的气泡整块往左下挪一点（跟聊天页同一个数），头像名字不动
