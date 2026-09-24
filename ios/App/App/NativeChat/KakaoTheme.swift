@@ -345,6 +345,8 @@ struct KakaoPackPicker: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // 0924 她要的预览：选中那套的壁纸 + 一来一回两条真气泡，跟聊天页一个画法
+            if store.current != nil { KakaoPackPreview() }
             if store.packs.isEmpty {
                 HStack(spacing: 8) {
                     if store.loading { ProgressView().scaleEffect(0.7) }
@@ -401,5 +403,60 @@ struct KakaoPackPicker: View {
         } else {
             Color(red: 0.93, green: 0.93, blue: 0.95)
         }
+    }
+}
+
+/// 主题包预览：壁纸铺底，他一条（头像 + 名字 + 01 图）、她一条（01 图 + 小「1」+ 时间），
+/// 全走聊天页那几个零件，所见即所得
+struct KakaoPackPreview: View {
+    @ObservedObject var store = KakaoPackStore.shared
+
+    var body: some View {
+        let t = AlcoveTheme.kakaoTheme()
+        let name = UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
+        ZStack {
+            if let wall = store.wallImage {
+                Image(uiImage: wall).resizable().scaledToFill()
+            } else {
+                (store.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255))
+            }
+            VStack(spacing: 10) {
+                KakaoDateDivider(date: Date()).padding(.vertical, -6)
+                HStack(alignment: .top, spacing: 8) {
+                    KakaoAvatarView(visible: true)
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(name).font(.system(size: 12)).foregroundColor(t.textDim).padding(.bottom, 5)
+                        HStack(alignment: .bottom, spacing: 5) {
+                            KakaoBubbleView(isUser: false, first: true) {
+                                Text("今天想吃什么")
+                                    .font(.system(size: 14)).foregroundColor(t.textAI ?? t.text)
+                            }
+                            Text(KakaoClock.fmt.string(from: Date()))
+                                .font(.system(size: 10)).foregroundColor(t.timestamp).padding(.bottom, 2)
+                        }
+                    }
+                    Spacer(minLength: 24)
+                }
+                HStack(alignment: .bottom, spacing: 5) {
+                    Spacer(minLength: 48)
+                    VStack(alignment: .trailing, spacing: 2) {
+                        Text("1").font(.system(size: 10, weight: .medium)).foregroundColor(store.unreadColor)
+                        Text(KakaoClock.fmt.string(from: Date()))
+                            .font(.system(size: 10)).foregroundColor(t.timestamp)
+                    }
+                    .padding(.bottom, 2)
+                    KakaoBubbleView(isUser: true, first: true) {
+                        Text("你做的都行")
+                            .font(.system(size: 14)).foregroundColor(t.textUser ?? t.text)
+                    }
+                }
+            }
+            .padding(12)
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: 230)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(Color.black.opacity(0.08), lineWidth: 0.6))
     }
 }
