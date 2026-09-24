@@ -2972,7 +2972,12 @@ struct MessageRow: View {
             if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
                 // 0924 她定的：不带名字，只有头像
                 // 0924 晚她要的：跟工作室一样头像后面留 16，左挪 14 之后猫图案不压头像（右侧少留 8 补回来，最宽不变）
-                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 16)
+                // 0924 晚：头像不占排版高度（原来看不见的头像位也撑 40 高，短气泡下面多出空），往上挪 6 代替气泡往下挪 6，
+                // 气泡跟头像的相对位置不变，气泡之间的空隙不再被撑大
+                KakaoAvatarView(visible: kakaoHead)
+                    .frame(width: 40, height: 0, alignment: .top)
+                    .offset(y: -Self.kakaoBubbleShiftDown)
+                    .padding(.trailing, 16)
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
@@ -3205,10 +3210,10 @@ struct MessageRow: View {
             }
         }
         .padding(.leading, theme.isPaper && !isUser && msg.morningPaperDate == nil && msg.journeyCard == nil && !isTarotRow ? 12 : 0)
-        .padding(.top, 2)
-        // 0922 任务#2578 她量的：他连着的气泡之间比她的宽 3 点上下（截图按 3px/pt 量：他约 19、她约 17）。
-        // 代码里两边行结构一样，源头没找到，先把他那边不带时间戳的行底边收 3 点，对齐到她的。
-        .padding(.bottom, showTime ? 12 : (isUser ? 5 : 2))
+        // 0924 晚她定的：所有主题气泡之间看得见的空隙 = 设置里的「气泡间距」，行上下不再各垫 2 / 5。
+        // （0922 那 3 点差的源头是他每条头上那个空的过程点占位行，0924 下午 7651dba 已经不画了。）
+        // 只剩非 Kakao 主题一串末尾（底下有时间那行）照旧留 12；Kakao 的时间在气泡旁边，不留。
+        .padding(.bottom, (showTime && !theme.isKakao) ? 12 : 0)
         .sheet(item: Binding(get: { openedThink.map { OneThought(text: $0) } },
                              set: { openedThink = $0?.text })) { one in
             NavigationStack {
@@ -3330,7 +3335,6 @@ struct MessageRow: View {
                     if !isUser { kakaoSideMeta }
                 }
                 .padding(.leading, (!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : 0)
-                .padding(.top, (!isUser && kakaoShowAvatar) ? Self.kakaoBubbleShiftDown : 0)
             } else {
                 bubbleCore
             }

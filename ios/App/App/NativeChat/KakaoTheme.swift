@@ -18,6 +18,8 @@ struct KakaoBubbleSpec: Decodable {
     let cap_top: Double
     let inset: [Double]
     let body_left: Double?     // 0924 晚：看得见的气泡左边离图片左边多少（后端量的），小按钮 / 思绪块按它对齐
+    let body_top: Double?      // 0924 晚：图上下自带的空边 / 虚边（后端量的），用负边距扣掉，看得见的间距 = 她设的数
+    let body_bottom: Double?
 
     /// 字离四边：上 左 下 右
     var textInsets: EdgeInsets {
@@ -422,6 +424,10 @@ struct KakaoBubbleView<Content: View>: View {
                         Image(uiImage: img)
                             .resizable(capInsets: spec.capInsets, resizingMode: .stretch)
                     )
+                    // 0924 晚她定的「所有主题都按我设的间距」：图上下那圈空边 / 晕开的虚边不算进排版高度，
+                    // 图照样整张画出来，只是排版上从看得见的边算起
+                    .padding(.top, -CGFloat(spec.body_top ?? 0))
+                    .padding(.bottom, -CGFloat(spec.body_bottom ?? 0))
             } else {
                 // 包还没到 / 没这张图：Kakao 原版的黄白泡兜底
                 content()
