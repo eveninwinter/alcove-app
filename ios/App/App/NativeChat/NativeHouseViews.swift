@@ -501,7 +501,13 @@ struct NativeHouseDrawer: View {
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @StateObject private var model = SidebarModel()
-    private var theme: AlcoveTheme { .named(themeName) }
+    // 0925 她抓的「侧边栏不跟着黑白切换吗」：Kakao 的聊天主题没有夜版（恒按白天画），侧边栏原来直接用它，
+    // 全屋白天 / 黑夜开关怎么拨都是奶白毛玻璃，暗色包的白字压在上面刺眼。Kakao 下改用面板那套：深浅跟全屋开关走
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
+    private var theme: AlcoveTheme {
+        _ = houseAppearance
+        return AlcoveAppearance.family(of: themeName) == "kakao" ? .panelNamed(themeName) : .named(themeName)
+    }
 
     private var screenSafeInsets: UIEdgeInsets {
         // 0904 她报的「拖唱片侧边栏往上跳」：唱片是独立小窗，按住它时 key window 就是那扇小窗，
@@ -522,6 +528,7 @@ struct NativeHouseDrawer: View {
                 // 改成整块只用「一块」毛玻璃当底板，透出后面聊天页的壁纸，壁纸是什么色它就是什么色。
                 // 上面再压一层很薄的暗 / 亮纱保证字看得清。
                 Rectangle().fill(.ultraThinMaterial)
+                    .environment(\.colorScheme, theme.isDark ? .dark : .light)   // 毛玻璃的深浅跟这套皮走，不跟聊天页
                     .frame(width: geo.size.width, height: geo.size.height)
                 (theme.isDark ? Color.black : Color.white).opacity(theme.isDark ? 0.22 : 0.16)
 
