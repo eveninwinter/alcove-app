@@ -6361,6 +6361,8 @@ private struct FavoriteForwardMemberView: View {
 struct NativeThinkingButton: View {
     let text: String
     let color: Color
+    /// 0925 工作室用：面板右上角「译」单点直接走 iOS 自带翻译，不调 AI、没有长按菜单
+    var iosOnly = false
     @State private var presented = false
     var body: some View {
         Button { presented = true } label: {
@@ -6374,7 +6376,7 @@ struct NativeThinkingButton: View {
         .accessibilityLabel("查看原生 Thinking")
         .sheet(isPresented: $presented) {
             if #available(iOS 18.0, *) {
-                NativeThinkingSheet(text: text)
+                NativeThinkingSheet(text: text, iosOnly: iosOnly)
                     .presentationDetents([.medium, .large])
                     .presentationDragIndicator(.visible)
                     .presentationCornerRadius(32)
@@ -6399,6 +6401,7 @@ private struct HouseColorScheme: ViewModifier {
 @available(iOS 18.0, *)
 private struct NativeThinkingSheet: View {
     let text: String
+    var iosOnly = false
     @Environment(\.dismiss) private var dismiss
     @State private var configuration: TranslationSession.Configuration?
     @State private var translated: String?
@@ -6438,6 +6441,35 @@ private struct NativeThinkingSheet: View {
     }
 
 
+    /// 右上角「译」。主聊天：单点 AI 润色翻译，长按可选 AI / iOS；
+    /// 0925 工作室（iosOnly）：单点直接 iOS 自带翻译，不调 AI，没有长按菜单
+    @ViewBuilder private var translateButton: some View {
+        let button = Button {
+            if translated != nil {
+                showTranslation.toggle()
+            } else if iosOnly {
+                translateIOS()
+            } else {
+                translateAI()
+            }
+        } label: {
+            Group {
+                if translating { ProgressView() }
+                else { Text(showTranslation ? "原文" : "译") }
+            }.frame(width: 44, height: 44)
+        }
+        .disabled(translating)
+        .accessibilityLabel(showTranslation ? "显示原文" : "翻译成中文")
+        if iosOnly {
+            button
+        } else {
+            button.contextMenu {
+                Button("AI 润色翻译") { translateAI() }.disabled(translating)
+                Button("iOS 翻译") { translateIOS() }.disabled(translating)
+            }
+        }
+    }
+
     var body: some View {
         VStack(spacing: 0) {
             HStack {
@@ -6450,32 +6482,19 @@ private struct NativeThinkingSheet: View {
                 Spacer()
                 Text("Thought process").font(.system(size: 17, weight: .semibold))
                 Spacer()
-                Button {
-                    if translated != nil {
-                        showTranslation.toggle()
-                    } else {
-                        translateAI()
-                    }
-                } label: {
-                    Group {
-                        if translating { ProgressView() }
-                        else { Text(showTranslation ? "原文" : "译") }
-                    }.frame(width: 44, height: 44)
-                }
-                .contextMenu {
-                    Button("AI 润色翻译") { translateAI() }.disabled(translating)
-                    Button("iOS 翻译") { translateIOS() }.disabled(translating)
-                }
-                .disabled(translating)
-                .accessibilityLabel(showTranslation ? "显示原文" : "翻译成中文")
+                translateButton
             }
             .padding(.horizontal, 18).padding(.top, 20).padding(.bottom, 12)
             if let errorText {
                 Text(errorText).font(.footnote).foregroundStyle(.secondary)
                     .padding(.horizontal, 22).padding(.bottom, 8)
                 HStack {
-                    Button("重试 AI 翻译") { translateAI() }
-                    Button("改用 iOS 翻译") { translateIOS() }
+                    if iosOnly {
+                        Button("重试") { translateIOS() }
+                    } else {
+                        Button("重试 AI 翻译") { translateAI() }
+                        Button("改用 iOS 翻译") { translateIOS() }
+                    }
                 }.font(.footnote).disabled(translating).padding(.bottom, 8)
             }
             ScrollView {

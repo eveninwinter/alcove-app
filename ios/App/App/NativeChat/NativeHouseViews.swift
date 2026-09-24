@@ -7141,7 +7141,7 @@ private struct NativeStudioView: View {
                     .buttonStyle(.plain)
                 }
                 if !thought.isEmpty {
-                    NativeThinkingButton(text: thought, color: theme.thoughtColor)
+                    NativeThinkingButton(text: thought, color: theme.thoughtColor, iosOnly: true)
                 }
             }
             if open && !tools.isEmpty {
