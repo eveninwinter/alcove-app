@@ -2994,9 +2994,10 @@ struct MessageRow: View {
                     .frame(width: 40, height: 0, alignment: .top)
                     .offset(y: -Self.kakaoBubbleShiftDown)
                     .padding(.trailing, 16)
-            } else if kakaoCardIndent > 0 {
-                // 0925 她要的：没头像时，他的截图 / 卡片跟气泡本体左边对齐（带小人的包，小人站在前面那一截）。
-                // 整列往右让开，气泡自己和小按钮再往回挪同样的量，位置不变。
+            }
+            if kakaoCardIndent > 0 {
+                // 0925 她定的：不管有没有头像，他的截图 / 卡片左边跟思绪那颗圆点对齐，思绪不动。
+                // 整列往右让开这么多，气泡自己和思绪 / 小按钮再往回挪同样的量，位置不变。
                 Color.clear.frame(width: kakaoCardIndent, height: 0)
             }
             VStack(alignment: isUser ? .trailing : .leading,
@@ -3354,7 +3355,7 @@ struct MessageRow: View {
                     bubbleCore
                     if !isUser { kakaoSideMeta }
                 }
-                .padding(.leading, (!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : -kakaoCardIndent)
+                .padding(.leading, ((!isUser && kakaoShowAvatar) ? -Self.kakaoBubbleShiftLeft : 0) - kakaoCardIndent)
             } else {
                 bubbleCore
             }
@@ -3365,21 +3366,26 @@ struct MessageRow: View {
     /// 0924 晚她抓的「小按钮在气泡外面」：气泡图四周有透明边、有的左边带小人，图片左边不是看得见的左边。
     /// 看得见的左边由后端拆包时量好（body_left，按这条用的 01 / 02 图取）；老缓存没有这个数就按 2 算（等于原来的 6）。
     private func kakaoTextLeading() -> CGFloat {
+        kakaoThoughtBase - kakaoCardIndent   // 整列让开过 kakaoCardIndent，这里扣回来，思绪 / 小按钮位置不变
+    }
+
+    /// 思绪块 / 小按钮的左边（从头像后面那一列的左边算，不含让位）：看得见的气泡左边往里 4，有头像再减左挪的 14
+    private var kakaoThoughtBase: CGFloat {
         let shift = kakaoShowAvatar ? Self.kakaoBubbleShiftLeft : 0
         let pack = KakaoPackStore.shared.current
         let spec = pack?.bubbles[kakaoFirstBubble ? "recv1" : "recv2"] ?? pack?.bubbles["recv1"]
-        let edge = CGFloat(spec?.body_left ?? 2)
-        return edge + 4 - shift - kakaoCardIndent   // 没头像时整列让开过 kakaoCardIndent，这里扣回来，小按钮位置不变
+        return CGFloat(spec?.body_left ?? 2) + 4 - shift
     }
 
-    /// 0925 她要的「没头像的时候卡片怎么办」：没头像时，他那一整列往右让开「气泡本体左边」那么多，
-    /// 截图 / 卡片 / 语音跟气泡本体对齐；有头像、她的消息、整行居中的东西（晨报、旅行卡、塔罗）都是 0
+    /// 过程点那颗圆点 7 宽、在 22 宽的按钮框里居中，看得见的左边比框往里 7.5
+    static let kakaoDotInset: CGFloat = 7.5
+
+    /// 0925 她定的：不管有没有头像，他的截图 / 卡片 / 语音左边跟思绪那颗圆点对齐（思绪不动）。
+    /// 她的消息、整行居中的东西（晨报、旅行卡、塔罗）是 0；算出来是负的（极少数包）就按 0，卡片贴列左边
     private var kakaoCardIndent: CGFloat {
-        guard theme.isKakao, !isUser, !kakaoShowAvatar, !isTarotRow,
+        guard theme.isKakao, !isUser, !isTarotRow,
               msg.morningPaperDate == nil, msg.journeyCard == nil else { return 0 }
-        let pack = KakaoPackStore.shared.current
-        let spec = pack?.bubbles["recv2"] ?? pack?.bubbles["recv1"]
-        return CGFloat(spec?.body_edge ?? 0)
+        return max(0, kakaoThoughtBase + Self.kakaoDotInset)
     }
 
     private var kakaoSideMeta: some View {
