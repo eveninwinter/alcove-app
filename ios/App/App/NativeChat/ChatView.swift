@@ -3243,7 +3243,8 @@ struct MessageRow: View {
                 }
                 if shouldShowMetaRow {
                     // 0822 她要的：信息主题下时间／清单／心率三个之间留呼吸感
-                    HStack(spacing: theme.isMessages ? 12 : (theme.isPaper && !isUser ? 14 : 4)) {
+                    // 0925 她要的：Kakao 下这排按钮再开一丢丢（12 → 16）
+                    HStack(spacing: theme.isKakao ? 16 : (theme.isMessages ? 12 : (theme.isPaper && !isUser ? 14 : 4))) {
                         if msg.pending {
                             Image(systemName: "clock")
                                 .font(.system(size: 9))
@@ -3298,10 +3299,12 @@ struct MessageRow: View {
                         if showTime, !isUser, let bpm = msg.heartRate, !(theme.isMessages && !showProcessDots) {
                             Button { showPulse = true } label: {
                                 HStack(spacing: 3) {
+                                    // 0925 她要的：Kakao 下爱心实心、不带颜色（跟旁边清单 / 重来一个色），去掉「bpm」只留数字
                                     Image(systemName: "heart.fill")
                                         .font(.system(size: 9, weight: .medium))
-                                        .foregroundColor(Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
-                                    Text("\(bpm) bpm")
+                                        .foregroundColor(theme.isKakao ? theme.timestamp.opacity(0.72)
+                                                         : Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
+                                    Text(theme.isKakao ? "\(bpm)" : "\(bpm) bpm")
                                         .font(.system(size: 10, design: .serif))
                                         .foregroundColor(theme.timestamp.opacity(0.72))
                                 }
