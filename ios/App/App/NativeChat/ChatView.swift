@@ -3119,10 +3119,7 @@ struct MessageRow: View {
                              set: { openedThink = $0?.text })) { one in
             NavigationStack {
                 ScrollView {
-                    Text(one.text)
-                        .font(ThoughtFont.font(15))
-                        .lineSpacing(7)
-                        .foregroundColor(theme.text)
+                    ObliqueText(text: one.text, size: 15, color: UIColor(theme.text), lineSpacing: 7)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.horizontal, 22).padding(.top, 6).padding(.bottom, 30)
@@ -3463,11 +3460,13 @@ struct MessageRow: View {
                         .frame(width: 10)
                         .padding(.top, 3)
                     // .italic(Bool) 是 iOS16+ 的签名，这里走老 API 免得吃部署目标的亏
-                    Text(it.content)
-                        .font(it.kind == "thinking"
-                              ? ThoughtFont.font(11)
-                              : .system(size: 11))
-                        .foregroundColor(theme.textDim.opacity(it.kind == "thinking" ? 0.72 : 0.9))
+                    Group {
+                        if it.kind == "thinking" {
+                            ObliqueText(text: it.content, size: 11, color: UIColor(theme.textDim.opacity(0.72)))
+                        } else {
+                            Text(it.content).font(.system(size: 11)).foregroundColor(theme.textDim.opacity(0.9))
+                        }
+                    }
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -3560,11 +3559,8 @@ struct MessageRow: View {
     }
 
     private func processThought(_ text: String) -> some View {
-        Text(text)
-            .font(ThoughtFont.font(12.5))   // 0924 她要的：思绪用宋体斜体
-            .foregroundColor(theme.thoughtColor)
-            .lineSpacing(3)
-            .textSelection(.enabled)
+        // 0924 她要的：思绪用宋体斜体（中文也真斜，走 UIKit obliqueness）
+        ObliqueText(text: text, size: 12.5, color: UIColor(theme.thoughtColor), lineSpacing: 3)
     }
 
     private func thinkPanelRow(_ text: String, index: Int, showRecall: Bool) -> some View {
@@ -3673,10 +3669,7 @@ struct MessageRow: View {
                 // 0820 她定的：跟命令栏剥开之后就不需要那条竖线了 ——
                 // 这里只剩一段话，跟官方那个面板一样干净。
                 VStack(alignment: .leading, spacing: 0) {
-                    Text(visibleChatThought ?? cuteThinkingPlaceholder)
-                        .font(ThoughtFont.font(15))
-                        .lineSpacing(7)
-                        .foregroundColor(theme.text)
+                    ObliqueText(text: visibleChatThought ?? cuteThinkingPlaceholder, size: 15, color: UIColor(theme.text), lineSpacing: 7)
                         .fixedSize(horizontal: false, vertical: true)
                         .frame(maxWidth: .infinity, alignment: .leading)
                         .padding(.top, 6)
@@ -4962,9 +4955,7 @@ struct LiveSayBand: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             if !state.thinking.isEmpty {
-                Text(state.thinking)
-                    .font(ThoughtFont.font(11))
-                    .foregroundColor(theme.textDim.opacity(0.62))
+                ObliqueText(text: state.thinking, size: 11, color: UIColor(theme.textDim.opacity(0.62)))
                     .fixedSize(horizontal: false, vertical: true)
             }
             if !state.say.isEmpty {

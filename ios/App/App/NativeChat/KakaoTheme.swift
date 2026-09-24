@@ -668,3 +668,37 @@ enum ThoughtFont {
         return Font.system(size: size, design: .serif).italic()
     }
 }
+
+/// 0924 她抓的：SwiftUI 的 .italic() 只斜英文，中文字形没有斜体版就原样站着。
+/// 这里走 UIKit 的 obliqueness（按字形剪切），中文也真斜；字体用打包的霞鹜新致宋。
+struct ObliqueText: UIViewRepresentable {
+    let text: String
+    let size: CGFloat
+    let color: UIColor
+    var lineSpacing: CGFloat = 0
+    var slant: CGFloat = 0.22
+
+    func makeUIView(context: Context) -> UILabel {
+        let l = UILabel()
+        l.numberOfLines = 0
+        l.lineBreakMode = .byWordWrapping
+        l.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        l.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        return l
+    }
+
+    func updateUIView(_ l: UILabel, context: Context) {
+        let font = UIFont(name: ThoughtFont.songPostScript, size: size) ?? UIFont.systemFont(ofSize: size)
+        let para = NSMutableParagraphStyle()
+        para.lineSpacing = lineSpacing
+        l.attributedText = NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: color, .obliqueness: slant, .paragraphStyle: para
+        ])
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
+        let w = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? (UIScreen.main.bounds.width - 40)
+        let s = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude))
+        return CGSize(width: min(w, ceil(s.width)), height: ceil(s.height))
+    }
+}
