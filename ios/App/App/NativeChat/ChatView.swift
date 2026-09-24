@@ -807,6 +807,9 @@ struct ChatView: View {
                 set: { if !$0 { store.rerollNote = nil } })
     }
 
+    // 0924 构建红了「function declares an opaque return type, but has no return statements」：
+    // 这个函数体里全是 if / let / Group，本来就该是 ViewBuilder，加了 kakaoHead 那段之后编译器不再替它兜底
+    @ViewBuilder
     private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
         if !isPhotoGroupContinuation(at: index) {
             let previous = index > 0 ? store.messages[index - 1] : nil
