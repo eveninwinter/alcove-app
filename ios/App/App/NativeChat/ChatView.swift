@@ -525,9 +525,7 @@ struct ChatView: View {
             }
             .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
             // 0924「重来」没成时说一声为什么（他正忙、回退菜单对不上号、SDK 通道……）
-            .alert("重来没成", isPresented: Binding(
-                get: { store.rerollNote != nil },
-                set: { if !$0 { store.rerollNote = nil } })) {
+            .alert("重来没成", isPresented: rerollAlertShown) {
                 Button("好", role: .cancel) {}
             } message: {
                 Text(store.rerollNote ?? "")
@@ -789,6 +787,19 @@ struct ChatView: View {
         return idx > lastUser
     }
 
+    /// 0924：给 MessageRow 的「重来」回调。抽成函数是为了别在那个几百行的构造里塞三目＋闭包（编译器算不过来，c5bdd8d/72e3404 两笔红）
+    private func rerollAction(for message: ChatMessage) -> (() -> Void)? {
+        guard isLatestAssistantTurn(message) else { return nil }
+        let s = store
+        return { s.rerollLastReply() }
+    }
+
+    /// 0924：「重来没成」弹窗的开关，抽出来别在 body 链里内联 Binding
+    private var rerollAlertShown: Binding<Bool> {
+        Binding(get: { store.rerollNote != nil },
+                set: { if !$0 { store.rerollNote = nil } })
+    }
+
     private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
         if !isPhotoGroupContinuation(at: index) {
             let previous = index > 0 ? store.messages[index - 1] : nil
@@ -846,9 +857,6 @@ struct ChatView: View {
                 // 0822 她要的：切通道留一道线，跟时间分割一个样子
                 ChannelDivider(text: message.text, color: theme.dividerColor)
             } else {
-                // 0924「重来」：闭包和 nil 直接放三目里 Swift 推不出类型（c5bdd8d 构建红了），先标好类型
-                let rerollAction: (() -> Void)? = isLatestAssistantTurn(message)
-                    ? { store.rerollLastReply() } : nil
                 let renderedRow = MessageRow(
                     msg: message,
                     sticker: message.stickerId.flatMap(store.sticker(for:)),
@@ -899,7 +907,7 @@ struct ChatView: View {
                         inputFocused = true
                     },
                     onResend: { text in store.sendText(text) },
-                    onReroll: rerollAction,
+                    onReroll: rerollAction(for: message),
                     onPlayMusic: { song in Task { await music.play(song) } },
                     onContentChange: { scrollKick += 1 }
                 )
@@ -3017,7 +3025,7 @@ struct MessageRow: View {
                             .accessibilityLabel("选择正文段落")
                         }
                         // 0924 她要的「重来」（像官方 app 那种重 roll）：只在他最后一轮的尾巴上出现
-                        if showTime, !isUser, let onReroll {
+                        if showTime, !isUser, let onReroll = onReroll {
                             Button { onReroll() } label: {
                                 Image(systemName: "arrow.counterclockwise")
                                     .font(.system(size: 11, weight: .medium))
