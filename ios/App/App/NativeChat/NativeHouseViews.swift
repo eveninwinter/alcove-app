@@ -7430,14 +7430,7 @@ private struct NativeStudioView: View {
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
             if isKakao && !mine && kakaoShowAvatar {
-                VStack(alignment: .leading, spacing: 4) {
-                    if head {
-                        Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
-                            .fixedSize().frame(width: 40, alignment: .leading)
-                    }
-                    KakaoAvatarView(visible: head)
-                }
-                .padding(.trailing, 8)
+                KakaoAvatarView(visible: head).padding(.trailing, 8)   // 0924 她定的：不带名字
             }
             VStack(alignment: mine ? .trailing : .leading, spacing: 6) {
                 Group {
@@ -7488,14 +7481,7 @@ private struct NativeStudioView: View {
         return HStack(alignment: (isKakao && !mine) ? .top : .bottom) {
             if mine { Spacer(minLength: 52) }
             if isKakao && !mine && kakaoShowAvatar {
-                VStack(alignment: .leading, spacing: 4) {
-                    if head {
-                        Text("工作室").font(.system(size: 12)).foregroundColor(AlcoveTheme.kakaoTheme().textDim)
-                            .fixedSize().frame(width: 40, alignment: .leading)
-                    }
-                    KakaoAvatarView(visible: head)
-                }
-                .padding(.trailing, 8)
+                KakaoAvatarView(visible: head).padding(.trailing, 8)   // 0924 她定的：不带名字
             }
             VStack(alignment: mine ? .trailing : .leading, spacing: 5) {
                 if !mine && !thought.isEmpty {

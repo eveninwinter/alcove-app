@@ -2923,18 +2923,8 @@ struct MessageRow: View {
             if isUser { Spacer(minLength: isTarotRow ? 0 : 48) }
             // 0924 Kakao：他的消息左边一个圆角方头像，一串只有第一条露脸
             if theme.isKakao && !isUser && !isTarotRow && kakaoShowAvatar {
-                // 0924 她定的：名字在头像上面。名字固定占 40 宽、允许往右溢出，头像那一列宽度不变，续条才对得齐
-                VStack(alignment: .leading, spacing: 4) {
-                    if kakaoHead {
-                        Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                            .font(.system(size: 12))
-                            .foregroundColor(theme.textDim)
-                            .fixedSize()
-                            .frame(width: 40, alignment: .leading)
-                    }
-                    KakaoAvatarView(visible: kakaoHead)
-                }
-                .padding(.trailing, 8)
+                // 0924 她定的：不带名字，只有头像
+                KakaoAvatarView(visible: kakaoHead).padding(.trailing, 8)
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {

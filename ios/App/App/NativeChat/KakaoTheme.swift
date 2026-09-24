@@ -554,7 +554,7 @@ struct KakaoPackPicker: View {
                 }
             }
             Toggle(isOn: $showAvatar) {
-                Text("他的消息带头像和名字")
+                Text("他的消息带头像")
                     .font(.system(size: 12)).foregroundColor(theme.text)
             }
             .tint(theme.fyAccent)
@@ -620,7 +620,6 @@ struct KakaoPackPreview: View {
                 HStack(alignment: .top, spacing: 8) {
                     if showAvatar { KakaoAvatarView(visible: true) }
                     VStack(alignment: .leading, spacing: 0) {
-                        if showAvatar { Text(name).font(.system(size: 12)).foregroundColor(t.textDim).padding(.bottom, 5) }
                         HStack(alignment: .bottom, spacing: 5) {
                             KakaoBubbleView(isUser: false, first: true) {
                                 Text("今天想吃什么")
