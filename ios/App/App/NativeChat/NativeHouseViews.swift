@@ -884,6 +884,7 @@ private struct NativeSettingsView: View {
     // 0925 「追问」（相处页，找你那排下面）开着时，找你 / 自醒锁住点不动（去玩照常）
     @State private var followupOn = false
     @State private var followupAlarm: String? = nil   // 他给自己订的闹钟几点到，nil = 没订
+    @State private var followupSchedule: [String] = []  // 0925 他订的日程提醒（可以好几张），只给 HH:mm
     @State private var wakeLine: String? = nil
     @State private var wakeEta: String? = nil
     @State private var wakeOdds: String? = nil
@@ -1298,6 +1299,10 @@ private struct NativeSettingsView: View {
                             }
                             Text(followupAlarm.map { "他订了闹钟：\($0)" } ?? "他没订闹钟")
                                 .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                            if !followupSchedule.isEmpty {
+                                Text("日程提醒：" + followupSchedule.joined(separator: "、"))
+                                    .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                            }
                         }
                         Button { showWakeTimeline = true } label: {
                             HStack(spacing: 6) {
@@ -1641,6 +1646,14 @@ private struct NativeSettingsView: View {
         .opacity(locked ? 0.45 : 1)
     }
 
+    /// 只要 HH:mm（日程提醒一排好几个，不带「还有几分钟」）；不是今天的前面带月日
+    private static func clockText(_ iso: String) -> String? {
+        guard let d = ISO8601DateFormatter().date(from: iso) else { return nil }
+        let f = DateFormatter()
+        f.dateFormat = Calendar.current.isDateInToday(d) ? "HH:mm" : "M月d日 HH:mm"
+        return f.string(from: d)
+    }
+
     private static func pulseDueText(_ iso: String?) -> String? {
         guard let iso, let d = ISO8601DateFormatter().date(from: iso) else { return nil }
         let f = DateFormatter(); f.dateFormat = "HH:mm"
@@ -1669,6 +1682,7 @@ private struct NativeSettingsView: View {
             if let g = value["ghost"] as? Bool { pulseGhost = g }
             if let f = value["followup"] as? Bool { followupOn = f }
             followupAlarm = Self.pulseDueText(value["followup_alarm"] as? String)
+            followupSchedule = ((value["followup_schedule"] as? [String]) ?? []).compactMap(Self.clockText)
         }
         pulseLoaded = true
     }
