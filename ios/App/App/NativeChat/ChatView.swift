@@ -5590,7 +5590,13 @@ struct AudioBubble: View {
     /// 拖的时候波纹跟着手指亮，松手再回到播放器的真实进度
     private var shownProgress: Double { scrubFraction ?? progress }
 
-    private var ink: Color { (theme.isMessages && !theme.isKakao && isUser) ? .white : theme.text }
+    private var ink: Color {
+        // 0925：Kakao 下套的是包里的气泡图，字色跟正文气泡一样用包里写的收 / 发字色
+        if theme.isKakao { return (isUser ? theme.textUser : theme.textAI) ?? theme.text }
+        return (theme.isMessages && isUser) ? .white : theme.text
+    }
+    // 转文字跟正文一样吃全局字体（她 0924 定的「字体全局，哪个主题都吃」）；换了字体这里跟着重画
+    @ObservedObject private var packs = KakaoPackStore.shared
 
     /// 10 条起步，每秒多一条，封顶 30——一条 4.5pt，最长约 135pt 的波纹，气泡不会撑爆
     /// 0912 她要能拖进度，短语音太窄对不准：起步 10 → 13 条（她说只加宽一点点）
@@ -5622,7 +5628,33 @@ struct AudioBubble: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
+        Group {
+            if theme.isKakao {
+                // 0925 她要的：Kakao 下语音条也套包里的气泡图，跟正文一样，字离四边按包里写的来。
+                // 带图案的 01 那张还是只给一串里第一条真说话的气泡（0924 她定的规矩），语音一律用 02
+                KakaoBubbleView(isUser: isUser, first: false) { card(kakao: true) }
+            } else {
+                card(kakao: false)
+                    .background {
+                        RoundedRectangle(cornerRadius: 18, style: .continuous)
+                            .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
+                    }
+            }
+        }
+        .animation(.easeInOut(duration: 0.18), value: transcriptShown)
+        .contextMenu {
+            if let onFavorite {
+                Button { onFavorite() } label: { Label("收藏", systemImage: "heart") }
+            }
+        }
+        .task(id: url) { await loadDuration() }
+    }
+
+    /// 语音条本体。Kakao 的气泡图自己带了离四边的距离，这里就不再垫那圈 14 / 10
+    private func card(kakao: Bool) -> some View {
+        let padH: CGFloat = kakao ? 0 : 14
+        let padV: CGFloat = kakao ? 2 : 10
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 10) {
                 Button(action: togglePlay) {
                     Image(systemName: playing ? "pause.fill" : "play.fill")
@@ -5667,34 +5699,24 @@ struct AudioBubble: View {
                     .opacity(0.8)
                 }
             }
-            .padding(.horizontal, 14)
-            .padding(.vertical, 10)
+            .padding(.horizontal, padH)
+            .padding(.vertical, padV)
             if hasTranscript && transcriptShown {
                 Rectangle()
                     .fill(ink.opacity(0.16))
                     .frame(height: 1)
-                    .padding(.horizontal, 12)
+                    .padding(.horizontal, kakao ? 0 : 12)
+                    .padding(.vertical, kakao ? 6 : 0)
                 // 0919 她要的：点「译」不再另起一条线挂小字，中文直接顶替英文原文，同字号同样式；再点回原文
                 Text(translationShown && !translation.isEmpty ? translation : transcript)
-                    .font(.system(size: fontSize))
+                    .font(packs.chatFont(fontSize))
                     .lineSpacing(theme.isPaper ? 7 : 5)
-                    .padding(.horizontal, 14)
-                    .padding(.vertical, 10)
+                    .padding(.horizontal, padH)
+                    .padding(.vertical, padV)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
         .foregroundColor(ink)
-        .background {
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-        }
-        .animation(.easeInOut(duration: 0.18), value: transcriptShown)
-        .contextMenu {
-            if let onFavorite {
-                Button { onFavorite() } label: { Label("收藏", systemImage: "heart") }
-            }
-        }
-        .task(id: url) { await loadDuration() }
     }
 
     private var waveform: some View {
