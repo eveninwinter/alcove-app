@@ -1670,12 +1670,9 @@ struct ChatView: View {
                     // 0823 她报的：信息主题按回车不攒气泡。病根是这个框没写 axis: .vertical，
                     // 单行框的回车走 submit 不往 draft 里塞换行，handleDraftChange 的
                     // 「新值 == 旧值 + \n」永远对不上。改成跟纸页那边同一套：竖轴 + 1...5 行。
-                    // 0925 她问「打字框『信息』的颜色为啥不跟着图标走」：Kakao 下占位字跟加号 / 话筒一样用包里的次要字色，
-                    // 不然暗色包上加号是白的、占位字是系统灰。信息主题照旧系统灰。
-                    TextField("", text: $draft,
-                              prompt: theme.isKakao
-                                ? Text("信息").font(.system(size: 16)).foregroundColor(theme.textDim)
-                                : Text("信息").font(.system(size: 16)),
+                    // 0925 凌晨 Kakao 下占位字改成跟加号 / 话筒一样用包里的次要字色；当天中午她说「太丑了，改回信息主题那样」，
+                    // 所以哪个主题都是系统灰的占位字，别再给 Kakao 单独染色。
+                    TextField("", text: $draft, prompt: Text("信息").font(.system(size: 16)),
                               axis: .vertical)
                         .focused($inputFocused)
                         .lineLimit(1...5)
