@@ -1319,7 +1319,7 @@ private struct NativeSettingsView: View {
                                     .buttonStyle(.plain)
                             }
                             .padding(.top, 6)
-                            Text("他一张闹钟都没订、你们也都 \(backstopMin) 分钟没说话，就把他叫起来一次，要不要找你他自己定。一段安静只叫一次，你说话才重新算。")
+                            Text("他一张闹钟都没订、你们也都 \(backstopMin) 分钟没说话，就把他叫起来一次，要不要找你他自己定。一段安静只叫一次，你说话才重新算。跟着睡眠开关走：他睡觉那段（0 点到早上 7 点）不算也不叫，醒了从 7 点开始算；睡眠关着就照常算。")
                                 .font(.system(size: 9.5)).foregroundColor(theme.textDim)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
