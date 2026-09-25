@@ -191,8 +191,6 @@ final class ChatStore: ObservableObject {
                 if let confirmed = rec,
                    let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
                     messages[idx] = confirmed
-                    if let lt = lastTs, confirmed.ts > lt { lastTs = confirmed.ts }
-                    else if lastTs == nil { lastTs = confirmed.ts }
                 }
             } catch { connectionError = true }
         }
@@ -243,8 +241,6 @@ final class ChatStore: ObservableObject {
                     if let rec = try await AlcoveAPI.upload(data: d, filename: name,
                                                            caption: i == 0 ? caption : "", group: group) {
                         appendNew([rec])
-                        if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
-                        else if lastTs == nil { lastTs = rec.ts }
                     }
                 } catch { connectionError = true }
             }
@@ -303,8 +299,6 @@ final class ChatStore: ObservableObject {
                 if let rec = try await AlcoveAPI.upload(data: pv.data, filename: name, caption: "",
                                                         voice: pv.analysis, hold: followedByText) {
                     appendNew([rec])
-                    if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
-                    else if lastTs == nil { lastTs = rec.ts }
                 }
                 if let held = try? await AlcoveAPI.heldCount() { heldCount = held }
             } catch { connectionError = true }
@@ -320,8 +314,6 @@ final class ChatStore: ObservableObject {
                 let name = "voice_\(Int(Date().timeIntervalSince1970 * 1000)).m4a"
                 if let rec = try await AlcoveAPI.upload(data: data, filename: name, caption: "") {
                     appendNew([rec])
-                    if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
-                    else if lastTs == nil { lastTs = rec.ts }
                 }
             } catch { connectionError = true }
         }
@@ -666,6 +658,9 @@ final class ChatStore: ObservableObject {
                 //「捞他的新话去合成语音」已经没有对象，整段撤掉。
                 // 那也是「读完一段停很久」的老病灶：合成排在播放后面。别加回来。
             }
+            // 0925 任务#2895：书签只由这里挪。她发消息 / 发图 / 发语音拿到回执时不再把 lastTs 跳到自己那条——
+            // 跳过去，上次轮询之后才落库或刚放行的（他 curl 的东西收轮才放，时间戳还是旧的）就再也问不到，
+            // 只有退出重进才补得回来。她自己那条下一轮轮询会再回来，appendNew 按 ts + role 认出来，不会多一条。
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
             currentTool = r.currentTool
             isTyping = r.isTyping || Date() < optimisticUntil
@@ -807,8 +802,6 @@ final class ChatStore: ObservableObject {
                     if let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
                         messages[idx] = confirmed
                     }
-                    if let lt = lastTs, confirmed.ts > lt { lastTs = confirmed.ts }
-                    else if lastTs == nil { lastTs = confirmed.ts }
                 }
                 if let h = try? await AlcoveAPI.heldCount() { heldCount = h }
             } catch {
@@ -1047,8 +1040,6 @@ final class ChatStore: ObservableObject {
             do {
                 if let rec = try await AlcoveAPI.upload(data: data, filename: filename, caption: caption) {
                     appendNew([rec])
-                    if let lt = lastTs, rec.ts > lt { lastTs = rec.ts }
-                    else if lastTs == nil { lastTs = rec.ts }
                 }
                 if let held = try? await AlcoveAPI.heldCount() { heldCount = held }
             } catch { connectionError = true }

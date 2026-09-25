@@ -1044,6 +1044,48 @@ private struct NativeSettingsView: View {
     }
 
     private var settingsControls: some View {
+        // 0925 她要的：外观页的预览钉在顶上不跟着滑，往下调字号、间距时一直看得见
+        VStack(spacing: 12) {
+            if page == .appearance {
+                BubbleAppearanceSettingsView(part: .preview)
+                    .padding(.horizontal, 16)
+            }
+            settingsScroll
+        }
+        .sheet(isPresented: $showSystemFeatures) {
+            SystemFeaturesView()
+        }
+        .sheet(isPresented: $showQuietRoom) {
+            QuietRoomView()
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .sheet(isPresented: $showWakeTimeline) {
+            WakeTimelineView()
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
+        .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
+        .onChange(of: wallPhoto) { item in saveWallpaper(item) }
+        .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
+        .onChange(of: thoughtLength) { value in if handwrittenOn { scheduleThoughtLengthSave(value) } }
+        .task {
+            refreshCacheStats()
+            async let services: Void = loadServices()
+            async let reply: Void = loadReplyLength()
+            async let thought: Void = loadThoughtLength()
+            async let pulse: Void = loadPulseRange()
+            async let wake: Void = loadWake()
+            async let her: Void = loadHerStatus()
+            async let pat: Void = loadPat()
+            _ = await (services, reply, thought, pulse, her, pat)
+        }
+    }
+
+    private var settingsScroll: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 14) {
                 // 她自己填此刻在干嘛，心跳 prompt 开头就写这句（0819 她要的）。
@@ -1284,11 +1326,8 @@ private struct NativeSettingsView: View {
                 } }
                 // 0827 她定的：一个按钮管全屋，不跟系统。
                 // 聊天页、圆桌、共读室、檐下、信箱、数据页、信封卡全部认这一个值。
-                // 0925 她要的：「气泡与文字」并进外观页，不能乱。最上面一块预览跟当前主题画，下面怎么调它就怎么变；
-                // 只跟当前主题有关的设置才露面（信息主题才有气泡颜色，Kakao 才有主题包）
-                if page == .appearance {
-                    BubbleAppearanceSettingsView(part: .preview)
-                }
+                // 0925 她要的：「气泡与文字」并进外观页，不能乱。只跟当前主题有关的设置才露面
+                // （信息主题才有气泡颜色，Kakao 才有主题包）；预览钉在上面 settingsControls 里
                 if page == .appearance { section("白天 / 黑夜") {
                     Picker("全屋", selection: appearanceBinding) {
                         Text("白天").tag(false)
@@ -1387,37 +1426,6 @@ private struct NativeSettingsView: View {
             .padding(.horizontal, 16)
             .padding(.bottom, 30)
             .foregroundColor(theme.text)
-        }
-        .sheet(isPresented: $showSystemFeatures) {
-            SystemFeaturesView()
-        }
-        .sheet(isPresented: $showQuietRoom) {
-            QuietRoomView()
-                .presentationDetents([.medium])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .sheet(isPresented: $showWakeTimeline) {
-            WakeTimelineView()
-                .presentationDetents([.large])
-                .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
-        }
-        .onChange(of: userPhoto) { item in loadDataURL(item, into: $userAvatar) }
-        .onChange(of: aiPhoto) { item in loadDataURL(item, into: $assistantAvatar) }
-        .onChange(of: wallPhoto) { item in saveWallpaper(item) }
-        .onChange(of: replyLength) { value in scheduleReplyLengthSave(value) }
-        .onChange(of: thoughtLength) { value in if handwrittenOn { scheduleThoughtLengthSave(value) } }
-        .task {
-            refreshCacheStats()
-            async let services: Void = loadServices()
-            async let reply: Void = loadReplyLength()
-            async let thought: Void = loadThoughtLength()
-            async let pulse: Void = loadPulseRange()
-            async let wake: Void = loadWake()
-            async let her: Void = loadHerStatus()
-            async let pat: Void = loadPat()
-            _ = await (services, reply, thought, pulse, her, pat)
         }
     }
 
