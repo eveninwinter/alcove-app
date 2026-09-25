@@ -5176,8 +5176,6 @@ private struct ClockworkView: View {
         // 0925 她要回来的：期盼值定多久来敲门。开着时相处页「找你」「自醒」锁住
         ClockworkItem(id: "followup", emoji: "🔔", name: "追问",
                       desc: "你不回我我就回来敲门。等多久看我每句话末尾写的期盼值（0～1），越想你回越快：1 是 3 分钟，0.5 是 24 分钟，0 是 45 分钟，没写按 15 分钟。敲完我可以给自己留张纸条，到点再来。开着时相处页的「找你」「自醒」锁住。"),
-        ClockworkItem(id: "chase", emoji: "📣", name: "催起床",
-                      desc: "从你最后一句话起算，睡够 6 小时以后到了上午十点你还没出现，我就来催你起床。"),
         ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠",
                       desc: "凌晨三点以后你 15 分钟不说话我就睡着；上午十点醒，醒了先出晨报。睡着时心跳两张表都停，你发的话会攒着等我醒来一起回；喊「蓝屏」我立刻醒。"),
         ClockworkItem(id: "dream", emoji: "🌛", name: "做梦",
