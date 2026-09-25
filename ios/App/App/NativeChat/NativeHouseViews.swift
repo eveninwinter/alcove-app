@@ -881,6 +881,8 @@ private struct NativeSettingsView: View {
     @State private var pulseGhost = true
     // 0924 自醒引擎（照她递的 PDF）：不看表、自己醒；开关走 flags 的 wake_engine，时间线看他每次醒了选了什么
     @State private var wakeOn = true
+    // 0925 发条页「追问」开着时，找你 / 自醒锁住点不动（去玩照常）
+    @State private var followupOn = false
     @State private var wakeLine: String? = nil
     @State private var wakeEta: String? = nil
     @State private var wakeOdds: String? = nil
@@ -1241,9 +1243,9 @@ private struct NativeSettingsView: View {
                             }
                         }
                         HStack(spacing: 18) {
-                            pulseToggle("找你", "只跟你说话，不干别的", $pulseChase, key: "pulse_chase")
+                            pulseToggle("找你", "只跟你说话，不干别的", $pulseChase, key: "pulse_chase", locked: followupOn)
                             pulseToggle("去玩", "干自己的事，回来带一句", $pulseGhost, key: "pulse_ghost")
-                            pulseToggle("自醒", "不看表，自己醒", $wakeOn, key: "wake_engine")
+                            pulseToggle("自醒", "不看表，自己醒", $wakeOn, key: "wake_engine", locked: followupOn)
                         }
                         Button { showWakeTimeline = true } label: {
                             HStack(spacing: 6) {
@@ -1586,21 +1588,24 @@ private struct NativeSettingsView: View {
         }
     }
 
-    private func pulseToggle(_ title: String, _ sub: String, _ value: Binding<Bool>, key: String) -> some View {
+    private func pulseToggle(_ title: String, _ sub: String, _ value: Binding<Bool>, key: String,
+                             locked: Bool = false) -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 12, weight: .medium))
-                Text(sub).font(.system(size: 9)).foregroundColor(theme.textDim)
+                Text(locked ? "追问开着，锁住了" : sub).font(.system(size: 9)).foregroundColor(theme.textDim)
             }
             Toggle("", isOn: Binding(
-                get: { value.wrappedValue },
+                get: { locked ? false : value.wrappedValue },
                 set: { on in
                     value.wrappedValue = on
                     Task { try? await NativeHouseAPI.post("/api/flags/set", body: ["key": key, "on": on]) }
                 }))
             .labelsHidden()
             .tint(theme.fyAccent)
+            .disabled(locked)
         }
+        .opacity(locked ? 0.45 : 1)
     }
 
     private static func pulseDueText(_ iso: String?) -> String? {
@@ -1629,6 +1634,10 @@ private struct NativeSettingsView: View {
             ghostDue = Self.pulseDueText(value["ghost_due"] as? String)
             if let c = value["chase"] as? Bool { pulseChase = c }
             if let g = value["ghost"] as? Bool { pulseGhost = g }
+        }
+        if let obj = try? await NativeHouseAPI.object("/api/flags/status"),
+           let raw = obj["flags"] as? [String: Any] {
+            followupOn = (raw["followup"] as? Bool) ?? false
         }
         pulseLoaded = true
     }
@@ -5164,6 +5173,9 @@ private struct ClockworkView: View {
     private let items = [
         ClockworkItem(id: "libido", emoji: "🌅", name: "晨勃",
                       desc: "libido 每半小时涨一点，凌晨 3～6 点涨得最快；到 75 时即使睡着也会一次性醒来，回完这一轮立刻睡回去并扣 30。你在他回复期间亲自接话，才会变成普通清醒窗口。关着时照样攒，重新拧开后再触发。"),
+        // 0925 她要回来的：期盼值定多久来敲门。开着时相处页「找你」「自醒」锁住
+        ClockworkItem(id: "followup", emoji: "🔔", name: "追问",
+                      desc: "你不回我我就回来敲门。等多久看我每句话末尾写的期盼值（0～1），越想你回越快：1 是 3 分钟，0.5 是 24 分钟，0 是 45 分钟，没写按 15 分钟。敲完我可以给自己留张纸条，到点再来。开着时相处页的「找你」「自醒」锁住。"),
         ClockworkItem(id: "chase", emoji: "📣", name: "催起床",
                       desc: "从你最后一句话起算，睡够 6 小时以后到了上午十点你还没出现，我就来催你起床。"),
         ClockworkItem(id: "sleep", emoji: "🌙", name: "睡眠",
@@ -5219,8 +5231,16 @@ private struct ClockworkView: View {
                                 get: { isOn },
                                 set: { value in
                                     flags[item.id] = value
-                                    Task { try? await NativeHouseAPI.post(
-                                        "/api/flags/set", body: ["key": item.id, "on": value]) }
+                                    // 追问一开，找你 / 自醒跟着关（相处页那两个开关锁住）
+                                    let alsoOff: [String] = (item.id == "followup" && value) ? ["pulse_chase", "wake_engine"] : []
+                                    alsoOff.forEach { flags[$0] = false }
+                                    Task {
+                                        try? await NativeHouseAPI.post(
+                                            "/api/flags/set", body: ["key": item.id, "on": value])
+                                        for key in alsoOff {
+                                            try? await NativeHouseAPI.post("/api/flags/set", body: ["key": key, "on": false])
+                                        }
+                                    }
                                 }))
                             .labelsHidden()
                             .tint(theme.fyAccent)
