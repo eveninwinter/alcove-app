@@ -1728,7 +1728,8 @@ private struct NativeSettingsView: View {
 
     /// 兜底的分钟数单独存（后端只传它时不重排找你 / 去玩那两张表）
     private func saveBackstop() {
-        guard (10...1440).contains(backstopMin) else { return }
+        // 她 0925 定的：最短 10 分钟、最长 5 小时，填出界就拉回边上再存
+        backstopMin = min(max(backstopMin, 10), 300)
         Task { @MainActor in
             if let value = try? await NativeHouseAPI.object(
                 "/api/pulse-range", method: "POST", body: ["backstop": backstopMin]
