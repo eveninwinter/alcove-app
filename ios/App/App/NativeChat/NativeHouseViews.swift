@@ -885,6 +885,9 @@ private struct NativeSettingsView: View {
     @State private var followupOn = false
     @State private var followupAlarm: String? = nil   // 他给自己订的闹钟几点到，nil = 没订
     @State private var followupSchedule: [String] = []  // 0925 他订的日程提醒（可以好几张），只给 HH:mm
+    // 0925 兜底：追问开着、他一张闹钟都没有、两边都安静 backstopMin 分钟，叫他一次（flags followup_backstop）
+    @State private var backstopOn = false
+    @State private var backstopMin = 60
     @State private var wakeLine: String? = nil
     @State private var wakeEta: String? = nil
     @State private var wakeOdds: String? = nil
@@ -1303,6 +1306,22 @@ private struct NativeSettingsView: View {
                                 Text("日程提醒：" + followupSchedule.joined(separator: "、"))
                                     .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
                             }
+                            // 0925 她要的兜底：开关 + 自己填安静多久；追问关着时一起锁住（开关管追问全部）
+                            HStack(alignment: .bottom, spacing: 8) {
+                                pulseToggle("兜底", "都没动静就叫他一次", $backstopOn, key: "followup_backstop",
+                                            locked: !followupOn, lockedText: "追问关着")
+                                Spacer(minLength: 0)
+                                pulseField("安静多久", $backstopMin)
+                                Text("分钟").font(.system(size: 12)).foregroundColor(theme.textDim)
+                                Button("存") { saveBackstop() }
+                                    .font(.system(size: 12, weight: .semibold))
+                                    .foregroundColor(theme.fyAccent)
+                                    .buttonStyle(.plain)
+                            }
+                            .padding(.top, 6)
+                            Text("他一张闹钟都没订、你们也都 \(backstopMin) 分钟没说话，就把他叫起来一次，要不要找你他自己定。一段安静只叫一次，你说话才重新算。")
+                                .font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                                .fixedSize(horizontal: false, vertical: true)
                         }
                         Button { showWakeTimeline = true } label: {
                             HStack(spacing: 6) {
@@ -1627,11 +1646,11 @@ private struct NativeSettingsView: View {
     }
 
     private func pulseToggle(_ title: String, _ sub: String, _ value: Binding<Bool>, key: String,
-                             locked: Bool = false) -> some View {
+                             locked: Bool = false, lockedText: String = "追问开着，锁住了") -> some View {
         HStack(spacing: 8) {
             VStack(alignment: .leading, spacing: 1) {
                 Text(title).font(.system(size: 12, weight: .medium))
-                Text(locked ? "追问开着，锁住了" : sub).font(.system(size: 9)).foregroundColor(theme.textDim)
+                Text(locked ? lockedText : sub).font(.system(size: 9)).foregroundColor(theme.textDim)
             }
             Toggle("", isOn: Binding(
                 get: { locked ? false : value.wrappedValue },
@@ -1683,6 +1702,8 @@ private struct NativeSettingsView: View {
             if let f = value["followup"] as? Bool { followupOn = f }
             followupAlarm = Self.pulseDueText(value["followup_alarm"] as? String)
             followupSchedule = ((value["followup_schedule"] as? [String]) ?? []).compactMap(Self.clockText)
+            if let b = value["backstop"] as? Bool { backstopOn = b }
+            if let n = value["backstop_min"] as? Int { backstopMin = n }
         }
         pulseLoaded = true
     }
@@ -1701,6 +1722,18 @@ private struct NativeSettingsView: View {
             wakeEta = Self.pulseDueText(st["eta_if_lambda_holds"] as? String).map { $0 + "，按此刻的速度估" } ?? "还没算出来"
             if let p30 = st["p_wake_30min"] as? Double, let p60 = st["p_wake_60min"] as? Double {
                 wakeOdds = "半小时内约 \(Int((p30 * 100).rounded()))%，一小时内约 \(Int((p60 * 100).rounded()))%"
+            }
+        }
+    }
+
+    /// 兜底的分钟数单独存（后端只传它时不重排找你 / 去玩那两张表）
+    private func saveBackstop() {
+        guard (10...1440).contains(backstopMin) else { return }
+        Task { @MainActor in
+            if let value = try? await NativeHouseAPI.object(
+                "/api/pulse-range", method: "POST", body: ["backstop": backstopMin]
+            ), let n = value["backstop_min"] as? Int {
+                backstopMin = n
             }
         }
     }
