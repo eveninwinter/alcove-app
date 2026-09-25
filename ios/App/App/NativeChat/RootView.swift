@@ -417,7 +417,8 @@ struct RootView: View {
             if assistantAsleep { Text("💤").font(.system(size: 13)) }
         }
         .foregroundColor(theme.text)
-        .frame(height: 40)
+        // 0925 她报「要点好几次」：名字就两个字，能点的只有字那么宽。框放宽，字还在正中，看着不变
+        .frame(minWidth: 150, minHeight: 44)
     }
 
     /// 0924 晚她要的：顶栏上他的名字跟设置里选的全局字体走；选的是「系统」就还是原来的系统字粗细
