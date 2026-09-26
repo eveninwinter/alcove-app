@@ -40,6 +40,8 @@ struct ChatMessage: Identifiable, Equatable {
     var nativeThinking: String?
     var thinkingDuration: Double?
     var heartRate: Int?
+    // 0926 API 房间：这一轮的缓存命中率（后端挂在他那轮最后一条上），显示在时间戳那行
+    var apiCacheLabel: String?
     // 0730：思绪标题（他自己写的一句话总结，替掉"思考了X秒"）
     var thinkTitle: String?
     // 0730：这一轮的过程记录（思绪/中间说的话/调过的工具），挂在时间戳旁边点开看
@@ -269,6 +271,10 @@ struct ChatMessage: Identifiable, Equatable {
         else if let i = json["thinking_duration"] as? Int { self.thinkingDuration = Double(i) }
         if let bpm = json["heart_rate"] as? Int { self.heartRate = bpm }
         else if let bpm = json["heart_rate"] as? Double { self.heartRate = Int(bpm) }
+        if let u = json["api_usage"] as? [String: Any] {
+            if let hit = (u["hit"] as? NSNumber)?.intValue { self.apiCacheLabel = "缓存 \(hit)%" }
+            else { self.apiCacheLabel = "缓存 没报" }   // 中转站回执里压根没有缓存字段
+        }
         self.attachmentUrl = json["attachment_url"] as? String
         self.attachmentType = json["attachment_type"] as? String
         self.attachmentFilename = json["attachment_filename"] as? String

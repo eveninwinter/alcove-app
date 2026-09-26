@@ -3671,6 +3671,11 @@ struct MessageRow: View {
                             }
                             .buttonStyle(.plain)
                         }
+                        if showTime, !isUser, let cache = msg.apiCacheLabel {
+                            Text(cache)
+                                .font(.system(size: 10, design: .serif))
+                                .foregroundColor(theme.timestamp.opacity(0.72))
+                        }
                     }
                     .padding(.leading, isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset))
                     .padding(.trailing, isUser ? timestampTextInset : 0)
