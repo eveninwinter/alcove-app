@@ -3832,7 +3832,7 @@ struct MessageRow: View {
     /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边在「看得见的气泡左边」往里缩 4（头像开关都一样）。
     /// 0924 晚她抓的「小按钮在气泡外面」：气泡图四周有透明边、有的左边带小人，图片左边不是看得见的左边。
     /// 看得见的左边由后端拆包时量好（body_left，按这条用的 01 / 02 图取）；老缓存没有这个数就按 2 算（等于原来的 6）。
-    /// 0926 她给的样子：↑ 32.2K tokens (32.1K cached) ↓ 180 tokens ⏱ 0.0s，后面再跟缓存命中率
+    /// 0926 她给的样子：↑ 32.2K tokens (32.1K cached) ↓ 180 tokens，后面再跟缓存命中率（秒数她说不要）
     private func apiUsageLine(_ u: ChatMessage.ApiUsage) -> some View {
         func k(_ n: Int) -> String { n < 1000 ? "\(n)" : String(format: "%.1fK", Double(n) / 1000) }
         var t = Text("")
@@ -3842,9 +3842,6 @@ struct MessageRow: View {
         }
         if let o = u.output, o > 0 {
             t = t + Text("  ") + Text(Image(systemName: "arrow.down.square")) + Text(" \(k(o)) tokens")
-        }
-        if let s = u.secs {
-            t = t + Text("  ") + Text(Image(systemName: "clock")) + Text(String(format: " %.1fs", s))
         }
         t = t + Text("  ") + Text(u.hit.map { "缓存 \($0)%" } ?? "缓存 没报")
         return t
