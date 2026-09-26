@@ -3671,10 +3671,8 @@ struct MessageRow: View {
                             }
                             .buttonStyle(.plain)
                         }
-                        if showTime, !isUser, let cache = msg.apiCacheLabel {
-                            Text(cache)
-                                .font(.system(size: 10, design: .serif))
-                                .foregroundColor(theme.timestamp.opacity(0.72))
+                        if showTime, !isUser, let usage = msg.apiUsage {
+                            apiUsageLine(usage)
                         }
                     }
                     .padding(.leading, isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset))
@@ -3834,6 +3832,28 @@ struct MessageRow: View {
     /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边在「看得见的气泡左边」往里缩 4（头像开关都一样）。
     /// 0924 晚她抓的「小按钮在气泡外面」：气泡图四周有透明边、有的左边带小人，图片左边不是看得见的左边。
     /// 看得见的左边由后端拆包时量好（body_left，按这条用的 01 / 02 图取）；老缓存没有这个数就按 2 算（等于原来的 6）。
+    /// 0926 她给的样子：↑ 32.2K tokens (32.1K cached) ↓ 180 tokens ⏱ 0.0s，后面再跟缓存命中率
+    private func apiUsageLine(_ u: ChatMessage.ApiUsage) -> some View {
+        func k(_ n: Int) -> String { n < 1000 ? "\(n)" : String(format: "%.1fK", Double(n) / 1000) }
+        var t = Text("")
+        if let i = u.input, i > 0 {
+            t = t + Text(Image(systemName: "arrow.up.square")) + Text(" \(k(i)) tokens")
+                + (u.cached > 0 ? Text(" (\(k(u.cached)) cached)") : Text(""))
+        }
+        if let o = u.output, o > 0 {
+            t = t + Text("  ") + Text(Image(systemName: "arrow.down.square")) + Text(" \(k(o)) tokens")
+        }
+        if let s = u.secs {
+            t = t + Text("  ") + Text(Image(systemName: "clock")) + Text(String(format: " %.1fs", s))
+        }
+        t = t + Text("  ") + Text(u.hit.map { "缓存 \($0)%" } ?? "缓存 没报")
+        return t
+            .font(.system(size: 10, design: .serif))
+            .foregroundColor(theme.timestamp.opacity(0.72))
+            .lineLimit(2)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+
     private func kakaoTextLeading() -> CGFloat {
         kakaoThoughtBase - kakaoCardIndent   // 整列让开过 kakaoCardIndent，这里扣回来，思绪 / 小按钮位置不变
     }
