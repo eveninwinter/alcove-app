@@ -1850,12 +1850,7 @@ struct ChatView: View {
     private func dispatchComposed(_ text: String) {
         if let stk = pendingSticker {
             pendingSticker = nil
-            if store.room == "api" {
-                // 0926 API 房间：她的表情走 chat-append 会落进 tmux 那间，这里改成一句字描述发过去
-                let t = outgoingText(text)
-                store.sendText("[表情：\(stk.descForAI)]" + (t.isEmpty ? "" : " " + t))
-                return
-            }
+            // 0926 任务#2963：API 房间也走这一条（跟 tmux 统一，气泡里是表情图），AlcoveAPI 会带上 room=api
             store.sendSticker(stk, text: outgoingText(text))
             return
         }

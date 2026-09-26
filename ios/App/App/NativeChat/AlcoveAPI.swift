@@ -341,6 +341,7 @@ enum AlcoveAPI {
         var body: [String: Any] = ["role": "user", "sticker_id": stk.id,
                                    "sticker_desc": stk.descForAI]
         if let t = text, !t.isEmpty { body["text"] = t }
+        if chatRoom == "api" { body["room"] = "api" }   // 0926 落进 API 房间，后端直接叫 API 的他回
         _ = try await postJSON("/api/chat-append", body: body)
     }
 
