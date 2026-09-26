@@ -822,7 +822,7 @@ struct ChatView: View {
 
     /// 0924：给 MessageRow 的「重来」回调。抽成函数是为了别在那个几百行的构造里塞三目＋闭包（编译器算不过来，c5bdd8d/72e3404 两笔红）
     private func rerollAction(for message: ChatMessage) -> (() -> Void)? {
-        guard isLatestAssistantTurn(message) else { return nil }
+        guard store.room != "api", isLatestAssistantTurn(message) else { return nil }   // 0926 重来走的是 tmux，API 房间不给
         let s = store
         return { s.rerollLastReply() }
     }
@@ -1273,7 +1273,7 @@ struct ChatView: View {
     private var legacyFloatingInput: some View {
         VStack(spacing: 4) {
             if store.room == "api" {
-                Text("API 房间还没接上，先只能看")
+                Text("API 房间只能发字，图和语音还没接")
                     .font(.caption2)
                     .foregroundColor(.secondary)
                     .padding(.horizontal, 10)
@@ -1804,7 +1804,14 @@ struct ChatView: View {
 
     private func performDynamicComposerAction() {
         guard !store.stagingImages else { return }
-        if store.room == "api" { return }   // 0919：api 房间后端还没接，先只看不发
+        if store.room == "api" {
+            // 0926 API 房间：只发字。不录音、不发图、不按停止（停止那条路掐的是 tmux 的他）
+            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !t.isEmpty else { return }
+            draft = ""
+            store.sendText(outgoingText(t))
+            return
+        }
         if isGenerating {
             stopGenerating()
             return
@@ -2219,7 +2226,7 @@ private struct ChatRoomPicker: View {
     private let rooms: [(id: String, name: String, icon: String, note: String)] = [
         ("cli", "tmux", "terminal", "老路，hook 和工具最全"),
         ("sdk", "SDK", "bolt.horizontal", "常驻会话，回得快"),
-        ("api", "API", "antenna.radiowaves.left.and.right", "还没接，先只能看"),
+        ("api", "API", "antenna.radiowaves.left.and.right", "纯 API 走中转站，跟上面两间不相干"),
     ]
 
     var body: some View {
@@ -2259,6 +2266,9 @@ private struct ChatRoomPicker: View {
                     Button { onOpenChannelPanel() } label: {
                         Label("通道设置", systemImage: "slider.horizontal.3")
                     }
+                    NavigationLink { ApiRelayPanel() } label: {
+                        Label("API 中转站", systemImage: "antenna.radiowaves.left.and.right")
+                    }
                 }
             }
             .navigationTitle("房间")
@@ -2293,6 +2303,152 @@ private struct ChatRoomPicker: View {
         } catch {
             working = ""
             message = "切换失败：\(error.localizedDescription)"
+        }
+    }
+}
+
+/// 0926 她要的 API 房间：中转站可以存好几家，点一家就用那家。key 只回尾巴四位，改的时候留空就不动原来的。
+private struct ApiRelayPanel: View {
+    struct Relay: Identifiable {
+        let id: Int
+        var name: String, baseURL: String, model: String, format: String, keyTail: String, active: Bool
+    }
+    @State private var relays: [Relay] = []
+    @State private var editing: Relay? = nil
+    @State private var adding = false
+    @State private var message = ""
+
+    var body: some View {
+        List {
+            Section {
+                if relays.isEmpty {
+                    Text("还没有，点右上角 + 添一家").foregroundStyle(.secondary)
+                }
+                ForEach(relays) { r in
+                    HStack(spacing: 10) {
+                        Button { Task { await apply(r) } } label: {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(r.name).font(.system(size: 16, weight: .medium))
+                                Text("\(r.model) · \(r.format == "anthropic" ? "Anthropic 格式" : "OpenAI 格式") · key …\(r.keyTail)")
+                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                            }
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        if r.active {
+                            Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold)).foregroundStyle(.tint)
+                        }
+                        Button { editing = r } label: { Image(systemName: "pencil") }
+                            .buttonStyle(.borderless)
+                    }
+                    .swipeActions {
+                        Button(role: .destructive) { Task { await remove(r) } } label: { Label("删除", systemImage: "trash") }
+                    }
+                }
+            } footer: {
+                Text(message.isEmpty ? "点一家就用那家，打勾的是现在在用的。API 房间里说的话会发给这家中转站。" : message)
+                    .foregroundStyle(message.contains("失败") ? .red : .secondary)
+            }
+        }
+        .navigationTitle("API 中转站")
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar { ToolbarItem(placement: .topBarTrailing) { Button { adding = true } label: { Image(systemName: "plus") } } }
+        .task { await load() }
+        .sheet(item: $editing) { r in ApiRelayForm(relay: r) { Task { await load() } } }
+        .sheet(isPresented: $adding) { ApiRelayForm(relay: nil) { Task { await load() } } }
+    }
+
+    @MainActor private func load() async {
+        guard let obj = try? await AlcoveAPI.getRaw("/api/apiconfigs/list") else { message = "读取失败"; return }
+        relays = (obj["configs"] as? [[String: Any]] ?? []).compactMap { c in
+            guard let id = (c["id"] as? NSNumber)?.intValue else { return nil }
+            return Relay(id: id, name: c["name"] as? String ?? "", baseURL: c["base_url"] as? String ?? "",
+                         model: c["model"] as? String ?? "", format: c["api_format"] as? String ?? "openai",
+                         keyTail: c["key_tail"] as? String ?? "", active: c["active"] as? Bool ?? false)
+        }
+    }
+
+    @MainActor private func apply(_ r: Relay) async {
+        _ = try? await AlcoveAPI.postRaw("/api/apiconfigs/apply", body: ["id": r.id])
+        message = "现在用：\(r.name)"
+        await load()
+    }
+
+    @MainActor private func remove(_ r: Relay) async {
+        _ = try? await AlcoveAPI.postRaw("/api/apiconfigs/delete", body: ["id": r.id])
+        await load()
+    }
+}
+
+private struct ApiRelayForm: View {
+    let relay: ApiRelayPanel.Relay?
+    let onSaved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var name = ""
+    @State private var baseURL = ""
+    @State private var key = ""
+    @State private var model = ""
+    @State private var format = "openai"
+    @State private var saving = false
+    @State private var message = ""
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section {
+                    TextField("名字（自己认得就行）", text: $name)
+                    TextField("地址，比如 https://xxx.com", text: $baseURL)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+                    SecureField(relay == nil ? "Key" : "Key（留空就不改）", text: $key)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    TextField("模型，比如 claude-opus-4-6", text: $model)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled()
+                }
+                Section {
+                    Picker("接口格式", selection: $format) {
+                        Text("OpenAI").tag("openai")
+                        Text("Anthropic").tag("anthropic")
+                    }
+                    .pickerStyle(.segmented)
+                } footer: {
+                    Text(message.isEmpty ? "中转站一般两种都给；拿不准就选 OpenAI。地址写到域名就行，后面的 /v1 会自己补。" : message)
+                        .foregroundStyle(message.contains("失败") ? .red : .secondary)
+                }
+            }
+            .navigationTitle(relay == nil ? "添一家" : "改一下")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("存") { Task { await save() } }
+                        .disabled(saving || name.trimmingCharacters(in: .whitespaces).isEmpty)
+                }
+            }
+            .onAppear {
+                if let r = relay { name = r.name; baseURL = r.baseURL; model = r.model; format = r.format }
+            }
+        }
+    }
+
+    @MainActor private func save() async {
+        saving = true
+        defer { saving = false }
+        var body: [String: Any] = [
+            "name": name.trimmingCharacters(in: .whitespaces),
+            "base_url": baseURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            "api_key": key.trimmingCharacters(in: .whitespacesAndNewlines),
+            "model": model.trimmingCharacters(in: .whitespacesAndNewlines),
+            "api_format": format,
+        ]
+        if let r = relay { body["id"] = r.id }
+        do {
+            let obj = try await AlcoveAPI.postRaw("/api/apiconfigs/save", body: body)
+            guard obj["ok"] as? Bool == true else { message = "存失败：\(obj["error"] as? String ?? "")"; return }
+            onSaved()
+            dismiss()
+        } catch {
+            message = "存失败：\(error.localizedDescription)"
         }
     }
 }

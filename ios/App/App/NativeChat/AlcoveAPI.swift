@@ -327,7 +327,9 @@ enum AlcoveAPI {
 
     // 返回服务器确认的记录；睡眠闸门拦下时 asleep=true
     static func send(text: String) async throws -> (record: ChatMessage?, asleep: Bool) {
-        let obj = try await postJSON("/api/send", body: ["text": text])
+        var body: [String: Any] = ["text": text]
+        if chatRoom == "api" { body["room"] = "api" }   // 0926 API 房间：后端直接交给中转站，不碰 tmux
+        let obj = try await postJSON("/api/send", body: body)
         let rec = (obj["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
         return (rec, obj["asleep"] as? Bool ?? false)
     }
