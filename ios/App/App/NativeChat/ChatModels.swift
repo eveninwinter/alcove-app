@@ -70,6 +70,9 @@ struct ChatMessage: Identifiable, Equatable {
     /// 0912：他发语音时自己写的中文翻译（voice_speak.py --zh → 后端 extra.audio_zh）。展开转文字后点「译」才显示
     var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
+    // 0926 她要的「流式直接在原有气泡里」：他还在写的那几段先当成临时气泡塞进列表，
+    // 用跟正式消息同一套画法（字体、气泡、主题都一样）；正式消息一到就收掉
+    var isLive: Bool = false
 
     // 0922 任务#2572 她抓的「一键到底顿一下」：id 原来是 uid（每次从服务器拿一次就重新发一遍号），
     // 整表一换 300 条全是新面孔，SwiftUI 把气泡全拆了重画。改成时间戳+角色，拉几次都是同一个号
@@ -318,6 +321,17 @@ struct ChatMessage: Identifiable, Equatable {
     }
 
     // 本地乐观消息
+    init(liveText: String, at date: Date, thinking: String?) {
+        self.ts = ISO8601DateFormatter.alcoveFrac.string(from: date)
+        self.date = date
+        self.role = "assistant"
+        self.text = liveText
+        self.turnID = "live"
+        self.thinking = thinking
+        self.asleepAtSend = false
+        self.isLive = true
+    }
+
     init(localText: String, role: String = "user") {
         let now = Date()
         self.ts = ISO8601DateFormatter.alcoveFrac.string(from: now)

@@ -338,7 +338,9 @@ struct ChatView: View {
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
                                 }
                         }
-                        if let live = store.live, (live.active || live.finishing), !live.isEmpty {
+                        // 0926：正文已经画进临时气泡了，这行只在「还没开口、只有思考/工具」时出来
+                        if let live = store.live, (live.active || live.finishing), !live.isEmpty,
+                           (live.say + live.pendingSay).trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                             StreamingAssistantRow(state: live, theme: theme, fontSize: chatFontSize)
                                 .id("live-\(live.turnID)")
                         }
@@ -677,8 +679,9 @@ struct ChatView: View {
     }
 
     private var liveLayoutKey: String {
-        guard let live = store.live else { return "" }
-        return "\(live.turnID)\u{1f}\(live.say)\u{1f}\(live.pendingSay)\u{1f}\(live.timeline.count)"
+        // 0926 她报的「API 流式不会自动滚」：API 房间没有 store.live，靠临时气泡的版本号跟着滚
+        guard let live = store.live else { return "api\u{1f}\(store.liveBubbleRev)" }
+        return "\(live.turnID)\u{1f}\(live.say)\u{1f}\(live.pendingSay)\u{1f}\(live.timeline.count)\u{1f}\(store.liveBubbleRev)"
     }
 
     private var paragraphSelectionToolbar: some View {
@@ -821,7 +824,9 @@ struct ChatView: View {
         guard message.role == "assistant", !store.isViewingHistory else { return false }
         // 0924 她截到两轮尾巴都有箭头：原来是「她最后一句之后的都算」，他自己醒来连说两轮就两个箭头。
         // 改成只认他最后一轮（turn_id 相同的那串；老消息没 turn_id 就只认最后一条）
-        guard let last = store.messages.last(where: { $0.role == "assistant" && $0.msgType != "api_error" }) else { return false }
+        guard !message.isLive,
+              let last = store.messages.last(where: { $0.role == "assistant" && $0.msgType != "api_error" && !$0.isLive })
+        else { return false }
         if let t = last.turnID, !t.isEmpty { return message.turnID == t }
         return message.uid == last.uid
     }

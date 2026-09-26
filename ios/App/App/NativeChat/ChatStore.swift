@@ -36,7 +36,45 @@ final class ChatStore: ObservableObject {
         didSet {
             let snapshot = live
             Task { await AlcoveLiveActivityController.sync(snapshot) }
+            // 0926：tmux / SDK 的流式也画进气泡（她要三个房间一样）
+            if room != "api" {
+                if let l = live, l.active || l.finishing {
+                    showLiveBubbles(l.say + l.pendingSay, thinking: l.thinking)
+                } else {
+                    clearLiveBubbles()
+                }
+            }
         }
+    }
+    /// 流式临时气泡每变一次就 +1，聊天页拿它跟着滚到底
+    @Published var liveBubbleRev = 0
+    private var liveBubbleBase: Date?
+
+    /// 他还在写的正文按空行切段，每段一个临时气泡（跟正式落库的切法一样），接在列表末尾
+    func showLiveBubbles(_ text: String, thinking: String) {
+        let paras = text.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        var kept = messages.filter { !$0.isLive }
+        guard !paras.isEmpty else {
+            if kept.count != messages.count { messages = kept; liveBubbleRev += 1 }
+            return
+        }
+        let base = liveBubbleBase ?? Date()
+        liveBubbleBase = base
+        for (i, p) in paras.enumerated() {
+            kept.append(ChatMessage(liveText: p, at: base.addingTimeInterval(Double(i) * 0.001),
+                                    thinking: (i == 0 && !thinking.isEmpty) ? thinking : nil))
+        }
+        messages = kept
+        liveBubbleRev += 1
+    }
+
+    func clearLiveBubbles() {
+        liveBubbleBase = nil
+        guard messages.contains(where: { $0.isLive }) else { return }
+        messages.removeAll { $0.isLive }
+        liveBubbleRev += 1
     }
 
     private var heldGen = 0
@@ -341,6 +379,7 @@ final class ChatStore: ObservableObject {
         AlcoveAPI.chatRoom = target
         room = target
         apiLive = nil
+        liveBubbleBase = nil
         messages = []
         lastTs = nil
         hasOlder = true
@@ -675,16 +714,19 @@ final class ChatStore: ObservableObject {
             currentTool = r.currentTool
             isTyping = r.isTyping || Date() < optimisticUntil
             if room == "api", r.isTyping, let p = r.apiPartial {
-                var s = AlcoveAPI.LiveState(active: true, turnID: "api-live")
-                s.say = p["say"] as? String ?? ""
-                s.thinking = [p["thinking"] as? String ?? "", p["native_thinking"] as? String ?? ""]
+                let say = p["say"] as? String ?? ""
+                let thought = [p["thinking"] as? String ?? "", p["native_thinking"] as? String ?? ""]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
+                // 0926 她要的：正文直接画在正式那种气泡里；还没开口只在想的时候才用那条「思考中」的实时行
+                showLiveBubbles(say, thinking: thought)
+                var s = AlcoveAPI.LiveState(active: true, turnID: "api-live")
+                if say.isEmpty { s.thinking = thought }
                 apiLive = s
                 let tool = p["tool"] as? String ?? ""
                 currentTool = tool.isEmpty ? nil : tool   // 他正在用的工具（后端 current_tool 是 tmux 那个他的，这间不认）
             } else {
                 apiLive = nil
-                if room == "api" { currentTool = nil }
+                if room == "api" { currentTool = nil; clearLiveBubbles() }
             }
             if r.isTyping { optimisticUntil = .distantPast }
             if r.isTyping || Date() < optimisticUntil {
@@ -738,6 +780,11 @@ final class ChatStore: ObservableObject {
         if recs.contains(where: { $0.role == "assistant" }) {
             Task { await loadRecalls() } // 我开口了，召回记录可能刚落库
             if live?.finishing == true { live = nil }
+        }
+        // 0926：他的正式消息到了，先收掉流式临时气泡再往里接
+        if recs.contains(where: { $0.role == "assistant" }) {
+            messages.removeAll { $0.isLive }
+            liveBubbleBase = nil
         }
         var out = messages
         for rec in recs {
