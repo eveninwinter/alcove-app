@@ -602,6 +602,7 @@ enum AlcoveAPI {
             if !v.tone.isEmpty { items.append(URLQueryItem(name: "tone", value: v.tone)) }
         }
         if hold { items.append(URLQueryItem(name: "hold", value: "1")) }
+        if chatRoom == "api" { items.append(URLQueryItem(name: "room", value: "api")) }   // 0926 落进 API 房间
         comps.queryItems = items
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"

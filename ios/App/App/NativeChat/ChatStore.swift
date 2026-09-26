@@ -246,6 +246,12 @@ final class ChatStore: ObservableObject {
                     }
                 } catch { connectionError = true }
             }
+            if room == "api" {
+                // 0926 API 房间：图传完就叫他回（配文已经挂在第一张上），不用再按一次发送
+                optimisticTyping()
+                _ = try? await AlcoveAPI.send(text: "")
+                return
+            }
             if let held = try? await AlcoveAPI.heldCount() {
                 heldCount = held
             }
@@ -674,8 +680,11 @@ final class ChatStore: ObservableObject {
                 s.thinking = [p["thinking"] as? String ?? "", p["native_thinking"] as? String ?? ""]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
                 apiLive = s
+                let tool = p["tool"] as? String ?? ""
+                currentTool = tool.isEmpty ? nil : tool   // 他正在用的工具（后端 current_tool 是 tmux 那个他的，这间不认）
             } else {
                 apiLive = nil
+                if room == "api" { currentTool = nil }
             }
             if r.isTyping { optimisticUntil = .distantPast }
             if r.isTyping || Date() < optimisticUntil {

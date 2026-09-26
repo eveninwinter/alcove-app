@@ -347,7 +347,8 @@ struct ChatView: View {
                             StreamingAssistantRow(state: al, theme: theme, fontSize: chatFontSize)
                                 .id("api-live")
                         }
-                        if store.isTyping, store.apiLive?.isEmpty ?? true {
+                        if store.isTyping, (store.apiLive?.isEmpty ?? true)
+                            || (store.room == "api" && store.currentTool != nil) {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
                                             name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
@@ -1278,12 +1279,8 @@ struct ChatView: View {
     private var legacyFloatingInput: some View {
         VStack(spacing: 4) {
             if store.room == "api" {
-                Text("API 房间只能发字，图和语音还没接")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 3)
-                    .background(.ultraThinMaterial, in: Capsule())
+                // 0926 任务#2954：上下文条，点开看明细、换窗
+                ApiContextCapsule(refreshKey: "\(store.isTyping)-\(store.messages.count)")
             }
             if store.connectionError {
                 Text("连接不上小屋，重试中…")
@@ -1809,14 +1806,8 @@ struct ChatView: View {
 
     private func performDynamicComposerAction() {
         guard !store.stagingImages else { return }
-        if store.room == "api" {
-            // 0926 API 房间：只发字。不录音、不发图、不按停止（停止那条路掐的是 tmux 的他）
-            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
-            guard !t.isEmpty else { return }
-            draft = ""
-            store.sendText(outgoingText(t))
-            return
-        }
+        // 0926 API 房间：字 / 图 / 语音都能发（任务#2954），但不给停止键——停止那条路掐的是 tmux 的他
+        if store.room == "api" && isGenerating { return }
         if isGenerating {
             stopGenerating()
             return
@@ -1833,7 +1824,7 @@ struct ChatView: View {
             return
         }
         guard canSend else {
-            if store.heldCount > 0 {
+            if store.heldCount > 0 && store.room != "api" {   // 攒着的是 tmux 那边的，API 房间别去放
                 store.flushHeld()
                 return
             }
@@ -1858,6 +1849,12 @@ struct ChatView: View {
     private func dispatchComposed(_ text: String) {
         if let stk = pendingSticker {
             pendingSticker = nil
+            if store.room == "api" {
+                // 0926 API 房间：她的表情走 chat-append 会落进 tmux 那间，这里改成一句字描述发过去
+                let t = outgoingText(text)
+                store.sendText("[表情：\(stk.descForAI)]" + (t.isEmpty ? "" : " " + t))
+                return
+            }
             store.sendSticker(stk, text: outgoingText(text))
             return
         }
@@ -2327,7 +2324,7 @@ private struct ApiRelayPanel: View {
     struct Relay: Identifiable {
         let id: Int
         var name: String, baseURL: String, model: String, format: String, apiPath: String, keyTail: String
-        var image: Bool, stream: Bool, thinking: Bool, active: Bool
+        var image: Bool, stream: Bool, thinking: Bool, tools: Bool, contextK: Int, active: Bool
     }
     @State private var relays: [Relay] = []
     @State private var editing: Relay? = nil
@@ -2385,7 +2382,9 @@ private struct ApiRelayPanel: View {
                          model: c["model"] as? String ?? "", format: c["api_format"] as? String ?? "openai",
                          apiPath: c["api_path"] as? String ?? "", keyTail: c["key_tail"] as? String ?? "",
                          image: c["supports_image"] as? Bool ?? false, stream: c["stream"] as? Bool ?? true,
-                         thinking: c["thinking"] as? Bool ?? false, active: c["active"] as? Bool ?? false)
+                         thinking: c["thinking"] as? Bool ?? false, tools: c["tools"] as? Bool ?? true,
+                         contextK: ((c["context_window"] as? NSNumber)?.intValue ?? 200000) / 1000,
+                         active: c["active"] as? Bool ?? false)
         }
     }
 
@@ -2414,6 +2413,8 @@ private struct ApiRelayForm: View {
     @State private var image = false
     @State private var stream = true
     @State private var thinking = false
+    @State private var tools = true
+    @State private var contextK = "200"
     @State private var saving = false
     @State private var message = ""
     @State private var testing = false
@@ -2454,7 +2455,8 @@ private struct ApiRelayForm: View {
             "model": model.trimmingCharacters(in: .whitespacesAndNewlines),
             "api_format": format,
             "api_path": apiPath.trimmingCharacters(in: .whitespacesAndNewlines),
-            "supports_image": image, "stream": stream, "thinking": thinking,
+            "supports_image": image, "stream": stream, "thinking": thinking, "tools": tools,
+            "context_window": (Int(contextK.trimmingCharacters(in: .whitespaces)) ?? 200) * 1000,
         ]
         if let r = relay { body["id"] = r.id }
         return body
@@ -2482,6 +2484,7 @@ private struct ApiRelayForm: View {
                 if let r = relay {
                     name = r.name; baseURL = r.baseURL; model = r.model; format = r.format; apiPath = r.apiPath
                     image = r.image; stream = r.stream; thinking = r.thinking
+                    tools = r.tools; contextK = String(r.contextK)
                 }
             }
             .sheet(isPresented: $showModels) {
@@ -2555,8 +2558,18 @@ private struct ApiRelayForm: View {
             Toggle("支持图片", isOn: $image)
             Toggle("流式输出", isOn: $stream)
             Toggle("思考 / 推理", isOn: $thinking)
+            Toggle("工具", isOn: $tools)
+            HStack {
+                Text("上下文上限")
+                Spacer()
+                TextField("200", text: $contextK)
+                    .keyboardType(.numberPad)
+                    .multilineTextAlignment(.trailing)
+                    .frame(width: 70)
+                Text("K").foregroundStyle(.secondary)
+            }
         } footer: {
-            Text("图片：模型看得懂图才开，看图功能下一步接。流式：开了字会一段段冒出来，关了等他说完一整段才出来。思考：让模型先想再说，想的过程能点开看；有的模型不认，开了报错就关掉。")
+            Text("图片：模型看得懂图才开，开了你发的图他能看见。流式：开了字会一段段冒出来，关了等他说完一整段才出来。思考：让模型先想再说；有的模型不认，开了报错就关掉。工具：记忆、日记、檐下、书房、语音、表情、相册这些本事，模型不会用工具就关掉。上下文上限：这个模型一窗能装多少，Claude 一般 200K，只用来画上下文条。")
         }
     }
 
@@ -2649,6 +2662,162 @@ private struct ApiModelPicker: View {
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } } }
         }
+    }
+}
+
+/// 0926 任务#2954：API 房间输入框上面那根上下文条。显示「这一窗已经用了多少 / 上限」，点开看明细、换窗。
+private struct ApiContext {
+    var limit = 200000, system = 0, tools = 0, chat = 0, images = 0, estimate = 0
+    var lastInput: Int? = nil
+    var windowStarted = "", carried = false, messages = 0, herMessages = 0
+    var used: Int { lastInput ?? estimate }
+    var ratio: Double { limit > 0 ? min(1, Double(used) / Double(limit)) : 0 }
+
+    init() {}
+    init(_ o: [String: Any]) {
+        func i(_ k: String) -> Int { (o[k] as? NSNumber)?.intValue ?? 0 }
+        limit = max(1, i("limit")); system = i("system"); tools = i("tools"); chat = i("chat")
+        images = i("images"); estimate = i("estimate")
+        lastInput = (o["last_input"] as? NSNumber)?.intValue
+        windowStarted = o["window_started"] as? String ?? ""
+        carried = o["carried"] as? Bool ?? false
+        messages = i("messages"); herMessages = i("her_messages")
+    }
+
+    static func k(_ n: Int) -> String { n < 1000 ? "\(n)" : String(format: "%.1fK", Double(n) / 1000) }
+}
+
+private func apiContextColor(_ r: Double) -> Color {
+    r < 0.6 ? .green : (r < 0.85 ? .orange : .red)
+}
+
+private struct ApiContextCapsule: View {
+    let refreshKey: String
+    @State private var ctx = ApiContext()
+    @State private var loaded = false
+    @State private var showSheet = false
+
+    var body: some View {
+        Button { showSheet = true } label: {
+            HStack(spacing: 6) {
+                Image(systemName: "square.stack.3d.up").font(.system(size: 10))
+                Text(loaded ? "\(ApiContext.k(ctx.used)) / \(ApiContext.k(ctx.limit))" : "上下文…")
+                    .font(.system(size: 11, design: .monospaced))
+                ZStack(alignment: .leading) {
+                    Capsule().fill(Color.secondary.opacity(0.2)).frame(width: 46, height: 4)
+                    Capsule().fill(apiContextColor(ctx.ratio)).frame(width: max(2, 46 * ctx.ratio), height: 4)
+                }
+            }
+            .foregroundColor(.secondary)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(.ultraThinMaterial, in: Capsule())
+        }
+        .buttonStyle(.plain)
+        .task(id: refreshKey) { await load() }
+        .sheet(isPresented: $showSheet) {
+            ApiContextSheet(ctx: ctx) { Task { await load() } }
+        }
+    }
+
+    @MainActor private func load() async {
+        if let o = try? await AlcoveAPI.getRaw("/api/api-room/context"), o["ok"] as? Bool == true {
+            ctx = ApiContext(o)
+            loaded = true
+        }
+    }
+}
+
+private struct ApiContextSheet: View {
+    let ctx: ApiContext
+    let onChanged: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var carry = 0
+    @State private var working = false
+    @State private var message = ""
+
+    private var startedText: String {
+        guard !ctx.windowStarted.isEmpty else { return "还没换过窗" }
+        let s = ctx.windowStarted.replacingOccurrences(of: "T", with: " ")
+        return String(s.prefix(16)) + (ctx.carried ? "（带了上一窗几句）" : "")
+    }
+
+    var body: some View {
+        NavigationStack {
+            List {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(ApiContext.k(ctx.used)).font(.system(size: 28, weight: .semibold, design: .rounded))
+                            Text("/ \(ApiContext.k(ctx.limit))").foregroundStyle(.secondary)
+                            Spacer()
+                            Text("\(Int(ctx.ratio * 100))%").font(.system(size: 15, weight: .medium))
+                                .foregroundColor(apiContextColor(ctx.ratio))
+                        }
+                        GeometryReader { g in
+                            ZStack(alignment: .leading) {
+                                Capsule().fill(Color.secondary.opacity(0.18))
+                                Capsule().fill(apiContextColor(ctx.ratio)).frame(width: max(4, g.size.width * ctx.ratio))
+                            }
+                        }
+                        .frame(height: 8)
+                        Text(ctx.lastInput != nil ? "上一轮中转站报的真实数" : "还没有中转站报的数，这是估的")
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                    .padding(.vertical, 4)
+                }
+                Section {
+                    row("锚点（人格、记忆索引）", ctx.system)
+                    row("工具说明", ctx.tools)
+                    row("这一窗的聊天", ctx.chat)
+                    row("图片", ctx.images)
+                    row("估算合计", ctx.estimate)
+                    if let li = ctx.lastInput { row("上一轮实际发出去", li) }
+                } header: { Text("都占在哪") } footer: {
+                    Text("估算是按字数粗算的，跟中转站报的会差一点。每轮还会临时带一段记忆召回，不算在里面。")
+                }
+                Section {
+                    LabeledContent("这一窗从", value: startedText)
+                    LabeledContent("这一窗气泡", value: "\(ctx.messages) 条（你说了 \(ctx.herMessages) 句）")
+                }
+                Section {
+                    Stepper(value: $carry, in: 0...30) {
+                        Text(carry == 0 ? "什么都不带，从头来" : "带上你最近 \(carry) 句起的对话")
+                    }
+                    Button {
+                        Task { await newWindow() }
+                    } label: {
+                        HStack {
+                            Text("开新窗口").fontWeight(.medium)
+                            Spacer()
+                            if working { ProgressView().controlSize(.small) }
+                        }
+                    }
+                    .disabled(working)
+                } header: { Text("换窗") } footer: {
+                    Text(message.isEmpty ? "换窗以后他只记得线下面的话（加上你选择带过去的那几句），聊天记录不会删，往上翻都还在。锚点和记忆照旧。" : message)
+                        .foregroundStyle(message.contains("失败") ? .red : .secondary)
+                }
+            }
+            .navigationTitle("API 房间上下文")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+        }
+    }
+
+    private func row(_ title: String, _ n: Int) -> some View {
+        LabeledContent(title, value: ApiContext.k(n))
+    }
+
+    @MainActor private func newWindow() async {
+        working = true
+        defer { working = false }
+        guard let o = try? await AlcoveAPI.postRaw("/api/api-room/new-window", body: ["carry": carry]),
+              o["ok"] as? Bool == true else {
+            message = "换窗失败：连不上小屋"; return
+        }
+        onChanged()
+        dismiss()
     }
 }
 
