@@ -10,6 +10,9 @@ struct RootView: View {
     @State private var showSplash = true
     @State private var showPermissions = false
     @State private var showTerminal = false
+    // 0926 任务#2959：API 房间点他名字 / 头像不进终端（那是 tmux 的），弹上下文和换窗面板
+    @AppStorage("alcove.chatRoom") private var chatRoom = "cli"
+    @State private var showApiContext = false
     @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
     // 任务#1309/#1310：一起听开着且在放歌，大卡就钉在聊天页顶部，一直在；
     // 聊天在卡下面照聊。卡右上角小叉 = 结束一起听。
@@ -281,6 +284,7 @@ struct RootView: View {
                 )
             }
         }
+        .sheet(isPresented: $showApiContext) { ApiContextPanel() }
         .tint(Color(red: 0.86, green: 0.44, blue: 0.57))
     }
 
@@ -327,6 +331,10 @@ struct RootView: View {
     }
 
     // 左头像｜中间留空｜右侧三枚按钮共用一块清透玻璃胶囊
+    private func openHeader() {
+        if chatRoom == "api" { showApiContext = true } else { showTerminal = true }
+    }
+
     @ViewBuilder private var topBar: some View {
         if theme.isMessages { messagesTopBar } else { legacyTopBar }
     }
@@ -363,12 +371,13 @@ struct RootView: View {
                 .foregroundColor(theme.text)
                 .padding(.horizontal, 8).padding(.vertical, 3)
                 .background(theme.capsuleTint.opacity(theme.isDark ? 0.9 : 0.7), in: Capsule())
+                if chatRoom == "api" { ApiContextHeaderBar(textColor: theme.text) }
                 }
             }
             // 双击先声明才抢得到，单击照旧进终端页
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { sendPat() }
-            .onTapGesture { showTerminal = true }
+            .onTapGesture { openHeader() }
             .frame(maxWidth: .infinity)
             HStack {
                 // 0919 她要的：左上角一颗跟右边同款的玻璃胶囊，一扇门，点开挑房间（tmux / SDK / API）
@@ -407,14 +416,18 @@ struct RootView: View {
             .padding(.leading, 12)
             .padding(.trailing, 12)
         }
-        .frame(height: theme.isKakao ? 44 : 84)   // 0924 Kakao 顶栏矮一截，贴灵动岛下面
+        .frame(height: (theme.isKakao ? 44 : 84) + (chatRoom == "api" ? 14 : 0))   // 0924 Kakao 顶栏矮一截，贴灵动岛下面；API 房间多一根上下文条
     }
 
     private var kakaoTitle: some View {
-        HStack(spacing: 4) {
-            Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                .font(topBarNameFont(CGFloat(chatFontSize), .semibold))   // 0924 晚她要的：跟正文字号走（原来写死 16）
-            if assistantAsleep { Text("💤").font(.system(size: 13)) }
+        VStack(spacing: 3) {
+            HStack(spacing: 4) {
+                Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                    .font(topBarNameFont(CGFloat(chatFontSize), .semibold))   // 0924 晚她要的：跟正文字号走（原来写死 16）
+                if assistantAsleep { Text("💤").font(.system(size: 13)) }
+            }
+            // 0926 任务#2959：API 房间名字下面一根上下文进度条
+            if chatRoom == "api" { ApiContextHeaderBar(textColor: theme.text) }
         }
         .foregroundColor(theme.text)
         // 0925 她报「要点好几次」：名字就两个字，能点的只有字那么宽。框放宽，字还在正中，看着不变
@@ -452,7 +465,7 @@ struct RootView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { sendPat() }
-                .onTapGesture { showTerminal = true }
+                .onTapGesture { openHeader() }
                 .frame(width: 44, height: 44)
 
                 // 0919 同上：门，挑房间

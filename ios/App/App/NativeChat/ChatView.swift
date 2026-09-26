@@ -1283,10 +1283,6 @@ struct ChatView: View {
 
     private var legacyFloatingInput: some View {
         VStack(spacing: 4) {
-            if store.room == "api" {
-                // 0926 任务#2954：上下文条，点开看明细、换窗
-                ApiContextCapsule(refreshKey: "\(store.isTyping)-\(store.messages.count)")
-            }
             if store.connectionError {
                 Text("连接不上小屋，重试中…")
                     .font(.caption2)
@@ -2671,7 +2667,7 @@ private struct ApiModelPicker: View {
 }
 
 /// 0926 任务#2954：API 房间输入框上面那根上下文条。显示「这一窗已经用了多少 / 上限」，点开看明细、换窗。
-private struct ApiContext {
+struct ApiContext {
     var limit = 200000, system = 0, tools = 0, chat = 0, images = 0, estimate = 0
     var lastInput: Int? = nil
     var windowStarted = "", carried = false, messages = 0, herMessages = 0
@@ -2692,36 +2688,37 @@ private struct ApiContext {
     static func k(_ n: Int) -> String { n < 1000 ? "\(n)" : String(format: "%.1fK", Double(n) / 1000) }
 }
 
-private func apiContextColor(_ r: Double) -> Color {
+func apiContextColor(_ r: Double) -> Color {
     r < 0.6 ? .green : (r < 0.85 ? .orange : .red)
 }
 
-private struct ApiContextCapsule: View {
-    let refreshKey: String
+/// 0926 任务#2959：API 房间顶栏名字下面那根进度条（「15.2K/8%」），点名字 / 头像弹上下文和换窗面板。
+/// 顶栏拿不到聊天页的 store，所以自己隔几秒问一次后端。
+struct ApiContextHeaderBar: View {
+    let textColor: Color
     @State private var ctx = ApiContext()
     @State private var loaded = false
-    @State private var showSheet = false
 
     var body: some View {
-        Button { showSheet = true } label: {
-            HStack(spacing: 6) {
-                Image(systemName: "square.stack.3d.up").font(.system(size: 10))
-                Text(loaded ? "\(ApiContext.k(ctx.used)) / \(ApiContext.k(ctx.limit))" : "上下文…")
-                    .font(.system(size: 11, design: .monospaced))
-                ZStack(alignment: .leading) {
-                    Capsule().fill(Color.secondary.opacity(0.2)).frame(width: 46, height: 4)
-                    Capsule().fill(apiContextColor(ctx.ratio)).frame(width: max(2, 46 * ctx.ratio), height: 4)
-                }
+        HStack(spacing: 5) {
+            ZStack(alignment: .leading) {
+                Capsule().fill(textColor.opacity(0.18)).frame(width: 54, height: 3)
+                Capsule().fill(apiContextColor(ctx.ratio)).frame(width: max(2, 54 * ctx.ratio), height: 3)
             }
-            .foregroundColor(.secondary)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(.ultraThinMaterial, in: Capsule())
+            Text(loaded ? "\(ApiContext.k(ctx.used))/\(Int((ctx.ratio * 100).rounded()))%" : "…")
+                .font(.system(size: 9.5, weight: .medium, design: .monospaced))
+                .foregroundColor(textColor.opacity(0.75))
         }
-        .buttonStyle(.plain)
-        .task(id: refreshKey) { await load() }
-        .sheet(isPresented: $showSheet) {
-            ApiContextSheet(ctx: ctx) { Task { await load() } }
+        .padding(.horizontal, 8).padding(.vertical, 2)
+        .background(.ultraThinMaterial, in: Capsule())
+        .task {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 6_000_000_000)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveApiContextChanged)) { _ in
+            Task { await load() }
         }
     }
 
@@ -2730,6 +2727,31 @@ private struct ApiContextCapsule: View {
             ctx = ApiContext(o)
             loaded = true
         }
+    }
+}
+
+extension Notification.Name {
+    static let alcoveApiContextChanged = Notification.Name("alcoveApiContextChanged")
+}
+
+/// 点顶栏名字弹出来的面板：自己拉一次数，磨砂毛玻璃底
+struct ApiContextPanel: View {
+    @State private var ctx = ApiContext()
+    @State private var loaded = false
+
+    var body: some View {
+        ApiContextSheet(ctx: ctx) {
+            NotificationCenter.default.post(name: .alcoveApiContextChanged, object: nil)
+        }
+        .task {
+            if let o = try? await AlcoveAPI.getRaw("/api/api-room/context"), o["ok"] as? Bool == true {
+                ctx = ApiContext(o)
+                loaded = true
+            }
+        }
+        .presentationBackground(.ultraThinMaterial)
+        .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
     }
 }
 
@@ -2771,6 +2793,7 @@ private struct ApiContextSheet: View {
                     }
                     .padding(.vertical, 4)
                 }
+                .listRowBackground(Color.primary.opacity(0.06))
                 Section {
                     row("锚点（人格、记忆索引）", ctx.system)
                     row("工具说明", ctx.tools)
@@ -2781,10 +2804,12 @@ private struct ApiContextSheet: View {
                 } header: { Text("都占在哪") } footer: {
                     Text("估算是按字数粗算的，跟中转站报的会差一点。每轮还会临时带一段记忆召回，不算在里面。")
                 }
+                .listRowBackground(Color.primary.opacity(0.06))
                 Section {
                     LabeledContent("这一窗从", value: startedText)
                     LabeledContent("这一窗气泡", value: "\(ctx.messages) 条（你说了 \(ctx.herMessages) 句）")
                 }
+                .listRowBackground(Color.primary.opacity(0.06))
                 Section {
                     Stepper(value: $carry, in: 0...30) {
                         Text(carry == 0 ? "什么都不带，从头来" : "带上你最近 \(carry) 句起的对话")
@@ -2803,11 +2828,15 @@ private struct ApiContextSheet: View {
                     Text(message.isEmpty ? "换窗以后他只记得线下面的话（加上你选择带过去的那几句），聊天记录不会删，往上翻都还在。锚点和记忆照旧。" : message)
                         .foregroundStyle(message.contains("失败") ? .red : .secondary)
                 }
+                .listRowBackground(Color.primary.opacity(0.06))
             }
+            .scrollContentBackground(.hidden)          // 0926 她要磨砂毛玻璃：列表底透掉，格子半透
             .navigationTitle("API 房间上下文")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
+            .toolbarBackground(.hidden, for: .navigationBar)
         }
+        .background(Color.clear)
     }
 
     private func row(_ title: String, _ n: Int) -> some View {
