@@ -3843,7 +3843,8 @@ struct MessageRow: View {
         if let o = u.output, o > 0 {
             t = t + Text("  ") + Text(Image(systemName: "arrow.down.square")) + Text(" \(k(o)) tokens")
         }
-        t = t + Text("  ") + Text(u.hit.map { "缓存 \($0)%" } ?? "缓存 没报")
+        // 0926 她要「缓存」两个字换成简约图标：闪电＝命中率；中转站没报就一道横线
+        t = t + Text("  ") + Text(Image(systemName: "bolt")) + Text(u.hit.map { " \($0)%" } ?? " –")
         return t
             .font(.system(size: 10, design: .serif))
             .foregroundColor(theme.timestamp.opacity(0.72))
