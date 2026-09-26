@@ -29,6 +29,8 @@ enum AlcoveAPI {
         // 0829 原生来电：poll 捎带的通话状态（idle/ringing/accepted/declined）
         var callState: String = "idle"
         var callId: String = ""
+        // 0926 API 房间流式：还没说完的半截（say / thinking / native_thinking）
+        var apiPartial: [String: Any]? = nil
     }
 
     // 0730 实时预览：他一说完一段就先给她看，不等整轮工具跑完。
@@ -260,7 +262,8 @@ enum AlcoveAPI {
             isTyping: status["is_typing"] as? Bool ?? false,
             currentTool: status["current_tool"] as? String,
             callState: call["state"] as? String ?? "idle",
-            callId: call["call_id"] as? String ?? "")
+            callId: call["call_id"] as? String ?? "",
+            apiPartial: status["api_partial"] as? [String: Any])
     }
 
     /// 来电回执：answer / decline / end

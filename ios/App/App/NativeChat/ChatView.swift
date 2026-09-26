@@ -342,7 +342,12 @@ struct ChatView: View {
                             StreamingAssistantRow(state: live, theme: theme, fontSize: chatFontSize)
                                 .id("live-\(live.turnID)")
                         }
-                        if store.isTyping {
+                        if let al = store.apiLive, !al.isEmpty {
+                            // 0926 API 房间流式：半截话从 poll 捎回来，照 tmux 那边的实时气泡画
+                            StreamingAssistantRow(state: al, theme: theme, fontSize: chatFontSize)
+                                .id("api-live")
+                        }
+                        if store.isTyping, store.apiLive?.isEmpty ?? true {
                             TypingIndicator(tool: store.currentTool,
                                             line: store.typingLine,
                                             name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
@@ -2308,10 +2313,21 @@ private struct ChatRoomPicker: View {
 }
 
 /// 0926 她要的 API 房间：中转站可以存好几家，点一家就用那家。key 只回尾巴四位，改的时候留空就不动原来的。
+/// 任务#2945 照她给的 Polaris 截图加了：常用模板、四种接口格式、自定义路径、测试连接、拉模型列表、每家三个开关。
+private func apiFormatLabel(_ f: String) -> String {
+    switch f {
+    case "anthropic": return "Anthropic 兼容"
+    case "responses": return "Responses API"
+    case "gemini": return "Gemini 原生"
+    default: return "OpenAI 兼容"
+    }
+}
+
 private struct ApiRelayPanel: View {
     struct Relay: Identifiable {
         let id: Int
-        var name: String, baseURL: String, model: String, format: String, keyTail: String, active: Bool
+        var name: String, baseURL: String, model: String, format: String, apiPath: String, keyTail: String
+        var image: Bool, stream: Bool, thinking: Bool, active: Bool
     }
     @State private var relays: [Relay] = []
     @State private var editing: Relay? = nil
@@ -2329,8 +2345,10 @@ private struct ApiRelayPanel: View {
                         Button { Task { await apply(r) } } label: {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(r.name).font(.system(size: 16, weight: .medium))
-                                Text("\(r.model) · \(r.format == "anthropic" ? "Anthropic 格式" : "OpenAI 格式") · key …\(r.keyTail)")
-                                    .font(.system(size: 12)).foregroundStyle(.secondary)
+                                Text(r.model.isEmpty ? "还没填模型" : r.model)
+                                    .font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(1)
+                                Text(apiFormatLabel(r.format))
+                                    .font(.system(size: 11)).foregroundStyle(.tertiary)
                             }
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .contentShape(Rectangle())
@@ -2365,7 +2383,9 @@ private struct ApiRelayPanel: View {
             guard let id = (c["id"] as? NSNumber)?.intValue else { return nil }
             return Relay(id: id, name: c["name"] as? String ?? "", baseURL: c["base_url"] as? String ?? "",
                          model: c["model"] as? String ?? "", format: c["api_format"] as? String ?? "openai",
-                         keyTail: c["key_tail"] as? String ?? "", active: c["active"] as? Bool ?? false)
+                         apiPath: c["api_path"] as? String ?? "", keyTail: c["key_tail"] as? String ?? "",
+                         image: c["supports_image"] as? Bool ?? false, stream: c["stream"] as? Bool ?? true,
+                         thinking: c["thinking"] as? Bool ?? false, active: c["active"] as? Bool ?? false)
         }
     }
 
@@ -2390,31 +2410,64 @@ private struct ApiRelayForm: View {
     @State private var key = ""
     @State private var model = ""
     @State private var format = "openai"
+    @State private var apiPath = ""
+    @State private var image = false
+    @State private var stream = true
+    @State private var thinking = false
     @State private var saving = false
     @State private var message = ""
+    @State private var testing = false
+    @State private var testNote = ""
+    @State private var testOK = false
+    @State private var models: [String] = []
+    @State private var loadingModels = false
+    @State private var showModels = false
+
+    // 常用的几家：选了自动填地址和格式，只剩 key 和模型要她填
+    private let templates: [(name: String, url: String, format: String)] = [
+        ("OpenAI", "https://api.openai.com/v1", "openai"),
+        ("Anthropic", "https://api.anthropic.com/v1", "anthropic"),
+        ("Gemini", "https://generativelanguage.googleapis.com", "gemini"),
+        ("OpenRouter", "https://openrouter.ai/api/v1", "openai"),
+        ("DeepSeek", "https://api.deepseek.com/v1", "openai"),
+        ("硅基流动", "https://api.siliconflow.cn/v1", "openai"),
+        ("Moonshot（Kimi）", "https://api.moonshot.cn/v1", "openai"),
+        ("智谱 GLM", "https://open.bigmodel.cn/api/paas/v4", "openai"),
+        ("通义千问", "https://dashscope.aliyuncs.com/compatible-mode/v1", "openai"),
+        ("xAI（Grok）", "https://api.x.ai/v1", "openai"),
+    ]
+
+    private var defaultPath: String {
+        switch format {
+        case "anthropic": return "/v1/messages"
+        case "responses": return "/v1/responses"
+        case "gemini": return "/v1beta/models/{model}:generateContent"
+        default: return "/v1/chat/completions"
+        }
+    }
+
+    private var formBody: [String: Any] {
+        var body: [String: Any] = [
+            "name": name.trimmingCharacters(in: .whitespaces),
+            "base_url": baseURL.trimmingCharacters(in: .whitespacesAndNewlines),
+            "api_key": key.trimmingCharacters(in: .whitespacesAndNewlines),
+            "model": model.trimmingCharacters(in: .whitespacesAndNewlines),
+            "api_format": format,
+            "api_path": apiPath.trimmingCharacters(in: .whitespacesAndNewlines),
+            "supports_image": image, "stream": stream, "thinking": thinking,
+        ]
+        if let r = relay { body["id"] = r.id }
+        return body
+    }
 
     var body: some View {
         NavigationStack {
             Form {
-                Section {
-                    TextField("名字（自己认得就行）", text: $name)
-                    TextField("地址，比如 https://xxx.com", text: $baseURL)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
-                    SecureField(relay == nil ? "Key" : "Key（留空就不改）", text: $key)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                    TextField("模型，比如 claude-opus-4-6", text: $model)
-                        .textInputAutocapitalization(.never).autocorrectionDisabled()
-                }
-                Section {
-                    Picker("接口格式", selection: $format) {
-                        Text("OpenAI").tag("openai")
-                        Text("Anthropic").tag("anthropic")
-                    }
-                    .pickerStyle(.segmented)
-                } footer: {
-                    Text(message.isEmpty ? "中转站一般两种都给；拿不准就选 OpenAI。地址写到域名就行，后面的 /v1 会自己补。" : message)
-                        .foregroundStyle(message.contains("失败") ? .red : .secondary)
-                }
+                basicSection
+                formatSection
+                modelSection
+                switchSection
+                testSection
             }
             .navigationTitle(relay == nil ? "添一家" : "改一下")
             .navigationBarTitleDisplayMode(.inline)
@@ -2426,29 +2479,175 @@ private struct ApiRelayForm: View {
                 }
             }
             .onAppear {
-                if let r = relay { name = r.name; baseURL = r.baseURL; model = r.model; format = r.format }
+                if let r = relay {
+                    name = r.name; baseURL = r.baseURL; model = r.model; format = r.format; apiPath = r.apiPath
+                    image = r.image; stream = r.stream; thinking = r.thinking
+                }
             }
+            .sheet(isPresented: $showModels) {
+                ApiModelPicker(models: models) { picked in model = picked }
+            }
+        }
+    }
+
+    private var basicSection: some View {
+        Section {
+            Menu {
+                ForEach(templates, id: \.name) { t in
+                    Button(t.name) {
+                        baseURL = t.url; format = t.format; apiPath = ""
+                        if name.trimmingCharacters(in: .whitespaces).isEmpty { name = t.name }
+                    }
+                }
+            } label: {
+                HStack {
+                    Text("从常用的里挑").foregroundStyle(.primary)
+                    Spacer()
+                    Image(systemName: "chevron.up.chevron.down").font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+            TextField("名字（自己认得就行）", text: $name)
+            TextField("地址，比如 https://xxx.com", text: $baseURL)
+                .textInputAutocapitalization(.never).autocorrectionDisabled().keyboardType(.URL)
+            SecureField(relay == nil ? "Key" : "Key（留空就不改，现在是 …\(relay?.keyTail ?? "")）", text: $key)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+        } footer: {
+            Text("用中转站就选「手动」：直接填中转站给你的地址和 key。")
+        }
+    }
+
+    private var formatSection: some View {
+        Section {
+            Picker("接口格式", selection: $format) {
+                Text("OpenAI 兼容").tag("openai")
+                Text("Anthropic 兼容").tag("anthropic")
+                Text("Responses API").tag("responses")
+                Text("Gemini 原生").tag("gemini")
+            }
+            .pickerStyle(.menu)
+            TextField("路径（不填就用 \(defaultPath)）", text: $apiPath)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+                .font(.system(size: 14))
+        } footer: {
+            Text("拿不准就选 OpenAI 兼容。路径一般空着，中转站说明里写了怪路径才填。")
+        }
+    }
+
+    private var modelSection: some View {
+        Section {
+            TextField("模型，比如 claude-opus-4-6", text: $model)
+                .textInputAutocapitalization(.never).autocorrectionDisabled()
+            Button {
+                Task { await fetchModels() }
+            } label: {
+                HStack {
+                    Text("从中转站拉模型列表")
+                    Spacer()
+                    if loadingModels { ProgressView().controlSize(.small) }
+                }
+            }
+            .disabled(loadingModels || baseURL.isEmpty)
+        }
+    }
+
+    private var switchSection: some View {
+        Section {
+            Toggle("支持图片", isOn: $image)
+            Toggle("流式输出", isOn: $stream)
+            Toggle("思考 / 推理", isOn: $thinking)
+        } footer: {
+            Text("图片：模型看得懂图才开，看图功能下一步接。流式：开了字会一段段冒出来，关了等他说完一整段才出来。思考：让模型先想再说，想的过程能点开看；有的模型不认，开了报错就关掉。")
+        }
+    }
+
+    private var testSection: some View {
+        Section {
+            Button {
+                Task { await runTest() }
+            } label: {
+                HStack {
+                    Text("测试连接")
+                    Spacer()
+                    if testing { ProgressView().controlSize(.small) }
+                }
+            }
+            .disabled(testing || baseURL.isEmpty || model.isEmpty)
+        } footer: {
+            Text(testNote.isEmpty ? "按这页填的发一句最短的话，看通不通。不用先存。" : testNote)
+                .foregroundStyle(testNote.isEmpty ? Color.secondary : (testOK ? Color.green : Color.red))
+        }
+    }
+
+    @MainActor private func runTest() async {
+        testing = true
+        testNote = ""
+        defer { testing = false }
+        guard let obj = try? await AlcoveAPI.postRaw("/api/apiconfigs/test", body: formBody) else {
+            testOK = false; testNote = "测试失败：连不上小屋"; return
+        }
+        let secs = (obj["secs"] as? NSNumber)?.doubleValue ?? 0
+        if obj["ok"] as? Bool == true {
+            testOK = true
+            let reply = obj["reply"] as? String ?? ""
+            testNote = "通了，\(String(format: "%.1f", secs)) 秒" + (reply.isEmpty ? "" : "，它回：\(reply)")
+        } else {
+            testOK = false
+            testNote = "没通：\(obj["error"] as? String ?? "不知道为啥")"
+        }
+    }
+
+    @MainActor private func fetchModels() async {
+        loadingModels = true
+        defer { loadingModels = false }
+        guard let obj = try? await AlcoveAPI.postRaw("/api/apiconfigs/models", body: formBody) else {
+            testOK = false; testNote = "拉列表失败：连不上小屋"; return
+        }
+        if obj["ok"] as? Bool == true, let list = obj["models"] as? [String], !list.isEmpty {
+            models = list
+            showModels = true
+        } else {
+            testOK = false
+            testNote = "拉列表失败：\(obj["error"] as? String ?? "中转站没给")"
         }
     }
 
     @MainActor private func save() async {
         saving = true
         defer { saving = false }
-        var body: [String: Any] = [
-            "name": name.trimmingCharacters(in: .whitespaces),
-            "base_url": baseURL.trimmingCharacters(in: .whitespacesAndNewlines),
-            "api_key": key.trimmingCharacters(in: .whitespacesAndNewlines),
-            "model": model.trimmingCharacters(in: .whitespacesAndNewlines),
-            "api_format": format,
-        ]
-        if let r = relay { body["id"] = r.id }
         do {
-            let obj = try await AlcoveAPI.postRaw("/api/apiconfigs/save", body: body)
-            guard obj["ok"] as? Bool == true else { message = "存失败：\(obj["error"] as? String ?? "")"; return }
+            let obj = try await AlcoveAPI.postRaw("/api/apiconfigs/save", body: formBody)
+            guard obj["ok"] as? Bool == true else { message = "存失败：\(obj["error"] as? String ?? "")"; testNote = message; return }
             onSaved()
             dismiss()
         } catch {
-            message = "存失败：\(error.localizedDescription)"
+            testOK = false
+            testNote = "存失败：\(error.localizedDescription)"
+        }
+    }
+}
+
+private struct ApiModelPicker: View {
+    let models: [String]
+    let onPick: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var query = ""
+
+    private var shown: [String] {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        return q.isEmpty ? models : models.filter { $0.lowercased().contains(q) }
+    }
+
+    var body: some View {
+        NavigationStack {
+            List(shown, id: \.self) { m in
+                Button { onPick(m); dismiss() } label: {
+                    Text(m).font(.system(size: 14)).foregroundStyle(.primary)
+                }
+            }
+            .searchable(text: $query, prompt: "搜模型")
+            .navigationTitle("挑一个模型（\(models.count)）")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar { ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } } }
         }
     }
 }

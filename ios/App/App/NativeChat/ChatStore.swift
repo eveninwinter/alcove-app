@@ -10,6 +10,7 @@ final class ChatStore: ObservableObject {
     private var temporarilyHiddenTextTs: Set<String> = []
     private var temporarilyHiddenPhotoTs: Set<String> = []
     @Published var isTyping = false
+    @Published var apiLive: AlcoveAPI.LiveState? = nil   // 0926 API 房间流式的半截，poll 捎回来
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
     @Published var stickerUploading = false
@@ -113,6 +114,7 @@ final class ChatStore: ObservableObject {
     private func pollInterval() -> UInt64 {
         let busy = isTyping || live?.active == true || live?.finishing == true
             || Date() < optimisticUntil
+        if room == "api" && busy { return 1_000_000_000 }   // 0926 API 房间流式靠 poll 捎半截，问勤一点
         return busy ? 2_500_000_000 : 8_000_000_000
     }
 
@@ -332,6 +334,7 @@ final class ChatStore: ObservableObject {
         guard target != room else { return }
         AlcoveAPI.chatRoom = target
         room = target
+        apiLive = nil
         messages = []
         lastTs = nil
         hasOlder = true
@@ -442,6 +445,7 @@ final class ChatStore: ObservableObject {
         _ event: AlcoveAPI.ParagraphLiveEvent,
         sseEvent: String
     ) async {
+        if room == "api" { return }   // 0926 实时通道是 tmux/SDK 那个他的，别画进 API 房间
         let kind = event.event ?? sseEvent
         if kind == "snapshot" {
             let snapshotActive = event.active == true || event.done == false
@@ -664,6 +668,15 @@ final class ChatStore: ObservableObject {
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
             currentTool = r.currentTool
             isTyping = r.isTyping || Date() < optimisticUntil
+            if room == "api", r.isTyping, let p = r.apiPartial {
+                var s = AlcoveAPI.LiveState(active: true, turnID: "api-live")
+                s.say = p["say"] as? String ?? ""
+                s.thinking = [p["thinking"] as? String ?? "", p["native_thinking"] as? String ?? ""]
+                    .filter { !$0.isEmpty }.joined(separator: "\n\n")
+                apiLive = s
+            } else {
+                apiLive = nil
+            }
             if r.isTyping { optimisticUntil = .distantPast }
             if r.isTyping || Date() < optimisticUntil {
                 idlePollsWhileLive = 0
