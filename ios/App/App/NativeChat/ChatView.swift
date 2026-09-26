@@ -3848,8 +3848,8 @@ struct MessageRow: View {
         return t
             .font(.system(size: 10, design: .serif))
             .foregroundColor(theme.timestamp.opacity(0.72))
-            .lineLimit(2)
-            .fixedSize(horizontal: false, vertical: true)
+            .lineLimit(1)                // 0926 她说两行不好看：只许一行，挤不下就整行等比缩小
+            .minimumScaleFactor(0.7)
     }
 
     private func kakaoTextLeading() -> CGFloat {
