@@ -3743,6 +3743,12 @@ struct MessageRow: View {
                   VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
                     photoBlock
                     if msg.isAudio, let raw = msg.attachmentUrl {
+                      // 0927 她要的：Kakao 的时间是贴在气泡旁边的（kakaoSideMeta），原来只有正文气泡挂，
+                      // 这一串最后一条是语音（比如她把后面那条字删了）时间就没了。语音条两边照正文气泡一样挂
+                      HStack(alignment: .bottom, spacing: 0) {
+                        if theme.isKakao && isUser {
+                            kakaoSideMeta.padding(.trailing, 5).fixedSize().frame(width: 0, alignment: .trailing)
+                        }
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
                         // 0902 她给的参考图：转文字收在同一条气泡里，点右边的小箭头展开
                         AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
@@ -3757,6 +3763,10 @@ struct MessageRow: View {
                                     onFavorite: { onFavorite?() },
                                     translation: msg.audioZh ?? "",
                                     onContentChange: { onContentChange?() })
+                        if theme.isKakao && !isUser {
+                            kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
+                        }
+                      }
                             // 0927 她要的「语音跟正常正文气泡对齐」：Kakao 下语音条套的也是包里的气泡图（带小人），
                             // 可它跟截图 / 卡片一起让开了 kakaoCardIndent，比正文气泡往右缩一截。照正文气泡（bubble）抵回来
                             .padding(.leading, (theme.isKakao && !isUser)
