@@ -3757,6 +3757,10 @@ struct MessageRow: View {
                                     onFavorite: { onFavorite?() },
                                     translation: msg.audioZh ?? "",
                                     onContentChange: { onContentChange?() })
+                            // 0927 她要的「语音跟正常正文气泡对齐」：Kakao 下语音条套的也是包里的气泡图（带小人），
+                            // 可它跟截图 / 卡片一起让开了 kakaoCardIndent，比正文气泡往右缩一截。照正文气泡（bubble）抵回来
+                            .padding(.leading, (theme.isKakao && !isUser)
+                                     ? (kakaoShowAvatar ? -Self.kakaoBubbleShiftLeft : 0) - kakaoCardIndent : 0)
                     }
                     if msg.isDocument, let raw = msg.attachmentUrl {
                         DocumentAttachmentCard(
