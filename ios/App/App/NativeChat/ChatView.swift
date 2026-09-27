@@ -6204,7 +6204,7 @@ struct AudioBubble: View {
     /// 0912 她要能拖进度，短语音太窄对不准：起步 10 → 13 条（她说只加宽一点点）
     private var barCount: Int { max(13, min(30, Int(10 + duration * 1.0))) }
     /// 波纹实际宽度（每条 2.5 ＋ 间隔 2），拖的时候拿手指位置除以它算百分比
-    private var waveWidth: CGFloat { CGFloat(barCount) * 2.5 + CGFloat(barCount - 1) * 2 }
+    private func waveWidth(bars n: Int) -> CGFloat { CGFloat(n) * 2.5 + CGFloat(n - 1) * 2 }
 
     /// 波纹高低：按链接算一串固定的伪随机数，同一条语音每次画出来一样，不会一刷新就跳
     private var bars: [CGFloat] {
@@ -6257,49 +6257,10 @@ struct AudioBubble: View {
         let padH: CGFloat = kakao ? 0 : 14
         let padV: CGFloat = kakao ? 2 : 10
         return VStack(alignment: .leading, spacing: 0) {
-            HStack(spacing: 10) {
-                Button(action: togglePlay) {
-                    Image(systemName: playing ? "pause.fill" : "play.fill")
-                        .font(.system(size: 13))
-                        .frame(width: 18, height: 22)
-                        .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                waveform
-                    .contentShape(Rectangle())
-                    .onTapGesture { togglePlay() }
-                    .simultaneousGesture(scrubGesture)
-                Text(timeText)
-                    .font(.system(size: 13, design: .monospaced))
-                    .opacity(0.85)
-                if hasTranscript {
-                    // 0907 她要的：展开以后箭头跟着气泡最右边走。
-                    // 只在展开时撑开——没展开时加 Spacer 会把语音条拉成整行宽
-                    if transcriptShown { Spacer(minLength: 8) }
-                    // 0912 她圈的位置：展开后箭头左边一点点。他写了中文翻译才有这个「译」
-                    if transcriptShown && !translation.isEmpty {
-                        Button {
-                            withAnimation(.easeInOut(duration: 0.18)) { translationShown.toggle() }
-                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
-                        } label: {
-                            Text(translationShown ? "原" : "译")
-                                .font(.system(size: 12, weight: translationShown ? .bold : .semibold))
-                                .frame(width: 22, height: 22)
-                                .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .opacity(translationShown ? 1 : 0.7)
-                    }
-                    Button { onToggleTranscript?() } label: {
-                        Image(systemName: "chevron.down")
-                            .font(.system(size: 12, weight: .semibold))
-                            .rotationEffect(.degrees(transcriptShown ? 180 : 0))
-                            .frame(width: 22, height: 22)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .opacity(0.8)
-                }
+            // 0927 她截图：展开后多了「译」，一行挤不下，时长被压成竖排 0 / : / 4 / 5。
+            // 时长不许折行；挤不下时波纹少画几条让位（没展开时照旧满条，观感不变）
+            ViewThatFits(in: .horizontal) {
+                ForEach(barFallbacks, id: \.self) { n in headerRow(bars: n) }
             }
             .padding(.horizontal, padH)
             .padding(.vertical, padV)
@@ -6321,11 +6282,67 @@ struct AudioBubble: View {
         .foregroundColor(ink)
     }
 
-    private var waveform: some View {
+    /// 波纹条数的退路：满条 → 每次少 4 条，最少 8 条
+    private var barFallbacks: [Int] {
+        var out = [barCount]
+        while let last = out.last, last - 4 >= 8 { out.append(last - 4) }
+        return out
+    }
+
+    private func headerRow(bars n: Int) -> some View {
+        HStack(spacing: 10) {
+            Button(action: togglePlay) {
+                Image(systemName: playing ? "pause.fill" : "play.fill")
+                    .font(.system(size: 13))
+                    .frame(width: 18, height: 22)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            waveform(bars: n)
+                .contentShape(Rectangle())
+                .onTapGesture { togglePlay() }
+                .simultaneousGesture(scrubGesture(width: waveWidth(bars: n)))
+            Text(timeText)
+                .font(.system(size: 13, design: .monospaced))
+                .lineLimit(1)
+                .fixedSize()
+                .opacity(0.85)
+            if hasTranscript {
+                // 0907 她要的：展开以后箭头跟着气泡最右边走。
+                // 只在展开时撑开——没展开时加 Spacer 会把语音条拉成整行宽
+                if transcriptShown { Spacer(minLength: 8) }
+                // 0912 她圈的位置：展开后箭头左边一点点。他写了中文翻译才有这个「译」
+                if transcriptShown && !translation.isEmpty {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.18)) { translationShown.toggle() }
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                    } label: {
+                        Text(translationShown ? "原" : "译")
+                            .font(.system(size: 12, weight: translationShown ? .bold : .semibold))
+                            .frame(width: 22, height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .opacity(translationShown ? 1 : 0.7)
+                }
+                Button { onToggleTranscript?() } label: {
+                    Image(systemName: "chevron.down")
+                        .font(.system(size: 12, weight: .semibold))
+                        .rotationEffect(.degrees(transcriptShown ? 180 : 0))
+                        .frame(width: 22, height: 22)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .opacity(0.8)
+            }
+        }
+    }
+
+    private func waveform(bars n: Int) -> some View {
         let heights = bars
         return HStack(alignment: .center, spacing: 2) {
-            ForEach(0..<barCount, id: \.self) { i in
-                let lit = Double(i) / Double(barCount) < shownProgress
+            ForEach(0..<n, id: \.self) { i in
+                let lit = Double(i) / Double(n) < shownProgress
                 Capsule()
                     .fill(ink.opacity(lit ? 0.95 : 0.42))
                     .frame(width: 2.5, height: heights[i % heights.count])
@@ -6336,14 +6353,14 @@ struct AudioBubble: View {
 
     /// 0912 她要的：按住波纹横着拖＝拖进度，松手从那儿接着放。
     /// 第一下动的方向定终身：竖着的整下都不管（留给聊天滚动）；点一下还是播放/暂停（上面的 onTapGesture）
-    private var scrubGesture: some Gesture {
+    private func scrubGesture(width: CGFloat) -> some Gesture {
         DragGesture(minimumDistance: 6)
             .onChanged { value in
                 if dragIsScrub == nil {
                     dragIsScrub = abs(value.translation.width) > abs(value.translation.height)
                 }
                 guard dragIsScrub == true else { return }
-                scrubFraction = min(1, max(0, Double(value.location.x / waveWidth)))
+                scrubFraction = min(1, max(0, Double(value.location.x / width)))
             }
             .onEnded { _ in
                 let f = scrubFraction
