@@ -510,18 +510,23 @@ private struct PondItemCard: View {
                 .tracking(0.4)
                 .foregroundColor(palette.ink3)
             Spacer()
-            Button(action: onLike) {
-                HStack(spacing: 4) {
-                    Image(systemName: item.likedBy.isEmpty ? "heart" : "heart.fill")
-                        .font(.system(size: 11.5, weight: .light))
-                    if item.likedBy.count > 1 {
-                        Text("2").font(.system(size: 9.5, design: .monospaced))
-                    }
+            // 0927 她说「点赞看不见谁点的」：他点了就单独挂一个「陈璟 ♥」；心形按钮只管她自己的赞
+            if item.likedBy.contains("jing") {
+                HStack(spacing: 3) {
+                    Image(systemName: "heart.fill").font(.system(size: 9))
+                    Text("陈璟").font(.system(size: 10, design: .serif)).tracking(0.6)
                 }
-                .foregroundColor(item.likedBy.isEmpty ? palette.ink3 : palette.acc)
-                .contentShape(Rectangle())
+                .foregroundColor(palette.acc)
+                .accessibilityLabel("陈璟点了赞")
+            }
+            Button(action: onLike) {
+                Image(systemName: item.likedBy.contains("ji") ? "heart.fill" : "heart")
+                    .font(.system(size: 11.5, weight: .light))
+                    .foregroundColor(item.likedBy.contains("ji") ? palette.acc : palette.ink3)
+                    .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
+            .accessibilityLabel(item.likedBy.contains("ji") ? "收回我的赞" : "点赞")
             Button(action: onReply) {
                 Image(systemName: "bubble.right")
                     .font(.system(size: 11, weight: .light))
