@@ -4005,17 +4005,8 @@ struct MessageRow: View {
                 .presentationBackground(sheetTheme.fyCardSub)
         }
         .fullScreenCover(isPresented: $showPulse) {
-            ZStack(alignment: .topTrailing) {
-                NativePulseView()
-                Button { showPulse = false } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(theme.text)
-                        .frame(width: 34, height: 34)
-                        .background(.ultraThinMaterial, in: Circle())
-                }
-                .padding(.top, 10).padding(.trailing, 12)
-            }
+            // 0927 Pulse 换纸页后自己带返回键（左上角，点了关掉这一层），右上角是「脉 / 狼身」，原来的 × 会压在上面
+            NativePulseView()
         }
     }
 

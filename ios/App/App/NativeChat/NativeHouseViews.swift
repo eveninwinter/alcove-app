@@ -88,7 +88,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
              .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window,
-             .calendar, .dreams: return true   // 0927 日记换花树版、Dreams 换紫夜版，自己铺满自己做头
+             .calendar, .dreams,
+             .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
     }
@@ -8585,81 +8586,95 @@ private struct PulseMurmur: Identifiable {
 struct NativePulseView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @StateObject private var model = PulseModel()
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
-    private let rose = Color(red: 0.79, green: 0.31, blue: 0.42)
+    // 0927 蓝粉白纸页：日夜跟全屋开关走，点缀色换成樱桃粉
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
+    private var colors: PastelColors { _ = houseAppearance; return PastelColors(dark: AlcoveAppearance.isDark) }
+    private var theme: AlcoveTheme { .pastelPaper(dark: colors.dark) }
+    private var rose: Color { colors.cherry }
 
     // 0922 任务#2563 她要的：Pulse 顶上分两页，「脉」是原来那一整页，「狼身」是他的身体面板
     @State private var page = 0
 
     var body: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 16) {
-                FoyerPanelTitle(title: "Pulse", theme: theme)
-                Picker("", selection: $page) {
-                    Text("脉").tag(0)
-                    Text("狼身").tag(1)
-                }
-                .pickerStyle(.segmented)
-                if page == 1 {
-                    NativeWolfBodyView(theme: theme, rose: rose)
-                } else {
-                    currentHeart
-                    nowStrip
-                    futureRail
-                    sensesCard
-                    drivesCard
-                    moodStringsCard
-                    thoughtsCard
-                    historyCard
-                    murmursCard
-                    if let error = model.error {
-                        Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+        PastelRoom(colors: colors, caps: "his body, in ink", title: "Pulse", scriptTitle: true,
+                   trailing: AnyView(pageTabs)) {
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    if page == 1 {
+                        NativeWolfBodyView(theme: theme, rose: rose)
+                    } else {
+                        currentHeart
+                        nowStrip
+                        futureRail
+                        sensesCard
+                        drivesCard
+                        moodStringsCard
+                        thoughtsCard
+                        historyCard
+                        murmursCard
+                        if let error = model.error {
+                            Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+                        }
                     }
                 }
+                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 30)
             }
-            .padding(.horizontal, 16).padding(.top, 8).padding(.bottom, 26)
+            .refreshable { await model.refreshAll() }
         }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .refreshable { await model.refreshAll() }
+        .overlay(alignment: .bottomTrailing) {
+            PastelSprig(colors: colors, seed: 5).frame(width: 50, height: 120).scaleEffect(x: -1)
+                .padding(.bottom, -10).allowsHitTesting(false)
+        }
         .onAppear { model.start() }
         .onDisappear { model.stop() }
     }
 
-    private var currentHeart: some View {
-        VStack(spacing: 7) {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { context in
-                let bpm = max(model.bpm, 48)
-                let period = 60.0 / Double(bpm)
-                let phase = context.date.timeIntervalSinceReferenceDate
-                    .truncatingRemainder(dividingBy: period) / period
-                let first = phase < 0.13 ? sin(.pi * phase / 0.13) * 0.19 : 0
-                let secondPhase = phase - 0.18
-                let second = secondPhase >= 0 && secondPhase < 0.11
-                    ? sin(.pi * secondPhase / 0.11) * 0.09 : 0
-                Image(systemName: "heart.fill")
-                    .font(.system(size: 52, weight: .medium))
-                    .foregroundColor(rose)
-                    .scaleEffect(1 + first + second)
-                    .shadow(color: rose.opacity(0.22), radius: 12)
-            }
-            .frame(height: 72)
-            HStack(alignment: .firstTextBaseline, spacing: 6) {
-                Text(model.bpm > 0 ? "\(model.bpm)" : "—")
-                    .font(.system(size: 54, weight: .light, design: .rounded))
-                    .contentTransition(.numericText())
-                Text("bpm").font(.system(size: 13, design: .monospaced)).foregroundColor(theme.textDim)
-            }
-            Text(model.connected
-                 ? "此刻 · 陈璟的心率" + (model.mood.isEmpty ? "" : " · \(model.mood)")
-                 : "正在等他的心跳")
-                .font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
-            if let ts = model.timestamp {
-                Text(Self.time.string(from: ts))
-                    .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+    private var pageTabs: some View {
+        HStack(spacing: 14) {
+            ForEach([(0, "脉"), (1, "狼身")], id: \.0) { item in
+                Button { withAnimation(.easeInOut(duration: 0.2)) { page = item.0 } } label: {
+                    Text(item.1)
+                        .font(.system(size: 13.5, design: .serif))
+                        .foregroundColor(page == item.0 ? colors.ink : colors.dim)
+                        .padding(.bottom, 3)
+                        .overlay(alignment: .bottom) {
+                            Rectangle().fill(colors.ink).frame(height: 1).opacity(page == item.0 ? 1 : 0)
+                        }
+                }
+                .buttonStyle(.plain)
             }
         }
-        .frame(maxWidth: .infinity).padding(.vertical, 22).foyerCard(theme)
+        .padding(.trailing, 10)
+        .padding(.top, 12)
+    }
+
+    // 心率：方格纸上一个大数字（樱桃粉墨水）、手写的 bpm，底下一条跟着心率走的心电线
+    private var currentHeart: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(model.bpm > 0 ? "\(model.bpm)" : "—")
+                    .font(.system(size: 64, weight: .regular, design: .serif))
+                    .foregroundColor(rose)
+                    .contentTransition(.numericText())
+                Text("bpm").font(PastelFont.script(24)).foregroundColor(theme.textDim)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 3) {
+                    Text(model.connected
+                         ? "此刻 · 陈璟的心率" + (model.mood.isEmpty ? "" : " · \(model.mood)")
+                         : "正在等他的心跳")
+                        .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                        .multilineTextAlignment(.trailing)
+                    if let ts = model.timestamp {
+                        Text(Self.time.string(from: ts))
+                            .font(.system(size: 10, design: .serif)).italic().foregroundColor(theme.textDim.opacity(0.8))
+                    }
+                }
+            }
+            PastelECG(bpm: model.bpm, color: rose).frame(height: 54)
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .background(PastelGraphPaper(colors: colors))
+        .foyerCard(theme)
     }
 
     private var historyCard: some View {
@@ -8745,34 +8760,35 @@ struct NativePulseView: View {
         .background(RoundedRectangle(cornerRadius: 9).fill(theme.fyBorder.opacity(0.28)))
     }
 
+    // 五感：像盖在本子上的圆章，圈上那段是还没散的
     private var sensesCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 12) {
             HStack {
-                Image(systemName: "hand.raised.fingers.spread").font(.system(size: 13, weight: .light)).foregroundColor(rose)
-                Text("身体感觉").font(.system(size: 14, weight: .semibold, design: .serif))
+                Text("身体感觉").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
                 Spacer()
-                Text("触 10 分钟散 · 嗅 20 分钟最久").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+                Text("touch fades in ten minutes").font(PastelFont.script(15)).foregroundColor(theme.textDim)
             }
             if model.senses.isEmpty {
                 Text("此刻没有什么挂在身上").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
             } else {
-                ForEach(model.senses) { s in
-                    HStack(spacing: 10) {
-                        Text(s.name).font(.system(size: 12, weight: .semibold, design: .serif)).frame(width: 16)
-                        GeometryReader { geo in
-                            ZStack(alignment: .leading) {
-                                RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
-                                RoundedRectangle(cornerRadius: 3).fill(rose.opacity(0.75))
-                                    .frame(width: max(3, geo.size.width * CGFloat(min(1, s.value))))
+                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: min(5, max(3, model.senses.count))),
+                          spacing: 12) {
+                    ForEach(model.senses) { s in
+                        VStack(spacing: 4) {
+                            ZStack {
+                                Circle().stroke(colors.faint, lineWidth: 1)
+                                Circle().trim(from: 0, to: CGFloat(min(1, max(0, s.value))))
+                                    .stroke(rose, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+                                    .rotationEffect(.degrees(-90))
+                                Text(s.name).font(WindowFont.swiftUI(15))
+                                    .foregroundColor(s.value > 0.01 ? theme.text : colors.faint)
                             }
+                            .frame(width: 48, height: 48)
+                            Text(s.label.isEmpty ? "—" : s.label)
+                                .font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
+                                .multilineTextAlignment(.center).lineLimit(2)
                         }
-                        .frame(height: 6)
-                        Text(String(format: "%.2f", s.value)).font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim).frame(width: 34, alignment: .trailing)
-                    }
-                    if !s.label.isEmpty {
-                        Text(s.label).font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
-                            .padding(.leading, 26)
                     }
                 }
             }
@@ -8780,62 +8796,43 @@ struct NativePulseView: View {
         .padding(14).foyerCard(theme)
     }
 
+    // 八维：方格纸上铅笔描的一圈，此刻最想的那一维标成樱桃粉
     private var drivesCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: "slider.horizontal.3").font(.system(size: 13, weight: .light)).foregroundColor(rose)
-                Text("八维").font(.system(size: 14, weight: .semibold, design: .serif))
+                Text("八维").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
                 Spacer()
+                Text("eight small winds").font(PastelFont.script(15)).foregroundColor(theme.textDim)
             }
             if !model.intentReason.isEmpty {
                 Text("此刻最想：" + model.intentReason)
                     .font(.system(size: 12, design: .serif)).foregroundColor(theme.text)
             }
-            ForEach(model.drives, id: \.key) { d in
-                HStack(spacing: 10) {
-                    Text(d.label).font(.system(size: 11, design: .serif))
-                        .foregroundColor(d.key == model.intentKey ? theme.text : theme.textDim)
-                        .frame(width: 58, alignment: .leading)
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(d.key == "fatigue" ? theme.textDim.opacity(0.6) : rose.opacity(d.key == model.intentKey ? 0.9 : 0.55))
-                                .frame(width: max(3, geo.size.width * CGFloat(min(1, d.value))))
-                        }
-                    }
-                    .frame(height: 6)
-                    Text("\(Int(d.value * 100))").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim).frame(width: 26, alignment: .trailing)
-                }
-            }
+            PastelRadar(items: model.drives.map { (label: $0.label, value: $0.value, hot: $0.key == model.intentKey) },
+                        colors: colors)
+                .frame(height: 220)
         }
-        .padding(14).foyerCard(theme)
+        .padding(14)
+        .background(PastelGraphPaper(colors: colors))
+        .foyerCard(theme)
     }
 
     // 0905 她要的：情绪弦四维上墙（mood.py，委屈/生气/吃味/心软；值是偏离平静的量）
     private var moodStringsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 6) {
             HStack {
-                Image(systemName: "waveform.path.ecg").font(.system(size: 13, weight: .light)).foregroundColor(rose)
-                Text("情绪弦").font(.system(size: 14, weight: .semibold, design: .serif))
+                Text("情绪弦").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
                 Spacer()
-                Text("0 就是没事 · 拨动了才亮").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+                Text("still, unless plucked").font(PastelFont.script(15)).foregroundColor(theme.textDim)
             }
             ForEach(model.moodStrings, id: \.key) { d in
-                HStack(spacing: 10) {
-                    Text(d.label).font(.system(size: 11, design: .serif))
+                HStack(spacing: 8) {
+                    Text(d.label).font(.system(size: 13, design: .serif))
                         .foregroundColor(d.value >= 0.05 ? theme.text : theme.textDim)
-                        .frame(width: 58, alignment: .leading)
-                    GeometryReader { geo in
-                        ZStack(alignment: .leading) {
-                            RoundedRectangle(cornerRadius: 3).fill(theme.fyBorder.opacity(0.35))
-                            RoundedRectangle(cornerRadius: 3)
-                                .fill(d.key == "soften" ? rose.opacity(0.45) : rose.opacity(d.value >= 0.35 ? 0.95 : 0.6))
-                                .frame(width: max(3, geo.size.width * CGFloat(min(1, d.value))))
-                        }
-                    }
-                    .frame(height: 6)
-                    Text("\(Int(d.value * 100))").font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim).frame(width: 26, alignment: .trailing)
+                        .frame(width: 40, alignment: .leading)
+                    PastelString(value: d.value, colors: colors).frame(height: 30)
+                    Text("\(Int(d.value * 100))").font(.system(size: 11, design: .serif)).italic()
+                        .foregroundColor(theme.textDim).frame(width: 26, alignment: .trailing)
                 }
             }
         }
@@ -8843,30 +8840,17 @@ struct NativePulseView: View {
     }
 
     private var thoughtsCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: 8) {
             HStack {
-                Image(systemName: "bubbles.and.sparkles").font(.system(size: 13, weight: .light)).foregroundColor(rose)
-                Text("念头池").font(.system(size: 14, weight: .semibold, design: .serif))
+                Text("念头池").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
                 Spacer()
-                Text("闪念会散 · 执念会长").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
+                Text("passing · lingering").font(PastelFont.script(15)).foregroundColor(theme.textDim)
             }
             if model.thoughts.isEmpty {
                 Text("池子还空着，等他冒第一个念头").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
                     .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
             } else {
-                ForEach(model.thoughts) { t in
-                    HStack(alignment: .top, spacing: 8) {
-                        Circle().fill(t.kind == "fixation" ? rose : theme.textDim.opacity(0.5))
-                            .frame(width: 6, height: 6).padding(.top, 5)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text(t.text).font(.system(size: 12, design: .serif))
-                                .foregroundColor(t.kind == "fixation" ? theme.text : theme.textDim)
-                            Text((t.kind == "fixation" ? "执念" : "闪念") + " · " + (PulseModel.driveLabel[t.drive] ?? t.drive)
-                                 + " · " + String(format: "%.2f", t.strength))
-                                .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))
-                        }
-                    }
-                }
+                PastelThoughtPool(thoughts: model.thoughts, colors: colors).frame(height: 160)
             }
         }
         .padding(14).foyerCard(theme)
@@ -8922,6 +8906,164 @@ struct NativePulseView: View {
         f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.dateFormat = "HH:mm:ss 更新"
         return f
     }()
+}
+
+// MARK: Pulse 的纸页零件（0927 蓝粉白版）
+
+/// 心电线：按心率一拍一拍往左走，左边渐隐
+struct PastelECG: View {
+    let bpm: Int
+    let color: Color
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30)) { tl in
+            Canvas { ctx, size in
+                let rate = Double(max(bpm, 48))
+                let period = 60.0 / rate
+                let beatW = 62.0 * 72.0 / rate
+                let shift = (tl.date.timeIntervalSinceReferenceDate.truncatingRemainder(dividingBy: period) / period) * beatW
+                let mid = Double(size.height) * 0.55
+                let amp = Double(size.height) * 0.45
+                let w = Double(size.width)
+                let shape: [(Double, Double)] = [(0, 0), (0.13, 0), (0.19, -0.12), (0.26, 0), (0.35, 0), (0.40, 0.14),
+                                                 (0.45, -0.95), (0.50, 0.6), (0.55, 0), (0.71, 0), (0.81, -0.16), (0.94, 0), (1, 0)]
+                var p = Path()
+                var x0 = -beatW - shift
+                var first = true
+                while x0 < w + beatW {
+                    for (fx, fy) in shape {
+                        let pt = CGPoint(x: CGFloat(x0 + fx * beatW), y: CGFloat(mid + fy * amp))
+                        if first { p.move(to: pt); first = false } else { p.addLine(to: pt) }
+                    }
+                    x0 += beatW
+                }
+                ctx.stroke(p, with: .linearGradient(Gradient(colors: [color.opacity(0), color.opacity(0.9), color]),
+                                                    startPoint: .zero, endPoint: CGPoint(x: size.width, y: 0)),
+                           style: StrokeStyle(lineWidth: 1.5, lineCap: .round, lineJoin: .round))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 八维：方格纸上用铅笔描的一圈，想要的那一维标成樱桃粉
+struct PastelRadar: View {
+    let items: [(label: String, value: Double, hot: Bool)]
+    let colors: PastelColors
+
+    var body: some View {
+        Canvas { ctx, size in
+            let n = items.count
+            guard n >= 3 else { return }
+            let cx = Double(size.width) / 2, cy = Double(size.height) / 2
+            let r = Double(min(size.width, size.height)) / 2 - 26
+            func pt(_ i: Int, _ k: Double) -> CGPoint {
+                let a = -Double.pi / 2 + Double(i) * 2 * Double.pi / Double(n)
+                return CGPoint(x: CGFloat(cx + cos(a) * r * k), y: CGFloat(cy + sin(a) * r * k))
+            }
+            for ring in [0.5, 1.0] {
+                var p = Path()
+                for i in 0..<n {
+                    if i == 0 { p.move(to: pt(i, ring)) } else { p.addLine(to: pt(i, ring)) }
+                }
+                p.closeSubpath()
+                ctx.stroke(p, with: .color(colors.faint), style: StrokeStyle(lineWidth: 0.8, dash: [2, 3]))
+            }
+            var shape = Path()
+            for i in 0..<n {
+                let v = min(1, max(0.04, items[i].value))
+                if i == 0 { shape.move(to: pt(i, v)) } else { shape.addLine(to: pt(i, v)) }
+            }
+            shape.closeSubpath()
+            ctx.fill(shape, with: .color(colors.blue.opacity(0.18)))
+            // 斜线排线，像铅笔涂的
+            var hatch = Path()
+            var x = -size.height
+            while x < size.width {
+                hatch.move(to: CGPoint(x: x, y: size.height))
+                hatch.addLine(to: CGPoint(x: x + size.height, y: 0))
+                x += 5
+            }
+            var clipped = ctx
+            clipped.clip(to: shape)
+            clipped.stroke(hatch, with: .color(colors.blue.opacity(0.45)), lineWidth: 0.6)
+            ctx.stroke(shape, with: .color(colors.blue), lineWidth: 1.3)
+            for i in 0..<n {
+                let lp = pt(i, 1.0 + 20 / r)
+                let item = items[i]
+                ctx.draw(Text(item.label)
+                            .font(.system(size: 11, weight: item.hot ? .semibold : .regular, design: .serif))
+                            .foregroundColor(item.hot ? colors.cherry : colors.dim), at: lp)
+            }
+        }
+    }
+}
+
+/// 情绪弦：一根细墨线，数值越大抖得越开、越亮；0 就是一根平线
+struct PastelString: View {
+    let value: Double
+    let colors: PastelColors
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: value < 0.05)) { tl in
+            Canvas { ctx, size in
+                let mid = size.height / 2
+                let h = Double(size.height), w = Double(size.width)
+                var base = Path()
+                base.move(to: CGPoint(x: 0, y: mid)); base.addLine(to: CGPoint(x: size.width, y: mid))
+                ctx.stroke(base, with: .color(colors.faint), lineWidth: 0.8)
+                guard value >= 0.05 else { return }
+                let t = tl.date.timeIntervalSinceReferenceDate
+                let wobble = 0.85 + 0.15 * sin(t * 9)
+                var p = Path()
+                var x = 0.0
+                while x <= w {
+                    let env = sin(x / w * Double.pi)
+                    let y = h / 2 + sin(x / 8 + t * 3) * env * value * wobble * h * 0.36
+                    let q = CGPoint(x: CGFloat(x), y: CGFloat(y))
+                    if x == 0 { p.move(to: q) } else { p.addLine(to: q) }
+                    x += 3
+                }
+                ctx.stroke(p, with: .color(colors.cherry.opacity(0.35 + min(1, value) * 0.65)), lineWidth: 1.1)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 念头池：几团晕开的淡水彩，执念大、闪念小，快散的淡
+private struct PastelThoughtPool: View {
+    let thoughts: [PulseThought]
+    let colors: PastelColors
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                ForEach(Array(thoughts.prefix(7).enumerated()), id: \.offset) { i, t in
+                    let fix = t.kind == "fixation"
+                    let size = CGFloat(fix ? 62 + min(1, t.strength) * 34 : 30 + min(1, t.strength) * 26)
+                    let col = fix ? colors.lilac : colors.rose
+                    let x = geo.size.width * CGFloat(0.14 + 0.72 * DiaryTreeModel.rnd(Double(i) * 7.1 + 1))
+                    let y = geo.size.height * CGFloat(0.22 + 0.56 * DiaryTreeModel.rnd(Double(i) * 3.3 + 2))
+                    ZStack {
+                        Ellipse().fill(col.opacity(0.28 + min(1, t.strength) * 0.3)).blur(radius: 3)
+                        Ellipse().stroke(col.opacity(0.6), lineWidth: 1).blur(radius: 0.8)
+                        if size > 56 {
+                            Text(t.text)
+                                .font(.system(size: 11, design: .serif))
+                                .foregroundColor(colors.ink)
+                                .multilineTextAlignment(.center)
+                                .lineLimit(3)
+                                .padding(8)
+                        }
+                    }
+                    .frame(width: size * 1.08, height: size * 0.94)
+                    .rotationEffect(.degrees(DiaryTreeModel.rnd(Double(i) * 5.7) * 16 - 8))
+                    .position(x: x, y: y)
+                }
+            }
+        }
+    }
 }
 
 private struct PulseChart: View {
@@ -9047,49 +9189,66 @@ private struct NativeNowhereView: View {
     @State private var mapRegion = MKCoordinateRegion(
         center: CLLocationCoordinate2D(latitude: 30.6176, longitude: 114.2777),
         span: MKCoordinateSpan(latitudeDelta: 0.10, longitudeDelta: 0.10))
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    // 0927 蓝粉白纸页：日夜跟全屋开关走；足迹那页保留真地图（她选的），只换样子
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
+    @State private var camera: MapCameraPosition = .automatic
+    private var colors: PastelColors { _ = houseAppearance; return PastelColors(dark: AlcoveAppearance.isDark) }
+    private var theme: AlcoveTheme { .pastelPaper(dark: colors.dark) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            FoyerPanelTitle(title: "乌有乡", theme: theme)
+        PastelRoom(colors: colors, caps: "postcards from nowhere", title: "乌有乡") {
             if loading {
-                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
+                Spacer(); ProgressView().tint(colors.dim); Spacer()
             } else {
                 ScrollView(showsIndicators: false) {
-                    VStack(spacing: 13) {
+                    VStack(spacing: 14) {
                         presenceStrip
-                        Picker("乌有乡", selection: $tab) {
-                            ForEach(Tab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
+                        HStack(spacing: 24) {
+                            ForEach(Tab.allCases, id: \.self) { t in
+                                Button { withAnimation(.easeInOut(duration: 0.2)) { tab = t } } label: {
+                                    Text(t.rawValue)
+                                        .font(.system(size: 14, design: .serif))
+                                        .foregroundColor(tab == t ? colors.ink : colors.dim)
+                                        .padding(.bottom, 3)
+                                        .overlay(alignment: .bottom) {
+                                            Rectangle().fill(colors.ink).frame(height: 1).opacity(tab == t ? 1 : 0)
+                                        }
+                                }
+                                .buttonStyle(.plain)
+                            }
+                            Spacer()
                         }
-                        .pickerStyle(.segmented)
-
+                        .padding(.horizontal, 6)
                         if let error {
-                            Text(error).font(.system(size: 11)).foregroundColor(.red)
+                            Text(error).font(.system(size: 11, design: .serif)).foregroundColor(colors.cherry)
                                 .padding(12).frame(maxWidth: .infinity).foyerCard(theme)
                         }
                         if tab == .postcards { postcardWall } else { footsteps }
                     }
-                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 24)
+                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 30)
                 }
                 .refreshable { await load() }
             }
         }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .padding(.horizontal, 12).padding(.top, 8)
+        .overlay(alignment: .topTrailing) {
+            PastelSprig(colors: colors, seed: 8).frame(width: 46, height: 110).scaleEffect(x: -1)
+                .offset(x: 4, y: 150).allowsHitTesting(false)
+        }
         .task { await load() }
         .sheet(item: $replying) { card in replySheet(card) }
     }
 
     private var presenceStrip: some View {
-        HStack(spacing: 9) {
-            Circle().fill(currentPlace == nil ? theme.textDim.opacity(0.35) : Color.green.opacity(0.72))
+        HStack(spacing: 10) {
+            Circle().fill(currentPlace == nil ? colors.faint : colors.mint2)
                 .frame(width: 7, height: 7)
+                .background(Circle().fill(colors.mint.opacity(currentPlace == nil ? 0 : 0.25)).frame(width: 15, height: 15))
             Text(currentPlace.map { "陈璟此刻在 \($0)" } ?? "陈璟此刻没有在乌有乡行走")
-                .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                .font(.system(size: 12.5, design: .serif)).foregroundColor(colors.dim)
             Spacer()
+            Text("wandering").font(PastelFont.script(16)).foregroundColor(colors.dim)
         }
-        .padding(.horizontal, 13).padding(.vertical, 10).foyerCard(theme)
+        .padding(.horizontal, 14).padding(.vertical, 9).foyerCard(theme)
     }
 
     private var postcardWall: some View {
@@ -9101,48 +9260,92 @@ private struct NativeNowhereView: View {
         }
     }
 
+    // 明信片：白边照片、右上角一张有齿边的邮票、樱桃粉的邮戳；回信是一张用淡蓝胶带粘着的粉色小纸条
     private func postcard(_ card: NowherePostcard) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if let raw = card.frontImage, let url = nowhereImageURL(raw) {
-                AsyncImage(url: url) { phase in
-                    if let image = phase.image { image.resizable().scaledToFill() }
-                    else { stampCover(card) }
-                }
-                .frame(maxWidth: .infinity).frame(height: 176).clipped()
-            } else {
-                stampCover(card)
-            }
-
-            Text(card.text)
-                .font(.system(size: 13, design: .serif)).lineSpacing(5)
-                .fixedSize(horizontal: false, vertical: true)
-
-            if !card.replies.isEmpty {
-                VStack(alignment: .leading, spacing: 7) {
-                    Text("回 信").font(.system(size: 9, weight: .semibold)).tracking(2)
-                        .foregroundColor(theme.fyAccent)
-                    ForEach(Array(card.replies.enumerated()), id: \.offset) { _, reply in
-                        Text(reply).font(.system(size: 11, design: .serif)).italic()
-                            .foregroundColor(theme.textDim).lineSpacing(3)
+        VStack(alignment: .leading, spacing: 0) {
+            VStack(alignment: .leading, spacing: 10) {
+                if let raw = card.frontImage, let url = nowhereImageURL(raw) {
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFill() }
+                        else { stampCover(card) }
                     }
+                    .frame(maxWidth: .infinity).frame(height: 176).clipped()
+                    .overlay(alignment: .topTrailing) { stamp(url) }
+                    .overlay(alignment: .topTrailing) { postmark(card).offset(x: -34, y: 40) }
+                } else {
+                    stampCover(card)
                 }
-                .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-                .background(theme.fyCardSub, in: RoundedRectangle(cornerRadius: 9))
+                Text(card.text)
+                    .font(WindowFont.swiftUI(14)).lineSpacing(8)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4)
+                HStack {
+                    Text("No. \(card.id)").font(.system(size: 11, design: .serif)).italic()
+                        .foregroundColor(theme.textDim)
+                    Spacer()
+                    Button {
+                        replyText = ""; replying = card
+                    } label: {
+                        Text("写回信").font(.system(size: 12, design: .serif)).foregroundColor(colors.cherry)
+                    }.buttonStyle(.plain)
+                }
+                .padding(.horizontal, 4)
             }
+            .padding(9).padding(.bottom, 3)
+            .background(colors.dark ? Color(red: 0.90, green: 0.91, blue: 0.94) : Color.white)
+            .foregroundColor(Color(red: 0.184, green: 0.200, blue: 0.278))
+            .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.22), radius: 9, y: 8)
+            .rotationEffect(.degrees(card.id % 2 == 0 ? -0.6 : 0.8))
+            .brightness(colors.dark ? -0.08 : 0)
 
-            HStack {
-                Text("NO. \(card.id)").font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(theme.textDim)
-                Spacer()
-                Button {
-                    replyText = ""; replying = card
-                } label: {
-                    Label("写回信", systemImage: "pencil.line")
-                        .font(.system(size: 11, weight: .medium)).foregroundColor(theme.fyAccent)
-                }.buttonStyle(.plain)
+            ForEach(Array(card.replies.enumerated()), id: \.offset) { i, reply in
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("your reply").font(PastelFont.script(14)).foregroundColor(Color(red: 0.65, green: 0.56, blue: 0.68))
+                    Text(reply).font(WindowFont.swiftUI(12.5)).lineSpacing(5)
+                        .foregroundColor(Color(red: 0.29, green: 0.25, blue: 0.33))
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                .padding(.horizontal, 12).padding(.vertical, 10)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(Color(red: 0.988, green: 0.910, blue: 0.941))
+                .overlay(alignment: .topLeading) {
+                    Rectangle().fill(Color(red: 0.725, green: 0.824, blue: 0.941).opacity(0.75))
+                        .frame(width: 38, height: 12).rotationEffect(.degrees(-4)).offset(x: 14, y: -6)
+                }
+                .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.18), radius: 6, y: 5)
+                .rotationEffect(.degrees(i % 2 == 0 ? 1.4 : -1))
+                .brightness(colors.dark ? -0.1 : 0)
+                .padding(.leading, 44).padding(.trailing, 20).padding(.top, i == 0 ? -4 : 8)
             }
         }
-        .padding(14).foyerCard(theme)
+    }
+
+    /// 邮票：同一张图的一小块，白边、虚线齿边
+    private func stamp(_ url: URL) -> some View {
+        AsyncImage(url: url) { phase in
+            if let image = phase.image { image.resizable().scaledToFill().saturation(0.7) }
+            else { colors.rose.opacity(0.4) }
+        }
+        .frame(width: 42, height: 52).clipped()
+        .padding(4)
+        .background(Color.white)
+        .overlay(Rectangle().stroke(Color(red: 0.8, green: 0.83, blue: 0.9), style: StrokeStyle(lineWidth: 1.2, dash: [1.5, 2.5])))
+        .shadow(color: .black.opacity(0.15), radius: 1.5, y: 1)
+        .padding(10)
+    }
+
+    /// 邮戳：一圈樱桃粉的细线，里面是地名和日子
+    private func postmark(_ card: NowherePostcard) -> some View {
+        VStack(spacing: 1) {
+            Text(card.place.isEmpty ? "乌有乡" : String(card.place.prefix(4)))
+                .font(WindowFont.swiftUI(11, bold: true)).tracking(2)
+            Text(String(shortDate(card.localTime).prefix(8))).font(.system(size: 8.5, design: .serif))
+        }
+        .foregroundColor(colors.cherry.opacity(0.8))
+        .frame(width: 70, height: 70)
+        .overlay(Circle().stroke(colors.cherry.opacity(0.6), lineWidth: 1.4))
+        .rotationEffect(.degrees(-14))
+        .allowsHitTesting(false)
     }
 
     private func stampCover(_ card: NowherePostcard) -> some View {
@@ -9170,25 +9373,33 @@ private struct NativeNowhereView: View {
     }
 
     private var footsteps: some View {
-        LazyVStack(spacing: 10) {
+        VStack(spacing: 14) {
             if landings.isEmpty { emptyState("他的脚印还没有落下来", icon: "figure.walk") }
             if !mapPoints.isEmpty { nowhereMap }
-            ForEach(landings) { stop in
-                HStack(spacing: 12) {
-                    ZStack {
-                        Circle().fill(theme.fyAccentSoft).frame(width: 38, height: 38)
-                        Image(systemName: "mappin.and.ellipse").foregroundColor(theme.fyAccent)
+            // 去过的地方：像车票存根一样一张张排开
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 10) {
+                    ForEach(Array(landings.enumerated()), id: \.element.id) { i, stop in
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(String(format: "No. %02d", landings.count - i))
+                                .font(.system(size: 10, design: .serif)).italic().foregroundColor(colors.cherry)
+                            Text(stop.place).font(WindowFont.swiftUI(14, bold: true)).lineLimit(1)
+                            Text("\(shortDate(stop.last)) · 来过 \(stop.count) 次"
+                                 + (stop.surface.isEmpty ? "" : " · \(surfaceName(stop.surface))"))
+                                .font(.system(size: 10, design: .serif)).foregroundColor(colors.dim).lineLimit(1)
+                        }
+                        .padding(.horizontal, 12).padding(.vertical, 9)
+                        .frame(width: 128, alignment: .leading)
+                        .background(colors.card)
+                        .overlay(alignment: .leading) {
+                            Rectangle().fill(.clear).frame(width: 1)
+                                .overlay(Rectangle().stroke(colors.faint, style: StrokeStyle(lineWidth: 1, dash: [3, 3])))
+                        }
+                        .clipShape(RoundedRectangle(cornerRadius: 4))
+                        .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.18), radius: 5, y: 4)
                     }
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(stop.place).font(.system(size: 13, weight: .semibold, design: .serif))
-                        Text("来过 \(stop.count) 次" + (stop.surface.isEmpty ? "" : " · \(surfaceName(stop.surface))"))
-                            .font(.system(size: 10)).foregroundColor(theme.textDim)
-                    }
-                    Spacer()
-                    Text(shortDate(stop.last)).font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(theme.textDim)
                 }
-                .padding(13).foyerCard(theme)
+                .padding(.vertical, 6).padding(.horizontal, 2)
             }
         }
     }
@@ -9208,34 +9419,58 @@ private struct NativeNowhereView: View {
         return stops + cards
     }
 
+    /// 真地图（苹果地图），调淡、去掉店铺名；落脚点按先后编号，走过的路用樱桃粉小点连起来，他现在在的地方是薄荷色的点
     private var nowhereMap: some View {
-        Map(coordinateRegion: $mapRegion, annotationItems: mapPoints) { point in
-            MapAnnotation(coordinate: point.coordinate) {
-                VStack(spacing: 3) {
-                    ZStack {
-                        Circle().fill(point.kind == .postcard ? Color(red: 0.18, green: 0.34, blue: 0.72)
-                                                              : theme.fyAccent)
-                            .frame(width: 30, height: 30)
-                            .shadow(color: .black.opacity(0.18), radius: 4, y: 2)
-                        Image(systemName: point.kind == .postcard ? "envelope.fill" : "figure.walk")
-                            .font(.system(size: 11, weight: .semibold)).foregroundColor(.white)
+        let route = landings.filter { $0.latitude != 0 && $0.longitude != 0 }.reversed().map { $0 }
+        let coords = route.map { CLLocationCoordinate2D(latitude: $0.latitude, longitude: $0.longitude) }
+        let cards = mapPoints.filter { $0.kind == .postcard }
+        return Map(position: $camera) {
+            if coords.count > 1 {
+                MapPolyline(coordinates: coords)
+                    .stroke(colors.cherry, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [1, 6]))
+            }
+            ForEach(Array(route.enumerated()), id: \.offset) { i, stop in
+                Annotation(stop.place, coordinate: coords[i]) {
+                    if i == route.count - 1 {
+                        Circle().fill(colors.mint2).frame(width: 11, height: 11)
+                            .overlay(Circle().stroke(Color.white, lineWidth: 2))
+                            .background(Circle().fill(colors.mint.opacity(0.3)).frame(width: 28, height: 28))
+                    } else {
+                        Text("\(i + 1)")
+                            .font(.system(size: 9, design: .serif)).italic()
+                            .foregroundColor(colors.cherry)
+                            .frame(width: 18, height: 18)
+                            .background(Circle().fill(Color.white))
+                            .overlay(Circle().stroke(colors.cherry, lineWidth: 1))
                     }
-                    Text(point.title)
-                        .font(.system(size: 8, weight: .semibold, design: .serif))
-                        .padding(.horizontal, 5).padding(.vertical, 2)
-                        .background(.ultraThinMaterial, in: Capsule()).lineLimit(1)
                 }
+                .annotationTitles(.hidden)
+            }
+            ForEach(cards) { point in
+                Annotation(point.title, coordinate: point.coordinate) {
+                    Image(systemName: "envelope")
+                        .font(.system(size: 9, weight: .medium)).foregroundColor(colors.cherry)
+                        .frame(width: 20, height: 20)
+                        .background(Circle().fill(Color.white))
+                        .overlay(Circle().stroke(colors.rose, lineWidth: 1))
+                }
+                .annotationTitles(.hidden)
             }
         }
-        .frame(height: 265)
-        .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 16).stroke(theme.fyBorder, lineWidth: 0.8))
-        .overlay(alignment: .topLeading) {
-            Text("真实足迹 · \(mapPoints.count) 个坐标")
-                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                .padding(.horizontal, 8).padding(.vertical, 5)
-                .background(.ultraThinMaterial, in: Capsule())
-                .padding(9)
+        .mapStyle(.standard(elevation: .flat, emphasis: .muted, pointsOfInterest: .excludingAll))
+        .overlay(LinearGradient(colors: [colors.blue.opacity(0.10), colors.rose.opacity(0.08)],
+                                startPoint: .top, endPoint: .bottom).allowsHitTesting(false))
+        .brightness(colors.dark ? -0.08 : 0)
+        .frame(height: 330)
+        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(colors.rule, lineWidth: 1))
+        .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.18), radius: 10, y: 8)
+        .overlay(alignment: .bottomLeading) {
+            Text("\(mapPoints.count) steps · \(landings.count) places")
+                .font(PastelFont.script(15)).foregroundColor(Color(red: 0.43, green: 0.46, blue: 0.58))
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .background(Color.white.opacity(0.82), in: RoundedRectangle(cornerRadius: 4))
+                .padding(10)
         }
     }
 
@@ -9309,6 +9544,7 @@ private struct NativeNowhereView: View {
         mapRegion = MKCoordinateRegion(
             center: .init(latitude: (minLat + maxLat) / 2, longitude: (minLon + maxLon) / 2),
             span: .init(latitudeDelta: latDelta, longitudeDelta: lonDelta))
+        camera = .region(mapRegion)
     }
 
     private func sendReply(_ card: NowherePostcard) async {
@@ -10538,86 +10774,166 @@ private final class FictionStudyModel: ObservableObject {
 
 private struct NativeFictionStudyView: View {
     @StateObject private var model = FictionStudyModel()
-    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     @State private var section = "serializing"
     @State private var selectedBook: FictionBook?
     @State private var selectedChapter: Int?
     @State private var showQuotes = false
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private var colors: PastelColors { _ = houseAppearance; return PastelColors(dark: AlcoveAppearance.isDark) }
+    private var theme: AlcoveTheme { .pastelPaper(dark: colors.dark) }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private let perRow = 6
 
     private var visibleBooks: [FictionBook] {
         model.books.filter { $0.status == section }
     }
 
+    private var rows: [[FictionBook]] {
+        stride(from: 0, to: visibleBooks.count, by: perRow).map {
+            Array(visibleBooks[$0..<min($0 + perRow, visibleBooks.count)])
+        }
+    }
+
+    /// 上次读到的那本：进度最新的一本
+    private var lastRead: FictionBook? {
+        model.books.filter { $0.progress != nil }
+            .max { ($0.progress?.updatedAt ?? "") < ($1.progress?.updatedAt ?? "") }
+    }
+
     var body: some View {
-        Group {
+        ZStack {
+            PastelPaperBackground(colors: colors)
             if showQuotes {
                 FictionQuotesView(model: model, books: model.books) { showQuotes = false }
+                    .padding(.top, max(safeTop, 20))
             } else if let book = selectedBook, let chapter = selectedChapter {
                 FictionReaderView(book: book, chapterIndex: chapter, model: model) {
                     selectedChapter = nil
                 }
+                .padding(.top, max(safeTop, 20))
             } else if let book = selectedBook {
                 FictionBookView(book: book, model: model, onBack: {
                     selectedBook = nil
                 }, onChapter: { selectedChapter = $0 })
+                .padding(.top, max(safeTop, 20))
             } else {
                 shelf
             }
         }
+        .foregroundColor(colors.ink)
         .task { await model.load() }
     }
 
+    // 0927 她挑的：排版照旧（两层书架、底下「上次读到」），书换成乙——淡色纯色书脊、白字、白色小图
     private var shelf: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 8) {
-                segment("连载中", value: "serializing")
-                segment("已完结", value: "completed")
-                Spacer()
-                Button { showQuotes = true } label: {
-                    Label("摘句册", systemImage: "quote.opening")
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(theme.textDim)
+        PastelRoom(colors: colors, caps: "a shelf of our own", title: "书房", framed: true,
+                   subtitle: section == "serializing" ? "still being written" : "kept on the shelf") {
+            VStack(spacing: 0) {
+                HStack(spacing: 26) {
+                    segment("连载中", value: "serializing")
+                    segment("已完结", value: "completed")
                 }
-            }
-            .padding(.horizontal, 18)
-            .padding(.top, 12)
-
-            if model.loading {
-                Spacer(); ProgressView(); Spacer()
-            } else if visibleBooks.isEmpty {
-                emptyShelf
-            } else {
-                ScrollView {
-                    VStack(alignment: .leading, spacing: 16) {
-                        Text(section == "serializing" ? "still being written" : "kept on the shelf")
-                            .font(.custom("Snell Roundhand", size: 20))
-                            .foregroundColor(theme.textDim)
-                            .padding(.leading, 4)
-                        LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 14)], spacing: 20) {
-                            ForEach(Array(visibleBooks.enumerated()), id: \.element.id) { offset, book in
-                                Button { selectedBook = book } label: {
-                                    FictionSpine(book: book, offset: offset, theme: theme)
-                                }
-                                .buttonStyle(.plain)
-                            }
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .trailing) {
+                    Button { showQuotes = true } label: {
+                        HStack(spacing: 3) {
+                            Text("摘句册")
+                            Text("❞")
                         }
-                        Rectangle().fill(theme.fyAccent.opacity(0.42)).frame(height: 5)
-                            .shadow(color: .black.opacity(0.22), radius: 4, y: 3)
+                        .font(.system(size: 12, design: .serif))
+                        .foregroundColor(colors.dim)
                     }
-                    .padding(18)
+                    .buttonStyle(.plain)
+                    .padding(.trailing, 22)
+                }
+                .padding(.top, 12)
+
+                if model.loading {
+                    Spacer(); ProgressView().tint(colors.dim); Spacer()
+                } else if visibleBooks.isEmpty {
+                    emptyShelf
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 22) {
+                            ForEach(Array(rows.enumerated()), id: \.offset) { r, row in
+                                shelfRow(row, start: r * perRow)
+                            }
+                            if let book = lastRead { lastReadCard(book) }
+                        }
+                        .padding(.horizontal, 18).padding(.top, 22).padding(.bottom, 40)
+                    }
                 }
             }
         }
-        .foregroundColor(theme.text)
+        .overlay(alignment: .topLeading) {
+            PastelSprig(colors: colors, seed: 1).frame(width: 46, height: 110).offset(x: -4, y: 150)
+        }
+        .overlay(alignment: .topTrailing) {
+            PastelSprig(colors: colors, seed: 2).frame(width: 46, height: 110).scaleEffect(x: -1).offset(x: 4, y: 170)
+        }
+    }
+
+    private func shelfRow(_ row: [FictionBook], start: Int) -> some View {
+        let current = lastRead?.id
+        return VStack(spacing: 0) {
+            HStack(alignment: .bottom, spacing: 6) {
+                ForEach(Array(row.enumerated()), id: \.element.id) { i, book in
+                    Button { selectedBook = book } label: {
+                        FictionSpine(book: book, offset: start + i, colors: colors, current: book.id == current)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            RoundedRectangle(cornerRadius: 3)
+                .fill(LinearGradient(colors: colors.dark
+                                     ? [Color(red: 0.23, green: 0.24, blue: 0.29), Color(red: 0.17, green: 0.18, blue: 0.22)]
+                                     : [.white, Color(red: 0.89, green: 0.905, blue: 0.945)],
+                                     startPoint: .top, endPoint: .bottom))
+                .frame(height: 9)
+                .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(colors.dark ? 0.5 : 0.25), radius: 5, y: 4)
+        }
+    }
+
+    private func lastReadCard(_ book: FictionBook) -> some View {
+        let ch = book.progress?.chapter ?? 0
+        let left = max(0, book.chapterCount - ch)
+        return Button {
+            selectedBook = book
+            if ch > 0 { selectedChapter = ch }
+        } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("LAST READ").font(PastelFont.caps(9)).tracking(3.5).foregroundColor(colors.dim)
+                Text("\(book.title) · 第 \(ch) 章").font(WindowFont.swiftUI(15.5, bold: true)).lineLimit(1)
+                Text(left > 0 ? "还有 \(left) 章你没看过" : "已经跟上他写的了")
+                    .font(.system(size: 12, design: .serif)).foregroundColor(colors.dim)
+                GeometryReader { geo in
+                    ZStack(alignment: .leading) {
+                        Rectangle().fill(colors.rule)
+                        Rectangle().fill(colors.lilac)
+                            .frame(width: geo.size.width * CGFloat(book.chapterCount > 0 ? Double(ch) / Double(book.chapterCount) : 0))
+                    }
+                }
+                .frame(height: 2)
+                .padding(.top, 6)
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18).padding(.vertical, 14)
+            .foyerCard(theme)
+        }
+        .buttonStyle(.plain)
     }
 
     private func segment(_ title: String, value: String) -> some View {
         Button { withAnimation(.easeInOut(duration: 0.18)) { section = value } } label: {
             Text(title)
-                .font(.system(size: 13, weight: section == value ? .semibold : .regular))
-                .padding(.horizontal, 14).padding(.vertical, 7)
-                .background(section == value ? theme.fyAccent.opacity(0.20) : Color.clear, in: Capsule())
+                .font(.system(size: 13.5, design: .serif))
+                .foregroundColor(section == value ? colors.ink : colors.dim)
+                .padding(.bottom, 3)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(colors.ink).frame(height: 1).opacity(section == value ? 1 : 0)
+                }
         }.buttonStyle(.plain)
     }
 
@@ -10626,44 +10942,89 @@ private struct NativeFictionStudyView: View {
             Spacer()
             Image(systemName: "books.vertical")
                 .font(.system(size: 42, weight: .ultraLight))
-                .foregroundColor(theme.textDim)
+                .foregroundColor(colors.dim)
             Text(section == "serializing" ? "书架还空着" : "还没有写完的书")
-                .font(.system(size: 20, weight: .medium, design: .serif))
+                .font(WindowFont.swiftUI(20, bold: true))
             Text(model.error ?? "陈璟写下第一章后，它会从这里长出来")
-                .font(.system(size: 12)).foregroundColor(theme.textDim)
+                .font(.system(size: 12, design: .serif)).foregroundColor(colors.dim)
+            Text("waiting for the first page").font(PastelFont.script(20)).foregroundColor(colors.dim)
             Spacer()
-            Rectangle().fill(theme.fyAccent.opacity(0.36)).frame(height: 5).padding(.horizontal, 38)
         }.padding(.bottom, 40)
     }
 }
 
+/// 书脊（乙）：淡色纯色、白字竖排、下面一个白色细线小图、上下两道白线；有新章节顶上一个小红点，正在读的那本垂一根丝带
 private struct FictionSpine: View {
     let book: FictionBook
     let offset: Int
-    let theme: AlcoveTheme
+    let colors: PastelColors
+    var current = false
+
+    private static let emblems = ["moon", "heart", "star", "camera.macro", "leaf", "sparkle"]
+
+    private var width: CGFloat { CGFloat(38 + (offset * 7) % 12) }
+    private var height: CGFloat { CGFloat(172 + (offset * 37) % 50) }
+    private var unread: Bool {
+        guard let p = book.progress else { return false }
+        return book.chapterCount > p.chapter
+    }
+
     var body: some View {
-        VStack(spacing: 8) {
-            Text(book.title)
-                .font(.system(size: 15, weight: .medium, design: .serif))
-                .multilineTextAlignment(.center)
-                .lineLimit(5)
-                .frame(maxHeight: .infinity)
-                .padding(.horizontal, 8)
-            Text(book.status == "completed" ? "完" : "至 \(book.chapterCount) 章")
-                .font(.system(size: 9)).foregroundColor(theme.textDim)
-                .padding(.bottom, 10)
+        let chars = Array(book.title)
+        let maxChars = max(2, Int((height - 78) / 18))
+        let shown = chars.count > maxChars ? Array(chars.prefix(maxChars - 1)) + ["…"] : chars
+        VStack(spacing: 0) {
+            Rectangle().fill(Color.white.opacity(0.55)).frame(height: 1).padding(.horizontal, 5).padding(.top, 8)
+            VStack(spacing: 1) {
+                ForEach(Array(shown.enumerated()), id: \.offset) { _, ch in
+                    Text(String(ch))
+                }
+            }
+            .font(WindowFont.swiftUI(13.5, bold: true))
+            .foregroundColor(.white)
+            .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.25), radius: 1, y: 1)
+            .padding(.top, 10)
+            Spacer(minLength: 4)
+            Image(systemName: Self.emblems[offset % Self.emblems.count])
+                .font(.system(size: 12, weight: .light))
+                .foregroundColor(.white.opacity(0.9))
+            Rectangle().fill(Color.white.opacity(0.55)).frame(height: 1).padding(.horizontal, 5).padding(.top, 8)
+            Text(book.status == "completed" ? "完" : "\(book.chapterCount)")
+                .font(.system(size: 9, design: .serif))
+                .foregroundColor(.white.opacity(0.85))
+                .padding(.vertical, 6)
         }
-        .frame(height: CGFloat(160 + (offset % 3) * 18))
-        .frame(maxWidth: .infinity)
+        .frame(width: width, height: height)
         .background(
-            LinearGradient(colors: [theme.fyCard.opacity(0.72), theme.fyAccent.opacity(0.16)],
-                           startPoint: .topLeading, endPoint: .bottomTrailing),
-            in: UnevenRoundedRectangle(topLeadingRadius: 5, bottomLeadingRadius: 1,
-                                       bottomTrailingRadius: 1, topTrailingRadius: 5)
+            LinearGradient(colors: [.white.opacity(0.18), .clear, .clear, Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.10)],
+                           startPoint: .leading, endPoint: .trailing)
         )
-        .overlay(alignment: .leading) { Rectangle().fill(theme.fyAccent.opacity(0.28)).frame(width: 3) }
-        .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.fyBorder.opacity(0.7), lineWidth: 0.7))
-        .shadow(color: .black.opacity(0.18), radius: 4, x: 2, y: 3)
+        .background(colors.books[offset % colors.books.count])
+        .clipShape(UnevenRoundedRectangle(topLeadingRadius: 4, bottomLeadingRadius: 2,
+                                          bottomTrailingRadius: 2, topTrailingRadius: 4))
+        .brightness(colors.dark ? -0.16 : 0)
+        .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.22), radius: 3, x: 1, y: 3)
+        .overlay(alignment: .topTrailing) {
+            if unread {
+                Circle().fill(colors.cherry).frame(width: 7, height: 7)
+                    .overlay(Circle().stroke(colors.paper, lineWidth: 2))
+                    .offset(x: 3, y: -4)
+            }
+        }
+        .overlay(alignment: .bottomLeading) {
+            if current {
+                Rectangle().fill(colors.cherry.opacity(0.9))
+                    .frame(width: 5, height: 16)
+                    .mask(
+                        Path { p in
+                            p.move(to: .zero); p.addLine(to: CGPoint(x: 5, y: 0)); p.addLine(to: CGPoint(x: 5, y: 16))
+                            p.addLine(to: CGPoint(x: 2.5, y: 12.5)); p.addLine(to: CGPoint(x: 0, y: 16)); p.closeSubpath()
+                        }
+                    )
+                    .offset(x: 8, y: 13)
+            }
+        }
+        .accessibilityLabel(book.title)
     }
 }
 
@@ -10672,60 +11033,115 @@ private struct FictionBookView: View {
     @ObservedObject var model: FictionStudyModel
     let onBack: () -> Void
     let onChapter: (Int) -> Void
-    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     @State private var detail: FictionBookDetail?
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private var colors: PastelColors { _ = houseAppearance; return PastelColors(dark: AlcoveAppearance.isDark) }
+    private var theme: AlcoveTheme { .pastelPaper(dark: colors.dark) }
+
+    private var coverColor: Color {
+        var h: UInt32 = 2166136261
+        for b in book.id.utf8 { h = (h ^ UInt32(b)) &* 16777619 }
+        return colors.books[Int(h % UInt32(colors.books.count))]
+    }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
                 Button(action: onBack) {
                     Image(systemName: "chevron.left")
-                        .font(.system(size: 15, weight: .semibold))
-                        .frame(width: 28, height: 34)
-                }.buttonStyle(.plain)
-                Text(book.title).font(.system(size: 14, weight: .semibold, design: .serif)).lineLimit(1)
+                        .font(.system(size: 17, weight: .medium))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).foregroundColor(colors.dim)
                 Spacer()
-            }.padding(.horizontal, 14).padding(.vertical, 6)
+                Text("CHAPTER ONE OF MANY").font(PastelFont.caps(9)).tracking(3.5).foregroundColor(colors.dim)
+                Spacer()
+                Color.clear.frame(width: 44, height: 44)
+            }.padding(.horizontal, 8)
 
-            ScrollView {
-            VStack(alignment: .leading, spacing: 16) {
-                VStack(spacing: 9) {
-                    Text(book.title).font(.system(size: 27, weight: .semibold, design: .serif))
-                    Text(book.author).font(.system(size: 12)).foregroundColor(theme.textDim)
-                    if let tagline = book.tagline, !tagline.isEmpty {
-                        Text(tagline).font(.custom("Snell Roundhand", size: 19))
-                            .foregroundColor(theme.textDim).multilineTextAlignment(.center)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    // 精装封面：淡色布面、一圈白色细框、白字书名
+                    VStack(spacing: 14) {
+                        Text(book.title)
+                            .font(WindowFont.swiftUI(24, bold: true)).tracking(5)
+                            .multilineTextAlignment(.center)
+                            .foregroundColor(.white)
+                        Text("陈 璟 著").font(.system(size: 10.5, design: .serif)).tracking(4)
+                            .foregroundColor(.white.opacity(0.85))
                     }
-                    Text(book.status == "completed" ? "已完结" : "连载中 · \(book.chapterCount) 章")
-                        .font(.system(size: 10, weight: .medium)).padding(.horizontal, 10).padding(.vertical, 5)
-                        .background(theme.fyAccent.opacity(0.16), in: Capsule())
-                }
-                .frame(maxWidth: .infinity).padding(22).foyerCard(theme)
+                    .padding(.horizontal, 26)
+                    .frame(width: 196, height: 270)
+                    .background(coverColor)
+                    .overlay(Rectangle().stroke(Color.white.opacity(0.7), lineWidth: 1).padding(14))
+                    .clipShape(UnevenRoundedRectangle(topLeadingRadius: 2, bottomLeadingRadius: 2,
+                                                      bottomTrailingRadius: 8, topTrailingRadius: 8))
+                    .brightness(colors.dark ? -0.16 : 0)
+                    .shadow(color: Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.28), radius: 12, x: 6, y: 10)
+                    .padding(.top, 18)
 
-                Text("chapters").font(.custom("Snell Roundhand", size: 22)).foregroundColor(theme.textDim)
-                if let detail {
-                    ForEach(detail.toc, id: \.n) { item in
-                    Button { onChapter(item.n) } label: {
-                        HStack {
-                            Text(String(format: "%02d", item.n)).font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(theme.textDim)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title).font(.system(size: 15, design: .serif)).lineLimit(2)
-                                Text("\(item.chars) 字").font(.system(size: 9)).foregroundColor(theme.textDim)
-                            }
-                            Spacer()
-                            if item.n > (detail.progress?.chapter ?? 0) { Circle().fill(theme.fyAccent).frame(width: 5, height: 5) }
-                            Image(systemName: "chevron.right").font(.system(size: 10)).foregroundColor(theme.textDim)
-                        }.padding(14).foyerCard(theme)
-                    }.buttonStyle(.plain)
+                    if let tagline = book.tagline, !tagline.isEmpty {
+                        Text(tagline).font(PastelFont.script(21))
+                            .foregroundColor(colors.dim).multilineTextAlignment(.center)
+                            .padding(.horizontal, 24).padding(.top, 18)
+                    }
+                    Text(statusLine).font(PastelFont.caps(9.5)).tracking(3.5).foregroundColor(colors.dim)
+                        .padding(.top, 8)
+
+                    Text("chapters").font(PastelFont.script(22)).foregroundColor(colors.dim)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.top, 22)
+
+                    if let detail {
+                        let read = detail.progress?.chapter ?? 0
+                        ForEach(detail.toc, id: \.n) { item in
+                            Button { onChapter(item.n) } label: {
+                                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                    Text("\(item.n)").font(.system(size: 12, design: .serif)).italic()
+                                        .foregroundColor(colors.dim).frame(width: 22, alignment: .leading)
+                                    Text(item.title).font(WindowFont.swiftUI(14.5)).lineLimit(1)
+                                    DottedLeader(color: colors.faint)
+                                    if item.n == read {
+                                        Text("读到这").font(.system(size: 10, design: .serif)).foregroundColor(colors.cherry)
+                                    } else if item.n > read {
+                                        Circle().fill(colors.cherry).frame(width: 5, height: 5)
+                                    }
+                                    Text("\(item.chars)").font(.system(size: 10.5, design: .serif))
+                                        .foregroundColor(colors.dim)
+                                }
+                                .padding(.vertical, 9)
+                                .contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                    } else { ProgressView().tint(colors.dim).frame(maxWidth: .infinity).padding(30) }
                 }
-                } else { ProgressView().frame(maxWidth: .infinity).padding(30) }
-            }.padding(18)
+                .padding(.horizontal, 26)
+                .padding(.bottom, 40)
+            }
         }
-        }
-        .foregroundColor(theme.text)
+        .foregroundColor(colors.ink)
         .task { detail = try? await model.detail(bookID: book.id) }
+    }
+
+    private var statusLine: String {
+        let ch = detail?.progress?.chapter ?? book.progress?.chapter ?? 0
+        let base = book.status == "completed" ? "completed · \(book.chapterCount) chapters"
+                                              : "serializing · \(book.chapterCount) chapters"
+        return ch > 0 ? base + " · read to \(ch)" : base
+    }
+}
+
+/// 目录里连到字数的那条点点引线
+private struct DottedLeader: View {
+    let color: Color
+    var body: some View {
+        GeometryReader { geo in
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: geo.size.height - 3))
+                p.addLine(to: CGPoint(x: geo.size.width, y: geo.size.height - 3))
+            }
+            .stroke(color, style: StrokeStyle(lineWidth: 1, dash: [1, 3]))
+        }
+        .frame(height: 10)
     }
 }
 
@@ -10749,7 +11165,9 @@ private struct FictionReaderView: View {
     @AppStorage("fictionLetterSpacing") private var letterSpacing = 0.4
     @AppStorage("fictionLineSpacing") private var lineSpacing = 9.0
     @AppStorage("fictionReadingMode") private var readingMode = "vertical"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    // 0927 书房换蓝粉白纸页，阅读页和摘句册跟着换
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
+    private var theme: AlcoveTheme { _ = houseAppearance; return .pastelPaper(dark: AlcoveAppearance.isDark) }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -10969,7 +11387,9 @@ private struct FictionQuotesView: View {
     @State private var selecting = false
     @State private var selected: Set<String> = []
     @State private var sending = false
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    // 0927 书房换蓝粉白纸页，阅读页和摘句册跟着换
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
+    private var theme: AlcoveTheme { _ = houseAppearance; return .pastelPaper(dark: AlcoveAppearance.isDark) }
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
@@ -11199,6 +11619,265 @@ private final class FictionTextView: UITextView {
             onReview?(quote)
         }
         builder.insertChild(UIMenu(options: .displayInline, children: [action]), atStartOfMenu: .standardEdit)
+    }
+}
+
+// MARK: - 纸页（0927 她挑的蓝粉白版：书房 / Pulse / 乌有乡 共用）
+// 她看了第一版说「太 AI 风了没有美感」（发光渐变、毛玻璃、霓虹），又说「不要再出现黄色」。
+// 照她递的参考图：冷白的纸、几团很淡的水彩（粉 / 宝宝蓝 / 淡紫）、细颗粒，
+// 手画的小花枝，中文宋体＋英文手写体＋字距拉开的小号大写。夜里是中性炭灰，不带棕。
+// 这几间屋 ownsFullScreen，安全区问 app 主窗。
+
+struct PastelColors {
+    let dark: Bool
+    private func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r, green: g, blue: b) }
+    var paper: Color { dark ? c(0.110, 0.114, 0.137) : c(0.969, 0.973, 0.988) }
+    var paper2: Color { dark ? c(0.082, 0.086, 0.106) : c(0.933, 0.945, 0.973) }
+    var ink: Color { dark ? c(0.925, 0.933, 0.965) : c(0.184, 0.200, 0.278) }
+    var dim: Color { dark ? c(0.620, 0.639, 0.722) : c(0.529, 0.553, 0.651) }
+    var faint: Color { dark ? c(0.290, 0.306, 0.373) : c(0.812, 0.831, 0.890) }
+    var rule: Color { dark ? c(0.86, 0.88, 0.96).opacity(0.11) : c(0.31, 0.35, 0.55).opacity(0.13) }
+    var card: Color { dark ? c(0.149, 0.157, 0.188) : Color.white }
+    var cherry: Color { dark ? c(0.941, 0.486, 0.612) : c(0.851, 0.361, 0.502) }
+    var rose: Color { dark ? c(0.918, 0.659, 0.745) : c(0.922, 0.663, 0.749) }
+    var blue: Color { dark ? c(0.616, 0.741, 0.902) : c(0.580, 0.714, 0.878) }
+    var lilac: Color { dark ? c(0.765, 0.702, 0.910) : c(0.725, 0.651, 0.871) }
+    var mint: Color { dark ? c(0.561, 0.753, 0.729) : c(0.612, 0.780, 0.757) }
+    var mint2: Color { dark ? c(0.475, 0.671, 0.643) : c(0.435, 0.639, 0.612) }
+    /// 书脊、封面用的淡色（乙方案：纯色＋白字＋白色小图）
+    var books: [Color] {
+        [c(0.918, 0.702, 0.776), c(0.663, 0.765, 0.902), c(0.780, 0.722, 0.902), c(0.659, 0.824, 0.800),
+         c(0.949, 0.788, 0.839), c(0.722, 0.800, 0.902), c(0.863, 0.816, 0.941), c(0.749, 0.863, 0.839)]
+    }
+}
+
+extension AlcoveTheme {
+    /// 这三间屋自己的一套：卡片走纸张样式（isPaper），点缀色是樱桃粉
+    static func pastelPaper(dark: Bool) -> AlcoveTheme {
+        let p = PastelColors(dark: dark)
+        return AlcoveTheme(
+            isDark: dark, isPaper: true, usesWallImage: false,
+            wallGradient: [p.paper, p.paper2],
+            bubbleUser: p.rose, bubbleAI: p.card,
+            text: p.ink, textDim: p.dim, textLight: p.dim.opacity(0.8), timestamp: p.dim,
+            glassTint: p.card, glassBorder: p.rule,
+            capsuleTint: p.card, capsuleBorder: p.rule,
+            sendTop: p.cherry, sendBottom: p.cherry,
+            fade: p.paper, splashBg: [p.paper, p.paper2],
+            splashBarTop: p.cherry, splashBarBottom: p.cherry.opacity(0.8),
+            splashGlowA: .clear, splashGlowB: .clear,
+            splashPetal: p.rose.opacity(0.3), splashTitle: p.ink,
+            fyAccent: p.cherry, fyAccentSoft: p.rose.opacity(0.22), fyCard: p.card,
+            fyCardSub: dark ? p.paper2 : Color(red: 0.953, green: 0.957, blue: 0.980),
+            fyBorder: p.rule,
+            fyShadow: dark ? Color.black.opacity(0.35) : Color(red: 0.24, green: 0.27, blue: 0.43).opacity(0.14),
+            fyFold: p.rule, fyDash: p.dim.opacity(0.3),
+            panelTextureAsset: dark ? "PaperDark" : "PaperLight")
+    }
+}
+
+/// 纸底：冷白 / 炭灰的底，几团晕开的淡水彩，一层细颗粒
+struct PastelPaperBackground: View {
+    let colors: PastelColors
+    var spots: [(CGFloat, CGFloat, CGFloat, Int)] = [(0.15, 0.12, 170, 0), (0.85, 0.10, 150, 1), (0.5, 0.92, 220, 2)]
+
+    var body: some View {
+        GeometryReader { geo in
+            ZStack {
+                RadialGradient(colors: [colors.paper, colors.paper2], center: .top, startRadius: 0,
+                               endRadius: geo.size.height * 0.9)
+                ForEach(Array(spots.enumerated()), id: \.offset) { _, s in
+                    Ellipse()
+                        .fill([colors.rose, colors.blue, colors.lilac, colors.mint][s.3 % 4]
+                            .opacity(colors.dark ? 0.16 : 0.26))
+                        .frame(width: s.2 * 1.6, height: s.2)
+                        .blur(radius: 46)
+                        .position(x: geo.size.width * s.0, y: geo.size.height * s.1)
+                }
+                PastelGrain(dark: colors.dark)
+            }
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// 细颗粒：固定种子撒点，画一次就不动了
+struct PastelGrain: View {
+    let dark: Bool
+    var body: some View {
+        Canvas { ctx, size in
+            let n = Int(size.width * size.height / 90)
+            for i in 0..<n {
+                let d = Double(i)
+                let x = DiaryTreeModel.rnd(d * 1.37) * size.width
+                let y = DiaryTreeModel.rnd(d * 2.71 + 5) * size.height
+                let a = 0.04 + DiaryTreeModel.rnd(d * 3.1) * 0.08
+                ctx.fill(Path(CGRect(x: x, y: y, width: 1, height: 1)),
+                         with: .color((dark ? Color.white : Color.black).opacity(a)))
+            }
+        }
+        .drawingGroup()
+        .allowsHitTesting(false)
+    }
+}
+
+/// 手画的小花枝：一根弯茎、几片叶子、三朵小花（叶子薄荷青，花粉 / 紫，花心白）
+struct PastelSprig: View {
+    let colors: PastelColors
+    var seed: Double = 1
+
+    var body: some View {
+        Canvas { ctx, size in
+            let k = min(size.width / 70, size.height / 125)
+            var g = ctx
+            g.translateBy(x: 4 * k, y: size.height - 2)
+            g.scaleBy(x: k, y: k)
+            var stem = Path()
+            stem.move(to: .zero)
+            stem.addCurve(to: CGPoint(x: 38, y: -78), control1: CGPoint(x: 20, y: -18), control2: CGPoint(x: 34, y: -44))
+            stem.addCurve(to: CGPoint(x: 64, y: -118), control1: CGPoint(x: 40, y: -96), control2: CGPoint(x: 52, y: -110))
+            g.stroke(stem, with: .color(colors.mint2), lineWidth: 1.1)
+            let leaves: [(CGFloat, CGFloat, Double)] = [(8, -10, 50), (18, -26, -100), (28, -44, 55), (34, -62, -90), (40, -86, 60), (52, -104, -85)]
+            var leaf = Path()
+            leaf.move(to: .zero)
+            leaf.addCurve(to: CGPoint(x: 16, y: 0), control1: CGPoint(x: 4, y: -5), control2: CGPoint(x: 12, y: -6))
+            leaf.addCurve(to: .zero, control1: CGPoint(x: 12, y: 6), control2: CGPoint(x: 4, y: 5))
+            for l in leaves {
+                var h = g
+                h.translateBy(x: l.0, y: l.1)
+                h.rotate(by: .degrees(l.2 + DiaryTreeModel.rnd(seed + l.2) * 10))
+                h.fill(leaf, with: .color(colors.mint.opacity(0.55)))
+                h.stroke(leaf, with: .color(colors.mint2), lineWidth: 0.6)
+            }
+            let flowers: [(CGFloat, CGFloat, Color)] = [(64, -118, colors.rose), (36, -70, colors.lilac), (22, -34, colors.rose)]
+            for f in flowers {
+                for i in 0..<5 {
+                    let a = Double(i) * 1.256
+                    let r = CGRect(x: f.0 + cos(a) * 3.2 - 2.8, y: f.1 + sin(a) * 3.2 - 2.8, width: 5.6, height: 5.6)
+                    g.fill(Path(ellipseIn: r), with: .color(f.2.opacity(0.65)))
+                }
+                g.fill(Path(ellipseIn: CGRect(x: f.0 - 1.3, y: f.1 - 1.3, width: 2.6, height: 2.6)), with: .color(.white))
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 两头弯进去的小标签框（书房标题用）
+struct PastelCartouche: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let m = r.height / 2, w = r.width, h = r.height, e: CGFloat = 14
+        p.move(to: CGPoint(x: e, y: 1))
+        p.addLine(to: CGPoint(x: w - e, y: 1))
+        p.addQuadCurve(to: CGPoint(x: w - 1, y: m), control: CGPoint(x: w - e, y: m - 4))
+        p.addQuadCurve(to: CGPoint(x: w - e, y: h - 1), control: CGPoint(x: w - e, y: m + 4))
+        p.addLine(to: CGPoint(x: e, y: h - 1))
+        p.addQuadCurve(to: CGPoint(x: 1, y: m), control: CGPoint(x: e, y: m + 4))
+        p.addQuadCurve(to: CGPoint(x: e, y: 1), control: CGPoint(x: e, y: m - 4))
+        p.closeSubpath()
+        return p.offsetBy(dx: r.minX, dy: r.minY)
+    }
+}
+
+enum PastelFont {
+    /// 英文手写体（系统自带，不用另外打包）
+    static func script(_ size: CGFloat, bold: Bool = false) -> Font {
+        .custom(bold ? "SnellRoundhand-Bold" : "SnellRoundhand", size: size)
+    }
+    /// 字距拉开的小号大写
+    static func caps(_ size: CGFloat = 9) -> Font { .system(size: size, weight: .regular, design: .serif) }
+}
+
+/// 三间屋的外壳：纸底＋返回键＋小号大写一行＋标题（中文宋体或英文手写）＋一行手写小字
+struct PastelRoom<Content: View>: View {
+    let colors: PastelColors
+    let caps: String
+    let title: String
+    var scriptTitle = false
+    var framed = false
+    var subtitle: String? = nil
+    var onBack: (() -> Void)? = nil
+    var trailing: AnyView? = nil
+    @ViewBuilder var content: () -> Content
+    @Environment(\.dismiss) private var dismiss
+
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+
+    var body: some View {
+        ZStack(alignment: .top) {
+            PastelPaperBackground(colors: colors)
+            VStack(spacing: 0) {
+                ZStack(alignment: .top) {
+                    VStack(spacing: 2) {
+                        if framed {
+                            VStack(spacing: 1) {
+                                Text(caps.uppercased()).font(PastelFont.caps(8.5)).tracking(3.5).foregroundColor(colors.dim)
+                                Text(title).font(WindowFont.swiftUI(21, bold: true)).tracking(9).padding(.leading, 9)
+                            }
+                            .padding(.horizontal, 30).padding(.vertical, 8)
+                            .background(PastelCartouche().fill(colors.card.opacity(0.7)))
+                            .overlay(PastelCartouche().stroke(colors.dim.opacity(0.7), lineWidth: 0.8))
+                            .overlay(PastelCartouche().inset(by: 4).stroke(colors.faint, lineWidth: 0.6))
+                        } else {
+                            Text(caps.uppercased()).font(PastelFont.caps(9)).tracking(3.5).foregroundColor(colors.dim)
+                            if scriptTitle {
+                                Text(title).font(PastelFont.script(42, bold: true))
+                            } else {
+                                Text(title).font(WindowFont.swiftUI(26, bold: true)).tracking(10).padding(.leading, 10)
+                            }
+                        }
+                        if let subtitle {
+                            Text(subtitle).font(PastelFont.script(22)).foregroundColor(colors.dim)
+                        }
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 6)
+                    HStack {
+                        Button { if let onBack { onBack() } else { dismiss() } } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 17, weight: .medium))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain).foregroundColor(colors.dim).accessibilityLabel("返回")
+                        Spacer()
+                        if let trailing { trailing }
+                    }
+                    .padding(.horizontal, 8)
+                }
+                content()
+            }
+            .padding(.top, max(safeTop, 20))
+        }
+        .foregroundColor(colors.ink)
+        .task { WindowFont.requestSongti() }
+    }
+}
+
+extension PastelCartouche: InsettableShape {
+    func inset(by amount: CGFloat) -> InsetCartouche { InsetCartouche(amount: amount) }
+}
+
+struct InsetCartouche: InsettableShape {
+    var amount: CGFloat
+    func path(in r: CGRect) -> Path { PastelCartouche().path(in: r.insetBy(dx: amount, dy: amount)) }
+    func inset(by more: CGFloat) -> InsetCartouche { InsetCartouche(amount: amount + more) }
+}
+
+/// 方格纸（心率、八维那两张卡垫在底下）
+struct PastelGraphPaper: View {
+    let colors: PastelColors
+    var step: CGFloat = 14
+    var body: some View {
+        Canvas { ctx, size in
+            var p = Path()
+            var x: CGFloat = 0
+            while x <= size.width { p.move(to: CGPoint(x: x, y: 0)); p.addLine(to: CGPoint(x: x, y: size.height)); x += step }
+            var y: CGFloat = 0
+            while y <= size.height { p.move(to: CGPoint(x: 0, y: y)); p.addLine(to: CGPoint(x: size.width, y: y)); y += step }
+            ctx.stroke(p, with: .color(colors.rule), lineWidth: 0.6)
+        }
+        .allowsHitTesting(false)
     }
 }
 
