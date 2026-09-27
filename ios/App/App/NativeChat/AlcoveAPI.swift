@@ -439,7 +439,10 @@ enum AlcoveAPI {
 
     // 攒气泡：气泡上屏入库但不触发回复，返回已攒条数
     static func sendHold(text: String) async throws -> (held: Int, record: ChatMessage?) {
-        let obj = try await postJSON("/api/send", body: ["text": text, "hold": true])
+        var body: [String: Any] = ["text": text, "hold": true]
+        // 0927 任务#2998：API 房间攒的原来没带 room，掉进 tmux 的攒气泡队列，API 的他只看到最后一句
+        if chatRoom == "api" { body["room"] = "api" }
+        let obj = try await postJSON("/api/send", body: body)
         let rec = (obj["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
         return (obj["held"] as? Int ?? 0, rec)
     }
