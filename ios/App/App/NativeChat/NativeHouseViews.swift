@@ -12244,7 +12244,8 @@ private struct NativeDreamsView: View {
         ZStack(alignment: .top) {
             DreamSky(palette: pal)
             ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
+                // 滑到哪一夜才画哪一夜
+                LazyVStack(alignment: .leading, spacing: 0) {
                     header(pal)
                     if loading {
                         ProgressView().tint(pal.dim).frame(maxWidth: .infinity).padding(.top, 80)
@@ -12438,6 +12439,9 @@ private struct NativeDreamsView: View {
         .buttonStyle(.plain)
         .matchedTransitionSource(id: key, in: zoomNS)
         .padding(.horizontal, 16).padding(.top, 10)
+        .task(id: id) {
+            if !id.isEmpty, dreamBodies[id] == nil { await loadBody(id: id, hasBody: d.bool("has_body")) }
+        }
     }
 
     // ── 零碎留痕收成一行，点开才展开 ──
@@ -12522,11 +12526,7 @@ private struct NativeDreamsView: View {
         // 时间轴从左往右画出来，点和梦泡跟着一颗颗冒
         try? await Task.sleep(nanoseconds: 120_000_000)
         withAnimation(.easeInOut(duration: 1.2)) { drawn = 1 }
-        // 真梦的正文先拉回来，卡片上要露开头一行
-        for d in dreams where d.string("status") == "dreamed" {
-            let id = d.string("dream_id")
-            if !id.isEmpty, dreamBodies[id] == nil { await loadBody(id: id, hasBody: d.bool("has_body")) }
-        }
+        // 0927 她说页面卡：原来一进门就把每场梦的正文挨个拉一遍。改成卡片滑进屏幕才拉它自己那一篇（见 dreamCard 的 .task）
     }
 
     private func loadBody(id: String, hasBody: Bool) async {
