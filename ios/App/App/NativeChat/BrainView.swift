@@ -173,6 +173,7 @@ struct NativeBrainView: View {
     @State private var shownTotal = 0
     @State private var drawn: CGFloat = 0
     @State private var lifted: String?
+    @State private var hubQuery = ""
 
     private var palette: GlassPalette { .named(themeName) }
 
@@ -219,10 +220,17 @@ struct NativeBrainView: View {
         }
     }
 
-    private func openMemories(thread: String? = nil, images: Bool = false, fromThreads: Bool = false) {
+    /// 0927 她抓的：运转面板开着的时候审核页叠不上去，点了没反应——先收面板，再开审核
+    private func openQueue() {
+        guard showBrainSheet else { showQueue = true; return }
+        showBrainSheet = false
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { showQueue = true }
+    }
+
+    private func openMemories(thread: String? = nil, images: Bool = false, fromThreads: Bool = false, search: String = "") {
         picked = thread ?? "全部"
         imagesOnly = images
-        keyword = ""
+        keyword = search
         backToThreads = fromThreads
         items = []
         withAnimation(.easeInOut(duration: 0.25)) { page = .memories }
@@ -269,6 +277,34 @@ struct NativeBrainView: View {
     private var hub: some View {
         ScrollView(showsIndicators: false) {
             VStack(spacing: 0) {
+                // 0927 她要的：第一页顶上就能搜，回车进「记忆」页带着这个词
+                HStack(spacing: 8) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 12))
+                        .foregroundColor(palette.ink3)
+                    TextField("翻找记忆", text: $hubQuery)
+                        .font(.system(size: 13))
+                        .foregroundColor(palette.ink)
+                        .submitLabel(.search)
+                        .onSubmit {
+                            let q = hubQuery.trimmingCharacters(in: .whitespaces)
+                            guard !q.isEmpty else { return }
+                            hubQuery = ""
+                            openMemories(search: q)
+                        }
+                    if !hubQuery.isEmpty {
+                        Button { hubQuery = "" } label: {
+                            Image(systemName: "xmark.circle.fill")
+                                .font(.system(size: 12))
+                                .foregroundColor(palette.ink3)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 13).padding(.vertical, 10)
+                .glassCard(palette, radius: 13)
+                .padding(.horizontal, 16)
+                .padding(.top, 4)
                 VStack(spacing: 0) {
                     Text("\(shownTotal)")
                         .font(.system(size: 60, weight: .bold, design: .serif))
@@ -497,6 +533,13 @@ struct NativeBrainView: View {
                     Text("\(t.count) 条 · \(t.newestAgo)")
                         .font(.system(size: 11))
                         .foregroundColor(palette.ink3)
+                    if !t.latest.isEmpty {
+                        Text(t.latest)
+                            .font(.system(size: 10.5))
+                            .foregroundColor(palette.ink2)
+                            .lineLimit(1)
+                            .padding(.top, 2)
+                    }
                     Spacer(minLength: 0)
                     HStack {
                         Spacer()
@@ -583,7 +626,7 @@ struct NativeBrainView: View {
                     line("最近快照", status.snapshot)
                 }
                 if status.pendingEmotion + status.pendingFact > 0 {
-                    Button { showQueue = true } label: {
+                    Button { openQueue() } label: {
                         HStack(spacing: 6) {
                             Image(systemName: "tray.full").font(.system(size: 9))
                             Text("有 \(status.pendingEmotion + status.pendingFact) 条等我点头")
