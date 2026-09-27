@@ -315,6 +315,12 @@ enum AlcoveAPI {
         return text
     }
 
+    /// 0927 她要的：通话里打字说。后端不听写，直接当她这句注入、落通话记录
+    static func callSayText(_ text: String) async throws {
+        let obj = try await postJSON("/api/call/say", body: ["text": text])
+        guard obj["ok"] as? Bool == true else { throw URLError(.badServerResponse) }
+    }
+
     /// ‼️0831 任务#1195 起没人调这个了，留着只为手工排查用。
     /// 通话里他那句的配音由**服务端在落库那一刻就做好**，通话页直接取现成的 mp3。
     /// 别把它接回播放链路——"要放的时候才现合成"就是"读完一段停很久"的病根。

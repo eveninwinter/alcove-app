@@ -462,6 +462,28 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         return turns.last { $0.isMine || playedIDs.contains($0.id) }
     }
 
+    /// 0927 她要的「左右对话、能上下滑」：这一通说过的都列出来。他那句照旧念到了才露（文字比声音先落库，别剧透）
+    var shownTurns: [CallTurn] {
+        turns.filter { $0.isMine || playedIDs.contains($0.id) || $0.id == playingID }
+    }
+
+    /// 0927 她要的：通话里打字说。跟按住说走同一条注入，只是不用听写
+    func sendText(_ text: String) async -> Bool {
+        let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty, !closed else { return false }
+        busy = true
+        defer { busy = false }
+        do {
+            try await AlcoveAPI.callSayText(t)
+            line = "他看到了，等回话…"
+            await refreshTurns()
+            return true
+        } catch {
+            line = "没发出去，再发一次？"
+            return false
+        }
+    }
+
     // MARK: 收线
 
     func end() {
@@ -487,6 +509,8 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
 struct CallTurnBubble: View {
     let turn: CallTurn
     var mineName: String = "我"
+    /// 0927：通话页上他正在念的那段描亮一点
+    var highlighted: Bool = false
 
     // 0912 她说通话记录没换成新版：跟通话页一样放在雨夜壁纸上——半透明玻璃气泡、白字；
     // 他那句底下带他自己写的中文（小字淡色），跟通话页一致
@@ -497,6 +521,11 @@ struct CallTurnBubble: View {
                     .font(.system(size: 14.5))
                     .foregroundColor(CallSkin.onWall)
                 if !turn.isMine && !turn.zh.isEmpty {
+                    // 0927 她要的：上面英文、下面小字中文，中间一道浅色细线
+                    Rectangle()
+                        .fill(Color.white.opacity(0.22))
+                        .frame(height: 0.6)
+                        .padding(.vertical, 2)
                     Text(turn.zh)
                         .font(.system(size: 12.5))
                         .foregroundColor(CallSkin.onWallDim)
@@ -507,7 +536,9 @@ struct CallTurnBubble: View {
             .background(RoundedRectangle(cornerRadius: 15, style: .continuous)
                 .fill(turn.isMine ? CallSkin.accent.opacity(0.45) : CallSkin.glass))
             .overlay(RoundedRectangle(cornerRadius: 15, style: .continuous)
-                .stroke(CallSkin.glassLine, lineWidth: 1))
+                .stroke(highlighted ? Color.white.opacity(0.75) : CallSkin.glassLine,
+                        lineWidth: highlighted ? 1.4 : 1))
+            .animation(.easeInOut(duration: 0.25), value: highlighted)
             if let tone = turn.toneLabel {
                 Text(tone)
                     .font(.system(size: 10.5))
@@ -636,16 +667,22 @@ struct CallView: View {
     // 对话只显示当下那一段、底下 按住说 / 挂断 / 扬声器 三个圆键。这一页不做黑夜模式。
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @State private var avatar: UIImage?
+    // 0927 她要的：通话里也能打字，框放最底下、跟主聊天打字框一样大
+    @State private var draft = ""
+    @FocusState private var typing: Bool
+    /// 她翻上去看前面的话时，新的一句别把她拽回底
+    @State private var nearBottom = true
 
     var body: some View {
         ZStack {
             CallWallpaper()
+                .onTapGesture { typing = false }
             VStack(spacing: 0) {
                 header
-                Spacer(minLength: 16)
-                subtitle
-                Spacer(minLength: 16)
+                transcript
+                    .padding(.top, 14)
                 controls
+                inputBar
             }
             // 0902 她要的缩小键：左上角，跟微信一个位置；计时挪到右上角
             VStack {
@@ -691,9 +728,9 @@ struct CallView: View {
     private var header: some View {
         VStack(spacing: 10) {
             hisAvatar
-                .padding(.top, 76)
+                .padding(.top, 50)   // 0927：中间要放整通对话，头部整体收小一点（76 → 50）
             Text(hisName)
-                .font(.system(size: 26, weight: .semibold, design: .serif))
+                .font(.system(size: 22, weight: .semibold, design: .serif))
                 .foregroundColor(CallSkin.onWall)
             Text(session.line)
                 .font(.system(size: 13))
@@ -709,11 +746,11 @@ struct CallView: View {
                 Image(uiImage: img)
                     .resizable()
                     .scaledToFill()
-                    .frame(width: 92, height: 92)   // 0912 她要缩小一点：118 → 92
+                    .frame(width: 68, height: 68)   // 0912 她要缩小一点：118 → 92；0927 给对话让地方 → 68
                     .clipShape(Circle())
                     .overlay(Circle().stroke(.white.opacity(0.85), lineWidth: 1.5))
             } else {
-                CallAvatar(name: hisName, size: 92, active: session.speaking)
+                CallAvatar(name: hisName, size: 68, active: session.speaking)
             }
         }
         .overlay(Circle()
@@ -723,56 +760,101 @@ struct CallView: View {
         .animation(.easeInOut(duration: 0.25), value: session.speaking)
     }
 
-    // MARK: 中间：当下那一段
+    // MARK: 中间：这一通的对话（0927 改）
 
-    /// 他说的：大字（以后换英文声音、接上翻译，就是大字英文 + 小字中文）；
-    /// 她说的：只有中文。她按住说的时候先写「在听你说…」，听写回来换成她那句。
-    /// 一段很长时才出滚动，短的就安安静静居中。
-    private var subtitle: some View {
-        ViewThatFits(in: .vertical) {
-            subtitleContent
-            ScrollView(showsIndicators: false) { subtitleContent }
-        }
-        .frame(maxHeight: 320)
-        .animation(.easeInOut(duration: 0.25), value: session.currentTurn?.id)
-        .animation(.easeInOut(duration: 0.25), value: session.recording)
-    }
-
-    @ViewBuilder private var subtitleContent: some View {
-        VStack(spacing: 10) {
-            if session.recording {
-                Text("在听你说…")
-                    .font(.system(size: 17, design: .serif))
-                    .foregroundColor(CallSkin.onWallDim)
-            } else if let t = session.currentTurn {
-                // 壁纸下半截有路灯和亮水珠，白字压一层淡黑影，免得糊进去
-                VStack(spacing: 8) {
-                    Text(t.text)
-                        // 0912 她要他的字缩小一点：24 → 20；她那句跟着从 20 → 17，保持比他小一号
-                        .font(.system(size: t.isMine ? 17 : 20, design: .serif))
-                        .foregroundColor(CallSkin.onWall)
-                        .lineSpacing(5)
-                        .multilineTextAlignment(.center)
-                    // 0912：他那句底下是他自己写的中文（<译>…</译>），小字淡色；她说的只有中文，不显示这行
-                    if !t.isMine && !t.zh.isEmpty {
-                        Text(t.zh)
+    /// 0927 她要的：原来只显示当下那一段，他分几段说时前面的就看不见了、期盼值还会单独冒一段。
+    /// 改成他左她右的对话，能上下滑；新的一句出来时她在底部就跟着滑，翻上去看就不打扰。
+    /// 他那段：上面英文、细线、下面小字中文（CallTurnBubble）；正在念的那段描亮。
+    private var transcript: some View {
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 12) {
+                    if session.shownTurns.isEmpty && !session.recording {
+                        Text("说话或打字就开始")
                             .font(.system(size: 14, design: .serif))
                             .foregroundColor(CallSkin.onWallDim)
-                            .lineSpacing(3)
-                            .multilineTextAlignment(.center)
+                            .padding(.top, 30)
                     }
+                    ForEach(session.shownTurns) { t in
+                        CallTurnBubble(turn: t, highlighted: t.id == session.playingID)
+                            .id(t.id)
+                    }
+                    if session.recording {
+                        Text("在听你说…")
+                            .font(.system(size: 13.5))
+                            .foregroundColor(CallSkin.onWallDim)
+                            .frame(maxWidth: .infinity, alignment: .trailing)
+                    }
+                    Color.clear.frame(height: 1).id("callTail")
                 }
-                .shadow(color: .black.opacity(0.45), radius: 6)
-                .id(t.id)
-                .transition(.opacity)
-            } else {
-                Text("说话就开始")
-                    .font(.system(size: 15, design: .serif))
-                    .foregroundColor(CallSkin.onWallDim)
+                .padding(.horizontal, 18)
+                .padding(.vertical, 6)
+            }
+            .onScrollGeometryChange(for: Bool.self) { g in
+                g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 80
+            } action: { _, near in
+                if near != nearBottom { nearBottom = near }
+            }
+            .onAppear { proxy.scrollTo("callTail", anchor: .bottom) }
+            .onChange(of: session.shownTurns.count) { _ in
+                guard nearBottom else { return }
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("callTail", anchor: .bottom) }
+            }
+            .onChange(of: session.recording) { rec in
+                guard rec else { return }
+                withAnimation(.easeOut(duration: 0.25)) { proxy.scrollTo("callTail", anchor: .bottom) }
+            }
+            .onChange(of: typing) { t in
+                // 键盘顶上来以后把最新的话留在输入框上面
+                guard t else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("callTail", anchor: .bottom) }
+                }
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 30)
+        .frame(maxHeight: .infinity)
+    }
+
+    // MARK: 最底下：打字框（0927）
+
+    /// 跟主聊天页的打字框一个大小：胶囊玻璃、单行起、最多长到 4 行，有字才出发送键
+    private var inputBar: some View {
+        HStack(alignment: .bottom, spacing: 8) {
+            TextField("", text: $draft, prompt: Text("想说的话，也可以打字").foregroundColor(CallSkin.onWallDim),
+                      axis: .vertical)
+                .lineLimit(1...4)
+                .font(.system(size: 16))
+                .foregroundColor(CallSkin.onWall)
+                .tint(.white)
+                .focused($typing)
+                .padding(.horizontal, 16)
+                .padding(.vertical, 11)
+                .background(RoundedRectangle(cornerRadius: 22, style: .continuous).fill(CallSkin.glass))
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .stroke(CallSkin.glassLine, lineWidth: 1))
+            if !draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                Button {
+                    let text = draft
+                    draft = ""
+                    Task {
+                        // 没发出去就把字还给她，别吞
+                        if !(await session.sendText(text)) && draft.isEmpty { draft = text }
+                    }
+                } label: {
+                    Image(systemName: "arrow.up")
+                        .font(.system(size: 17, weight: .semibold))
+                        .foregroundColor(CallSkin.ink)
+                        .frame(width: 44, height: 44)
+                        .background(Circle().fill(Color.white))
+                }
+                .buttonStyle(.plain)
+                .disabled(session.busy)
+                .transition(.scale.combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: draft.isEmpty)
+        .padding(.horizontal, 16)
+        .padding(.bottom, 10)
     }
 
     // MARK: 下面：按住说 + 挂断 + 扬声器
@@ -786,7 +868,8 @@ struct CallView: View {
             controlSlot(session.speakerOn ? "扬声器已开" : "扬声器已关") { speakerButton }
         }
         .padding(.horizontal, 18)
-        .padding(.bottom, 30)
+        .padding(.top, 10)
+        .padding(.bottom, 14)   // 0927：底下还有打字框，原来的 30 收一点
     }
 
     private func controlSlot<Content: View>(_ label: String,
