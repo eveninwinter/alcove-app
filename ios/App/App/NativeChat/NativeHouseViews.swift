@@ -87,7 +87,8 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window: return true
+             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window,
+             .calendar: return true   // 0927 日记换花树版，自己铺满自己做头
         default: return false
         }
     }
@@ -11201,22 +11202,471 @@ private final class FictionTextView: UITextView {
     }
 }
 
+// MARK: - 日记（0927 她挑的花树版）
+// 她拿 Garden（一篇日记一枝杏花、夜里月亮、花瓣飘）和随笔阅读页当参考，我画了效果图她一轮轮改：
+// 花瓣要、日夜跟全屋开关走；阅读页顶上是一整棵梅树，上清楚下渐虚，虚掉的那截垫在标题后面；
+// 枝不许笔直（梅枝一节一节拐）。日历上写了日记的那天开一朵小花。
+// 这间屋 ownsFullScreen，安全区问 app 主窗（见「全屏房间先做安全区」）。
+
+private struct DiaryPalette {
+    let dark: Bool
+    private func c(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r, green: g, blue: b) }
+    var paper: Color { dark ? c(0.075, 0.067, 0.094) : c(0.973, 0.949, 0.925) }
+    var sky: Color { dark ? c(0.051, 0.043, 0.071) : c(0.953, 0.902, 0.918) }
+    var ink: Color { dark ? c(0.925, 0.898, 0.882) : c(0.239, 0.204, 0.192) }
+    var dim: Color { dark ? c(0.604, 0.569, 0.600) : c(0.561, 0.506, 0.482) }
+    var faint: Color { dark ? c(0.357, 0.329, 0.376) : c(0.769, 0.714, 0.682) }
+    var accent: Color { dark ? c(0.886, 0.663, 0.714) : c(0.788, 0.545, 0.592) }
+    var card: Color { dark ? Color.white.opacity(0.06) : Color.white.opacity(0.62) }
+    var line: Color { dark ? Color.white.opacity(0.10) : c(0.47, 0.35, 0.31).opacity(0.14) }
+    var petal0: Color { dark ? Color.white : c(1.0, 0.980, 0.980) }
+    var petal1: Color { dark ? c(1.0, 0.953, 0.961) : c(0.984, 0.890, 0.910) }
+    var petal2: Color { dark ? c(0.941, 0.761, 0.800) : c(0.918, 0.702, 0.749) }
+    /// 日历上的小花：夜里调暗，别盖住日期数字
+    var bloomFill: Color { dark ? c(0.94, 0.706, 0.765).opacity(0.20) : petal1 }
+    var bloomLine: Color { dark ? c(0.94, 0.706, 0.765).opacity(0.55) : petal2 }
+    var branch: Color { dark ? c(0.369, 0.333, 0.349) : c(0.494, 0.388, 0.345) }
+    var bark: Color { dark ? c(0.561, 0.522, 0.541) : c(0.427, 0.337, 0.298) }
+    var stamen: Color { dark ? c(0.910, 0.788, 0.812) : c(0.788, 0.518, 0.561) }
+    var anther: Color { dark ? c(0.953, 0.843, 0.659) : c(0.690, 0.337, 0.310) }
+    var heart: Color { dark ? c(0.839, 0.604, 0.647) : c(0.722, 0.420, 0.447) }
+    var bud: Color { dark ? c(0.914, 0.722, 0.765) : c(0.906, 0.635, 0.690) }
+    var sepal: Color { dark ? c(0.490, 0.435, 0.451) : c(0.541, 0.357, 0.310) }
+}
+
+// MARK: 梅树（跟效果图同一套算法：固定种子，每次画出来一样）
+
+private struct DP { var x: Double; var y: Double }
+
+private struct DiaryTreeModel {
+    struct Limb { var pts: [DP]; let w0: Double; let w1: Double; let seed: Double }
+    struct Flower { let x: Double; let y: Double; let k: Double; let rot: Double; let open: Bool }
+    struct Bud { let x: Double; let y: Double; let rot: Double; let k: Double }
+
+    var limbs: [Limb] = []
+    var far: [Limb] = []
+    var flowers: [Flower] = []
+    var farFlowers: [Flower] = []
+    var buds: [Bud] = []
+
+    static let shared = DiaryTreeModel()
+
+    static func rnd(_ a: Double) -> Double {
+        let x = sin(a * 9301 + 49297) * 233280
+        return x - floor(x)
+    }
+
+    static func bez(_ p: [DP], _ t: Double) -> DP {
+        let u = 1 - t
+        let a = u * u * u, b = 3 * u * u * t, c = 3 * u * t * t, d = t * t * t
+        let x = a * p[0].x + b * p[1].x + c * p[2].x + d * p[3].x
+        let y = a * p[0].y + b * p[1].y + c * p[2].y + d * p[3].y
+        return DP(x: x, y: y)
+    }
+
+    /// 梅枝不直：沿主线取几个节点左右交替折一下，再用平滑曲线串起来。主干只弯一点
+    static func kink(_ p: [DP], seed: Double) -> [DP] {
+        let K = 4
+        let len = hypot(p[3].x - p[0].x, p[3].y - p[0].y)
+        var nodes: [DP] = []
+        for i in 0...K {
+            let t = Double(i) / Double(K)
+            let a = bez(p, max(0, t - 0.01)), b = bez(p, min(1, t + 0.01)), c = bez(p, t)
+            let dx = b.x - a.x, dy = b.y - a.y
+            let l = max(hypot(dx, dy), 0.0001)
+            var amp = 0.0
+            if i != 0 && i != K {
+                let side: Double = i % 2 == 1 ? 1 : -1
+                amp = side * (0.035 + rnd(seed * 31 + Double(i)) * 0.045) * len * (seed == 1 ? 0.4 : 1)
+            }
+            nodes.append(DP(x: c.x - dy / l * amp, y: c.y + dx / l * amp))
+        }
+        var out: [DP] = []
+        for i in 0..<K {
+            let p0 = nodes[max(0, i - 1)], p1 = nodes[i], p2 = nodes[i + 1], p3 = nodes[min(K, i + 2)]
+            for j in 0..<6 {
+                let t = Double(j) / 6
+                out.append(DP(x: catmull(p0.x, p1.x, p2.x, p3.x, t), y: catmull(p0.y, p1.y, p2.y, p3.y, t)))
+            }
+        }
+        out.append(nodes[K])
+        return out
+    }
+
+    static func catmull(_ a: Double, _ b: Double, _ c: Double, _ d: Double, _ t: Double) -> Double {
+        let t2 = t * t, t3 = t2 * t
+        let p1 = 2 * b + (-a + c) * t
+        let p2 = (2 * a - 5 * b + 4 * c - d) * t2
+        let p3 = (-a + 3 * b - 3 * c + d) * t3
+        return 0.5 * (p1 + p2 + p3)
+    }
+
+    static func at(_ k: [DP], _ t: Double) -> DP {
+        let i = Int((min(1, max(0, t)) * Double(k.count - 1)).rounded())
+        return k[i]
+    }
+
+    init() {
+        func P(_ a: [(Double, Double)]) -> [DP] { a.map { DP(x: $0.0, y: $0.1) } }
+        // (控制点, 粗, 细, 种子, 父枝, 在父枝的位置)
+        let spec: [([(Double, Double)], Double, Double, Double, Int, Double)] = [
+            ([(150, 345), (158, 290), (170, 240), (190, 195)], 20, 12, 1, -1, 0),
+            ([(190, 195), (150, 130), (118, 60), (72, -40)], 11, 2.4, 2, 0, 1),
+            ([(190, 195), (240, 135), (292, 60), (342, -78)], 10, 2.2, 3, 0, 1),
+            ([(196, 188), (204, 120), (212, 40), (222, -88)], 7, 1.6, 4, 0, 0.96),
+            ([(142, 112), (104, 98), (64, 92), (18, 70)], 4.5, 1.2, 5, 1, 0.33),
+            ([(262, 100), (306, 98), (352, 112), (418, 80)], 4.5, 1.2, 6, 2, 0.37),
+            ([(120, 58), (140, 30), (150, 5), (168, -20)], 3, 1, 7, 1, 0.6),
+            ([(292, 60), (270, 30), (262, 5), (248, -22)], 3, 1, 8, 2, 0.6),
+            ([(-30, 210), (20, 180), (60, 150), (96, 142)], 6, 2, 9, -1, 0),
+            ([(60, 150), (50, 120), (46, 100), (30, 80)], 2.5, 0.9, 10, 8, 0.75),
+            ([(212, 40), (236, 25), (252, 8), (270, -4)], 2.2, 0.8, 11, 3, 0.5),
+        ]
+        // 小枝从大枝折过之后的真位置长出来，不悬空
+        for s in spec {
+            var pts = P(s.0)
+            if s.4 >= 0 { pts[0] = Self.at(limbs[s.4].pts, s.5) }
+            limbs.append(Limb(pts: Self.kink(pts, seed: s.3), w0: s.1, w1: s.2, seed: s.3))
+        }
+        // 花沿着枝长：越往梢越密；一部分是花苞
+        for (li, l) in limbs.enumerated() where li > 0 {
+            let n = li < 4 ? 7 : 4
+            let sd = l.seed
+            for q in 0..<n {
+                let qd = Double(q)
+                let t = 0.35 + 0.65 * qd / Double(n - 1) + (Self.rnd(sd * 7 + qd) - 0.5) * 0.08
+                let c = Self.at(l.pts, t)
+                let off = (Self.rnd(sd * 13 + qd) - 0.5) * 14
+                let k = 0.55 + Self.rnd(sd * 3 + qd) * 0.55
+                if Self.rnd(sd * 5 + qd) < 0.22 {
+                    buds.append(Bud(x: c.x + off, y: c.y - 4, rot: Self.rnd(qd + sd) * 360, k: 0.8 + Self.rnd(qd) * 0.3))
+                } else {
+                    let dy = (Self.rnd(sd + qd * 2) - 0.5) * 10
+                    flowers.append(Flower(x: c.x + off, y: c.y + dy, k: k, rot: Self.rnd(sd * qd + 1) * 360,
+                                          open: Self.rnd(sd * 11 + qd) > 0.25))
+                }
+            }
+        }
+        // 远处虚掉的两枝和几朵，画面有远近
+        far = [
+            Limb(pts: Self.kink(P([(430, 120), (380, 90), (340, 40), (300, -40)]), seed: 17), w0: 6, w1: 1.5, seed: 17),
+            Limb(pts: Self.kink(P([(-20, 60), (30, 40), (70, 0), (90, -60)]), seed: 18), w0: 5, w1: 1.5, seed: 18),
+        ]
+        let ff: [(Double, Double, Double, Double)] = [(330, 10, 1.1, 20), (360, 70, 1, 60), (300, -30, 1, 10),
+                                                      (60, 20, 1, 80), (80, -40, 0.9, 30), (20, 50, 1, 0)]
+        farFlowers = ff.map { Flower(x: $0.0, y: $0.1, k: $0.2, rot: $0.3, open: true) }
+    }
+}
+
+/// 一层梅树。坐标系跟效果图一样：宽 420、y 从 -100 到 360
+private struct DiaryTreeLayer: View {
+    let palette: DiaryPalette
+    var farOnly = false
+
+    var body: some View {
+        Canvas { ctx, size in
+            let k = size.width / 420
+            var g = ctx
+            g.scaleBy(x: k, y: k)
+            g.translateBy(x: 0, y: 100)
+            let m = DiaryTreeModel.shared
+            if farOnly {
+                for l in m.far { drawLimb(&g, l) }
+                for f in m.farFlowers { drawFlower(&g, f) }
+                return
+            }
+            for l in m.limbs { drawLimb(&g, l) }
+            for f in m.flowers { drawFlower(&g, f) }
+            for b in m.buds { drawBud(&g, b) }
+        }
+    }
+
+    private func drawLimb(_ g: inout GraphicsContext, _ l: DiaryTreeModel.Limb) {
+        let pts = l.pts
+        let n = pts.count - 1
+        var left: [CGPoint] = [], right: [CGPoint] = []
+        for i in 0...n {
+            let t = Double(i) / Double(n)
+            let a = pts[max(0, i - 1)], b = pts[min(n, i + 1)], c = pts[i]
+            let dx = b.x - a.x, dy = b.y - a.y
+            let len = max(hypot(dx, dy), 0.0001)
+            let wob = 1 + (DiaryTreeModel.rnd(l.seed + Double(i)) - 0.5) * 0.3
+            let w = (l.w0 + (l.w1 - l.w0) * pow(t, 0.8)) * wob / 2
+            left.append(CGPoint(x: c.x - dy / len * w, y: c.y + dx / len * w))
+            right.append(CGPoint(x: c.x + dy / len * w, y: c.y - dx / len * w))
+        }
+        var path = Path()
+        path.addLines(left + right.reversed())
+        path.closeSubpath()
+        g.fill(path, with: .color(palette.branch))
+        // 树皮上几道细纹
+        var i = 3
+        while i < n - 3 {
+            let c = pts[i]
+            let t = Double(i) / Double(n)
+            var p = Path()
+            let y = c.y + l.w0 * 0.18 * (1 - t)
+            p.move(to: CGPoint(x: c.x - 2, y: y))
+            p.addQuadCurve(to: CGPoint(x: c.x + 4, y: y), control: CGPoint(x: c.x + 1, y: y - 1))
+            g.stroke(p, with: .color(palette.bark.opacity(0.5)), lineWidth: 0.7)
+            i += 4
+        }
+    }
+
+    private static let petal: Path = {
+        var p = Path()
+        p.move(to: .zero)
+        p.addCurve(to: CGPoint(x: -4, y: -17), control1: CGPoint(x: -7, y: -3), control2: CGPoint(x: -9, y: -13))
+        p.addCurve(to: CGPoint(x: 0, y: -15), control1: CGPoint(x: -2, y: -18), control2: CGPoint(x: -1, y: -16))
+        p.addCurve(to: CGPoint(x: 4, y: -17), control1: CGPoint(x: 1, y: -16), control2: CGPoint(x: 2, y: -18))
+        p.addCurve(to: .zero, control1: CGPoint(x: 9, y: -13), control2: CGPoint(x: 7, y: -3))
+        p.closeSubpath()
+        return p
+    }()
+
+    private func drawFlower(_ g: inout GraphicsContext, _ f: DiaryTreeModel.Flower) {
+        var h = g
+        h.translateBy(x: f.x, y: f.y)
+        h.rotate(by: .degrees(f.rot))
+        h.scaleBy(x: f.k, y: f.k)
+        let shade = GraphicsContext.Shading.radialGradient(
+            Gradient(stops: [.init(color: palette.petal0, location: 0),
+                             .init(color: palette.petal1, location: 0.55),
+                             .init(color: palette.petal2, location: 1)]),
+            center: .zero, startRadius: 0, endRadius: 18)
+        for i in 0..<5 {
+            let di = Double(i)
+            var p = h
+            p.rotate(by: .degrees(di * 72 + DiaryTreeModel.rnd(f.x + di) * 14))
+            p.scaleBy(x: 1 + (DiaryTreeModel.rnd(f.y + di) - 0.5) * 0.18, y: f.open ? 1 : 0.55)
+            p.fill(Self.petal, with: shade)
+            p.stroke(Self.petal, with: .color(palette.petal2), lineWidth: 0.35)
+        }
+        if f.open {
+            for i in 0..<14 {
+                let di = Double(i)
+                let a = (di * 25.7 + DiaryTreeModel.rnd(di + f.x) * 10) * .pi / 180
+                let r = 6 + DiaryTreeModel.rnd(di * 3 + f.y) * 3.5
+                let e = CGPoint(x: sin(a) * r, y: -cos(a) * r)
+                var s = Path()
+                s.move(to: .zero)
+                s.addLine(to: e)
+                h.stroke(s, with: .color(palette.stamen), lineWidth: 0.45)
+                h.fill(Path(ellipseIn: CGRect(x: e.x - 0.9, y: e.y - 0.9, width: 1.8, height: 1.8)), with: .color(palette.anther))
+            }
+        }
+        h.fill(Path(ellipseIn: CGRect(x: -2.2, y: -2.2, width: 4.4, height: 4.4)), with: .color(palette.heart))
+    }
+
+    private func drawBud(_ g: inout GraphicsContext, _ b: DiaryTreeModel.Bud) {
+        var h = g
+        h.translateBy(x: b.x, y: b.y)
+        h.rotate(by: .degrees(b.rot))
+        h.scaleBy(x: b.k, y: b.k)
+        var p = Path()
+        p.move(to: .zero)
+        p.addCurve(to: CGPoint(x: 0, y: -9), control1: CGPoint(x: -3, y: -2), control2: CGPoint(x: -3, y: -7))
+        p.addCurve(to: .zero, control1: CGPoint(x: 3, y: -7), control2: CGPoint(x: 3, y: -2))
+        h.fill(p, with: .color(palette.bud))
+        var s = Path()
+        s.move(to: CGPoint(x: -2, y: 0))
+        s.addCurve(to: CGPoint(x: 2, y: 0), control1: CGPoint(x: -2, y: -2), control2: CGPoint(x: 2, y: -2))
+        h.fill(s, with: .color(palette.sepal))
+    }
+}
+
+/// 阅读页顶上那一整块：远景（白天粉杏的雾 / 夜里星星和月亮）＋ 上清楚下渐虚的梅树
+private struct DiaryHero: View {
+    let palette: DiaryPalette
+    let width: CGFloat
+
+    private var treeHeight: CGFloat { (width + 20) * 460 / 420 }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            haze
+            if palette.dark { stars }
+            glow
+            ZStack {
+                DiaryTreeLayer(palette: palette, farOnly: true)
+                    .blur(radius: 4).opacity(0.4)
+                // 上面清楚、中段轻虚、底下虚成一团光——三层叠起来就是渐变模糊
+                DiaryTreeLayer(palette: palette)
+                    .mask(fade([(.white, 0.30), (.clear, 0.55)]))
+                DiaryTreeLayer(palette: palette)
+                    .blur(radius: 3.5).opacity(0.85)
+                    .mask(fade([(.clear, 0.30), (.white, 0.50), (.white, 0.70), (.clear, 0.85)]))
+                DiaryTreeLayer(palette: palette)
+                    .blur(radius: 9).opacity(0.6)
+                    .mask(fade([(.clear, 0.62), (.white, 0.85)]))
+            }
+            .frame(width: width + 20, height: treeHeight)
+            .drawingGroup()
+            .offset(x: -10, y: 40)
+        }
+        .frame(width: width, height: 420, alignment: .topLeading)
+        .allowsHitTesting(false)
+    }
+
+    private func fade(_ stops: [(Color, CGFloat)]) -> LinearGradient {
+        LinearGradient(stops: stops.map { .init(color: $0.0, location: $0.1) }, startPoint: .top, endPoint: .bottom)
+    }
+
+    private var haze: some View {
+        Canvas { ctx, size in
+            if palette.dark {
+                let r = CGRect(x: size.width * 0.7 - 130, y: 105 - 70, width: 260, height: 140)
+                ctx.fill(Path(ellipseIn: r), with: .radialGradient(
+                    Gradient(colors: [Color(red: 0.47, green: 0.43, blue: 0.63).opacity(0.14), .clear]),
+                    center: CGPoint(x: r.midX, y: r.midY), startRadius: 0, endRadius: 130))
+            } else {
+                let spots: [(CGFloat, CGFloat, CGFloat, Color)] = [
+                    (0.2, 126, 200, Color(red: 0.965, green: 0.804, blue: 0.839).opacity(0.45)),
+                    (0.85, 231, 240, Color(red: 0.98, green: 0.871, blue: 0.804).opacity(0.40)),
+                ]
+                for s in spots {
+                    let r = CGRect(x: size.width * s.0 - s.2 / 2, y: s.1 - s.2 / 4, width: s.2, height: s.2 / 2)
+                    ctx.fill(Path(ellipseIn: r), with: .radialGradient(
+                        Gradient(colors: [s.3, .clear]),
+                        center: CGPoint(x: r.midX, y: r.midY), startRadius: 0, endRadius: s.2 / 2))
+                }
+            }
+        }
+    }
+
+    private var stars: some View {
+        Canvas { ctx, size in
+            for q in 0..<40 {
+                let d = Double(q)
+                let x = DiaryTreeModel.rnd(d * 17) * size.width
+                let y = 60 + DiaryTreeModel.rnd(d * 29) * 260
+                let s = 1 + DiaryTreeModel.rnd(d * 3) * 1.2
+                ctx.fill(Path(ellipseIn: CGRect(x: x, y: y, width: s, height: s)),
+                         with: .color(.white.opacity(0.2 + DiaryTreeModel.rnd(d * 7) * 0.6)))
+            }
+        }
+    }
+
+    @ViewBuilder private var glow: some View {
+        if palette.dark {
+            Circle()
+                .fill(RadialGradient(colors: [Color(red: 1, green: 0.98, blue: 0.94), Color(red: 0.914, green: 0.882, blue: 0.831)],
+                                     center: UnitPoint(x: 0.4, y: 0.38), startRadius: 0, endRadius: 52))
+                .frame(width: 74, height: 74)
+                .shadow(color: Color(red: 1, green: 0.97, blue: 0.92).opacity(0.35), radius: 30)
+                .offset(x: width - 52 - 74, y: 118)
+        } else {
+            Circle()
+                .fill(RadialGradient(colors: [Color(red: 1, green: 0.925, blue: 0.839).opacity(0.9), .clear],
+                                     center: .center, startRadius: 0, endRadius: 60))
+                .frame(width: 120, height: 120)
+                .offset(x: width - 40 - 120, y: 80)
+        }
+    }
+}
+
+// MARK: 花瓣：进门和翻开一篇时飘几片，飘完就停
+
+private struct DiaryPetalFall: View {
+    let palette: DiaryPalette
+    var count = 7
+    @State private var start = Date()
+    @State private var done = false
+
+    private let duration: Double = 9
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30, paused: done)) { tl in
+            Canvas { ctx, size in
+                let t = tl.date.timeIntervalSince(start)
+                for i in 0..<count {
+                    let d = Double(i)
+                    let delay = DiaryTreeModel.rnd(d * 5 + 1) * 3
+                    let life = 5 + DiaryTreeModel.rnd(d * 9 + 2) * 3
+                    let p = (t - delay) / life
+                    guard p > 0, p < 1 else { continue }
+                    let x0 = DiaryTreeModel.rnd(d * 13 + 3) * size.width
+                    let x = x0 + sin(p * .pi * 2 + d) * 26 + p * 30
+                    let y = -20 + p * (size.height * 0.85 + 40)
+                    var g = ctx
+                    g.opacity = p > 0.8 ? (1 - p) / 0.2 : 0.85
+                    g.translateBy(x: x, y: y)
+                    g.rotate(by: .degrees(p * 360 * (i % 2 == 0 ? 1 : -1) + d * 40))
+                    let k = 0.7 + DiaryTreeModel.rnd(d * 17) * 0.4
+                    g.scaleBy(x: k, y: k)
+                    var petal = Path()
+                    petal.move(to: CGPoint(x: 0, y: -8))
+                    petal.addLine(to: CGPoint(x: -2, y: -11))
+                    petal.addCurve(to: CGPoint(x: 0, y: 11), control1: CGPoint(x: -7, y: -9), control2: CGPoint(x: -9, y: 2))
+                    petal.addCurve(to: CGPoint(x: 2, y: -11), control1: CGPoint(x: 9, y: 2), control2: CGPoint(x: 7, y: -9))
+                    petal.closeSubpath()
+                    g.fill(petal, with: .linearGradient(Gradient(colors: [palette.petal1, palette.petal2]),
+                                                        startPoint: CGPoint(x: 0, y: -11), endPoint: CGPoint(x: 0, y: 11)))
+                }
+            }
+        }
+        .allowsHitTesting(false)
+        .task {
+            start = Date()
+            try? await Task.sleep(nanoseconds: UInt64(duration * 1_000_000_000))
+            done = true
+        }
+    }
+}
+
+/// 日历格子里的小花（五瓣＋花心）
+private struct DiaryBloom: View {
+    let palette: DiaryPalette
+
+    var body: some View {
+        Canvas { ctx, size in
+            let k = min(size.width, size.height) / 40
+            var g = ctx
+            g.translateBy(x: size.width / 2, y: size.height / 2)
+            g.scaleBy(x: k, y: k)
+            let petal = Path(ellipseIn: CGRect(x: -6.5, y: -18, width: 13, height: 18))
+            for i in 0..<5 {
+                var p = g
+                p.rotate(by: .degrees(Double(i) * 72))
+                p.fill(petal, with: .color(palette.bloomFill))
+                p.stroke(petal, with: .color(palette.bloomLine), lineWidth: 0.6)
+            }
+            g.fill(Path(ellipseIn: CGRect(x: -3, y: -3, width: 6, height: 6)), with: .color(palette.bloomLine))
+        }
+    }
+}
+
+// MARK: 页面
+
+private struct DiaryOpen: Identifiable {
+    let id: String
+    let date: String
+    let time: String
+    let kind: String
+    let title: String
+    let content: String
+}
+
 private struct NativeCalendarView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     @State private var year = Calendar.current.component(.year, from: Date())
     @State private var month = Calendar.current.component(.month, from: Date())
     @State private var selectedDate: String?
     @State private var events: [String: [[String: Any]]] = [:]
     @State private var periodDates: [String: String] = [:]
     @State private var loading = true
-    @State private var expandedIdx: Int?
     @State private var diaryContents: [String: String] = [:]
     @State private var displayMode = 0
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    @State private var diaryTotal = 0
+    @State private var diaryFirst = ""
+    @State private var bloomOn = false
+    @State private var opened: DiaryOpen?
+    @Namespace private var zoomNS
 
-    private var dotDates: Set<String> {
-        Set(events.keys)
-    }
+    private var palette: DiaryPalette { _ = houseAppearance; return DiaryPalette(dark: AlcoveAppearance.isDark) }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
 
     private var selectedEvents: [[String: Any]] {
         guard let sel = selectedDate else { return [] }
@@ -11229,166 +11679,284 @@ private struct NativeCalendarView: View {
         }
     }
 
-    private var selectedDateLabel: String {
-        guard let sel = selectedDate, sel.count >= 10 else { return "" }
-        let m = Int(sel.dropFirst(5).prefix(2)) ?? 0
-        let d = Int(sel.suffix(2)) ?? 0
-        let weekday: String = {
-            let fmt = DateFormatter()
-            fmt.dateFormat = "yyyy-MM-dd"
-            guard let date = fmt.date(from: sel) else { return "" }
-            let wd = Calendar.current.component(.weekday, from: date)
-            return ["日", "一", "二", "三", "四", "五", "六"][(wd - 1) % 7]
-        }()
-        return String(format: "%02d月%02d日·周%@", m, d, weekday)
-    }
+    private static let monthNames = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"]
 
     var body: some View {
-        VStack(spacing: 0) {
-            FoyerPanelTitle(title: "Calendar", theme: theme)
-            if loading {
-                Spacer(); ProgressView().tint(theme.fyAccent); Spacer()
-            } else {
-                ScrollView(showsIndicators: false) {
-                    VStack(spacing: 12) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text("diary & moments")
-                                .font(.custom("Snell Roundhand", size: 20))
-                                .italic()
-                            Spacer()
-                            Text("\(monthEntries.count) entries")
-                                .font(.system(size: 9, weight: .medium, design: .monospaced))
-                                .foregroundColor(theme.textDim)
-                        }
-                        .padding(.horizontal, 4)
-
-                        Picker("日记视图", selection: $displayMode) {
-                            Text("日历").tag(0)
-                            Text("本月条目").tag(1)
-                        }
-                        .pickerStyle(.segmented)
-
-                        if displayMode == 0 {
-                            MonthCalendarGrid(
-                                year: year, month: month, theme: theme,
-                                dotDates: dotDates, periodDates: periodDates,
-                                counts: events.mapValues { $0.count },
-                                selectedDate: selectedDate,
-                                onSelect: { selectedDate = $0 },
-                                onPrev: { shiftMonth(-1) },
-                                onNext: { shiftMonth(1) })
-
-                            if periodDates.values.contains(where: { _ in true }) {
-                                HStack(spacing: 16) {
-                                    HStack(spacing: 4) {
-                                        Circle().fill(theme.fyAccent.opacity(0.12)).frame(width: 10, height: 10)
-                                        Text("姨妈期").font(.system(size: 10)).foregroundColor(theme.textDim)
-                                    }
-                                    Spacer()
-                                }
-                                .padding(.horizontal, 4)
+        let pal = palette
+        ZStack(alignment: .top) {
+            LinearGradient(colors: [pal.sky, pal.paper], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.4))
+                .ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    header(pal)
+                    if loading && events.isEmpty {
+                        ProgressView().tint(pal.accent).frame(maxWidth: .infinity).padding(.top, 60)
+                    } else if displayMode == 0 {
+                        monthBar(pal)
+                        grid(pal)
+                        if periodDates.values.contains(where: { _ in true }) {
+                            HStack(spacing: 5) {
+                                Circle().fill(pal.accent.opacity(0.5)).frame(width: 5, height: 5)
+                                Text("姨妈期").font(.system(size: 10)).foregroundColor(pal.dim)
                             }
-
-                            if !selectedEvents.isEmpty {
-                                Text(selectedDateLabel)
-                                    .font(.system(size: 14, weight: .semibold, design: .serif))
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.horizontal, 4)
-
-                                ForEach(Array(selectedEvents.enumerated()), id: \.offset) { idx, evt in
-                                let key = "\(selectedDate ?? "")_\(evt.string("time"))"
-                                let isExpanded = expandedIdx == idx
-                                Button {
-                                    if isExpanded {
-                                        expandedIdx = nil
-                                    } else {
-                                        expandedIdx = idx
-                                        if diaryContents[key] == nil {
-                                            Task { await loadDiaryContent(key: key, date: selectedDate ?? "", time: evt.string("time")) }
-                                        }
-                                    }
-                                } label: {
-                                    VStack(alignment: .leading, spacing: 0) {
-                                        HStack {
-                                            Image(systemName: "pencil.and.scribble")
-                                                .font(.system(size: 15, weight: .light))
-                                                .foregroundColor(theme.textDim)
-                                            Text(evt.string("title"))
-                                                .font(.system(size: 13, weight: .medium))
-                                            Spacer()
-                                            Text(evt.string("time"))
-                                                .font(.system(size: 12))
-                                                .foregroundColor(theme.textDim)
-                                            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
-                                                .font(.system(size: 10))
-                                                .foregroundColor(theme.textLight)
-                                        }
-                                        if isExpanded {
-                                            Divider().padding(.vertical, 8)
-                                            if let content = diaryContents[key] {
-                                                Text(content)
-                                                    .font(.system(size: 12))
-                                                    .foregroundColor(theme.textDim)
-                                                    .lineSpacing(4)
-                                                    .textSelection(.enabled)
-                                                    .fixedSize(horizontal: false, vertical: true)
-                                            } else {
-                                                ProgressView().scaleEffect(0.7).tint(theme.fyAccent)
-                                                    .frame(maxWidth: .infinity).padding(8)
-                                            }
-                                        }
-                                    }
-                                    .padding(12).foyerCard(theme)
-                                }
-                                .buttonStyle(.plain)
-                                }
-                            } else if selectedDate != nil {
-                                Text("这天没有记录")
-                                    .font(.system(size: 12)).foregroundColor(theme.textDim)
-                                    .padding(20)
-                            }
-                        } else {
-                            VStack(spacing: 8) {
-                                ForEach(Array(monthEntries.enumerated()), id: \.offset) { _, item in
-                                    Button {
-                                        selectedDate = item.date
-                                        displayMode = 0
-                                    } label: {
-                                        HStack(spacing: 12) {
-                                            VStack(alignment: .leading, spacing: 3) {
-                                                Text(item.date)
-                                                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
-                                                Text(item.event.string("title"))
-                                                    .font(.system(size: 12, design: .serif))
-                                                    .lineLimit(1)
-                                            }
-                                            Spacer()
-                                            Text(item.event.string("time"))
-                                                .font(.system(size: 10, design: .monospaced))
-                                                .foregroundColor(theme.textDim)
-                                            Image(systemName: "chevron.right")
-                                                .font(.system(size: 9, weight: .semibold))
-                                                .foregroundColor(theme.textDim)
-                                        }
-                                        .padding(12)
-                                        .frame(maxWidth: .infinity)
-                                        .foyerCard(theme)
-                                    }
-                                    .buttonStyle(.plain)
-                                }
-                            }
+                            .padding(.horizontal, 26).padding(.top, 6)
                         }
+                        dayCards(pal)
+                    } else {
+                        monthBar(pal)
+                        monthList(pal)
                     }
-                    .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 18)
                 }
+                .padding(.top, max(safeTop, 20))
+                .padding(.bottom, max(safeBottom, 16) + 20)
             }
+            DiaryPetalFall(palette: pal, count: 5)
+                .ignoresSafeArea()
         }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .padding(.horizontal, 12).padding(.top, 8)
-        .task { await loadMonth() }
+        .foregroundColor(pal.ink)
+        .task {
+            WindowFont.requestSongti()
+            await loadMonth()
+        }
+        .fullScreenCover(item: $opened) { item in
+            DiaryReader(item: item, palette: pal)
+                .navigationTransition(.zoom(sourceID: item.id, in: zoomNS))
+        }
     }
 
+    // ── 头 ──
+    private func header(_ pal: DiaryPalette) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .medium))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel("返回")
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.25)) { displayMode = displayMode == 0 ? 1 : 0 }
+                } label: {
+                    Image(systemName: displayMode == 0 ? "list.bullet" : "calendar")
+                        .font(.system(size: 16))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain).accessibilityLabel(displayMode == 0 ? "本月条目" : "日历")
+            }
+            .foregroundColor(pal.dim)
+            .padding(.horizontal, 8)
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Diary")
+                    .font(.system(size: 38, weight: .regular, design: .serif)).italic()
+                Text("写一篇，开一朵")
+                    .font(WindowFont.swiftUI(13)).tracking(1).foregroundColor(pal.dim)
+                Text(countLine)
+                    .font(.system(size: 13, design: .serif)).italic().foregroundColor(pal.dim)
+            }
+            .padding(.horizontal, 26).padding(.top, 8)
+        }
+    }
+
+    private var countLine: String {
+        guard diaryTotal > 0 else {
+            let n = monthEntries.filter { $0.event.string("type") == "diary" }.count
+            return "本月 \(n) 篇"
+        }
+        let p = diaryFirst.split(separator: "-")
+        if p.count == 3, let m = Int(p[1]), let d = Int(p[2]) {
+            return "\(diaryTotal) 篇 · 从 \(m) 月 \(d) 日开始"
+        }
+        return "\(diaryTotal) 篇"
+    }
+
+    private func monthBar(_ pal: DiaryPalette) -> some View {
+        HStack {
+            Button { shiftMonth(-1) } label: {
+                Image(systemName: "chevron.left").font(.system(size: 13)).frame(width: 36, height: 36).contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundColor(pal.faint)
+            Spacer()
+            Text("\(String(year)) · \(Self.monthNames[max(0, min(11, month - 1))])")
+                .font(WindowFont.swiftUI(15)).tracking(3)
+            Spacer()
+            Button { shiftMonth(1) } label: {
+                Image(systemName: "chevron.right").font(.system(size: 13)).frame(width: 36, height: 36).contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundColor(pal.faint)
+        }
+        .padding(.horizontal, 18).padding(.top, 22).padding(.bottom, 4)
+    }
+
+    // ── 日历：写了日记的那天开一朵花，换月份时一朵朵开出来 ──
+    private func grid(_ pal: DiaryPalette) -> some View {
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
+        let lead = leadingBlanks
+        let days = daysInMonth
+        return LazyVGrid(columns: cols, spacing: 4) {
+            ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { w in
+                Text(w).font(.system(size: 11)).foregroundColor(pal.faint).padding(.vertical, 6)
+            }
+            ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 46) }
+            ForEach(1...days, id: \.self) { d in dayCell(d, pal) }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func dayCell(_ d: Int, _ pal: DiaryPalette) -> some View {
+        let key = String(format: "%04d-%02d-%02d", year, month, d)
+        let has = !(events[key] ?? []).isEmpty
+        let sel = selectedDate == key
+        return Button {
+            withAnimation(.easeInOut(duration: 0.2)) { selectedDate = key }
+            Task { await loadDay(key) }
+        } label: {
+            ZStack {
+                if has {
+                    DiaryBloom(palette: pal)
+                        .frame(width: 38, height: 38)
+                        .scaleEffect(bloomOn ? 1 : 0.1)
+                        .opacity(bloomOn ? 1 : 0)
+                        .animation(.spring(response: 0.45, dampingFraction: 0.62).delay(Double(d) * 0.025), value: bloomOn)
+                }
+                if sel {
+                    Circle().stroke(pal.accent, lineWidth: 1.2).frame(width: 42, height: 42)
+                }
+                Text("\(d)")
+                    .font(.system(size: 14, weight: has ? .semibold : .regular))
+                    .foregroundColor(has ? pal.ink : pal.dim)
+                if periodDates[key] != nil {
+                    Circle().fill(pal.accent.opacity(0.5)).frame(width: 4, height: 4).offset(y: 17)
+                }
+            }
+            .frame(height: 46).frame(maxWidth: .infinity).contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var leadingBlanks: Int {
+        var comps = DateComponents(); comps.year = year; comps.month = month; comps.day = 1
+        guard let date = Calendar.current.date(from: comps) else { return 0 }
+        let wd = Calendar.current.component(.weekday, from: date)   // 周日=1
+        return (wd + 5) % 7                                         // 周一开头
+    }
+
+    private var daysInMonth: Int {
+        var comps = DateComponents(); comps.year = year; comps.month = month; comps.day = 1
+        guard let date = Calendar.current.date(from: comps),
+              let r = Calendar.current.range(of: .day, in: .month, for: date) else { return 30 }
+        return r.count
+    }
+
+    // ── 选中那天的卡片 ──
+    @ViewBuilder private func dayCards(_ pal: DiaryPalette) -> some View {
+        if let sel = selectedDate {
+            Text(dayLabel(sel, compact: true))
+                .font(.system(size: 12)).tracking(3).foregroundColor(pal.dim)
+                .padding(.horizontal, 26).padding(.top, 20).padding(.bottom, 10)
+            if selectedEvents.isEmpty {
+                Text("这天没有记录").font(WindowFont.swiftUI(13)).foregroundColor(pal.dim)
+                    .frame(maxWidth: .infinity).padding(20)
+            }
+            ForEach(Array(selectedEvents.enumerated()), id: \.offset) { _, evt in
+                entryCard(date: sel, evt: evt, pal: pal)
+            }
+        }
+    }
+
+    private func kindLabel(_ type: String) -> String {
+        switch type {
+        case "diary": return "日记"
+        case "": return "记事"
+        default: return type == "event" ? "记事" : type
+        }
+    }
+
+    private func entryCard(date: String, evt: [String: Any], pal: DiaryPalette) -> some View {
+        let time = evt.string("time")
+        let key = "\(date)_\(time)"
+        let content = diaryContents[key] ?? ""
+        let chars = content.filter { !$0.isWhitespace }.count
+        let open = DiaryOpen(id: key, date: date, time: time, kind: kindLabel(evt.string("type")),
+                             title: evt.string("title"), content: content)
+        return Button {
+            if content.isEmpty {
+                Task { await loadDay(date); openIfReady(open) }
+            } else {
+                opened = open
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("\(open.kind) · \(time)")
+                    .font(.system(size: 11)).tracking(2.5).foregroundColor(pal.accent)
+                Text(open.title.isEmpty ? "无题" : open.title)
+                    .font(WindowFont.swiftUI(19)).padding(.top, 6).padding(.bottom, 4)
+                if chars > 0 {
+                    Text("\(chars.formatted()) 字 · 约 \(max(1, Int((Double(chars) / 400).rounded()))) 分钟")
+                        .font(.system(size: 12, design: .serif)).foregroundColor(pal.dim)
+                    Text(content.replacingOccurrences(of: "\n", with: " "))
+                        .font(WindowFont.swiftUI(13)).foregroundColor(pal.dim)
+                        .lineSpacing(6).lineLimit(2)
+                        .padding(.top, 10)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 18).padding(.vertical, 16)
+            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(pal.card))
+            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(pal.line, lineWidth: 1))
+            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+        }
+        .buttonStyle(.plain)
+        .matchedTransitionSource(id: key, in: zoomNS)
+        .padding(.horizontal, 18).padding(.bottom, 12)
+    }
+
+    private func openIfReady(_ o: DiaryOpen) {
+        let c = diaryContents[o.id] ?? ""
+        opened = DiaryOpen(id: o.id, date: o.date, time: o.time, kind: o.kind, title: o.title,
+                           content: c.isEmpty ? "这条没有正文。" : c)
+    }
+
+    // ── 本月全部（原来的「本月条目」） ──
+    private func monthList(_ pal: DiaryPalette) -> some View {
+        VStack(spacing: 10) {
+            if monthEntries.isEmpty {
+                Text("这个月还没有记录").font(WindowFont.swiftUI(13)).foregroundColor(pal.dim).padding(30)
+            }
+            ForEach(Array(monthEntries.enumerated()), id: \.offset) { _, item in
+                Button {
+                    selectedDate = item.date
+                    Task { await loadDay(item.date) }
+                    withAnimation(.easeInOut(duration: 0.25)) { displayMode = 0 }
+                } label: {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("\(kindLabel(item.event.string("type"))) · \(dayLabel(item.date, compact: true))")
+                                .font(.system(size: 10.5)).tracking(2).foregroundColor(pal.accent)
+                            Text(item.event.string("title").isEmpty ? "无题" : item.event.string("title"))
+                                .font(WindowFont.swiftUI(15)).lineLimit(1)
+                        }
+                        Spacer()
+                        Text(item.event.string("time")).font(.system(size: 11, design: .monospaced)).foregroundColor(pal.dim)
+                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundColor(pal.faint)
+                    }
+                    .padding(14)
+                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(pal.card))
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(pal.line, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 18).padding(.top, 10)
+    }
+
+    private func dayLabel(_ date: String, compact: Bool) -> String {
+        let p = date.split(separator: "-")
+        guard p.count == 3, let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]) else { return date }
+        var comps = DateComponents(); comps.year = y; comps.month = m; comps.day = d
+        var wd = ""
+        if let dt = Calendar.current.date(from: comps) {
+            wd = ["日", "一", "二", "三", "四", "五", "六"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
+        }
+        return compact ? String(format: "%02d.%02d · 周%@", m, d, wd) : "\(y)/\(m)/\(d) · 周\(wd)"
+    }
+
+    // ── 数据 ──
     private func shiftMonth(_ delta: Int) {
         month += delta
         if month > 12 { month = 1; year += 1 }
@@ -11399,36 +11967,134 @@ private struct NativeCalendarView: View {
 
     private func loadMonth() async {
         loading = events.isEmpty
+        bloomOn = false
         defer { loading = false }
         guard let obj = try? await NativeHouseAPI.object(
             "/api/calendar/month?year=\(year)&month=\(month)") else { return }
         if let evts = obj["events"] as? [String: Any] {
             events = evts.compactMapValues { $0 as? [[String: Any]] }
+        } else {
+            events = [:]
         }
-        if let prd = obj["period"] as? [String: String] {
-            periodDates = prd
-        }
+        periodDates = (obj["period"] as? [String: String]) ?? [:]
+        if let n = obj["diary_total"] as? Int { diaryTotal = n }
+        diaryFirst = obj.string("diary_first")
         if selectedDate == nil, let first = events.keys.sorted().last {
             selectedDate = first
         }
-        expandedIdx = nil
+        // 下一拍再开花，动画才看得见
+        try? await Task.sleep(nanoseconds: 80_000_000)
+        bloomOn = true
+        if let sel = selectedDate { await loadDay(sel) }
     }
 
-    private func loadDiaryContent(key: String, date: String, time: String) async {
-        guard let obj = try? await NativeHouseAPI.object("/api/calendar/day?date=\(date)") else {
-            diaryContents[key] = "加载失败"
-            return
-        }
-        let diaries = obj.array("diaries")
-        for entry in diaries {
+    private func loadDay(_ date: String) async {
+        guard let obj = try? await NativeHouseAPI.object("/api/calendar/day?date=\(date)") else { return }
+        for entry in obj.array("diaries") {
             let ts = entry.string("ts")
             let tsTime = ts.count > 16 ? String(ts.dropFirst(11).prefix(5)) : ""
-            if tsTime == time {
-                diaryContents[key] = entry.string("content")
-                return
-            }
+            diaryContents["\(date)_\(tsTime)"] = entry.string("content")
         }
-        diaryContents[key] = "没有找到内容"
+    }
+}
+
+// MARK: 阅读页：顶上梅树往下滑慢一点退、慢慢变虚；往下拉缩回卡片
+
+private struct DiaryReader: View {
+    let item: DiaryOpen
+    let palette: DiaryPalette
+    @Environment(\.dismiss) private var dismiss
+    @State private var offset: CGFloat = 0
+
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    private var chars: Int { item.content.filter { !$0.isWhitespace }.count }
+
+    private var paragraphs: [String] {
+        item.content.components(separatedBy: "\n")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+    }
+
+    private var dateLine: String {
+        let p = item.date.split(separator: "-")
+        guard p.count == 3, let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]) else { return item.date }
+        var comps = DateComponents(); comps.year = y; comps.month = m; comps.day = d
+        var wd = ""
+        if let dt = Calendar.current.date(from: comps) {
+            wd = ["日", "一", "二", "三", "四", "五", "六"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
+        }
+        return "\(item.kind) · \(y)/\(m)/\(d) · 周\(wd)"
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let pal = palette
+            let lift = max(0, offset)
+            ZStack(alignment: .top) {
+                LinearGradient(colors: [pal.sky, pal.paper], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.45))
+                    .ignoresSafeArea()
+                ScrollView(showsIndicators: false) {
+                    VStack(spacing: 0) {
+                        DiaryHero(palette: pal, width: geo.size.width)
+                            .offset(y: lift * 0.45)
+                            .blur(radius: min(lift / 30, 10))
+                            .opacity(1 - min(lift / 520, 0.6))
+                            .padding(.top, max(safeTop, 20) - 20)
+                        VStack(spacing: 10) {
+                            Text(dateLine)
+                                .font(.system(size: 12)).tracking(4).foregroundColor(pal.accent)
+                                .shadow(color: pal.paper, radius: 5)
+                            Text(item.title.isEmpty ? "无题" : item.title)
+                                .font(WindowFont.swiftUI(30)).tracking(2)
+                                .multilineTextAlignment(.center)
+                                .shadow(color: pal.paper, radius: 7).shadow(color: pal.paper, radius: 2)
+                            if chars > 0 {
+                                Text("\(chars.formatted()) 字 · 约 \(max(1, Int((Double(chars) / 400).rounded()))) 分钟")
+                                    .font(.system(size: 12, design: .serif)).foregroundColor(pal.dim)
+                            }
+                        }
+                        .padding(.horizontal, 22)
+                        .padding(.top, -120)
+                        VStack(alignment: .leading, spacing: 12) {
+                            ForEach(Array(paragraphs.enumerated()), id: \.offset) { _, para in
+                                Text("\u{3000}\u{3000}" + para)
+                                    .font(WindowFont.swiftUI(16.5))
+                                    .lineSpacing(14)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        .textSelection(.enabled)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(.horizontal, 28).padding(.top, 26)
+                        Text("❦").font(.system(size: 20, design: .serif)).foregroundColor(pal.accent.opacity(0.7))
+                            .padding(.top, 30)
+                            .padding(.bottom, max(safeBottom, 16) + 30)
+                    }
+                }
+                .onScrollGeometryChange(for: CGFloat.self) { g in
+                    g.contentOffset.y + g.contentInsets.top
+                } action: { _, v in
+                    offset = v
+                }
+                // 顶上一道小横条＋收起按钮：往下拉或者点它都回到卡片
+                HStack {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.down").font(.system(size: 15, weight: .medium))
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }.buttonStyle(.plain).foregroundColor(pal.dim).accessibilityLabel("收起")
+                    Spacer()
+                }
+                .padding(.horizontal, 8)
+                .padding(.top, max(safeTop, 20))
+                .opacity(1 - min(lift / 200, 1))
+                DiaryPetalFall(palette: pal, count: 6)
+                    .ignoresSafeArea()
+            }
+            .foregroundColor(pal.ink)
+        }
+        .preferredColorScheme(palette.dark ? .dark : .light)
     }
 }
 

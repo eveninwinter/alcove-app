@@ -342,7 +342,15 @@ struct NativeWindowView: View {
     @State private var page = 0
     @State private var opened: WindowCard?
     @State private var showDays = false
+    // 0927 她挑的效果图：一幅一屏 / 目录 两种看法；目录里分 今天 / 往期 / 我们留过言的
+    @State private var gridMode = false
+    @State private var tab = 0
+    @State private var commented: [WindowCard] = []
+    /// 读过的记在手机本地就够了（不上后端），留最近 400 张
+    @AppStorage("windowReadIDs") private var readRaw = ""
+    @Namespace private var zoomNS
     private var paper: WindowPaper { .of(AlcoveTheme.named(themeName).isDark) }
+    private var readIDs: Set<String> { Set(readRaw.split(separator: ",").map(String.init)) }
 
     /// 0925 她抓的「世界之窗又没做安全区」：这间屋是 ownsFullScreen，外面那层把安全区全吃了，
     /// 头顶到灵动岛、页码贴着 Home 横条。全屏房间第一件事：安全区问 app 主窗（跟占星室、育儿室一样）。
@@ -358,21 +366,28 @@ struct NativeWindowView: View {
             paper.paper.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                if store.cards.isEmpty {
+                if store.cards.isEmpty && !gridMode {
                     emptyState
                 } else {
-                    TabView(selection: $page) {
-                        ForEach(Array(store.cards.enumerated()), id: \.element.id) { i, card in
-                            WindowPlate(card: card, paper: paper)
-                                .contentShape(Rectangle())
-                                .onTapGesture { opened = card }
-                                .padding(.horizontal, 18)
-                                .padding(.bottom, 14)
-                                .tag(i)
+                    dateline
+                    if gridMode {
+                        catalog
+                    } else {
+                        TabView(selection: $page) {
+                            ForEach(Array(store.cards.enumerated()), id: \.element.id) { i, card in
+                                WindowPlate(card: card, paper: paper)
+                                    .contentShape(Rectangle())
+                                    .matchedTransitionSource(id: card.id, in: zoomNS)
+                                    .onTapGesture { open(card) }
+                                    .padding(.horizontal, 18)
+                                    .padding(.bottom, 8)
+                                    .tag(i)
+                            }
                         }
+                        .tabViewStyle(.page(indexDisplayMode: .never))
+                        thumbStrip
+                        folio
                     }
-                    .tabViewStyle(.page(indexDisplayMode: .never))
-                    folio
                 }
             }
         }
@@ -382,6 +397,7 @@ struct NativeWindowView: View {
         }
         .fullScreenCover(item: $opened) { card in
             WindowCardPage(store: store, cardId: card.id, paper: paper)
+                .navigationTransition(.zoom(sourceID: card.id, in: zoomNS))
         }
         .sheet(isPresented: $showDays) { daysSheet }
     }
@@ -407,6 +423,284 @@ struct NativeWindowView: View {
         .padding(.horizontal, 8)
         .padding(.top, max(safeTop, 20))
         .padding(.bottom, 6)
+    }
+
+    // MARK: 0927 丰富版：日期行＋看法切换、缩略图条、目录
+
+    private func markRead(_ id: String) {
+        var ids = readRaw.split(separator: ",").map(String.init).filter { $0 != id }
+        ids.append(id)
+        readRaw = ids.suffix(400).joined(separator: ",")
+    }
+
+    /// 点开一张：今天这批里有就直接开；「留过言的」可能是往期的，先把那天翻出来再开
+    private func open(_ card: WindowCard) {
+        markRead(card.id)
+        if store.cards.contains(where: { $0.id == card.id }) {
+            opened = card
+            return
+        }
+        Task {
+            await store.load(day: card.day)
+            if let i = store.cards.firstIndex(where: { $0.id == card.id }) {
+                page = i
+                opened = store.cards[i]
+            }
+        }
+    }
+
+    private static func cn(_ n: Int) -> String {
+        let d = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        if n < 10 { return d[max(0, n)] }
+        if n < 20 { return "十" + (n % 10 == 0 ? "" : d[n % 10]) }
+        if n < 100 { return d[n / 10] + "十" + (n % 10 == 0 ? "" : d[n % 10]) }
+        return "\(n)"
+    }
+
+    /// 九月廿七
+    private func cnDay(_ day: String) -> String {
+        let p = day.split(separator: "-")
+        guard p.count == 3, let m = Int(p[1]), let d = Int(p[2]) else { return day }
+        let month = Self.cn(m) + "月"
+        let date: String
+        switch d {
+        case 20: date = "二十"
+        case 21...29: date = "廿" + Self.cn(d - 20)
+        case 30: date = "三十"
+        case 31: date = "卅一"
+        default: date = Self.cn(d)
+        }
+        return month + date
+    }
+
+    private var dateline: some View {
+        HStack {
+            Text(store.day.isEmpty ? "" : "\(cnDay(store.day)) · 今天\(Self.cn(store.cards.count))幅")
+                .font(WindowFont.swiftUI(12)).tracking(1.5).foregroundColor(paper.inkSoft)
+            Spacer()
+            HStack(spacing: 0) {
+                modeButton("一幅一屏", on: !gridMode) { gridMode = false }
+                modeButton("目录", on: gridMode) { gridMode = true }
+            }
+            .overlay(Capsule().stroke(paper.rule, lineWidth: 1))
+            .clipShape(Capsule())
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 4)
+        .padding(.bottom, 10)
+    }
+
+    private func modeButton(_ title: String, on: Bool, action: @escaping () -> Void) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.3)) { action() }
+        } label: {
+            Text(title).font(WindowFont.swiftUI(11))
+                .padding(.horizontal, 10).padding(.vertical, 4)
+                .foregroundColor(on ? paper.paper : paper.inkSoft)
+                .background(on ? paper.ink : Color.clear)
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 大图下面一排小图：现在这张红框圈着，点哪张跳哪张
+    private var thumbStrip: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(Array(store.cards.enumerated()), id: \.element.id) { i, c in
+                        CachedPhaseImage(url: c.thumbURL) { phase in
+                            switch phase {
+                            case .success(let image): image.resizable().aspectRatio(contentMode: .fill)
+                            default: paper.paperDeep
+                            }
+                        }
+                        .frame(width: 30, height: 30)
+                        .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                        .opacity(i == page ? 1 : 0.55)
+                        .padding(3)
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(paper.rubric, lineWidth: i == page ? 1.5 : 0))
+                        .id(i)
+                        .onTapGesture { withAnimation(.easeInOut(duration: 0.35)) { page = i } }
+                    }
+                }
+                .padding(.horizontal, 20)
+                .frame(minWidth: UIScreen.main.bounds.width)
+            }
+            .onChange(of: page) { _, p in
+                withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo(p, anchor: .center) }
+            }
+        }
+        .padding(.top, 2)
+        .padding(.bottom, 6)
+    }
+
+    // ── 目录 ──
+    private var catalog: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 22) {
+                tabButton("今天", 0)
+                tabButton("往期", 1)
+                tabButton("我们留过言的", 2)
+                Spacer()
+            }
+            .padding(.horizontal, 22)
+            .overlay(alignment: .bottom) { Rectangle().fill(paper.rule).frame(height: 0.6) }
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    switch tab {
+                    case 1: pastDays
+                    case 2:
+                        if commented.isEmpty {
+                            Text("还没有留过言的画").font(WindowFont.swiftUI(14)).foregroundColor(paper.inkSoft)
+                                .frame(maxWidth: .infinity).padding(.top, 60)
+                        } else {
+                            masonry(commented).padding(.top, 16)
+                        }
+                    default:
+                        todayLead
+                        masonry(store.cards)
+                    }
+                }
+                .padding(.bottom, max(safeBottom, 10) + 20)
+            }
+        }
+        .task(id: tab) {
+            if tab == 1 { await store.loadDays() }
+            if tab == 2 { await loadCommented() }
+        }
+    }
+
+    private func tabButton(_ title: String, _ i: Int) -> some View {
+        Button {
+            withAnimation(.easeInOut(duration: 0.25)) { tab = i }
+        } label: {
+            Text(title).font(WindowFont.swiftUI(14))
+                .foregroundColor(tab == i ? paper.ink : paper.inkSoft)
+                .padding(.vertical, 9)
+                .overlay(alignment: .bottom) {
+                    Rectangle().fill(paper.rubric).frame(height: 2).opacity(tab == i ? 1 : 0)
+                }
+        }
+        .buttonStyle(.plain)
+    }
+
+    private var todayLead: some View {
+        let isLatest = store.days.first.map { $0.day == store.day } ?? true
+        var kinds: [(String, Int)] = []
+        for c in store.cards {
+            if let i = kinds.firstIndex(where: { $0.0 == c.categoryZh }) { kinds[i].1 += 1 } else { kinds.append((c.categoryZh, 1)) }
+        }
+        let summary = kinds.map { "\($0.0)\(Self.cn($0.1))幅" }.joined(separator: " · ")
+        let read = store.cards.filter { readIDs.contains($0.id) }.count
+        let his = store.cards.reduce(0) { $0 + $1.comments.filter { $0.author == "陈璟" }.count }
+        var note = "你读过\(Self.cn(read))幅"
+        if his > 0 { note += "，他留了\(Self.cn(his))句话" }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("\(isLatest ? "今天" : cnDay(store.day))，世界送来\(Self.cn(store.cards.count))幅。")
+                .font(WindowFont.swiftUI(26, bold: true)).tracking(1)
+            Text(summary).font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft).lineSpacing(5)
+            Text(note + "。").font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft)
+        }
+        .padding(.horizontal, 22).padding(.top, 18).padding(.bottom, 16)
+    }
+
+    /// 两列错落：高矮按图本身的比例来（拿不到就按位置错开）
+    private func masonry(_ cards: [WindowCard]) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(spacing: 12) {
+                ForEach(Array(cards.enumerated()).filter { $0.offset % 2 == 0 }, id: \.element.id) { i, c in tile(c, i) }
+            }
+            VStack(spacing: 12) {
+                ForEach(Array(cards.enumerated()).filter { $0.offset % 2 == 1 }, id: \.element.id) { i, c in tile(c, i) }
+            }
+        }
+        .padding(.horizontal, 16)
+    }
+
+    private func tile(_ c: WindowCard, _ i: Int) -> some View {
+        let fallback: [CGFloat] = [1.2, 0.9, 1.05, 1.3, 0.95, 1.15, 1.0, 0.85, 1.25]
+        let ratio: CGFloat = (c.width > 0 && c.height > 0)
+            ? min(1.45, max(0.75, CGFloat(c.height) / CGFloat(c.width)))
+            : fallback[i % fallback.count]
+        return Color.clear
+            .aspectRatio(1 / ratio, contentMode: .fit)
+            .overlay {
+                CachedPhaseImage(url: c.thumbURL ?? c.imageURL) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().aspectRatio(contentMode: .fill)
+                    default: paper.paperDeep
+                    }
+                }
+            }
+            .overlay {
+                LinearGradient(stops: [.init(color: .clear, location: 0.4), .init(color: .black.opacity(0.62), location: 1)],
+                               startPoint: .top, endPoint: .bottom)
+            }
+            .overlay(alignment: .bottomLeading) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("\(c.number) · \(c.categoryZh)")
+                        .font(WindowFont.smallCaps(9)).tracking(2).opacity(0.85)
+                    Text(c.displayTitle).font(WindowFont.swiftUI(15, bold: true)).lineLimit(2)
+                }
+                .foregroundColor(.white)
+                .padding(.horizontal, 12).padding(.bottom, 11)
+            }
+            .overlay(alignment: .topLeading) {
+                if readIDs.contains(c.id) {
+                    Text("读过").font(.system(size: 9)).foregroundColor(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 1.5)
+                        .overlay(Capsule().stroke(.white.opacity(0.7), lineWidth: 1))
+                        .padding(10)
+                }
+            }
+            .overlay(alignment: .topTrailing) {
+                if !c.comments.isEmpty {
+                    HStack(spacing: 3) {
+                        Image(systemName: "text.bubble").font(.system(size: 9))
+                        Text("\(c.comments.count)").font(.system(size: 10))
+                    }
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 7).padding(.vertical, 2)
+                    .background(Capsule().fill(.black.opacity(0.35)))
+                    .padding(10)
+                }
+            }
+            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .matchedTransitionSource(id: c.id, in: zoomNS)
+            .onTapGesture { open(c) }
+    }
+
+    private var pastDays: some View {
+        VStack(spacing: 0) {
+            ForEach(store.days) { d in
+                Button {
+                    page = 0
+                    Task {
+                        await store.load(day: d.day)
+                        withAnimation(.easeInOut(duration: 0.25)) { tab = 0 }
+                    }
+                } label: {
+                    HStack {
+                        Text(cnDay(d.day)).font(WindowFont.swiftUI(16)).foregroundColor(paper.ink)
+                        Text(dayText(d.day)).font(WindowFont.smallCaps(10)).tracking(1.5).foregroundColor(paper.inkSoft)
+                        Spacer()
+                        Text("\(d.count) 幅").font(WindowFont.swiftUI(13)).foregroundColor(paper.inkSoft)
+                        if d.day == store.day { Image(systemName: "bookmark.fill").foregroundColor(paper.rubric) }
+                    }
+                    .padding(.horizontal, 22).padding(.vertical, 14)
+                    .overlay(alignment: .bottom) { Rectangle().fill(paper.rule).frame(height: 0.6).padding(.horizontal, 22) }
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    private func loadCommented() async {
+        guard let d = try? await NativeHouseAPI.object("/api/window/commented") else { return }
+        commented = (d["cards"] as? [[String: Any]] ?? []).compactMap(WindowCard.init(json:))
     }
 
     /// 页脚：像书的页码

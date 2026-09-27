@@ -43,6 +43,8 @@ private struct BrainStatus {
     var stations: [BrainStation] = []
     var patrolAgo = ""
     var snapshot = ""
+    var daily: [Int] = []       // 0927 大厅那条起伏线：近 14 天每天新增几条
+    var week = 0
 
     init() {}
 
@@ -69,7 +71,11 @@ private struct BrainStatus {
         }
         patrolAgo = b.object("patrol").string("ago")
         snapshot = b.string("snapshot")
+        daily = b.array("daily").map { $0.int("n") }
+        week = b.int("week")
     }
+
+    var total: Int { counts.first { $0.0 == "记事" }?.1 ?? 0 }
 }
 
 private struct BrainThread: Identifiable {
@@ -140,6 +146,11 @@ private struct QueueItem: Identifiable {
 
 // MARK: - 页面
 
+// 0927 她挑的效果图：不忘先是一间大厅——大数字、起伏线、三组小入口；
+// 「记忆」进原来那页列表，「五条线」是一排文件夹，「带图的」只看图片记忆，
+// 今天的脑子 / 夜里那趟 / 巡逻 / 快照 点开是同一张运转面板。
+private enum BrainPage { case hub, memories, threads, volumes }
+
 struct NativeBrainView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -155,55 +166,354 @@ struct NativeBrainView: View {
     @State private var showBrain = true
     @State private var showQueue = false
     @State private var opened: BrainMemory?
-    @State private var showVolumes = false
+    @State private var page: BrainPage = .hub
+    @State private var imagesOnly = false
+    @State private var backToThreads = false
+    @State private var showBrainSheet = false
+    @State private var shownTotal = 0
+    @State private var drawn: CGFloat = 0
+    @State private var lifted: String?
 
     private var palette: GlassPalette { .named(themeName) }
+
+    private var pageTitle: String {
+        switch page {
+        case .hub: return "不忘"
+        case .threads: return threads.count == 5 ? "五条线" : "\(threads.count) 条线"
+        case .volumes: return "叙事卷"
+        case .memories: return imagesOnly ? "带图的" : (picked == "全部" ? "记忆" : picked)
+        }
+    }
 
     var body: some View {
         ZStack {
             GlassBackdrop(palette: palette)
             VStack(spacing: 0) {
-                GlassHeader(title: showVolumes ? "叙事卷" : "不忘", palette: palette, onBack: { dismiss() },
-                            switchTitle: showVolumes ? "不忘" : "叙事卷",
-                            onSwitch: { showVolumes.toggle() }, trailing: showVolumes ? nil : AnyView(queueButton))
-                if showVolumes {
+                GlassHeader(title: pageTitle, palette: palette, onBack: goBack,
+                            trailing: page == .hub || page == .memories ? AnyView(queueButton) : nil)
+                switch page {
+                case .hub:
+                    hub
+                case .threads:
+                    threadFolders
+                case .volumes:
                     NarrativeVolumesView(palette: palette)
-                } else if loading && items.isEmpty {
-                    Spacer()
-                    ProgressView().tint(palette.ink3)
-                    Spacer()
-                } else {
-                    ScrollView {
-                        LazyVStack(spacing: 12) {
-                            brainCard
-                            threadStrip
-                            searchBar
-                            filterBar
-                            ForEach(items) { m in
-                                memoryCard(m).onTapGesture { opened = m }
-                            }
-                            if items.count < total {
-                                Button {
-                                    Task { await loadMore() }
-                                } label: {
-                                    Text("再翻 30 条（还有 \(total - items.count) 条）")
-                                        .font(.system(size: 12))
-                                        .foregroundColor(palette.ink3)
-                                        .frame(maxWidth: .infinity)
-                                        .padding(.vertical, 12)
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.bottom, 30)
-                    }
+                case .memories:
+                    memoryList
                 }
             }
         }
         .task { await reload() }
         .sheet(isPresented: $showQueue) { QueueSheet(palette: palette) }
         .sheet(item: $opened) { m in MemorySheet(palette: palette, memory: m) }
+        .sheet(isPresented: $showBrainSheet) { brainSheet }
+    }
+
+    private func goBack() {
+        withAnimation(.easeInOut(duration: 0.25)) {
+            switch page {
+            case .hub: dismiss()
+            case .memories: page = backToThreads ? .threads : .hub
+            default: page = .hub
+            }
+        }
+    }
+
+    private func openMemories(thread: String? = nil, images: Bool = false, fromThreads: Bool = false) {
+        picked = thread ?? "全部"
+        imagesOnly = images
+        keyword = ""
+        backToThreads = fromThreads
+        items = []
+        withAnimation(.easeInOut(duration: 0.25)) { page = .memories }
+        Task { await reloadList() }
+    }
+
+    // ── 记忆列表（原来那一页，去掉了挪进大厅的「今天的脑子」和五条线横条） ──
+    private var memoryList: some View {
+        Group {
+            if loading && items.isEmpty {
+                VStack { Spacer(); ProgressView().tint(palette.ink3); Spacer() }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 12) {
+                        searchBar
+                        if !imagesOnly { filterBar }
+                        if items.isEmpty {
+                            Text("这里还没有记忆").font(.system(size: 12)).foregroundColor(palette.ink3).padding(30)
+                        }
+                        ForEach(items) { m in
+                            memoryCard(m).onTapGesture { opened = m }
+                        }
+                        if items.count < total {
+                            Button {
+                                Task { await loadMore() }
+                            } label: {
+                                Text("再翻 30 条（还有 \(total - items.count) 条）")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(palette.ink3)
+                                    .frame(maxWidth: .infinity)
+                                    .padding(.vertical, 12)
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 30)
+                }
+            }
+        }
+    }
+
+    // ── 大厅 ──
+    private var hub: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(spacing: 0) {
+                VStack(spacing: 0) {
+                    Text("\(shownTotal)")
+                        .font(.system(size: 60, weight: .bold, design: .serif))
+                        .foregroundColor(palette.ink)
+                        .contentTransition(.numericText())
+                    Text("条记忆醒着")
+                        .font(.system(size: 13)).tracking(2)
+                        .foregroundColor(palette.ink3)
+                }
+                .padding(.top, 10)
+                if status.daily.count > 1 {
+                    ZStack {
+                        BrainSpark(values: status.daily)
+                            .trim(from: 0, to: drawn)
+                            .stroke(palette.acc.opacity(0.7), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
+                        BrainSparkDot(values: status.daily, progress: drawn)
+                            .fill(palette.acc)
+                    }
+                    .frame(height: 50)
+                    .padding(.horizontal, 30)
+                    .padding(.top, 10)
+                }
+                HStack(spacing: 5) {
+                    Text("上次召回 \(status.recallAgo.isEmpty ? "—" : status.recallAgo) · 本周 +\(status.week)")
+                        .foregroundColor(palette.ink2)
+                    if status.pendingEmotion + status.pendingFact > 0 {
+                        Text("· \(status.pendingEmotion + status.pendingFact) 条等我点头")
+                            .fontWeight(.semibold)
+                            .foregroundColor(palette.gold)
+                    }
+                }
+                .font(.system(size: 12))
+                .padding(.top, 6)
+
+                section("翻 看")
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    hubCard("brain", "记忆", "一条条找、看") { openMemories() }
+                    hubCard("slider.horizontal.3", pageTitleFor(.threads), "按线分开看") {
+                        withAnimation(.easeInOut(duration: 0.25)) { page = .threads }
+                    }
+                    hubCard("books.vertical", "叙事卷", "写成卷的故事") {
+                        withAnimation(.easeInOut(duration: 0.25)) { page = .volumes }
+                    }
+                    hubCard("photo", "带图的", "有小图的记忆") { openMemories(images: true) }
+                }
+                .padding(.horizontal, 16)
+
+                section("脑 子 在 转")
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 10), GridItem(.flexible(), spacing: 10)], spacing: 10) {
+                    let alive = status.timers.filter { $0.alive }.count
+                    hubCard("clock", "今天的脑子", status.timers.isEmpty ? "—" : "\(alive)/\(status.timers.count) 个钟在走",
+                            dot: alive > 0) { showBrainSheet = true }
+                    hubCard("moon", "夜里那趟", status.nightlyAgo.isEmpty ? "还没跑过" : "\(status.stations.count) 站 · \(status.nightlyAgo)") {
+                        showBrainSheet = true
+                    }
+                    hubCard("scope", "巡逻", status.patrolAgo.isEmpty ? "—" : "\(status.patrolAgo)走过",
+                            dot: !status.patrolAgo.isEmpty) { showBrainSheet = true }
+                    hubCard("camera", "快照", status.snapshot.isEmpty ? "—" : status.snapshot) { showBrainSheet = true }
+                }
+                .padding(.horizontal, 16)
+
+                section("等 我 点 头")
+                let pending = status.pendingEmotion + status.pendingFact
+                hubCard("tray.full", "审核",
+                        pending > 0 ? "情绪 \(status.pendingEmotion) · 事实 \(status.pendingFact)，等你看过再收进去" : "现在没有要审的",
+                        badge: pending) { showQueue = true }
+                    .padding(.horizontal, 16)
+            }
+            .padding(.bottom, 30)
+        }
+        .onAppear { animateHub() }
+        .onChange(of: status.total) { _, _ in animateHub() }
+    }
+
+    private func pageTitleFor(_ p: BrainPage) -> String {
+        p == .threads ? (threads.count == 5 || threads.isEmpty ? "五条线" : "\(threads.count) 条线") : ""
+    }
+
+    /// 进门时大数字滚上去、起伏线从左往右画出来
+    private func animateHub() {
+        guard status.total > 0 else { return }
+        drawn = 0
+        withAnimation(.easeOut(duration: 1.0)) { shownTotal = status.total }
+        withAnimation(.easeInOut(duration: 1.3).delay(0.15)) { drawn = 1 }
+    }
+
+    private func section(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11))
+            .foregroundColor(palette.ink3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 22)
+            .padding(.top, 18).padding(.bottom, 8)
+    }
+
+    private func hubCard(_ icon: String, _ title: String, _ sub: String, dot: Bool = false, badge: Int = 0,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                Image(systemName: icon)
+                    .font(.system(size: 16, weight: .light))
+                    .foregroundColor(palette.acc)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 11, style: .continuous).fill(palette.acc.opacity(0.09)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.system(size: 14, weight: .semibold, design: .serif))
+                        .foregroundColor(palette.ink)
+                    Text(sub)
+                        .font(.system(size: 10))
+                        .foregroundColor(palette.ink3)
+                        .lineLimit(1)
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .glassCard(palette, radius: 18)
+            .overlay(alignment: .topTrailing) {
+                if badge > 0 {
+                    Text("\(badge)")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Capsule().fill(palette.gold))
+                        .padding(9)
+                } else if dot {
+                    BrainBreathingDot(color: palette.acc).padding(11)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // ── 运转面板（今天的脑子 / 夜里那趟 / 巡逻 / 快照） ──
+    private var brainSheet: some View {
+        ZStack {
+            GlassBackdrop(palette: palette)
+            VStack(spacing: 0) {
+                GlassHeader(title: "今天的脑子", palette: palette, onBack: { showBrainSheet = false })
+                ScrollView {
+                    VStack(spacing: 12) {
+                        brainCard
+                        if !status.stations.isEmpty {
+                            VStack(alignment: .leading, spacing: 8) {
+                                Text("夜里那趟 · \(status.nightlyAgo)")
+                                    .font(.system(size: 13, weight: .medium, design: .serif))
+                                    .foregroundColor(palette.ink)
+                                ForEach(status.stations) { st in
+                                    HStack(spacing: 8) {
+                                        Circle().fill(st.ok ? palette.acc : palette.gold).frame(width: 5, height: 5)
+                                        Text(st.name).font(.system(size: 12)).foregroundColor(palette.ink2)
+                                        Spacer(minLength: 0)
+                                        Text(st.ok ? "顺利" : "出错").font(.system(size: 10)).foregroundColor(palette.ink3)
+                                    }
+                                }
+                            }
+                            .padding(14)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .glassCard(palette)
+                        }
+                    }
+                    .padding(.horizontal, 16).padding(.bottom, 30)
+                }
+            }
+        }
+        .onAppear { showBrain = true }
+    }
+
+    // ── 五条线：一排文件夹，口上露出点小东西；点开只看这个抽屉 ──
+    private var threadFolders: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("five threads of us")
+                        .font(.system(size: 17, design: .serif)).italic()
+                        .foregroundColor(palette.ink2)
+                    Text("一共 \(status.total) 条 · 本周 +\(status.week)\(status.newestAgo.isEmpty ? "" : " · 最新一条 " + status.newestAgo)")
+                        .font(.system(size: 12))
+                        .foregroundColor(palette.ink3)
+                }
+                .padding(.horizontal, 24).padding(.top, 6)
+                LazyVGrid(columns: [GridItem(.flexible(), spacing: 14), GridItem(.flexible(), spacing: 14)], spacing: 18) {
+                    ForEach(Array(threads.enumerated()), id: \.element.id) { i, t in
+                        folder(t, i)
+                            .padding(.top, i % 2 == 1 ? 40 : 0)
+                    }
+                }
+                .padding(.horizontal, 16).padding(.top, 40)
+            }
+            .padding(.bottom, 40)
+        }
+    }
+
+    private func folder(_ t: BrainThread, _ i: Int) -> some View {
+        let icons = ["bubble.left", "camera", "mappin.and.ellipse", "key", "sparkle", "leaf"]
+        let up = lifted == t.id
+        return Button {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.7)) { lifted = t.id }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.32) {
+                lifted = nil
+                openMemories(thread: t.thread, fromThreads: true)
+            }
+        } label: {
+            ZStack(alignment: .bottom) {
+                // 后片＋文件夹的小耳朵
+                RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(palette.glass.opacity(0.7))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(palette.line, lineWidth: 1))
+                    .overlay(alignment: .topLeading) {
+                        UnevenRoundedRectangle(topLeadingRadius: 8, topTrailingRadius: 8, style: .continuous)
+                            .fill(palette.glass.opacity(0.7))
+                            .frame(width: 62, height: 12)
+                            .offset(x: 14, y: -10)
+                    }
+                // 口上露出来的小东西，点的时候往上抽一截
+                BrainFolderTrinket(kind: i % 6, palette: palette)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+                    .offset(y: up ? -64 : -34)
+                // 前片
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(t.thread)
+                        .font(.system(size: 19, weight: .bold, design: .serif))
+                        .foregroundColor(palette.ink)
+                        .lineLimit(1).minimumScaleFactor(0.7)
+                    Text("\(t.count) 条 · \(t.newestAgo)")
+                        .font(.system(size: 11))
+                        .foregroundColor(palette.ink3)
+                    Spacer(minLength: 0)
+                    HStack {
+                        Spacer()
+                        Image(systemName: icons[i % icons.count])
+                            .font(.system(size: 15, weight: .light))
+                            .foregroundColor(palette.ink2)
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .frame(height: 112)
+                .glassCard(palette, radius: 14)
+            }
+            .frame(height: 150)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private var queueButton: some View {
@@ -490,6 +800,7 @@ struct NativeBrainView: View {
            let e = keyword.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) {
             p += "&q=" + e
         }
+        if imagesOnly { p += "&source=image" }
         return p
     }
 
@@ -509,6 +820,151 @@ struct NativeBrainView: View {
         let raw = (try? await NativeHouseAPI.object(listPath(offset: items.count))) ?? [:]
         let more = raw.array("items").map { BrainMemory($0) }
         await MainActor.run { items.append(contentsOf: more) }
+    }
+}
+
+// MARK: - 大厅的小零件
+
+/// 近 14 天每天新增几条，画成一条软的线
+private struct BrainSpark: Shape {
+    let values: [Int]
+
+    static func points(_ values: [Int], in rect: CGRect) -> [CGPoint] {
+        guard values.count > 1 else { return [] }
+        let hi = CGFloat(max(values.max() ?? 1, 1))
+        let step = rect.width / CGFloat(values.count - 1)
+        return values.enumerated().map { i, v in
+            CGPoint(x: rect.minX + CGFloat(i) * step,
+                    y: rect.maxY - 4 - (rect.height - 8) * CGFloat(v) / hi)
+        }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let pts = Self.points(values, in: rect)
+        var p = Path()
+        guard let first = pts.first else { return p }
+        p.move(to: first)
+        for i in 1..<pts.count {
+            let a = pts[i - 1], b = pts[i]
+            let mid = CGPoint(x: (a.x + b.x) / 2, y: (a.y + b.y) / 2)
+            p.addQuadCurve(to: mid, control: a)
+            if i == pts.count - 1 { p.addQuadCurve(to: b, control: b) }
+        }
+        return p
+    }
+}
+
+/// 线头上那颗点，跟着线画到哪就在哪
+private struct BrainSparkDot: Shape {
+    let values: [Int]
+    var progress: CGFloat
+    var animatableData: CGFloat {
+        get { progress }
+        set { progress = newValue }
+    }
+
+    func path(in rect: CGRect) -> Path {
+        let pts = BrainSpark.points(values, in: rect)
+        guard progress > 0.98, let last = pts.last else { return Path() }
+        return Path(ellipseIn: CGRect(x: last.x - 3.5, y: last.y - 3.5, width: 7, height: 7))
+    }
+}
+
+/// 正在跑的那几张卡角上的小蓝点，一呼一吸
+private struct BrainBreathingDot: View {
+    let color: Color
+    @State private var on = false
+
+    var body: some View {
+        Circle()
+            .fill(color)
+            .frame(width: 6, height: 6)
+            .background(Circle().fill(color.opacity(0.25)).scaleEffect(on ? 2.4 : 1))
+            .onAppear {
+                withAnimation(.easeInOut(duration: 1.4).repeatForever(autoreverses: true)) { on = true }
+            }
+    }
+}
+
+/// 文件夹口上露出来的小东西：纸条、照片、票根、星星、月亮、小花，按顺序轮着配
+private struct BrainFolderTrinket: View {
+    let kind: Int
+    let palette: GlassPalette
+    private let paper = Color(red: 1, green: 0.992, blue: 0.972)
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            switch kind {
+            case 0:
+                note(width: 70, height: 50).rotationEffect(.degrees(-8)).offset(x: 16, y: 0)
+                Image(systemName: "heart.circle.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(Color(red: 0.95, green: 0.78, blue: 0.81), Color(red: 0.69, green: 0.34, blue: 0.42))
+                    .rotationEffect(.degrees(10)).offset(x: 80, y: -6)
+            case 1:
+                photo(Color(red: 0.86, green: 0.83, blue: 0.94)).rotationEffect(.degrees(-6)).offset(x: 22, y: -8)
+                photo(Color(red: 0.79, green: 0.85, blue: 0.94)).rotationEffect(.degrees(7)).offset(x: 64, y: -4)
+            case 2:
+                Text("NO.27 ✈")
+                    .font(.system(size: 9, design: .serif)).tracking(1)
+                    .foregroundColor(Color(red: 0.36, green: 0.52, blue: 0.39))
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                    .frame(width: 96, height: 44, alignment: .topLeading)
+                    .background(RoundedRectangle(cornerRadius: 4).fill(Color(red: 0.85, green: 0.93, blue: 0.85)))
+                    .shadow(color: .black.opacity(0.12), radius: 3, y: 2)
+                    .rotationEffect(.degrees(-5)).offset(x: 12, y: 4)
+                Image(systemName: "mappin")
+                    .font(.system(size: 28, weight: .bold))
+                    .foregroundColor(Color(red: 0.9, green: 0.6, blue: 0.57))
+                    .offset(x: 100, y: 0)
+            case 3:
+                Image(systemName: "star.fill")
+                    .font(.system(size: 34))
+                    .foregroundStyle(LinearGradient(colors: [Color(red: 0.96, green: 0.89, blue: 0.65), Color(red: 0.83, green: 0.70, blue: 0.37)],
+                                                    startPoint: .topLeading, endPoint: .bottomTrailing))
+                    .offset(x: 14, y: 8)
+                note(width: 52, height: 62).rotationEffect(.degrees(12)).offset(x: 60, y: -12)
+            case 4:
+                Image(systemName: "moon.fill")
+                    .font(.system(size: 40))
+                    .foregroundColor(Color(red: 0.96, green: 0.93, blue: 0.82))
+                    .rotationEffect(.degrees(-20)).offset(x: 20, y: -8)
+                Image(systemName: "sparkle")
+                    .font(.system(size: 16))
+                    .foregroundColor(.white)
+                    .shadow(color: .white, radius: 4)
+                    .offset(x: 80, y: 12)
+            default:
+                Image(systemName: "camera.macro")
+                    .font(.system(size: 36))
+                    .foregroundColor(Color(red: 0.91, green: 0.68, blue: 0.74))
+                    .offset(x: 46, y: -10)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+
+    private func note(width: CGFloat, height: CGFloat) -> some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(paper)
+            .frame(width: width, height: height)
+            .overlay(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Capsule().fill(Color(red: 0.56, green: 0.70, blue: 0.64)).frame(width: width * 0.6, height: 2)
+                    Capsule().fill(Color(red: 0.56, green: 0.70, blue: 0.64)).frame(width: width * 0.4, height: 2)
+                }
+                .padding(9)
+            }
+            .shadow(color: .black.opacity(0.12), radius: 3, y: 2)
+    }
+
+    private func photo(_ fill: Color) -> some View {
+        RoundedRectangle(cornerRadius: 3)
+            .fill(fill)
+            .frame(width: 44, height: 56)
+            .padding(5)
+            .background(RoundedRectangle(cornerRadius: 4).fill(Color.white))
+            .shadow(color: .black.opacity(0.12), radius: 3, y: 2)
     }
 }
 
