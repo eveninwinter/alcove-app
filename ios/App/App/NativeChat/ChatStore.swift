@@ -128,7 +128,8 @@ final class ChatStore: ObservableObject {
 
     private func refreshTypingLine() {
         if let tool = currentTool {
-            typingLine = Self.toolLine(tool)
+            let line = Self.toolLine(tool)
+            if typingLine != line { typingLine = line }
             typingLineTs = Date()
         } else if Date().timeIntervalSince(typingLineTs) > 8 {
             var next = Self.typingLines.randomElement()!
@@ -157,6 +158,7 @@ final class ChatStore: ObservableObject {
     }
 
     private var lastTs: String?
+    private var lastApiPartial = ""   // 0927：API 半截话上次画到哪，没变就不重画
     private var pollTask: Task<Void, Never>?
     private var liveTask: Task<Void, Never>?
     private var lastModelPoll = Date.distantPast
@@ -373,20 +375,43 @@ final class ChatStore: ObservableObject {
         live = nil
     }
 
-    // 0919 三个房间：换到另一间。老的全清掉，从头拉那间最近 300 条
+    /// 0927 任务#2985：切房间换完记录 +1，聊天页拿它无动画滚一次到底
+    @Published var roomSwitchTick = 0
+    /// 切房间换记录的那一小会儿：聊天页别再按「条数变了」去带动画滚
+    private(set) var switchingRoom = false
+
+    // 0919 三个房间：换到另一间，拉那间最近 300 条整批换上
     func switchRoom(_ target: String) {
         guard target != room else { return }
         AlcoveAPI.chatRoom = target
         room = target
         apiLive = nil
+        lastApiPartial = ""
         liveBubbleBase = nil
-        messages = []
         lastTs = nil
         hasOlder = true
-        loading = true
         temporarilyHiddenTextTs.removeAll()
         temporarilyHiddenPhotoTs.removeAll()
-        Task { await initialLoad() }
+        // 0927 她报的「切房间先跳到顶再滑到底、很卡」：原来这里先清空 + loading=true，聊天页整个列表被拆掉换成转圈，
+        // 载完再新建一个列表——新列表从最顶上开始，再连着滚七八次到底。现在列表不拆，记录载好整批换上，滚一次。
+        switchingRoom = true
+        Task {
+            do {
+                let recs = try await AlcoveAPI.history(limit: 300)
+                guard room == target else { return }
+                messages = recs
+                lastTs = recs.last?.ts
+                isViewingHistory = false
+                if connectionError { connectionError = false }
+            } catch {
+                guard room == target else { return }
+                messages = []
+                connectionError = true
+            }
+            roomSwitchTick += 1
+            try? await Task.sleep(nanoseconds: 800_000_000)
+            if room == target { switchingRoom = false }
+        }
     }
 
     // 前后台切换后强制刷新
@@ -711,23 +736,34 @@ final class ChatStore: ObservableObject {
             // 跳过去，上次轮询之后才落库或刚放行的（他 curl 的东西收轮才放，时间戳还是旧的）就再也问不到，
             // 只有退出重进才补得回来。她自己那条下一轮轮询会再回来，appendNew 按 ts + role 认出来，不会多一条。
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
-            currentTool = r.currentTool
-            isTyping = r.isTyping || Date() < optimisticUntil
+            // 0927 任务#2986 她报的「主聊天滑动一卡一卡」：@Published 只要赋值就通知整页重算，值没变也算。
+            // 这里每次轮询（闲 8 秒 / 忙 2.5 秒 / API 流式 1 秒）原来都照写一遍，整张聊天表（几百条）跟着重算一回。
+            // 下面一律「真变了才写」。
+            var tool = r.currentTool
+            let typing = r.isTyping || Date() < optimisticUntil
+            if isTyping != typing { isTyping = typing }
             if room == "api", r.isTyping, let p = r.apiPartial {
                 let say = p["say"] as? String ?? ""
                 let thought = [p["thinking"] as? String ?? "", p["native_thinking"] as? String ?? ""]
                     .filter { !$0.isEmpty }.joined(separator: "\n\n")
                 // 0926 她要的：正文直接画在正式那种气泡里；还没开口只在想的时候才用那条「思考中」的实时行
-                showLiveBubbles(say, thinking: thought)
+                // 0927：半截话没长就别重画（原来每秒整批拆了重排一次临时气泡）
+                let key = say + "\u{1f}" + thought
+                if key != lastApiPartial {
+                    lastApiPartial = key
+                    showLiveBubbles(say, thinking: thought)
+                }
                 var s = AlcoveAPI.LiveState(active: true, turnID: "api-live")
                 if say.isEmpty { s.thinking = thought }
-                apiLive = s
-                let tool = p["tool"] as? String ?? ""
-                currentTool = tool.isEmpty ? nil : tool   // 他正在用的工具（后端 current_tool 是 tmux 那个他的，这间不认）
+                if apiLive != s { apiLive = s }
+                let t = p["tool"] as? String ?? ""
+                tool = t.isEmpty ? nil : t   // 他正在用的工具（后端 current_tool 是 tmux 那个他的，这间不认）
             } else {
-                apiLive = nil
-                if room == "api" { currentTool = nil; clearLiveBubbles() }
+                if apiLive != nil { apiLive = nil }
+                lastApiPartial = ""
+                if room == "api" { tool = nil; clearLiveBubbles() }
             }
+            if currentTool != tool { currentTool = tool }
             if r.isTyping { optimisticUntil = .distantPast }
             if r.isTyping || Date() < optimisticUntil {
                 idlePollsWhileLive = 0
@@ -743,19 +779,19 @@ final class ChatStore: ObservableObject {
                 idlePollsWhileLive = 0
             }
             if isTyping { refreshTypingLine() }
-            connectionError = false
+            if connectionError { connectionError = false }
             // 0828 心跳降频：模型标签和暂存计数都不是急事，30s 看一眼够了
             if Date().timeIntervalSince(lastModelPoll) > 30 {
                 lastModelPoll = Date()
-                if let label = try? await AlcoveAPI.modelLabel(), !label.isEmpty {
+                if let label = try? await AlcoveAPI.modelLabel(), !label.isEmpty, label != modelLabel {
                     modelLabel = label
                 }
-                if let held = try? await AlcoveAPI.heldCount() {
+                if let held = try? await AlcoveAPI.heldCount(), held != heldCount {
                     heldCount = held
                 }
             }
         } catch {
-            connectionError = true
+            if !connectionError { connectionError = true }
         }
     }
 

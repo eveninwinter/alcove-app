@@ -455,7 +455,11 @@ struct ChatView: View {
                 .onTapGesture { inputFocused = false }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4).onChanged { _ in
-                        if store.live?.active == true { followLiveOutput = false }
+                        // 0927 任务#2982：API 房间的流式不走 store.live（走 apiLive），原来这里认不出来，
+                        // 她往上翻，followLiveOutput 还是 true，每冒一段字就把她拽回底
+                        if store.live?.active == true || store.apiLive != nil || store.isTyping {
+                            followLiveOutput = false
+                        }
                     }
                 )
                 .modifier(EdgeFadeMaskModifier(enabled: !theme.isMessages, mask: edgeFadeMask))   // 信息主题不罩遮罩，别挡系统效果（Kakao 的顶部渐隐在上面单独罩）
@@ -582,8 +586,16 @@ struct ChatView: View {
                 // requested history target. History navigation owns the scroll until
                 // it has centered the target.
                 guard !historyJumpInProgress, !store.isViewingHistory else { return }
+                guard !store.switchingRoom else { return }   // 0927：切房间整批换记录，下面 roomSwitchTick 那条管滚
                 guard shouldFollowTail else { return }
                 scrollToTail(proxy, delays: [0, 0.15, 0.4], animated: true)
+            }
+            .onChange(of: store.roomSwitchTick) { _ in
+                // 0927 任务#2985：切房间记录换好了，无动画直接落到底，只这一处滚
+                atBottom = true
+                followLiveOutput = true
+                // 懒加载列表远处高度是估的，一次落不准；全是无动画的，已经在底了再喊也看不出来
+                scrollToTail(proxy, delays: [0, 0.1, 0.3, 0.6], animated: false)
             }
             .onChange(of: store.loading) { loading in
                 if !loading {
