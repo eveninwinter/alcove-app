@@ -359,7 +359,10 @@ struct ChatView: View {
                         }
                         // 信息主题：输入栏和迷你条都挂在安全区那一栏里，系统自己会推，
                         // 列表这边一点都不用替它们留高
-                        Color.clear.frame(height: (theme.isMessages ? 0 : bottomChromeHeight) + 12
+                        // 0927 她截图：多选时打字框收起、换成底部那条多选栏，信息主题这里原来只留 12，
+                        // 最后一条气泡被栏压住。多选时按栏的高度（54 ＋ 底下 8）留
+                        Color.clear.frame(height: (paragraphSelectionMode ? 54 + 8
+                                                   : (theme.isMessages ? 0 : bottomChromeHeight)) + 12
                                           + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear {
@@ -468,6 +471,13 @@ struct ChatView: View {
                 // 重建发生在这一帧，下一帧再把锚点拉回最新一条。
                 .onChange(of: theme.isMessages) { _ in
                     DispatchQueue.main.async { proxy.scrollTo("tail", anchor: .bottom) }
+                }
+                // 0927：进多选时底下多留了一截给多选栏；本来在最底的话跟着滚下去，最后一条别被栏盖住
+                .onChange(of: paragraphSelectionMode) { on in
+                    guard on, atBottom else { return }
+                    DispatchQueue.main.async {
+                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tail", anchor: .bottom) }
+                    }
                 }
 
                 if paragraphSelectionMode {
@@ -723,7 +733,8 @@ struct ChatView: View {
         .background(.ultraThinMaterial, in: Capsule())
         .overlay(Capsule().stroke(theme.glassBorder, lineWidth: 1))
         .padding(.horizontal, 14)
-        .padding(.bottom, max(safeBottom, 8))
+        // 0927 她说「框太上了」：这一层本来就让着安全区，再垫一个 safeBottom 等于底下空了两截 home 条
+        .padding(.bottom, 8)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottom)
     }
 
