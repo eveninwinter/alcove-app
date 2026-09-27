@@ -9032,34 +9032,56 @@ struct PastelString: View {
 }
 
 /// 念头池：几团晕开的淡水彩，执念大、闪念小，快散的淡
+/// 0927 构建报「表达式太复杂、类型推不出来」（CGFloat 和 Double 混着算）：尺寸、位置全挪进小函数、类型写死
 private struct PastelThoughtPool: View {
     let thoughts: [PulseThought]
     let colors: PastelColors
 
+    private func blobSize(_ t: PulseThought) -> CGFloat {
+        let k: Double = min(1.0, t.strength)
+        let v: Double = t.kind == "fixation" ? 62.0 + k * 34.0 : 30.0 + k * 26.0
+        return CGFloat(v)
+    }
+
+    private func blobCenter(_ i: Int, in size: CGSize) -> CGPoint {
+        let d = Double(i)
+        let fx: Double = 0.14 + 0.72 * DiaryTreeModel.rnd(d * 7.1 + 1.0)
+        let fy: Double = 0.22 + 0.56 * DiaryTreeModel.rnd(d * 3.3 + 2.0)
+        return CGPoint(x: size.width * CGFloat(fx), y: size.height * CGFloat(fy))
+    }
+
+    private func blobTilt(_ i: Int) -> Angle {
+        let r: Double = DiaryTreeModel.rnd(Double(i) * 5.7)
+        return .degrees(r * 16.0 - 8.0)
+    }
+
+    private func blob(_ t: PulseThought) -> some View {
+        let size = blobSize(t)
+        let col: Color = t.kind == "fixation" ? colors.lilac : colors.rose
+        let alpha: Double = 0.28 + min(1.0, t.strength) * 0.3
+        return ZStack {
+            Ellipse().fill(col.opacity(alpha)).blur(radius: 3)
+            Ellipse().stroke(col.opacity(0.6), lineWidth: 1).blur(radius: 0.8)
+            if size > 56 {
+                Text(t.text)
+                    .font(.system(size: 11, design: .serif))
+                    .foregroundColor(colors.ink)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(8)
+            }
+        }
+        .frame(width: size * 1.08, height: size * 0.94)
+    }
+
     var body: some View {
         GeometryReader { geo in
+            let items = Array(thoughts.prefix(7).enumerated())
             ZStack {
-                ForEach(Array(thoughts.prefix(7).enumerated()), id: \.offset) { i, t in
-                    let fix = t.kind == "fixation"
-                    let size = CGFloat(fix ? 62 + min(1, t.strength) * 34 : 30 + min(1, t.strength) * 26)
-                    let col = fix ? colors.lilac : colors.rose
-                    let x = geo.size.width * CGFloat(0.14 + 0.72 * DiaryTreeModel.rnd(Double(i) * 7.1 + 1))
-                    let y = geo.size.height * CGFloat(0.22 + 0.56 * DiaryTreeModel.rnd(Double(i) * 3.3 + 2))
-                    ZStack {
-                        Ellipse().fill(col.opacity(0.28 + min(1, t.strength) * 0.3)).blur(radius: 3)
-                        Ellipse().stroke(col.opacity(0.6), lineWidth: 1).blur(radius: 0.8)
-                        if size > 56 {
-                            Text(t.text)
-                                .font(.system(size: 11, design: .serif))
-                                .foregroundColor(colors.ink)
-                                .multilineTextAlignment(.center)
-                                .lineLimit(3)
-                                .padding(8)
-                        }
-                    }
-                    .frame(width: size * 1.08, height: size * 0.94)
-                    .rotationEffect(.degrees(DiaryTreeModel.rnd(Double(i) * 5.7) * 16 - 8))
-                    .position(x: x, y: y)
+                ForEach(items, id: \.offset) { pair in
+                    blob(pair.element)
+                        .rotationEffect(blobTilt(pair.offset))
+                        .position(blobCenter(pair.offset, in: geo.size))
                 }
             }
         }
