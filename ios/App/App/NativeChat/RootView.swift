@@ -37,7 +37,7 @@ struct RootView: View {
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var windowDark: Bool {
         _ = houseAppearance
-        return AlcoveAppearance.family(of: themeName) == "kakao" ? AlcoveAppearance.isDark : theme.isDark
+        return AlcoveAppearance.isDark   // 0928 她拍板：整个 Alcove 就认一个黑白开关，不看主题
     }
 
     static func applyWindowStyle(dark: Bool) {
@@ -205,7 +205,7 @@ struct RootView: View {
             }
         }
         .onChange(of: themeName) { _ in prewarmPanelTexture() }
-        .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
+        .preferredColorScheme(windowDark ? .dark : .light) // 跟全屋黑白开关走，不跟系统、不看主题（0928）
         // 0928 她报深色主题下相册白底白字：这个 app 的窗口是 AppDelegate 自己搭的，上面那句只管到根页面，
         // 弹出来的 sheet / fullScreenCover 认的是窗口的深浅＝手机系统的，systemBackground 这些系统色全跟手机走。
         // 在窗口上直接钉死，所有弹出页的系统色就都跟 App 主题了。

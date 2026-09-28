@@ -90,7 +90,7 @@ struct NativeAlbumView: View {
             } message: { Text(actionError ?? "") }
         }
         .tint(theme.text)
-        .preferredColorScheme(theme.isDark ? .dark : .light)
+        .preferredColorScheme(AlcoveAppearance.isDark ? .dark : .light)   // 0928：只认全屋黑白开关
     }
 
     private var bottomBar: some View {
