@@ -1899,6 +1899,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
+    @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
@@ -1942,6 +1943,7 @@ private struct BubbleAppearanceSettingsView: View {
             VStack(spacing: 12) {
                 fontSizeSlider
                 bubbleGapSlider
+                turnGapSlider
             }
         case .colors:
             VStack(spacing: 12) {
@@ -1980,6 +1982,7 @@ private struct BubbleAppearanceSettingsView: View {
                     VStack(spacing: 12) {
                         fontSizeSlider
                         bubbleGapSlider
+                        turnGapSlider
                     }
                 }
 
@@ -2149,6 +2152,23 @@ private struct BubbleAppearanceSettingsView: View {
                 .tint(panelTheme.fyAccent)
 
             Text("\(Int(bubbleGap)) pt")
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(panelTheme.textDim)
+                .frame(width: 45, alignment: .trailing)
+        }
+    }
+
+    /// 0929 她要的：他连着两轮挨太近（中间隔不到 15 分钟、没冒时间胶囊）时，两轮之间多留多少。原来写死 22
+    private var turnGapSlider: some View {
+        HStack(spacing: 9) {
+            Text("轮与轮间距")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+
+            Slider(value: $turnGap, in: 0...48, step: 2)
+                .tint(panelTheme.fyAccent)
+
+            Text("\(Int(turnGap)) pt")
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(panelTheme.textDim)
                 .frame(width: 45, alignment: .trailing)

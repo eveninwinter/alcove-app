@@ -97,6 +97,7 @@ struct ChatView: View {
     @AppStorage("chatFontSize") private var chatFontSize = 14
     // 0909 她要的：气泡之间的间距自己调。原来写死 6pt
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
+    @AppStorage("chatTurnGap") private var chatTurnGap = 22.0   // 0929 她要的：他连着两轮之间的空，设置里「轮与轮间距」
     @AppStorage(KakaoPackStore.showAvatarKey) private var listKakaoShowAvatar = true   // 0924 晚：换人那截空隙要知道他那边气泡是不是挪过
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
@@ -1068,7 +1069,7 @@ struct ChatView: View {
                 }
             }
             }
-            .padding(.top, (newSoloTurn ? 22 : 0) + roleGap)
+            .padding(.top, (newSoloTurn ? CGFloat(chatTurnGap) : 0) + roleGap)
             .id(message.id)
         }
     }
