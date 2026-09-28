@@ -3757,7 +3757,17 @@ struct MessageRow: View {
                     //（她打的=user 在右，他打的=assistant 在左），拒绝也照这条走。
                     CallSummaryBubble(info: call, text: msg.displayText, theme: theme)
                 } else if msg.isSticker {
-                    stickerBody
+                    // 0928 她抓的：一串最后一条是表情时 Kakao 的时间没了——时间贴在气泡旁边（kakaoSideMeta），
+                    // 表情原来不挂。照语音条那样两边挂上
+                    HStack(alignment: .bottom, spacing: 0) {
+                        if theme.isKakao && isUser {
+                            kakaoSideMeta.padding(.trailing, 5).fixedSize().frame(width: 0, alignment: .trailing)
+                        }
+                        stickerBody
+                        if theme.isKakao && !isUser {
+                            kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
+                        }
+                    }
                 } else {
                   VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
                     photoBlock
