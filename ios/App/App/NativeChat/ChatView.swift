@@ -1204,6 +1204,7 @@ struct ChatView: View {
         if m.morningPaperDate != nil || m.insideText != nil || m.ghostCard != nil || m.playCard != nil
             || m.favoriteForward != nil || m.readingCard != nil || m.tarotCard != nil || m.tarotOffer != nil
             || m.workCard != nil || m.albumSavedCard != nil || m.buyCard != nil || m.paidCard != nil
+            || m.pondCard != nil || m.memoryCard != nil
             || m.ticketCard != nil || m.choiceCard != nil || m.letterCard != nil || m.journeyCard != nil
             || m.callSummary != nil || m.musicCard != nil { return false }
         if m.isSticker || m.isAudio || m.isBareLink { return false }
@@ -3732,6 +3733,10 @@ struct MessageRow: View {
                     WorkDeliveryMessageCard(card: work, theme: theme)
                 } else if let album = msg.albumSavedCard {
                     AlbumSavedMessageCard(batch: album, theme: theme)
+                } else if let pond = msg.pondCard {
+                    PondChatMessageCard(card: pond)
+                } else if let mem = msg.memoryCard {
+                    MemoryChatMessageCard(card: mem)
                 } else if let buy = msg.buyCard {
                     // 0907 二期审批卡：她要它「跟他的气泡列在一堆」，所以不居中，走左侧
                     BuyApprovalMessageCard(card: buy, theme: theme)
@@ -5525,12 +5530,199 @@ private struct TarotOfferMessageCard: View {
     }
 }
 
+// MARK: - 0929 聊天小卡：Inside 便签 / 檐下 / 不忘
+// 她拍的效果图：/root/workroom/mock/cards3/mint3-day.png。薄荷＋偏紫淡粉＋雾灰，细线蝴蝶结、别针、小星、圆点。
+// 深浅只认全屋黑白开关（AlcoveAppearance），不看主题。黑夜那套她还没看过效果图，先按同样的冷色压暗。
+
+extension Notification.Name {
+    /// object = HouseDestination.rawValue；RootView 收到就打开那间屋子（聊天小卡的跳转按钮用）
+    static let alcoveOpenHouse = Notification.Name("alcoveOpenHouse")
+}
+
+private func cardRGB(_ h: UInt32) -> Color {
+    Color(red: Double((h >> 16) & 0xff) / 255, green: Double((h >> 8) & 0xff) / 255, blue: Double(h & 0xff) / 255)
+}
+
+struct ChatCardInk {
+    let dark: Bool
+    var mint: Color { dark ? cardRGB(0x4FAF90) : cardRGB(0xB4F0DA) }
+    var mintLine: Color { dark ? cardRGB(0x5BBF9F) : cardRGB(0xA9F0D6) }
+    var mintD: Color { dark ? cardRGB(0x6FCFAE) : cardRGB(0x86DCBF) }
+    var mintInk: Color { dark ? cardRGB(0x8FE3C6) : cardRGB(0x4CB892) }
+    var mintShade: Color { dark ? cardRGB(0x2F7A63) : cardRGB(0x6FD6B2) }
+    var pink: Color { dark ? cardRGB(0x463A52) : cardRGB(0xF5DAF1) }
+    var pinkD: Color { dark ? cardRGB(0x7E5F86) : cardRGB(0xE9B9E2) }
+    var pinkInk: Color { dark ? cardRGB(0xF0B3DD) : cardRGB(0xC67DBB) }
+    var loadPink: Color { dark ? cardRGB(0xF2A9D8) : cardRGB(0xCF78B6) }   // 她嫌「正在记住」太浅，挑深
+    var progPink: Color { dark ? cardRGB(0xC98AB6) : cardRGB(0xF6C8E6) }
+    var silver: Color { dark ? cardRGB(0x55535E) : cardRGB(0xC7C6D0) }
+    var silverD: Color { dark ? cardRGB(0x8A8795) : cardRGB(0x9D9BAA) }
+    var ink: Color { dark ? cardRGB(0xE8E4EF) : cardRGB(0x6C6679) }
+    var sub: Color { dark ? cardRGB(0x9A95A8) : cardRGB(0xA29CAF) }
+    var page: Color { dark ? cardRGB(0x2A2930) : .white }
+    var gray1: Color { dark ? cardRGB(0x3A3842) : cardRGB(0xB3B1BA) }
+    var gray2: Color { dark ? cardRGB(0x34323C) : cardRGB(0xC9C6CF) }
+    var gray3: Color { dark ? cardRGB(0x2C2B33) : cardRGB(0xDDD7E0) }
+    var outline: Color { dark ? cardRGB(0x1B1A21) : .white }   // 贴纸外面那圈边
+}
+
+private enum CardScript {
+    static func font(_ size: CGFloat) -> Font { .custom("SnellRoundhand", size: size) }
+}
+
+/// 像素小图：一行一个字符串，字符查颜色表，查不到的留空
+private struct CardPixelArt: View {
+    let rows: [String]
+    let px: CGFloat
+    let colors: [Character: Color]
+    var body: some View {
+        let cols = rows.first?.count ?? 0
+        Canvas { ctx, _ in
+            for (y, row) in rows.enumerated() {
+                for (x, ch) in row.enumerated() {
+                    guard let c = colors[ch] else { continue }
+                    ctx.fill(Path(CGRect(x: CGFloat(x) * px, y: CGFloat(y) * px, width: px + 0.3, height: px + 0.3)), with: .color(c))
+                }
+            }
+        }
+        .frame(width: CGFloat(cols) * px, height: CGFloat(rows.count) * px)
+    }
+}
+
+private enum CardPixels {
+    static let heart = ["..ooo.ooo..", ".offfofffo.", "ofhhffffffo", "ofhfffffffo", "offfffffffo",
+                        ".offfffffo.", "..offfffo..", "...offfo...", "....ofo....", ".....o....."]
+    static let bow = [".oo.......oo.", "ofho.....ohfo", "offfo...offfo", "offffoooffffo", "offffofoffffo",
+                      "offffoooffffo", "offfo.o.offfo", "ofo..ofo..ofo", ".o...o.o...o."]
+    static let sparkle = ["....o....", "...ofo...", "...ofo...", "..offfo..", "offfwfffo",
+                          "..offfo..", "...ofo...", "...ofo...", "....o...."]
+    static let tiny = ["0110110", "1111111", "1111111", "0111110", "0011100", "0001000"]
+}
+
+/// 像素贴纸：外面描一圈边（白天白边，夜里深边）
+private struct CardSticker: View {
+    let rows: [String]
+    let px: CGFloat
+    let colors: [Character: Color]
+    let edge: Color
+    var body: some View {
+        CardPixelArt(rows: rows, px: px, colors: colors)
+            .shadow(color: edge, radius: 0, x: 1.5, y: 0)
+            .shadow(color: edge, radius: 0, x: -1.5, y: 0)
+            .shadow(color: edge, radius: 0, x: 0, y: 1.5)
+            .shadow(color: edge, radius: 0, x: 0, y: -1.5)
+    }
+}
+
+/// 细线蝴蝶结
+private struct CardThinBow: View {
+    let color: Color
+    var body: some View {
+        Canvas { ctx, size in
+            let s = size.width / 34
+            func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: x * s, y: y * s) }
+            var path = Path()
+            path.move(to: p(17, 10))
+            path.addCurve(to: p(3, 7), control1: p(12, 3), control2: p(4, 2))
+            path.addCurve(to: p(17, 10), control1: p(2, 12), control2: p(11, 13))
+            path.move(to: p(17, 10))
+            path.addCurve(to: p(31, 7), control1: p(22, 3), control2: p(30, 2))
+            path.addCurve(to: p(17, 10), control1: p(32, 12), control2: p(23, 13))
+            path.move(to: p(16, 12)); path.addCurve(to: p(9, 22), control1: p(14, 16), control2: p(12, 19))
+            path.move(to: p(18, 12)); path.addCurve(to: p(25, 22), control1: p(20, 16), control2: p(22, 19))
+            ctx.stroke(path, with: .color(color), style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+            ctx.fill(Path(ellipseIn: CGRect(x: 15 * s, y: 8 * s, width: 4.2 * s, height: 4.8 * s)), with: .color(.white))
+            ctx.stroke(Path(ellipseIn: CGRect(x: 15 * s, y: 8 * s, width: 4.2 * s, height: 4.8 * s)), with: .color(color), lineWidth: 1)
+        }
+        .frame(width: 30, height: 21)
+    }
+}
+
+/// 银色别针
+private struct CardSafetyPin: View {
+    var body: some View {
+        Canvas { ctx, _ in
+            var wire = Path()
+            wire.move(to: CGPoint(x: 4, y: 7)); wire.addLine(to: CGPoint(x: 36, y: 7))
+            wire.addArc(center: CGPoint(x: 36, y: 5), radius: 2, startAngle: .degrees(90), endAngle: .degrees(-90), clockwise: true)
+            wire.addLine(to: CGPoint(x: 8, y: 3))
+            ctx.stroke(wire, with: .color(cardRGB(0xB9B8C3)), lineWidth: 1.2)
+            let head = Path(roundedRect: CGRect(x: 1, y: 1.5, width: 9, height: 7), cornerRadius: 2)
+            ctx.fill(head, with: .color(cardRGB(0xDCDBE3)))
+            ctx.stroke(head, with: .color(cardRGB(0xA9A8B4)), lineWidth: 0.8)
+        }
+        .frame(width: 42, height: 11)
+    }
+}
+
+/// 两颗四角小星＋一个小圈
+private struct CardTwinStars: View {
+    let a: Color
+    let b: Color
+    var body: some View {
+        Canvas { ctx, _ in
+            func star(_ cx: CGFloat, _ cy: CGFloat, _ r: CGFloat) -> Path {
+                var p = Path(); let k = r * 0.3
+                p.move(to: CGPoint(x: cx, y: cy - r)); p.addLine(to: CGPoint(x: cx + k, y: cy - k))
+                p.addLine(to: CGPoint(x: cx + r, y: cy)); p.addLine(to: CGPoint(x: cx + k, y: cy + k))
+                p.addLine(to: CGPoint(x: cx, y: cy + r)); p.addLine(to: CGPoint(x: cx - k, y: cy + k))
+                p.addLine(to: CGPoint(x: cx - r, y: cy)); p.addLine(to: CGPoint(x: cx - k, y: cy - k)); p.closeSubpath()
+                return p
+            }
+            let s1 = star(9, 9, 7), s2 = star(22, 17, 4)
+            ctx.fill(s1, with: .color(.white)); ctx.stroke(s1, with: .color(a), lineWidth: 0.7)
+            ctx.fill(s2, with: .color(.white)); ctx.stroke(s2, with: .color(b), lineWidth: 0.6)
+            let dot = Path(ellipseIn: CGRect(x: 22.6, y: 3.6, width: 2.8, height: 2.8))
+            ctx.fill(dot, with: .color(.white)); ctx.stroke(dot, with: .color(a), lineWidth: 0.5)
+        }
+        .frame(width: 30, height: 26)
+    }
+}
+
+/// 竖条形码
+private struct CardBarcode: View {
+    let ink: Color
+    var body: some View {
+        Canvas { ctx, size in
+            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(.white))
+            for (i, y) in [2, 4, 5, 8, 10, 11, 13, 17, 19, 20, 23, 26, 27, 30, 33, 34, 36, 39, 41, 42, 45, 48, 49, 52].enumerated() {
+                ctx.fill(Path(CGRect(x: 3, y: CGFloat(y), width: 10, height: i % 3 == 0 ? 1.6 : 0.8)), with: .color(ink))
+            }
+        }
+        .frame(width: 16, height: 56)
+    }
+}
+
+/// 圆点底纹
+private struct CardDots: View {
+    let color: Color
+    let spacing: CGFloat
+    let radius: CGFloat
+    var body: some View {
+        Canvas { ctx, size in
+            var y = spacing / 2
+            while y < size.height {
+                var x = spacing / 2
+                while x < size.width {
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - radius, y: y - radius, width: radius * 2, height: radius * 2)), with: .color(color))
+                    x += spacing
+                }
+                y += spacing
+            }
+        }
+    }
+}
+
+// ── ① Inside：粉框笔记页，默认两行，点一下展开 / 收起 ──
+
 private struct InsideMessageCard: View {
     let text: String
     let date: Date
     let theme: AlcoveTheme
     let messageID: String
     @State private var expanded = false
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: ChatCardInk { _ = houseAppearance; return ChatCardInk(dark: AlcoveAppearance.isDark) }
     private static let time: DateFormatter = {
         let value = DateFormatter(); value.dateFormat = "HH:mm"; return value
     }()
@@ -5546,28 +5738,237 @@ private struct InsideMessageCard: View {
         Button {
             if expanded { collapse() } else { withAnimation(.easeInOut(duration: 0.2)) { expanded = true } }
         } label: {
-            VStack(alignment: .leading, spacing: 10) {
-                HStack(spacing: 7) {
-                    Image(systemName: "quote.opening").font(.system(size: 12))
-                    Text("Inside").font(.system(size: 12, weight: .semibold, design: .serif)).tracking(1)
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text("inside").font(CardScript.font(24)).foregroundColor(ink.mintD)
+                    Text("THINGS LEFT UNSAID").font(.system(size: 8, weight: .medium, design: .serif))
+                        .tracking(2.2).foregroundColor(ink.pinkInk)
+                    Spacer(minLength: 34)
+                }
+                Text(text)
+                    .font(.system(size: 13, design: .serif))
+                    .underline(true, pattern: .dot, color: ink.silver)
+                    .lineSpacing(9)
+                    .foregroundColor(ink.ink)
+                    .lineLimit(expanded ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                HStack {
+                    Text(Self.time.string(from: date)).foregroundColor(ink.sub)
                     Spacer()
-                    Image(systemName: expanded ? "chevron.up" : "chevron.down").font(.system(size: 9))
+                    Text(expanded ? "收起 ⌃" : "展开 ⌄").foregroundColor(ink.pinkInk)
                 }
-                if expanded {
-                    Text(text).font(.system(size: 13, design: .serif)).lineSpacing(5)
-                        .fixedSize(horizontal: false, vertical: true)
-                    Text("···· " + Self.time.string(from: date))
-                        .font(.system(size: 10, design: .monospaced)).opacity(0.6)
-                }
+                .font(.system(size: 10))
+                .padding(.top, 4)
             }
-            .foregroundColor(theme.isDark ? theme.text : Color(red: 0.32, green: 0.29, blue: 0.30))
-            .padding(14)
-            .frame(maxWidth: 290, alignment: .leading)
-            .background(theme.isDark ? theme.fyCard : Color(red: 0.91, green: 0.88, blue: 0.86),
-                        in: RoundedRectangle(cornerRadius: theme.isPaper ? 7 : 15, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 7 : 15)
-                .stroke(theme.fyBorder, lineWidth: 0.8))
-        }.buttonStyle(.plain)
+            .padding(.horizontal, 14).padding(.top, 12).padding(.bottom, 10)
+            .background(ink.page)
+            .padding(9)
+            .background(ink.pink)
+            .overlay(alignment: .topTrailing) {
+                CardThinBow(color: ink.silverD).padding(.top, 14).padding(.trailing, 16)
+            }
+            .overlay(alignment: .topTrailing) {
+                VStack(spacing: 24) { CardSafetyPin().rotationEffect(.degrees(-8)); CardSafetyPin().rotationEffect(.degrees(-4)) }
+                    .offset(x: 26, y: 48)
+            }
+            .overlay(alignment: .bottomLeading) { CardTwinStars(a: ink.pinkD, b: ink.mintD).offset(x: -12, y: 10) }
+            .frame(maxWidth: 272, alignment: .leading)
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+// ── ② 檐下：淡粉灰点卡，默认两行，展开 / 收起 ＋ 去檐下看看 ──
+
+struct PondChatMessageCard: View {
+    let card: PondChatCard
+    @State private var expanded = false
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: ChatCardInk { _ = houseAppearance; return ChatCardInk(dark: AlcoveAppearance.isDark) }
+    private var foldable: Bool { card.text.count > 36 || card.text.contains("\n") }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 9) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("under the eaves").font(CardScript.font(19)).foregroundColor(ink.pinkInk)
+                    Spacer(minLength: 6)
+                    Text(card.kind == "wish" ? "檐下 · 许愿" : "檐下")
+                        .font(.system(size: 9.5, design: .serif)).tracking(2).foregroundColor(ink.mintInk)
+                }
+                Text(card.text)
+                    .font(.system(size: 13, design: .serif))
+                    .lineSpacing(5)
+                    .foregroundColor(ink.ink)
+                    .lineLimit(expanded ? nil : 2)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 11)
+            .background(ink.page.opacity(0.9))
+            .overlay(Rectangle().stroke(ink.pinkD, lineWidth: 1))
+            .overlay(Rectangle().stroke(ink.pinkD.opacity(0.5), lineWidth: 1).padding(3))
+            HStack {
+                if foldable {
+                    Button {
+                        withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
+                    } label: {
+                        Text(expanded ? "收起 ⌃" : "展开 ⌄").font(.system(size: 11)).foregroundColor(ink.pinkInk)
+                    }
+                    .buttonStyle(.plain)
+                } else {
+                    Text("just now").font(CardScript.font(13)).foregroundColor(ink.pinkInk)
+                }
+                Spacer()
+                Button {
+                    NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.pond.rawValue)
+                } label: {
+                    Text("去檐下看看")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(ink.mintInk)
+                        .padding(.horizontal, 14).padding(.vertical, 4)
+                        .background(Capsule().fill(ink.page))
+                        .overlay(Capsule().stroke(ink.mintD, lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(10)
+        .background(ZStack { ink.pink; CardDots(color: ink.silver, spacing: 11, radius: 1.2) })
+        .overlay(alignment: .topTrailing) { CardThinBow(color: ink.silverD).rotationEffect(.degrees(6)).offset(x: -10, y: -11) }
+        .overlay(alignment: .topLeading) { CardBarcode(ink: ink.ink).offset(x: -17, y: 18) }
+        .overlay(alignment: .trailing) { CardTwinStars(a: ink.pinkD, b: ink.mintD).offset(x: 13, y: 12) }
+        .frame(width: 252, alignment: .leading)
+    }
+}
+
+// ── ③ 不忘：像素小窗，只放标题＋哪条线＋跳转 ──
+
+struct MemoryChatMessageCard: View {
+    let card: MemoryChatCard
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: ChatCardInk { _ = houseAppearance; return ChatCardInk(dark: AlcoveAppearance.isDark) }
+
+    private var stickerPink: [Character: Color] {
+        ink.dark ? ["o": cardRGB(0xB77FA8), "f": cardRGB(0xE6A9D2), "h": cardRGB(0xF8DDEE), "w": .white]
+                 : ["o": cardRGB(0xE7A3CF), "f": cardRGB(0xF8CDE9), "h": .white, "w": .white]
+    }
+    private var stickerMint: [Character: Color] {
+        ink.dark ? ["o": cardRGB(0x4FAF90), "f": cardRGB(0x8FDFC3), "h": cardRGB(0xD2F6EA), "w": .white]
+                 : ["o": cardRGB(0x7FDCBC), "f": cardRGB(0xB9F5DF), "h": .white, "w": .white]
+    }
+    private var stickerWhite: [Character: Color] {
+        ["o": ink.dark ? cardRGB(0xB77FA8) : cardRGB(0xE7A3CF), "f": .white, "h": cardRGB(0xFDEEF8), "w": cardRGB(0xF8CDE9)]
+    }
+
+    var body: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 6) {
+                CardPixelArt(rows: CardPixels.tiny, px: 1.6, colors: ["1": .white])
+                Text("MEMORY V1.1")
+                    .font(.system(size: 10, weight: .bold, design: .monospaced)).tracking(1.2)
+                    .foregroundColor(.white).shadow(color: ink.mintShade, radius: 0, x: 1, y: 1)
+                Spacer()
+                Text("×").font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white).shadow(color: ink.mintShade, radius: 0, x: 1, y: 1)
+            }
+            .padding(.horizontal, 8).padding(.vertical, 4)
+            .background(ink.mintLine)
+            VStack(alignment: .leading, spacing: 0) {
+                Text("正在记住……").font(.system(size: 12)).foregroundColor(ink.loadPink)
+                    .padding(.horizontal, 3).padding(.top, 2).padding(.bottom, 5)
+                HStack(spacing: 2) {
+                    ForEach(0..<18, id: \.self) { _ in Rectangle().fill(ink.progPink) }
+                }
+                .padding(2)
+                .frame(height: 14)
+                .background(ink.page.opacity(0.55))
+                .overlay(Rectangle().stroke(ink.mintLine, lineWidth: 2))
+                .padding(.horizontal, 3).padding(.bottom, 8)
+                VStack(alignment: .leading, spacing: 6) {
+                    Text(card.title)
+                        .font(.system(size: 14, weight: .medium, design: .serif))
+                        .foregroundColor(ink.ink)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if let thread = card.thread, !thread.isEmpty {
+                        Text(thread).font(.system(size: 10)).foregroundColor(ink.pinkInk)
+                            .padding(.horizontal, 5).padding(.vertical, 1)
+                            .overlay(Rectangle().stroke(ink.pinkD, lineWidth: 1.5))
+                    }
+                }
+                .padding(.horizontal, 10).padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(ink.page.opacity(0.84))
+                .overlay(Rectangle().stroke(ink.mintLine, lineWidth: 2))
+                .padding(3)
+                .overlay(Rectangle().stroke(ink.page.opacity(0.9), lineWidth: 1))
+                .padding(.horizontal, 3)
+                HStack {
+                    Spacer()
+                    Button {
+                        BuwangDeepLink.search = card.title
+                        NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.memory.rawValue)
+                    } label: {
+                        Text("打开这条记忆")
+                            .font(.system(size: 12))
+                            .foregroundColor(ink.pinkInk)
+                            .padding(.horizontal, 14).padding(.vertical, 3)
+                            .background(ink.page.opacity(0.88))
+                            .overlay(Rectangle().stroke(ink.mintLine, lineWidth: 2))
+                            .background(Rectangle().fill(ink.progPink).offset(x: 2, y: 2))
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 8)
+            }
+            .padding(8)
+            .background(
+                ZStack {
+                    LinearGradient(colors: [ink.gray1, ink.gray2, ink.gray3], startPoint: .top, endPoint: .bottom)
+                    RadialGradient(colors: [ink.pinkD.opacity(ink.dark ? 0.18 : 0.45), .clear], center: UnitPoint(x: 0.85, y: 0.2), startRadius: 0, endRadius: 150)
+                }
+            )
+            HStack {
+                Spacer()
+                Text("No." + String(format: "%04d", card.id % 10000))
+                    .font(.system(size: 11, weight: .bold, design: .monospaced))
+                    .foregroundColor(.white).shadow(color: ink.mintShade, radius: 0, x: 1, y: 1)
+                    .padding(.leading, 8).padding(.trailing, 2)
+                    .frame(maxHeight: .infinity)
+                    .background(ink.mintLine)
+            }
+            .padding(.trailing, 8)
+            .frame(height: 24)
+            .background(ZStack { ink.mintLine; CardDots(color: .white, spacing: 13, radius: 2) })
+        }
+        .overlay(Rectangle().stroke(ink.mintLine, lineWidth: 2))
+        .background(Rectangle().fill(ink.progPink.opacity(0.9)).offset(x: 3, y: 3))
+        .overlay(alignment: .topTrailing) {
+            HStack(spacing: 3) {
+                Image(systemName: "heart.fill").font(.system(size: 8, weight: .bold))
+                Text("1").font(.system(size: 10, weight: .bold))
+            }
+            .foregroundColor(.white)
+            .padding(.horizontal, 6).padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 4).fill(cardRGB(0xF3B9DD)))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(ink.outline, lineWidth: 1.5))
+            .offset(x: -22, y: -12)
+        }
+        .overlay(alignment: .topTrailing) {
+            CardSticker(rows: CardPixels.heart, px: 2.5, colors: stickerPink, edge: ink.outline)
+                .rotationEffect(.degrees(14)).offset(x: 13, y: 52)
+        }
+        .overlay(alignment: .bottomLeading) {
+            CardSticker(rows: CardPixels.sparkle, px: 1.85, colors: stickerWhite, edge: ink.outline)
+                .offset(x: -10, y: -56)
+        }
+        .overlay(alignment: .bottomLeading) {
+            CardSticker(rows: CardPixels.bow, px: 1.95, colors: stickerMint, edge: ink.outline)
+                .rotationEffect(.degrees(6)).offset(x: 30, y: 10)
+        }
+        .frame(width: 252)
     }
 }
 

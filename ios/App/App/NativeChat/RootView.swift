@@ -576,6 +576,12 @@ struct RootView: View {
             .onChange(of: housePage) { _ in syncListenPill() }
             .onChange(of: showTerminal) { _ in syncListenPill() }
             .onChange(of: showRoundtable) { _ in syncListenPill() }
+            // 0929 聊天小卡的跳转按钮：檐下 / 不忘（挂这儿不挂主链，主链编译器算不动）
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenHouse)) { note in
+                if let raw = note.object as? String, let target = HouseDestination(rawValue: raw) {
+                    presentHouse(target)
+                }
+            }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveListenRestore)) { _ in
                 withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
             }

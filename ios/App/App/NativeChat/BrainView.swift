@@ -151,6 +151,11 @@ private struct QueueItem: Identifiable {
 // 今天的脑子 / 夜里那趟 / 巡逻 / 快照 点开是同一张运转面板。
 private enum BrainPage { case hub, memories, threads, volumes, surface, stopwords, wrongbook }
 
+/// 0929：聊天页「不忘」小卡点「打开这条记忆」→ 先记下要找的标题，再开不忘；不忘一进门就按它搜
+enum BuwangDeepLink {
+    static var search: String?
+}
+
 struct NativeBrainView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
@@ -226,7 +231,13 @@ struct NativeBrainView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
-        .task { await reload() }
+        .task {
+            await reload()
+            if let q = BuwangDeepLink.search, !q.isEmpty {
+                BuwangDeepLink.search = nil
+                openMemories(search: q)
+            }
+        }
         .onAppear { BuwangFont.warm() }
         .onReceive(KakaoPackStore.shared.objectWillChange) { _ in KakaoPackStore.shared.ensureFont(id: BuwangFont.handID) }
         .sheet(isPresented: $showQueue) { QueueSheet(palette: palette) }

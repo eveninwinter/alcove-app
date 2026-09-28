@@ -160,6 +160,22 @@ struct ChatMessage: Identifiable, Equatable {
         return AlbumSavedBatch.decode(data)
     }
 
+    /// 0929：他在檐下放了一条 → 聊天页小卡（后端 pond.add 投的，只认他放的）
+    var pondCard: PondChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "POND_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PondChatCard.self, from: data)
+    }
+
+    /// 0929：他亲笔记下一条记忆（lmc5/mine.py 投的）→ 聊天页「不忘」小卡
+    var memoryCard: MemoryChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "MEMORY_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(MemoryChatCard.self, from: data)
+    }
+
     /// 0907 二期：审批卡（他提议买东西）
     var buyCard: BuyApprovalCard? {
         guard let raw = Self.taggedBody(text, tag: "BUY_CARD"),
@@ -938,4 +954,18 @@ struct FavoriteForwardPayload: Decodable {
             ($0.role == "user" ? "陈霁：" : "陈璟：") + ($0.text.isEmpty ? "[附件]" : $0.text)
         }.joined(separator: "\n")
     }
+}
+
+
+struct PondChatCard: Decodable {
+    let id: String
+    let kind: String?
+    let text: String
+}
+
+struct MemoryChatCard: Decodable {
+    let id: Int
+    let title: String
+    let thread: String?
+    let day: String?
 }
