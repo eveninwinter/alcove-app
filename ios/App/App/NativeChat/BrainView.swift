@@ -1661,8 +1661,10 @@ struct BWItem: Identifiable {
     let her: String
     let score: Double
     let fullLen: Int
+    let thumb: String   // 0928：图召回那样带小图地址（/api/...）
     init(_ d: [String: Any]) {
         id = d.string("key")
+        thumb = d.string("thumb")
         kind = d.string("kind")
         title = d.string("title")
         body = d.string("body")
@@ -1844,6 +1846,16 @@ struct BuwangMemoryCard: View {
             Text(meta)
                 .font(.system(size: 10))
                 .foregroundColor(ink.ink3)
+            if !item.thumb.isEmpty, let url = URL(string: AlcoveAPI.base.absoluteString + item.thumb) {
+                AsyncImage(url: url) { img in
+                    img.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Rectangle().fill(ink.ink3.opacity(0.12))
+                }
+                .frame(width: 96, height: 96)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .padding(.vertical, 4)
+            }
             if !item.her.isEmpty {
                 Text("她当时：" + item.her)
                     .font(.system(size: 11))
