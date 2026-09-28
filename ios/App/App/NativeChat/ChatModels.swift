@@ -798,8 +798,18 @@ struct RecallItem {
             lines = []
         }
 
+        // 0928：钩子只在给前端的存档末尾捎一行 [panel-thumbs]{标题: 小图地址}（照片生成的那条记忆），他那边收不到
+        var panelThumbs: [String: String] = [:]
         for raw in content.components(separatedBy: "\n") {
             if raw.hasPrefix("[新脑子") { continue }
+            if raw.hasPrefix("[panel-thumbs]") {
+                flush()
+                if let data = String(raw.dropFirst("[panel-thumbs]".count)).data(using: .utf8),
+                   let m = try? JSONSerialization.jsonObject(with: data) as? [String: String] {
+                    panelThumbs = m
+                }
+                continue
+            }
             if raw.hasPrefix("## ") {
                 flush()
                 section = sectionName(raw)
@@ -815,6 +825,11 @@ struct RecallItem {
             }
         }
         flush()
+        if !panelThumbs.isEmpty {
+            for i in out.indices where out[i].thumb.isEmpty {
+                if let t = panelThumbs[out[i].title] { out[i].thumb = t }
+            }
+        }
         return out
     }
 }
