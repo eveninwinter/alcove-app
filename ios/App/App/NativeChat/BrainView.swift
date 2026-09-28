@@ -2271,6 +2271,7 @@ struct BWKnob: Identifiable {
 struct BuwangKnobRow: View {
     let ink: BuwangInk
     @Binding var knob: BWKnob
+    @State private var axis = 0   // 这一下拖：0 还没定 / 1 横着（调） / 2 竖着（让页面滑）
     @ObservedObject private var fontStore = KakaoPackStore.shared
 
     var body: some View {
@@ -2298,7 +2299,11 @@ struct BuwangKnobRow: View {
                 }
                 .frame(height: 24)
                 .contentShape(Rectangle())
-                .gesture(DragGesture(minimumDistance: 0).onChanged { g in
+                // 0928 她报：页面上下滑不动、一碰就拖到横条。原来是 minimumDistance 0 的 .gesture 把整页滑动吃了。
+                // 改成跟页面一起认手势，头几点判方向：横着拖才调，竖着的放给页面滑。
+                .simultaneousGesture(DragGesture(minimumDistance: 6).onChanged { g in
+                    if axis == 0 { axis = abs(g.translation.width) > abs(g.translation.height) ? 1 : 2 }
+                    guard axis == 1 else { return }
                     let raw = knob.lo + Double(min(max(0, (g.location.x - 8) / max(1, w)), 1)) * (knob.hi - knob.lo)
                     let snapped = (raw / knob.step).rounded() * knob.step
                     let clamped = min(knob.hi, max(knob.lo, snapped))
@@ -2306,7 +2311,7 @@ struct BuwangKnobRow: View {
                         UISelectionFeedbackGenerator().selectionChanged()
                         withAnimation(.snappy(duration: 0.15)) { knob.value = clamped }
                     }
-                })
+                }.onEnded { _ in axis = 0 })
             }
             .frame(height: 24)
         }
@@ -2324,6 +2329,7 @@ struct BuwangTuningView: View {
     @State private var evalText = ""
     @State private var evalStamp = 0
     @State private var savedStamp = 0
+    @State private var resetStamp = 0
     @State private var fails: [String] = []
     @ObservedObject private var fontStore = KakaoPackStore.shared
 
@@ -2332,6 +2338,26 @@ struct BuwangTuningView: View {
             VStack(spacing: 9) {
                 if loading {
                     ProgressView().tint(ink.cherry).padding(.top, 30)
+                }
+                if !knobs.isEmpty {
+                    // 0928 她要的一键默认：全部拨回默认并直接存，放最上面一眼看得见
+                    HStack(spacing: 8) {
+                        Spacer(minLength: 0)
+                        if resetStamp > 0 {
+                            BuwangStamp(text: "已回默认", color: ink.cherry).id(resetStamp)
+                        }
+                        Button {
+                            Task { await resetAll() }
+                        } label: {
+                            Text("一键默认")
+                                .font(BuwangFont.hand(15))
+                                .foregroundColor(ink.cherry)
+                                .padding(.horizontal, 14).padding(.vertical, 5)
+                                .background(Capsule().fill(ink.card))
+                                .overlay(Capsule().stroke(ink.cherry.opacity(0.45), lineWidth: 1.2))
+                        }
+                        .buttonStyle(BuwangPress())
+                    }
                 }
                 ForEach($knobs) { $k in
                     BuwangKnobRow(ink: ink, knob: $k)
@@ -2377,15 +2403,6 @@ struct BuwangTuningView: View {
                             BuwangStamp(text: "已存", color: ink.cherry).id(savedStamp)
                         }
                         Spacer(minLength: 0)
-                        Button {
-                            buwangBuzz(.soft)
-                            withAnimation(.snappy) {
-                                for i in knobs.indices { knobs[i].value = knobs[i].def }
-                            }
-                        } label: {
-                            Text("回到默认").font(.system(size: 11)).foregroundColor(ink.ink3).underline()
-                        }
-                        .buttonStyle(.plain)
                     }
                     Text("先拖、先跑测评看分数，满意了再存。测评是我编的 28 句话：闲聊不该召、该召的要召到。")
                         .font(.system(size: 10.5))
@@ -2453,6 +2470,19 @@ struct BuwangTuningView: View {
         let d = (try? await NativeHouseAPI.object("/api/lmc5/recall/tuning", method: "POST", body: ["values": values()])) ?? [:]
         await MainActor.run {
             if (d["ok"] as? Bool) == true { savedStamp += 1 }
+        }
+    }
+
+    private func resetAll() async {
+        buwangBuzz(.medium)
+        await MainActor.run {
+            withAnimation(.snappy) {
+                for i in knobs.indices { knobs[i].value = knobs[i].def }
+            }
+        }
+        let d = (try? await NativeHouseAPI.object("/api/lmc5/recall/tuning", method: "POST", body: ["values": values()])) ?? [:]
+        await MainActor.run {
+            if (d["ok"] as? Bool) == true { resetStamp += 1 }
         }
     }
 }
