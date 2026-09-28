@@ -97,7 +97,9 @@ private struct AlbumBatchCard: View {
                 }
                 .frame(width: side, height: side)
                 .foregroundStyle(theme.text)
-                .background(Color(uiColor: .systemBackground), in: RoundedRectangle(cornerRadius: 28, style: .continuous))
+                // 0928 她报黑夜模式相册预览没统一：systemBackground 跟的是手机系统的深浅，不跟 App 主题，
+                // 手机浅色 + App 深色主题时底是白的、字是主题的白字，整张卡看不见。深色主题改用主题自己的卡片色。
+                .background(theme.isDark ? theme.fyCard : Color.white, in: RoundedRectangle(cornerRadius: 28, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 28, style: .continuous).stroke(.white.opacity(0.18), lineWidth: 0.8))
                 .shadow(color: .black.opacity(0.18), radius: 35, y: 15)
                 .accessibilityAddTraits(.isModal)
