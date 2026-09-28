@@ -6665,7 +6665,8 @@ struct RecallPop: View {
     private func card(_ c: RecallCard, first: Bool) -> some View {
         let long = c.section == "一整卷" || c.body.count > 260
         let isOpen = expanded.contains(c.id)
-        return VStack(alignment: .leading, spacing: 5) {
+        return HStack(alignment: .top, spacing: 10) {
+          VStack(alignment: .leading, spacing: 5) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(c.title.isEmpty ? "无题" : c.title)
                     .font(BuwangFont.hand(c.section == "原话片段" ? 15 : 17))
@@ -6691,6 +6692,17 @@ struct RecallPop: View {
                     .foregroundColor(ink.cherry)
                     .padding(.top, 2)
             }
+          }
+          // 0928：图那段右边一张小圆角方图
+          if !c.thumb.isEmpty, let url = URL(string: AlcoveAPI.base.absoluteString + c.thumb) {
+              AsyncImage(url: url) { img in
+                  img.resizable().aspectRatio(contentMode: .fill)
+              } placeholder: {
+                  Rectangle().fill(ink.ink3.opacity(0.12))
+              }
+              .frame(width: 64, height: 64)
+              .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+          }
         }
         .padding(.horizontal, 14).padding(.vertical, 12)
         .frame(maxWidth: .infinity, alignment: .leading)

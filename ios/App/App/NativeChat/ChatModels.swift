@@ -763,6 +763,7 @@ struct RecallItem {
                 .replacingOccurrences(of: #"，想看全文：python3 [^）]*"#, with: "", options: .regularExpression)
             var title = h
             var meta = ""
+            var thumb = ""
             if h.hasPrefix("《"), let end = h.range(of: "》") {
                 title = String(h[h.index(after: h.startIndex)..<end.lowerBound])
                 meta = String(h[end.upperBound...])
@@ -773,8 +774,13 @@ struct RecallItem {
                 let rest = String(h[end.upperBound...]).trimmingCharacters(in: .whitespaces)
                 let day = rest.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression).map { String(rest[$0]) } ?? ""
                 if section == "图" {
+                    // 0928 她要的：图那段卡片右边带小图，左边只留标题＋「她当时」，他记的/他当时说在前端省掉
                     title = label
                     meta = day
+                    if let p = rest.split(separator: " ").first(where: { $0.hasPrefix("/") }) {
+                        thumb = RecallCard.thumbPath(String(p))
+                    }
+                    body = body.components(separatedBy: "\n").filter { $0.hasPrefix("她当时") }.joined(separator: "\n")
                 } else {
                     title = label.hasPrefix("原话") ? "原话" : label
                     meta = day
@@ -787,7 +793,7 @@ struct RecallItem {
                 title = String(h[..<colon.lowerBound])
                 body = String(h[colon.upperBound...]) + (body.isEmpty ? "" : "\n" + body)
             }
-            out.append(RecallCard(id: out.count, section: section, title: title, meta: meta, body: body))
+            out.append(RecallCard(id: out.count, section: section, title: title, meta: meta, body: body, thumb: thumb))
             head = nil
             lines = []
         }
@@ -819,6 +825,21 @@ struct RecallCard: Identifiable {
     let title: String
     let meta: String
     let body: String
+    var thumb: String = ""   // 图那段的小图地址（/api/...），拼 AlcoveAPI.base 用
+
+    /// 服务器上图的路径 → 小图地址。规矩照后端 lmc5_api._image_thumb（相册 / 世界之窗 / 聊天附件三种）
+    static func thumbPath(_ path: String) -> String {
+        let name = (path as NSString).lastPathComponent
+        guard !name.isEmpty else { return "" }
+        if path.contains("/album_media/"),
+           name.range(of: #"^ph_[0-9a-f]{20}\.(jpg|png|webp|gif)$"#, options: .regularExpression) != nil {
+            return "/api/album/media/" + (name as NSString).deletingPathExtension + "_thumb.jpg"
+        }
+        if path.contains("/window_media/"), name.range(of: #"^[0-9a-f]{32}\.jpg$"#, options: .regularExpression) != nil {
+            return "/api/window/media/" + name + ".thumb.jpg"
+        }
+        return "/api/attachments/thumb/" + name
+    }
 }
 
 extension ISO8601DateFormatter {
