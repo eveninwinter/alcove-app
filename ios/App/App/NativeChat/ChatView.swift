@@ -28,6 +28,7 @@ struct ChatView: View {
     @State private var selectedQuote: String?
     // 0925「编辑」：正在编辑哪条（她那条的 ts）和输入框里的字
     @State private var editingTs: String?
+    @State private var rerollConfirmShown = false   // 0928 她要的：点重来先问一句是否（误触过一次，见下面 alert）
     @State private var editDraft = ""
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -573,6 +574,13 @@ struct ChatView: View {
             }
             .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
             // 0924「重来」没成时说一声为什么（他正忙、回退菜单对不上号、SDK 通道……）
+            // 0928 她要的确认弹窗：点重来先问是否，别再误触
+            .alert("重来这一轮？", isPresented: $rerollConfirmShown) {
+                Button("取消", role: .cancel) {}
+                Button("重来", role: .destructive) { store.rerollLastReply() }
+            } message: {
+                Text("他这一轮的话会被藏起来，他自己也会忘掉说过，然后重新答一遍。")
+            }
             .alert("重来没成", isPresented: rerollAlertShown) {
                 Button("好", role: .cancel) {}
             } message: {
@@ -857,8 +865,8 @@ struct ChatView: View {
     /// 0924：给 MessageRow 的「重来」回调。抽成函数是为了别在那个几百行的构造里塞三目＋闭包（编译器算不过来，c5bdd8d/72e3404 两笔红）
     private func rerollAction(for message: ChatMessage) -> (() -> Void)? {
         guard store.room != "api", isLatestAssistantTurn(message) else { return nil }   // 0926 重来走的是 tmux，API 房间不给
-        let s = store
-        return { s.rerollLastReply() }
+        // 0928 她误触过一次（任务#3110：他那轮被藏、他自己也退掉不记得了），现在先弹一句问清楚再真重来
+        return { rerollConfirmShown = true }
     }
 
     /// 0925 她要的「编辑」：只给她自己的文字气泡（CLI 房间、没在翻历史、已经落库的）。
