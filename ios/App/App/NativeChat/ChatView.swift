@@ -6583,43 +6583,145 @@ struct ImageViewer: View {
 }
 
 // 记忆召回弹层：✦记起 点开看召回的记忆卡片
+// 0928 她要的：标题改成「那一刻他想起的」；里面原来整段召回原文糊成一张卡（## 和开头那句说明都露着）
+// 「排版太杂了也有点丑」——按新召回的格式一样东西一张纸片，跟不忘一套纸面、手写字；
+// 卷很长，先收着给几行，点了再展开。老格式（OB 那套 [bucket_id:）照旧走原来的切法。
 struct RecallPop: View {
     let item: RecallItem
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.colorScheme) private var scheme
+    @State private var expanded: Set<Int> = []
+    @ObservedObject private var fontStore = KakaoPackStore.shared
+
+    private var ink: BuwangInk { BuwangInk(dark: scheme == .dark) }
 
     var body: some View {
-        NavigationStack {
-            ScrollView {
+        ZStack(alignment: .topTrailing) {
+            BuwangPaper(ink: ink)
+            ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 12) {
-                    ForEach(Array(item.cards.enumerated()), id: \.offset) { _, card in
-                        VStack(alignment: .leading, spacing: 6) {
-                            if !card.date.isEmpty {
-                                Text(card.date)
-                                    .font(.system(size: 11, design: .serif))
-                                    .foregroundColor(.secondary)
-                            }
-                            Text(card.body)
-                                .font(.system(size: 13))
-                                .foregroundColor(.primary.opacity(0.85))
+                    VStack(spacing: -2) {
+                        Text("那一刻他想起的").font(BuwangFont.hand(24)).foregroundColor(ink.ink)
+                        Text("what surfaced").font(BuwangFont.script(15)).foregroundColor(ink.ink3)
+                    }
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, 22)
+                    if !item.prompt.isEmpty {
+                        Text("你说「\(item.prompt)」")
+                            .font(BuwangFont.hand(15))
+                            .foregroundColor(ink.ink2)
+                            .lineLimit(3)
+                            .frame(maxWidth: .infinity, alignment: .center)
+                            .padding(.bottom, 4)
+                    }
+                    let cards = item.lmcCards
+                    if cards.isEmpty {
+                        ForEach(Array(item.cards.enumerated()), id: \.offset) { _, card in
+                            oldCard(date: card.date, text: card.body)
                         }
-                        .padding(12)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .background(Color(.secondarySystemGroupedBackground),
-                                    in: RoundedRectangle(cornerRadius: 14))
+                    } else {
+                        ForEach(Array(cards.enumerated()), id: \.element.id) { pair in
+                            if pair.offset == 0 || cards[pair.offset - 1].section != pair.element.section {
+                                Text(pair.element.section)
+                                    .font(BuwangFont.hand(16))
+                                    .foregroundColor(ink.ink3)
+                                    .padding(.top, pair.offset == 0 ? 0 : 6)
+                            }
+                            card(pair.element, first: pair.offset == 0)
+                        }
+                        Text("这些是递给他的背景：相关就自然融进话里，不相关就忽略。")
+                            .font(.system(size: 10.5))
+                            .foregroundColor(ink.ink3)
+                            .padding(.top, 4)
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 18)
+                .padding(.bottom, 30)
             }
-            .background(Color(.systemGroupedBackground))
-            .navigationTitle("✦ 那一刻我想起的")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar {
-                ToolbarItem(placement: .navigationBarTrailing) {
-                    Button { dismiss() } label: { Image(systemName: "xmark") }
-                }
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(ink.cherry)
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(ink.card).shadow(color: ink.shadow, radius: 5, x: 0, y: 2))
             }
+            .buttonStyle(BuwangPress())
+            .padding(14)
         }
         .presentationDetents([.medium, .large])
+        .presentationDragIndicator(.visible)
+    }
+
+    private func tint(_ section: String) -> Color {
+        switch section {
+        case "她在说的": return ink.mint
+        case "一整卷": return ink.lilac
+        case "图": return ink.blue
+        case "原话片段": return ink.faint
+        default: return ink.pink
+        }
+    }
+
+    private func card(_ c: RecallCard, first: Bool) -> some View {
+        let long = c.section == "一整卷" || c.body.count > 260
+        let isOpen = expanded.contains(c.id)
+        return VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(c.title.isEmpty ? "无题" : c.title)
+                    .font(BuwangFont.hand(c.section == "原话片段" ? 15 : 17))
+                    .foregroundColor(ink.ink)
+                Spacer(minLength: 0)
+            }
+            if !c.meta.isEmpty {
+                Text(c.meta)
+                    .font(.system(size: 10.5))
+                    .foregroundColor(ink.ink3)
+            }
+            if !c.body.isEmpty {
+                Text(c.body)
+                    .font(.system(size: 13))
+                    .foregroundColor(ink.ink2)
+                    .lineSpacing(4)
+                    .lineLimit(long && !isOpen ? 5 : nil)
+                    .textSelection(.enabled)
+            }
+            if long {
+                Text(isOpen ? "收起" : "展开全文")
+                    .font(BuwangFont.hand(14))
+                    .foregroundColor(ink.cherry)
+                    .padding(.top, 2)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.card)
+            .shadow(color: ink.shadow, radius: 6, x: 0, y: 3))
+        .overlay(alignment: .leading) {
+            RoundedRectangle(cornerRadius: 2).fill(tint(c.section)).frame(width: 4).padding(.vertical, 12)
+        }
+        .overlay(alignment: .topLeading) {
+            if first { BuwangTape(color: tint(c.section)).offset(x: 16, y: -6) }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            guard long else { return }
+            UIImpactFeedbackGenerator(style: .soft).impactOccurred()
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.85)) {
+                if isOpen { expanded.remove(c.id) } else { expanded.insert(c.id) }
+            }
+        }
+    }
+
+    private func oldCard(date: String, text: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if !date.isEmpty {
+                Text(date).font(.system(size: 11)).foregroundColor(ink.ink3)
+            }
+            Text(text).font(.system(size: 13)).foregroundColor(ink.ink2).lineSpacing(4)
+        }
+        .padding(14)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.card))
     }
 }
 

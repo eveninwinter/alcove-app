@@ -737,6 +737,88 @@ struct RecallItem {
         s.components(separatedBy: .whitespacesAndNewlines)
             .filter { !$0.isEmpty }.joined(separator: " ")
     }
+
+    /// 0928 新召回（LMC）的格式：「## 段」底下一行「- 」开头一样东西，接着几行正文。
+    /// 老的按 [bucket_id: 切，新格式整段糊成一张卡、## 和开头那句说明都露在外面（她 0928 截的图）。
+    /// 切成：哪一段（她在说的 / 一整卷 / 想起来的 / 原话片段 / 图）、标题、日期这类小字、正文。
+    var lmcCards: [RecallCard] {
+        guard content.contains("## ") else { return [] }
+        var out: [RecallCard] = []
+        var section = ""
+        var head: String?
+        var lines: [String] = []
+
+        func sectionName(_ raw: String) -> String {
+            if raw.contains("专名") { return "她在说的" }
+            if raw.contains("事件卷") { return "一整卷" }
+            if raw.contains("图片") { return "图" }
+            if raw.contains("原话") { return "原话片段" }
+            return "想起来的"
+        }
+        func flush() {
+            guard let h = head else { return }
+            var body = lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+            body = body.replacingOccurrences(of: "我当时说：", with: "他当时说：")
+                .replacingOccurrences(of: "我记的：", with: "他记的：")
+                .replacingOccurrences(of: #"，想看全文：python3 [^）]*"#, with: "", options: .regularExpression)
+            var title = h
+            var meta = ""
+            if h.hasPrefix("《"), let end = h.range(of: "》") {
+                title = String(h[h.index(after: h.startIndex)..<end.lowerBound])
+                meta = String(h[end.upperBound...])
+                    .replacingOccurrences(of: "（", with: " ").replacingOccurrences(of: "）", with: " ")
+                    .trimmingCharacters(in: .whitespaces)
+            } else if h.hasPrefix("["), let end = h.range(of: "]") {
+                let label = String(h[h.index(after: h.startIndex)..<end.lowerBound])
+                let rest = String(h[end.upperBound...]).trimmingCharacters(in: .whitespaces)
+                let day = rest.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression).map { String(rest[$0]) } ?? ""
+                if section == "图" {
+                    title = label
+                    meta = day
+                } else {
+                    title = label.hasPrefix("原话") ? "原话" : label
+                    meta = day
+                    var said = rest
+                    if !day.isEmpty { said = said.replacingOccurrences(of: day, with: "") }
+                    body = (said.trimmingCharacters(in: .whitespaces) + (body.isEmpty ? "" : "\n" + body))
+                        .trimmingCharacters(in: .whitespacesAndNewlines)
+                }
+            } else if section == "她在说的", let colon = h.range(of: "：") {
+                title = String(h[..<colon.lowerBound])
+                body = String(h[colon.upperBound...]) + (body.isEmpty ? "" : "\n" + body)
+            }
+            out.append(RecallCard(id: out.count, section: section, title: title, meta: meta, body: body))
+            head = nil
+            lines = []
+        }
+
+        for raw in content.components(separatedBy: "\n") {
+            if raw.hasPrefix("[新脑子") { continue }
+            if raw.hasPrefix("## ") {
+                flush()
+                section = sectionName(raw)
+                continue
+            }
+            if raw.hasPrefix("- ") {
+                flush()
+                head = String(raw.dropFirst(2))
+                continue
+            }
+            if head != nil {
+                lines.append(raw.hasPrefix("  ") ? String(raw.dropFirst(2)) : raw)
+            }
+        }
+        flush()
+        return out
+    }
+}
+
+struct RecallCard: Identifiable {
+    let id: Int          // 第几张（切法固定，重画时编号不变，展开状态才记得住）
+    let section: String
+    let title: String
+    let meta: String
+    let body: String
 }
 
 extension ISO8601DateFormatter {
