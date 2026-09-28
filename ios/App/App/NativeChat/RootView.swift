@@ -34,6 +34,12 @@ struct RootView: View {
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
 
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var windowDark: Bool {
+        _ = houseAppearance
+        return AlcoveAppearance.family(of: themeName) == "kakao" ? AlcoveAppearance.isDark : theme.isDark
+    }
+
     static func applyWindowStyle(dark: Bool) {
         for scene in UIApplication.shared.connectedScenes {
             guard let ws = scene as? UIWindowScene else { continue }
@@ -203,8 +209,9 @@ struct RootView: View {
         // 0928 她报深色主题下相册白底白字：这个 app 的窗口是 AppDelegate 自己搭的，上面那句只管到根页面，
         // 弹出来的 sheet / fullScreenCover 认的是窗口的深浅＝手机系统的，systemBackground 这些系统色全跟手机走。
         // 在窗口上直接钉死，所有弹出页的系统色就都跟 App 主题了。
-        .onAppear { Self.applyWindowStyle(dark: theme.isDark) }
-        .onChange(of: theme.isDark) { dark in Self.applyWindowStyle(dark: dark) }
+        // 0928 晚：Kakao 的 named() 恒报白天，上面那句钉成了白天、黑夜开关不认 → 相册白底白字。Kakao 下认全屋开关
+        .onAppear { Self.applyWindowStyle(dark: windowDark) }
+        .onChange(of: windowDark) { dark in Self.applyWindowStyle(dark: dark) }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 SensorReporter.shared.appActive()

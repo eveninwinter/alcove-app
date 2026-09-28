@@ -15,7 +15,12 @@ struct NativeAlbumView: View {
     @State private var showCategoryName = false
     @State private var categoryBusy = false
     @State private var actionError: String?
-    private var theme: AlcoveTheme { .named(themeName) }
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""   // 全屋黑夜开关，拨了要重画
+    // 0928 她又报黑夜下相册白底白字：named("kakao") 恒报白天，字却是包的颜色。Kakao 下改用面板那套（跟全屋开关走）
+    private var theme: AlcoveTheme {
+        _ = houseAppearance
+        return AlcoveAppearance.family(of: themeName) == "kakao" ? .panelNamed(themeName) : .named(themeName)
+    }
     private var title: String {
         if let id = store.category { return store.categories.first { $0.id == id }?.name ?? "相簿" }
         return tab == 0 ? "照片" : "相簿"
