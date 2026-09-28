@@ -5810,11 +5810,17 @@ struct PondChatMessageCard: View {
             .overlay(Rectangle().stroke(ink.pinkD, lineWidth: 1))
             .overlay(Rectangle().stroke(ink.pinkD.opacity(0.5), lineWidth: 1).padding(3))
             HStack {
+                // 0929 她定的：左下角一直是 just now；要折叠时后面跟个小三角，点这一行展开/收起；不用折叠就没三角、点不动
                 if foldable {
                     Button {
                         withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() }
                     } label: {
-                        Text(expanded ? "收起 ⌃" : "展开 ⌄").font(.system(size: 11)).foregroundColor(ink.pinkInk)
+                        HStack(spacing: 4) {
+                            Text("just now").font(CardScript.font(13))
+                            Text(expanded ? "▴" : "▾").font(.system(size: 9))
+                        }
+                        .foregroundColor(ink.pinkInk)
+                        .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                 } else {
