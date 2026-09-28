@@ -9768,35 +9768,6 @@ struct NativeForgeView: View {
                         }
                         .disabled(forging)
 
-                        if let handoff = handoffPreview,
-                           (handoff["exists"] as? Bool) == true {
-                            Toggle(isOn: Binding(
-                                get: { (handoff["fresh"] as? Bool) == true || forceHandoff },
-                                set: { forceHandoff = $0 }
-                            )) {
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text((handoff["fresh"] as? Bool) == true
-                                         ? "新交接会随这次带入"
-                                         : "再次带上这封交接")
-                                        .font(.system(size: 12, weight: .medium))
-                                    Text((handoff["fresh"] as? Bool) == true
-                                         ? "成功进入新窗口后，这封信会标成已读"
-                                         : "这封已经带过，默认不再重复")
-                                        .font(.system(size: 10))
-                                        .foregroundColor(theme.textDim)
-                                }
-                            }
-                            .tint(theme.fyAccent)
-                            .disabled((handoff["fresh"] as? Bool) == true)
-                            .onChange(of: forceHandoff) { _ in
-                                Task {
-                                    if mode == .picker && !selectedRounds.isEmpty { await previewPickedRounds() }
-                                    else { await loadPreview() }
-                                }
-                            }
-                            .padding(14)
-                            .foyerCard(theme)
-                        }
 
                         if !report.isEmpty {
                             forgeReportCard
@@ -10201,19 +10172,10 @@ struct NativeForgeView: View {
             if let tb = report["tool_blocks_compressed"] as? Int {
                 let kept = (report["tool_blocks_kept"] as? Int) ?? 0
                 let tc = ((report["tool_chars_compressed"] as? Int) ?? 0) / 1000
-                reportRow("工具痕迹", "\(tb) 块（约\(tc)K字）压成占位行，留 \(kept) 块真范本")
+                reportRow("工具痕迹", "\(tb) 块（约\(tc)K字）不带，留 \(kept) 块真范本")
             }
             if let n = report["tool_demo_rounds"] as? Int, n > 0 {
                 reportRow("工具示范", "\(n) 轮真实调用结构")
-            }
-            if let h = report["handoff"] as? [String: Any] {
-                if (h["included"] as? Bool) == true {
-                    reportRow("交接包", "1 份，陈璟写于 \((h["written_at"] as? String) ?? "?")")
-                } else if (h["exists"] as? Bool) == true {
-                    reportRow("交接包", "已在上一窗口带过，本次不重复")
-                } else {
-                    reportRow("交接包", "没有手写交接")
-                }
             }
             if let sb = report["source_bytes"] as? Int, let ob = report["output_bytes"] as? Int {
                 reportRow("体积", "\(sb / 1024)KB → \(ob / 1024)KB")
