@@ -33,6 +33,13 @@ struct RootView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @AppStorage("alcoveTheme") private var themeName = "haven"
+
+    static func applyWindowStyle(dark: Bool) {
+        for scene in UIApplication.shared.connectedScenes {
+            guard let ws = scene as? UIWindowScene else { continue }
+            for w in ws.windows { w.overrideUserInterfaceStyle = dark ? .dark : .light }
+        }
+    }
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     // ↑ 0924 Kakao 换包重画顶栏颜色
     @AppStorage("chatFontSize") private var chatFontSize = 14   // 0924 晚：Kakao 顶栏名字跟正文字号一样大
@@ -193,6 +200,11 @@ struct RootView: View {
         }
         .onChange(of: themeName) { _ in prewarmPanelTexture() }
         .preferredColorScheme(theme.isDark ? .dark : .light) // 跟 PWA 主题走，不跟系统
+        // 0928 她报深色主题下相册白底白字：这个 app 的窗口是 AppDelegate 自己搭的，上面那句只管到根页面，
+        // 弹出来的 sheet / fullScreenCover 认的是窗口的深浅＝手机系统的，systemBackground 这些系统色全跟手机走。
+        // 在窗口上直接钉死，所有弹出页的系统色就都跟 App 主题了。
+        .onAppear { Self.applyWindowStyle(dark: theme.isDark) }
+        .onChange(of: theme.isDark) { dark in Self.applyWindowStyle(dark: dark) }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
                 SensorReporter.shared.appActive()
