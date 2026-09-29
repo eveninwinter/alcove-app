@@ -49,6 +49,11 @@ struct AlcoveTheme {
     var textUser: Color? = nil
     var textAI: Color? = nil
     var divider: Color? = nil
+    /// 0929 她要的：已读双勾、输入框发送键各自单独调色，nil = 原来的系统蓝
+    var readTick: Color? = nil
+    var sendButton: Color? = nil
+    var readTickColor: Color { readTick ?? Color(uiColor: .systemBlue) }
+    var sendButtonColor: Color { sendButton ?? Color(uiColor: .systemBlue) }
     var thoughtColor: Color { thought ?? textDim }
     var dividerColor: Color { divider ?? textDim }
 
@@ -414,7 +419,7 @@ enum AlcoveAppearance {
 //（以前只存一套，她夜里调的白天还顶着）。老键 msgColor.<item> 第一次读到就搬进夜里那套。
 enum MessagesPalette {
     enum Item: String, CaseIterable, Identifiable {
-        case timestamp, thought, divider, bubbleUser, bubbleAI, textUser, textAI
+        case timestamp, thought, divider, bubbleUser, bubbleAI, textUser, textAI, readTick, sendButton
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -425,6 +430,8 @@ enum MessagesPalette {
             case .bubbleAI: return "他的气泡"
             case .textUser: return "我的正文"
             case .textAI: return "他的正文"
+            case .readTick: return "已读勾"
+            case .sendButton: return "发送键"
             }
         }
         /// 旧键（0902 只有一套的时候）
@@ -473,6 +480,7 @@ enum MessagesPalette {
         case .bubbleAI: return base.bubbleAI
         case .textUser: return .white          // 信息主题里她的气泡上的字本来就是白的
         case .textAI: return base.text
+        case .readTick, .sendButton: return Color(uiColor: .systemBlue)
         }
     }
 
@@ -511,6 +519,8 @@ enum MessagesPalette {
         if let c = stored(.bubbleAI, dark: dark) { t.bubbleAI = c }
         if let c = stored(.textUser, dark: dark) { t.textUser = c }
         if let c = stored(.textAI, dark: dark) { t.textAI = c }
+        if let c = stored(.readTick, dark: dark) { t.readTick = c }
+        if let c = stored(.sendButton, dark: dark) { t.sendButton = c }
         return t
     }
 }

@@ -1511,6 +1511,12 @@ struct ChatView: View {
     }
 
     // 加号菜单：经典输入栏和「信息」输入栏共用同一份
+    /// 0929 她要的：Kakao 的输入框整体跟信息主题一模一样（白天 / 黑夜、调色板都走信息主题那套）
+    private var composerTheme: AlcoveTheme {
+        guard theme.isKakao else { return theme }
+        return .named(AlcoveAppearance.isDark ? "imessage-dark" : "imessage")
+    }
+
     private var composerPlusMenu: some View {
         Menu {
             Button { showStickers = true } label: {
@@ -1525,7 +1531,7 @@ struct ChatView: View {
             Button { showDocPicker = true } label: {
                 Label("选取文件", systemImage: "doc")
             }
-            if theme.isMessages {
+            if composerTheme.isMessages {
                 // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
                 Divider()
                 if !store.modelLabel.isEmpty {
@@ -1543,14 +1549,14 @@ struct ChatView: View {
         } label: {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
-                .foregroundColor(theme.textDim)
-                .frame(width: theme.isMessages ? 40 : 36, height: theme.isMessages ? 40 : 36)
+                .foregroundColor(composerTheme.textDim)
+                .frame(width: composerTheme.isMessages ? 40 : 36, height: composerTheme.isMessages ? 40 : 36)
                 .modifier(MessagesGlassModifier(
-                    face: theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white,
-                    line: theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06),
-                    shadow: Color.black.opacity(theme.isDark ? 0.35 : 0.10),
-                    circle: true, enabled: theme.isMessages))
-                .background((theme.isMessages ? Color.clear : theme.glassTint.opacity(theme.isDark ? 0.64 : 0.82)), in: Circle())
+                    face: composerTheme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white,
+                    line: composerTheme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06),
+                    shadow: Color.black.opacity(composerTheme.isDark ? 0.35 : 0.10),
+                    circle: true, enabled: composerTheme.isMessages))
+                .background((composerTheme.isMessages ? Color.clear : composerTheme.glassTint.opacity(composerTheme.isDark ? 0.64 : 0.82)), in: Circle())
         }
     }
 
@@ -1670,9 +1676,9 @@ struct ChatView: View {
     // 0822 她要的 iMessage 同款输入栏：三件各自独立——左边一个圆加号、中间细边框单行框、
     // 框里右边平时是话筒，有字／在回的时候换成蓝圆（发送／停止）。没有大玻璃胶囊。
     private var messagesComposerRow: some View {
-        let line = theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
-        let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
-        let shadow = Color.black.opacity(theme.isDark ? 0.35 : 0.10)
+        let line = composerTheme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+        let face = composerTheme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
+        let shadow = Color.black.opacity(composerTheme.isDark ? 0.35 : 0.10)
         let showBlue = isGenerating || canSend || recorder.isRecording || store.heldCount > 0 || store.pendingVoice != nil
         return HStack(alignment: .bottom, spacing: 10) {
             if recorder.isRecording {
@@ -1681,7 +1687,7 @@ struct ChatView: View {
                 Button(action: { recorder.cancel() }) {
                     Image(systemName: "xmark")
                         .font(.system(size: 15, weight: .medium))
-                        .foregroundColor(theme.textDim)
+                        .foregroundColor(composerTheme.textDim)
                         .frame(width: 40, height: 40)
                         .contentShape(Circle())
                 }
@@ -1699,8 +1705,8 @@ struct ChatView: View {
                     Circle().fill(Color.red).frame(width: 8, height: 8)
                     Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
                         .font(.system(size: 15).monospacedDigit())
-                        .foregroundColor(theme.text)
-                    Text("录音中… 按■停下").font(.system(size: 14)).foregroundColor(theme.textDim)
+                        .foregroundColor(composerTheme.text)
+                    Text("录音中… 按■停下").font(.system(size: 14)).foregroundColor(composerTheme.textDim)
                     Spacer(minLength: 0)
                 } else {
                     // 0823 她报的：信息主题按回车不攒气泡。病根是这个框没写 axis: .vertical，
@@ -1725,15 +1731,15 @@ struct ChatView: View {
                             .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: showBlue ? .semibold : .regular))
                             .contentTransition(.symbolEffect(.replace))
                             .animation(.easeInOut(duration: 0.18), value: isGenerating)
-                            .foregroundColor(showBlue ? .white : theme.textDim)
+                            .foregroundColor(showBlue ? .white : composerTheme.textDim)
                             .frame(width: 30, height: 30)
-                            .background(showBlue ? Color(uiColor: .systemBlue) : Color.clear, in: Circle())
+                            .background(showBlue ? composerTheme.sendButtonColor : Color.clear, in: Circle())
                         if store.heldCount > 0 {
                             Text("\(store.heldCount)")
                                 .font(.system(size: 9, weight: .bold))
                                 .foregroundColor(.white)
                                 .frame(minWidth: 14, minHeight: 14)
-                                .background(Color(uiColor: .systemBlue), in: Capsule())
+                                .background(composerTheme.sendButtonColor, in: Capsule())
                                 .offset(x: 3, y: -3)
                         }
                     }
@@ -3885,7 +3891,7 @@ struct MessageRow: View {
                                 Image(systemName: "checkmark")
                             }
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(Color(uiColor: .systemBlue))
+                            .foregroundColor(theme.readTickColor)
                         }
                         // 0907 她抓的：原来要求这条有正文才给按钮，
                         // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
@@ -4150,11 +4156,7 @@ struct MessageRow: View {
                     Text(quote).lineLimit(2)
                 }
                 .font(.system(size: 12))
-                .foregroundColor(
-                    (theme.isMessages && !theme.isKakao && isUser)
-                        ? Color.white.opacity(0.72)
-                        : (isUser ? Color.black : theme.textDim.opacity(0.94))
-                )
+                .foregroundColor(theme.thoughtColor)
             }
             Group {
                 if theme.isKakao {
