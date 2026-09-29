@@ -3719,6 +3719,7 @@ struct MessageRow: View {
                     MorningPaperMessageCard(date: paperDate, theme: theme, messageID: msg.id)
                 } else if let inside = msg.insideText {
                     InsideMessageCard(text: inside, date: msg.date, theme: theme, messageID: msg.id)
+                        .frame(maxWidth: .infinity)   // 0929 她要的：整行居中
                 } else if let ghost = msg.ghostCard {
                     GhostActivityMessageCard(card: ghost, theme: theme)
                 } else if let play = msg.playCard {
@@ -3742,8 +3743,10 @@ struct MessageRow: View {
                     AlbumSavedMessageCard(batch: album, theme: theme)
                 } else if let pond = msg.pondCard {
                     PondChatMessageCard(card: pond)
+                        .frame(maxWidth: .infinity)
                 } else if let mem = msg.memoryCard {
                     MemoryChatMessageCard(card: mem)
+                        .frame(maxWidth: .infinity)
                 } else if let buy = msg.buyCard {
                     // 0907 二期审批卡：她要它「跟他的气泡列在一堆」，所以不居中，走左侧
                     BuyApprovalMessageCard(card: buy, theme: theme)
