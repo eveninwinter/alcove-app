@@ -3663,8 +3663,11 @@ struct MessageRow: View {
     }
     /// 只有话没有动作的轮次不挂轨迹行（那些话本来就在气泡里）
     private var trailWorthShowing: Bool { trailToolCount > 0 }
-    /// 塔罗卡那一行：整行居中
-    private var isTarotRow: Bool { msg.tarotCard != nil || msg.tarotOffer != nil }
+    /// 塔罗卡那一行：整行居中（两侧留白都不吃）。0929 她要檐下 / 不忘 / Inside 三张小卡也在屏幕正中，一并走这条
+    private var isTarotRow: Bool {
+        msg.tarotCard != nil || msg.tarotOffer != nil
+            || msg.insideText != nil || msg.pondCard != nil || msg.memoryCard != nil
+    }
 
     var body: some View {
         HStack(alignment: (theme.isKakao && !isUser) ? .top : .bottom, spacing: 0) {
