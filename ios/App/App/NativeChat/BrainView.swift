@@ -2265,8 +2265,10 @@ struct BWKnob: Identifiable {
     let lo: Double
     let hi: Double
     let step: Double
+    let isSwitch: Bool          // 1001 原话兜底：后端标 kind=switch 的画成开关，0 关 1 开
     var value: Double
     init(_ d: [String: Any]) {
+        isSwitch = d.string("kind") == "switch"
         id = d.string("key")
         name = d.string("name")
         note = d.string("note")
@@ -2286,6 +2288,31 @@ struct BuwangKnobRow: View {
     @ObservedObject private var fontStore = KakaoPackStore.shared
 
     var body: some View {
+        if knob.isSwitch { switchRow } else { sliderRow }
+    }
+
+    private var switchRow: some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 2) {
+                Text(knob.name).font(BuwangFont.hand(15.5)).foregroundColor(ink.ink)
+                Text(knob.note).font(.system(size: 9.5)).foregroundColor(ink.ink3)
+            }
+            Spacer(minLength: 0)
+            Toggle("", isOn: Binding(
+                get: { knob.value >= 0.5 },
+                set: { on in
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    withAnimation(.snappy(duration: 0.15)) { knob.value = on ? 1 : 0 }
+                }))
+                .labelsHidden()
+                .tint(ink.cherry)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 10)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.card)
+            .shadow(color: ink.shadow, radius: 5, x: 0, y: 3))
+    }
+
+    private var sliderRow: some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(alignment: .firstTextBaseline) {
                 Text(knob.name).font(BuwangFont.hand(15.5)).foregroundColor(ink.ink)
