@@ -724,6 +724,13 @@ struct RecallItem {
         self.ts = json["ts"] as? String ?? ""
     }
 
+    private static let isoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }()
+    private static let iso = ISO8601DateFormatter()
+    /// 存档时间（后端存的是带时区的 ISO 串）；解析不了就是 nil
+    var date: Date? { Self.isoFrac.date(from: ts) ?? Self.iso.date(from: ts) }
+
     // 与 PWA formatRecallCards 同款切卡：按 [bucket_id: 分段
     var cards: [(date: String, body: String)] {
         let parts = content.components(separatedBy: "[bucket_id:")

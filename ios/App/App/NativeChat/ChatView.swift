@@ -1172,7 +1172,7 @@ struct ChatView: View {
             if let j = (first...last).first(where: { showsProcess(msgs[$0]) }) { host = j }
         }
         guard host == k else { return nil }
-        return store.recall(forUserText: msgs[first - 1].text)
+        return store.recall(forUserText: msgs[first - 1].text, sentAt: msgs[first - 1].date)
     }
 
     /// 0924 晚她要的：带图案的「第一条」气泡（01 图）给这一串里第一条真画气泡的消息。卡片、照片、语音、表情不算，

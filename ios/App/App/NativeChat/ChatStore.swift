@@ -206,13 +206,21 @@ final class ChatStore: ObservableObject {
         recallMap = map
     }
 
-    func recall(forUserText text: String) -> RecallItem? {
+    func recall(forUserText text: String, sentAt: Date) -> RecallItem? {
+        // 1001 她抓的：发表情时这句是表情描述，每次一字不差，会挂上以前发同一张表情那轮的旧召回。
+        // 只认这条消息之后半小时内存档的召回（排队等他收轮也算进去），对不上就是这轮没召回。
+        func near(_ it: RecallItem) -> Bool {
+            guard let d = it.date else { return false }
+            let dt = d.timeIntervalSince(sentAt)
+            return dt > -120 && dt < 1800
+        }
         let key = RecallItem.norm(text)
-        if let exact = recallMap[key] { return exact }
+        if let exact = recallMap[key], near(exact) { return exact }
         // 文字和表情／图片同一次发出时，召回 hook 收到的是合并 prompt，
         // 聊天页却分开显示。只要合并 prompt 含这颗文字，就把角标挂回来。
         guard key.count >= 4 else { return nil }
         return orderedRecalls.first {
+            guard near($0) else { return false }
             let prompt = RecallItem.norm($0.prompt)
             return prompt.hasPrefix(key + " ") || prompt.contains(key)
         }
