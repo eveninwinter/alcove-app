@@ -744,6 +744,7 @@ final class ChatStore: ObservableObject {
             // 跳过去，上次轮询之后才落库或刚放行的（他 curl 的东西收轮才放，时间戳还是旧的）就再也问不到，
             // 只有退出重进才补得回来。她自己那条下一轮轮询会再回来，appendNew 按 ts + role 认出来，不会多一条。
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
+            if !r.reactionUpdates.isEmpty { applyReactionUpdates(r.reactionUpdates) }
             // 0927 任务#2986 她报的「主聊天滑动一卡一卡」：@Published 只要赋值就通知整页重算，值没变也算。
             // 这里每次轮询（闲 8 秒 / 忙 2.5 秒 / API 流式 1 秒）原来都照写一遍，整张聊天表（几百条）跟着重算一回。
             // 下面一律「真变了才写」。
@@ -817,6 +818,33 @@ final class ChatStore: ObservableObject {
             notifiedTs.insert(rec.ts)
             AlcoveNotify.shared.newMessage(rec.text)
         }
+    }
+
+    /// 1001 贴表情：轮询带回来的变化挂到对应那条上；值没变就不写（免得整页重算）
+    private func applyReactionUpdates(_ ups: [[String: Any]]) {
+        for u in ups {
+            guard let ts = u["ts"] as? String, let role = u["role"] as? String,
+                  let who = u["who"] as? String,
+                  let idx = messages.firstIndex(where: { $0.ts == ts && $0.role == role }) else { continue }
+            let emoji = u["emoji"] as? String ?? ""
+            let now = messages[idx].reactions[who]
+            if emoji.isEmpty {
+                if now != nil { messages[idx].reactions.removeValue(forKey: who) }
+            } else if now != emoji {
+                messages[idx].reactions[who] = emoji
+            }
+        }
+    }
+
+    /// 1001 她贴一个：先在本地挂上（不等服务器），再告诉后端
+    func react(_ msg: ChatMessage, emoji: String) {
+        if let idx = messages.firstIndex(where: { $0.ts == msg.ts && $0.role == msg.role }),
+           messages[idx].reactions["user"] != emoji {
+            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
+                messages[idx].reactions["user"] = emoji
+            }
+        }
+        Task { try? await AlcoveAPI.react(ts: msg.ts, role: msg.role, emoji: emoji) }
     }
 
     // 追加服务器消息，同时清理已被确认的本地乐观气泡

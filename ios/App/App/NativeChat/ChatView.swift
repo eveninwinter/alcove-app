@@ -26,6 +26,9 @@ struct ChatView: View {
     @State private var showEffectPanel = false
     @State private var handlingReturn = false
     @State private var selectedQuote: String?
+    /// 1001 贴表情：正被长按的那条（整屏那层盖在上面）；点了「选择文字」的那条（只有它能逐字选）
+    @State private var reactTarget: ReactTarget?
+    @State private var selectingTs: String?
     // 0925「编辑」：正在编辑哪条（她那条的 ts）和输入框里的字
     @State private var editingTs: String?
     @State private var rerollConfirmShown = false   // 0928 她要的：点重来先问一句是否（误触过一次，见下面 alert）
@@ -168,6 +171,7 @@ struct ChatView: View {
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
+        .overlay { reactOverlay }
         .sheet(isPresented: $showStickers) { stickerSheet.modifier(HouseColorScheme()) }
         .sheet(isPresented: $showEffectPanel) {
             TextEffectPanel(selection: effectSelectionText, onPick: applyTextEffect)
@@ -870,6 +874,41 @@ struct ChatView: View {
         return { rerollConfirmShown = true }
     }
 
+    /// 1001 贴表情：长按文字气泡 → 整屏那层。还没落库的、流式临时气泡不给
+    private func reactLongPress(for message: ChatMessage) -> ((CGRect) -> Void)? {
+        guard !message.pending, !message.isLive, !message.displayText.isEmpty else { return nil }
+        return { frame in
+            inputFocused = false
+            selectingTs = nil
+            reactTarget = ReactTarget(msg: message, frame: frame)
+        }
+    }
+
+    private func exitTextSelection() { selectingTs = nil }
+
+    @ViewBuilder private var reactOverlay: some View {
+        if let t = reactTarget {
+            ReactionOverlay(target: t, theme: theme,
+                            canCopyTurn: t.msg.role == "assistant",
+                            canEdit: editAction(for: t.msg) != nil,
+                            onPick: { store.react(t.msg, emoji: $0) },
+                            onAction: { handleReactAction($0, t.msg) },
+                            onDismiss: { reactTarget = nil })
+        }
+    }
+
+    private func handleReactAction(_ action: ReactionOverlay.Action, _ m: ChatMessage) {
+        switch action {
+        case .copy: UIPasteboard.general.string = m.displayText
+        case .ask:
+            selectedQuote = m.displayText
+            inputFocused = true
+        case .copyTurn: UIPasteboard.general.string = wholeTurnText(for: m)
+        case .edit: editAction(for: m)?()
+        case .select: selectingTs = m.ts
+        }
+    }
+
     /// 0925 她要的「编辑」：只给她自己的文字气泡（CLI 房间、没在翻历史、已经落库的）。
     /// 跟 rerollAction 一样抽成函数，别在 MessageRow 那一长串参数里内联，编译器扛不住
     private func editAction(for message: ChatMessage) -> (() -> Void)? {
@@ -1046,7 +1085,11 @@ struct ChatView: View {
                     kakaoFirstBubble: theme.isKakao ? kakaoFirstBubble(at: index) : kakaoHead,
                     kakaoUnread: message.role == "user" && next == nil,
                     onPlayMusic: { song in Task { await music.play(song) } },
-                    onContentChange: { scrollKick += 1 }
+                    onContentChange: { scrollKick += 1 },
+                    onReactLongPress: reactLongPress(for: message),
+                    reactLifted: reactTarget?.msg.id == message.id,
+                    textSelectable: selectingTs == message.ts,
+                    onExitTextSelection: exitTextSelection
                 )
                 if paragraphSelectionMode && !splittable {
                     Button {
@@ -3428,9 +3471,26 @@ struct SelectableMessageText: UIViewRepresentable {
     var onEdit: (() -> Void)? = nil
     /// 0925 工作室非 Kakao 的气泡是系统衬线字（New York）；没指定字体时用它
     var serif = false
+    /// 1001 聊天页：长按要留给贴表情，平时不让逐字选；点了菜单里的「选择文字」才打开（并直接全选）
+    var selectionEnabled = true
+    var selectAllOnEnable = false
+    /// 选区收掉（点了别处）就回到不能选字
+    var onSelectionEnded: (() -> Void)? = nil
 
-    final class Coordinator {
+    final class Coordinator: NSObject, UITextViewDelegate {
         var renderedKey: String?
+        var hadSelection = false
+        var onSelectionEnded: (() -> Void)?
+
+        func textViewDidChangeSelection(_ textView: UITextView) {
+            if textView.selectedRange.length > 0 {
+                hadSelection = true
+            } else if hadSelection {
+                hadSelection = false
+                let done = onSelectionEnded
+                DispatchQueue.main.async { done?() }
+            }
+        }
     }
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -3444,6 +3504,7 @@ struct SelectableMessageText: UIViewRepresentable {
         view.textContainerInset = .zero
         view.textContainer.lineFragmentPadding = 0
         view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        view.delegate = context.coordinator
         return view
     }
 
@@ -3451,6 +3512,20 @@ struct SelectableMessageText: UIViewRepresentable {
         view.onAsk = onAsk
         view.onCopyTurn = onCopyTurn
         view.onEdit = onEdit
+        context.coordinator.onSelectionEnded = onSelectionEnded
+        if view.isUserInteractionEnabled != selectionEnabled {
+            view.isSelectable = selectionEnabled
+            view.isUserInteractionEnabled = selectionEnabled
+            context.coordinator.hadSelection = false
+            if !selectionEnabled {
+                view.selectedRange = NSRange(location: 0, length: 0)
+            } else if selectAllOnEnable {
+                DispatchQueue.main.async {
+                    _ = view.becomeFirstResponder()
+                    view.selectedRange = NSRange(location: 0, length: (view.text as NSString).length)
+                }
+            }
+        }
         // 后台每 2.5 秒轮询会让 SwiftUI 重跑 updateUIView。正文其实没变，
         // 但重新赋 attributedText 会强制收掉 iOS 的选区和复制菜单。
         // 同一份渲染直接跳过；用户正在选字时，即使主题恰好变化也先让她选完。
@@ -3549,6 +3624,12 @@ struct MessageRow: View {
     var kakaoUnread: Bool = false
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
+    /// 1001 贴表情：长按文字气泡的回调（带气泡在屏幕上的位置）；这条是不是正浮起来；是不是点了「选择文字」
+    var onReactLongPress: ((CGRect) -> Void)? = nil
+    var reactLifted = false
+    var textSelectable = false
+    var onExitTextSelection: (() -> Void)? = nil
+    @State private var reactPressing = false
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
     // 0820 按时间线摆之后，点开的是「这一段」，不是整轮那一坨
@@ -3849,7 +3930,7 @@ struct MessageRow: View {
                         } else if isEditing, let editDraft = editDraft {
                             editBox(editDraft)
                         } else {
-                            bubble
+                            reactBubble
                         }
                     }
                     // 正文里有链接：气泡下面长一张小卡片（只有链接的话就只留卡）
@@ -4070,6 +4151,45 @@ struct MessageRow: View {
     static let kakaoBubbleShiftLeft: CGFloat = 14
     static let kakaoBubbleShiftDown: CGFloat = 6
 
+    /// 1001 贴表情：气泡＋底下贴的小片。按住先缩一点，触发那一下弹起来（跟 iOS 长按一样）
+    private var reactBubble: some View {
+        VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
+            bubble
+                .scaleEffect(reactPressing ? 0.95 : (reactLifted ? 1.04 : 1),
+                             anchor: isUser ? .trailing : .leading)
+                .animation(.spring(response: 0.3, dampingFraction: 0.62), value: reactPressing)
+                .animation(.spring(response: 0.36, dampingFraction: 0.58), value: reactLifted)
+                .overlay(reactPressLayer)
+            if !msg.reactions.isEmpty {
+                ReactionChips(reactions: msg.reactions, theme: theme)
+                    .padding(.top, -5)
+                    .padding(isUser ? .trailing : .leading, reactChipInset)
+                    .transition(.scale(scale: 0.5, anchor: isUser ? .topTrailing : .topLeading).combined(with: .opacity))
+            }
+        }
+    }
+
+    /// Kakao 他那边气泡整块往左挪过（头像让位），小片跟着看得见的气泡左边走
+    private var reactChipInset: CGFloat {
+        if isUser || !theme.isKakao { return 8 }
+        return kakaoTextLeading() + 2
+    }
+
+    @ViewBuilder private var reactPressLayer: some View {
+        if let onReactLongPress, !textSelectable {
+            GeometryReader { geo in
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture {}
+                    .onLongPressGesture(minimumDuration: 0.38, maximumDistance: 12, perform: {
+                        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                        reactPressing = false
+                        onReactLongPress(geo.frame(in: .global))
+                    }, onPressingChanged: { reactPressing = $0 })
+            }
+        }
+    }
+
     private var bubble: some View {
         Group {
             if theme.isKakao {
@@ -4271,7 +4391,10 @@ struct MessageRow: View {
                         ? msg.displayText : wholeTurnText
                 },
                 fontName: KakaoPackStore.shared.fontName,
-                onEdit: isUser ? onEdit : nil
+                onEdit: isUser ? onEdit : nil,
+                selectionEnabled: textSelectable || onReactLongPress == nil,
+                selectAllOnEnable: textSelectable,
+                onSelectionEnded: onExitTextSelection
             )
             }
         }
@@ -7734,6 +7857,462 @@ private struct NativeThinkingSheet: View {
                 translating = false
                 errorText = "翻译未完成，原文已保留。点右上角「译」重试。"
             }
+        }
+    }
+}
+
+// MARK: - 1001 贴表情（照 tg：长按气泡 → 一排 emoji ＋ 菜单，能展开全部苹果 emoji；贴上挂在气泡下角，头像在表情左边）
+
+struct ReactTarget: Equatable {
+    let msg: ChatMessage
+    let frame: CGRect
+    var isUser: Bool { msg.role == "user" }
+    static func == (a: ReactTarget, b: ReactTarget) -> Bool { a.msg.id == b.msg.id && a.frame == b.frame }
+}
+
+/// 全部苹果 emoji（后端 /chat/emoji-list：emoji-datasource 15.1 ＋ CLDR 中文名），拿一次存进 Caches
+final class EmojiCatalog: ObservableObject {
+    static let shared = EmojiCatalog()
+    static let quick = ["❤️", "🥺", "😂", "🫣", "😡", "🐰", "🫶"]
+    static let groupIcons = ["😀", "🐻", "🍔", "⚽️", "🚗", "💡", "❤️", "🏳️"]
+
+    struct Item: Identifiable, Hashable {
+        let id: Int
+        let c: String
+        let g: Int
+        let k: String
+    }
+
+    @Published private(set) var groups: [String] = []
+    @Published private(set) var byGroup: [[Item]] = []
+    private(set) var items: [Item] = []
+    private var loading = false
+
+    private var cacheURL: URL {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("emoji_zh.json")
+    }
+
+    func load() {
+        guard items.isEmpty, !loading else { return }
+        loading = true
+        if let data = try? Data(contentsOf: cacheURL), apply(data) {
+            loading = false
+            return
+        }
+        Task {
+            let obj = try? await AlcoveAPI.getRaw("/api/chat/emoji-list")
+            let data = obj.flatMap { try? JSONSerialization.data(withJSONObject: $0) }
+            await MainActor.run {
+                if let data, self.apply(data) { try? data.write(to: self.cacheURL) }
+                self.loading = false
+            }
+        }
+    }
+
+    @discardableResult
+    private func apply(_ data: Data) -> Bool {
+        guard let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+              let g = obj["groups"] as? [String],
+              let arr = obj["emoji"] as? [[String: Any]], !arr.isEmpty else { return false }
+        var out: [Item] = []
+        out.reserveCapacity(arr.count)
+        for (i, e) in arr.enumerated() {
+            guard let c = e["c"] as? String else { continue }
+            out.append(Item(id: i, c: c, g: (e["g"] as? NSNumber)?.intValue ?? 0, k: e["k"] as? String ?? ""))
+        }
+        var grouped = Array(repeating: [Item](), count: g.count)
+        for it in out where it.g >= 0 && it.g < g.count { grouped[it.g].append(it) }
+        items = out
+        groups = g
+        byGroup = grouped
+        return true
+    }
+
+    func search(_ q: String) -> [Item] {
+        let key = q.trimmingCharacters(in: .whitespaces).lowercased()
+        guard !key.isEmpty else { return [] }
+        return items.filter { $0.c == key || $0.k.lowercased().contains(key) }
+    }
+}
+
+/// 贴在气泡下角的小片：头像在左、表情在右；两个人都贴了就横着排开（她在前）
+struct ReactionChips: View {
+    let reactions: [String: String]
+    let theme: AlcoveTheme
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
+    @AppStorage(KakaoPackStore.usePackAvatarKey) private var usePackAvatar = true
+
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(["user", "assistant"], id: \.self) { who in
+                if let e = reactions[who] {
+                    HStack(spacing: 3) {
+                        avatar(who)
+                            .frame(width: 18, height: 18)
+                            .clipShape(Circle())
+                        Text(e)
+                            .font(.system(size: 14))
+                            .id(e)
+                            .transition(.scale(scale: 0.2).combined(with: .opacity))
+                    }
+                    .padding(.leading, 3)
+                    .padding(.trailing, 7)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(theme.isDark ? Color(red: 44/255, green: 44/255, blue: 46/255) : .white))
+                    .overlay(Capsule().stroke(theme.isDark ? Color.white.opacity(0.12) : Color.black.opacity(0.08), lineWidth: 0.8))
+                    .shadow(color: .black.opacity(theme.isDark ? 0.25 : 0.07), radius: 2, y: 1)
+                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                }
+            }
+        }
+        .animation(.spring(response: 0.38, dampingFraction: 0.55), value: reactions)
+    }
+
+    @ViewBuilder
+    private func avatar(_ who: String) -> some View {
+        if let img = image(who) {
+            Image(uiImage: img).resizable().scaledToFill()
+        } else {
+            ZStack {
+                Circle().fill(who == "user" ? Color(red: 240/255, green: 170/255, blue: 196/255)
+                                            : Color(red: 150/255, green: 170/255, blue: 210/255))
+                Text(who == "user" ? "霁" : "璟")
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundColor(.white)
+            }
+        }
+    }
+
+    private func image(_ who: String) -> UIImage? {
+        if who == "user" { return Self.decode(userAvatar) }
+        let mine = Self.decode(assistantAvatar)
+        if theme.isKakao {
+            if !usePackAvatar, let m = mine { return m }
+            return KakaoPackStore.shared.profileImage ?? mine
+        }
+        return mine
+    }
+
+    private static var cache: [Int: UIImage] = [:]
+    private static func decode(_ value: String) -> UIImage? {
+        guard !value.isEmpty else { return nil }
+        let key = value.hashValue
+        if let hit = cache[key] { return hit }
+        let payload = value.split(separator: ",", maxSplits: 1).last.map(String.init) ?? value
+        guard let img = Data(base64Encoded: payload).flatMap(UIImage.init(data:)) else { return nil }
+        cache[key] = img
+        return img
+    }
+}
+
+private struct ReactPressStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.82 : 1)
+            .animation(.spring(response: 0.22, dampingFraction: 0.55), value: configuration.isPressed)
+    }
+}
+
+/// 长按之后整屏这一层：毛玻璃（被按的气泡那块挖空、它自己在列表里弹起来）＋ 一排 emoji ＋ 菜单；
+/// 点 ⌄ 那一排顺着变形成大面板（搜索 ＋ 分类 ＋ 全部 emoji）
+struct ReactionOverlay: View {
+    enum Action { case copy, ask, copyTurn, edit, select }
+
+    let target: ReactTarget
+    let theme: AlcoveTheme
+    let canCopyTurn: Bool
+    let canEdit: Bool
+    let onPick: (String) -> Void
+    let onAction: (Action) -> Void
+    let onDismiss: () -> Void
+
+    @ObservedObject private var catalog = EmojiCatalog.shared
+    @State private var shown = false
+    @State private var popped = false
+    @State private var expanded = false
+    @State private var picked: String?
+    @State private var query = ""
+    @State private var jump: Int?
+    @Namespace private var ns
+
+    private let barW: CGFloat = 8 * 40 + 16
+    private let barH: CGFloat = 52
+    private let menuW: CGFloat = 230
+    private let rowH: CGFloat = 44
+
+    private var cardFill: Color { theme.isDark ? Color(red: 38/255, green: 38/255, blue: 40/255) : .white }
+    private var ink: Color { theme.isDark ? .white : Color(red: 0.2, green: 0.19, blue: 0.2) }
+    private var softFill: Color { theme.isDark ? Color.white.opacity(0.08) : Color.black.opacity(0.05) }
+    private var selFill: Color { theme.isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.1) }
+    private var mine: String? { target.msg.reactions["user"] }
+
+    private var menuItems: [(Action, String, String)] {
+        var out: [(Action, String, String)] = [(.copy, "复制", "doc.on.doc"), (.ask, "询问", "quote.bubble")]
+        if canCopyTurn { out.append((.copyTurn, "复制整轮", "doc.on.clipboard")) }
+        if canEdit { out.append((.edit, "编辑", "pencil")) }
+        out.append((.select, "选择文字", "character.cursor.ibeam"))
+        return out
+    }
+
+    private static var insets: UIEdgeInsets {
+        UIApplication.shared.connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .first { $0.isKeyWindow }?.safeAreaInsets ?? .zero
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let o = geo.frame(in: .global).origin
+            let f = target.frame.offsetBy(dx: -o.x, dy: -o.y)
+            ZStack(alignment: .topLeading) {
+                Rectangle()
+                    .fill(.ultraThinMaterial)
+                    .overlay(Color.black.opacity(theme.isDark ? 0.28 : 0.06))
+                    .mask(holeMask(size: geo.size, hole: f.insetBy(dx: -8, dy: -8)))
+                    .opacity(shown ? 1 : 0)
+                    .contentShape(Rectangle())
+                    .onTapGesture { close() }
+                if shown {
+                    if expanded {
+                        panel(size: geo.size, f: f)
+                    } else {
+                        bar(size: geo.size, f: f)
+                        menu(size: geo.size, f: f)
+                    }
+                }
+            }
+        }
+        .ignoresSafeArea()
+        .onAppear {
+            catalog.load()
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) { shown = true }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { popped = true }
+        }
+    }
+
+    private func holeMask(size: CGSize, hole: CGRect) -> some View {
+        ZStack {
+            Rectangle().fill(Color.black)
+            RoundedRectangle(cornerRadius: 20, style: .continuous)
+                .fill(Color.black)
+                .frame(width: max(0, hole.width), height: max(0, hole.height))
+                .position(x: hole.midX, y: hole.midY)
+                .blendMode(.destinationOut)
+        }
+        .compositingGroup()
+        .frame(width: size.width, height: size.height)
+    }
+
+    // 一排：上面放得下就在气泡上面，放不下挪到下面
+    private func barCenter(size: CGSize, f: CGRect) -> CGPoint {
+        let pad: CGFloat = 10
+        let x0 = target.isUser ? f.maxX - barW : f.minX
+        let x = min(max(x0, pad), size.width - pad - barW) + barW / 2
+        let above = f.minY - 12 - barH
+        let y = above >= Self.insets.top + 8 ? above + barH / 2 : f.maxY + 12 + barH / 2
+        return CGPoint(x: x, y: y)
+    }
+
+    private func bar(size: CGSize, f: CGRect) -> some View {
+        let c = barCenter(size: size, f: f)
+        return HStack(spacing: 0) {
+            ForEach(Array(EmojiCatalog.quick.enumerated()), id: \.element) { i, e in
+                Button { pick(e) } label: {
+                    Text(e)
+                        .font(.system(size: 28))
+                        .frame(width: 40, height: 44)
+                        .background(Circle().fill(mine == e ? selFill : .clear).frame(width: 38, height: 38))
+                        .scaleEffect(picked == e ? 1.4 : (popped ? 1 : 0.2))
+                        .opacity(popped ? 1 : 0)
+                        .animation(.spring(response: 0.36, dampingFraction: 0.55).delay(Double(i) * 0.025), value: popped)
+                        .animation(.spring(response: 0.24, dampingFraction: 0.45), value: picked)
+                }
+                .buttonStyle(ReactPressStyle())
+            }
+            Button { expand() } label: {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(ink.opacity(0.55))
+                    .frame(width: 32, height: 32)
+                    .background(Circle().fill(softFill))
+                    .frame(width: 40, height: 44)
+                    .scaleEffect(popped ? 1 : 0.2)
+                    .opacity(popped ? 1 : 0)
+                    .animation(.spring(response: 0.36, dampingFraction: 0.55).delay(7 * 0.025), value: popped)
+            }
+            .buttonStyle(ReactPressStyle())
+        }
+        .padding(.horizontal, 8)
+        .frame(width: barW, height: barH)
+        .background(
+            RoundedRectangle(cornerRadius: barH / 2, style: .continuous)
+                .fill(cardFill)
+                .matchedGeometryEffect(id: "reactCard", in: ns)
+                .shadow(color: .black.opacity(theme.isDark ? 0.4 : 0.12), radius: 14, y: 6)
+        )
+        .position(c)
+        .transition(.scale(scale: 0.5, anchor: target.isUser ? .bottomTrailing : .bottomLeading).combined(with: .opacity))
+    }
+
+    private func menu(size: CGSize, f: CGRect) -> some View {
+        let items = menuItems
+        let h = rowH * CGFloat(items.count)
+        let bc = barCenter(size: size, f: f)
+        let barBelow = bc.y > f.maxY
+        var top = barBelow ? bc.y + barH / 2 + 8 : f.maxY + 10
+        let limit = size.height - Self.insets.bottom - 8
+        if top + h > limit { top = max(Self.insets.top + 8, limit - h) }
+        let pad: CGFloat = 10
+        let x0 = target.isUser ? f.maxX - menuW : f.minX
+        let x = min(max(x0, pad), size.width - pad - menuW) + menuW / 2
+        return VStack(spacing: 0) {
+            ForEach(Array(items.enumerated()), id: \.offset) { i, item in
+                if i > 0 { Divider().padding(.leading, 16) }
+                Button {
+                    UISelectionFeedbackGenerator().selectionChanged()
+                    let act = item.0
+                    close { onAction(act) }
+                } label: {
+                    HStack {
+                        Text(item.1).font(.system(size: 16))
+                        Spacer()
+                        Image(systemName: item.2).font(.system(size: 15))
+                    }
+                    .foregroundColor(ink)
+                    .padding(.horizontal, 16)
+                    .frame(height: rowH)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(width: menuW)
+        .background(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .fill(cardFill)
+                .shadow(color: .black.opacity(theme.isDark ? 0.4 : 0.12), radius: 14, y: 6)
+        )
+        .position(x: x, y: top + h / 2)
+        .transition(.scale(scale: 0.6, anchor: target.isUser ? .topTrailing : .topLeading).combined(with: .opacity))
+    }
+
+    private func panel(size: CGSize, f: CGRect) -> some View {
+        let w = min(size.width - 20, 380)
+        let h: CGFloat = min(360, size.height * 0.5)
+        let roomAbove = f.minY - Self.insets.top - 20
+        let cy = roomAbove >= h ? f.minY - 12 - h / 2 : Self.insets.top + 8 + h / 2
+        return VStack(spacing: 8) {
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").font(.system(size: 14)).foregroundColor(ink.opacity(0.45))
+                TextField("搜索", text: $query)
+                    .font(.system(size: 15))
+                    .foregroundColor(ink)
+                    .submitLabel(.search)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(Capsule().fill(softFill))
+            if query.isEmpty && !catalog.groups.isEmpty {
+                HStack(spacing: 0) {
+                    ForEach(0..<min(catalog.groups.count, EmojiCatalog.groupIcons.count), id: \.self) { gi in
+                        Button { jump = gi } label: {
+                            Text(EmojiCatalog.groupIcons[gi])
+                                .font(.system(size: 18))
+                                .grayscale(0.7)
+                                .opacity(0.75)
+                                .frame(maxWidth: .infinity, minHeight: 28)
+                        }
+                        .buttonStyle(ReactPressStyle())
+                    }
+                }
+            }
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    let cols = Array(repeating: GridItem(.flexible(), spacing: 0), count: 8)
+                    if catalog.groups.isEmpty {
+                        LazyVGrid(columns: cols, spacing: 6) {
+                            ForEach(EmojiCatalog.quick, id: \.self) { cell($0) }
+                        }
+                        ProgressView().padding(.top, 12)
+                    } else if !query.isEmpty {
+                        LazyVGrid(columns: cols, spacing: 6) {
+                            ForEach(catalog.search(query)) { cell($0.c) }
+                        }
+                    } else {
+                        LazyVGrid(columns: cols, spacing: 6, pinnedViews: []) {
+                            ForEach(Array(catalog.byGroup.enumerated()), id: \.offset) { gi, list in
+                                Section(header: groupHeader(gi)) {
+                                    ForEach(list) { cell($0.c) }
+                                }
+                            }
+                        }
+                    }
+                }
+                .onChange(of: jump) { gi in
+                    guard let gi else { return }
+                    withAnimation(.easeInOut(duration: 0.3)) { proxy.scrollTo("emoji-group-\(gi)", anchor: .top) }
+                    jump = nil
+                }
+            }
+        }
+        .padding(12)
+        .frame(width: w, height: h)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(cardFill)
+                .matchedGeometryEffect(id: "reactCard", in: ns)
+                .shadow(color: .black.opacity(theme.isDark ? 0.4 : 0.14), radius: 18, y: 8)
+        )
+        .position(x: size.width / 2, y: cy)
+        .transition(.opacity)
+    }
+
+    private func groupHeader(_ gi: Int) -> some View {
+        Text(gi < catalog.groups.count ? catalog.groups[gi] : "")
+            .font(.system(size: 12, weight: .medium))
+            .foregroundColor(ink.opacity(0.45))
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.top, gi == 0 ? 0 : 8)
+            .padding(.leading, 4)
+            .id("emoji-group-\(gi)")
+    }
+
+    private func cell(_ e: String) -> some View {
+        Button { pick(e) } label: {
+            Text(e)
+                .font(.system(size: 28))
+                .frame(maxWidth: .infinity, minHeight: 40)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(mine == e ? selFill : .clear))
+                .scaleEffect(picked == e ? 1.35 : 1)
+                .animation(.spring(response: 0.24, dampingFraction: 0.45), value: picked)
+        }
+        .buttonStyle(ReactPressStyle())
+    }
+
+    private func expand() {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.82)) { expanded = true }
+    }
+
+    private func pick(_ e: String) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        picked = e
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.16) {
+            close { onPick(e) }
+        }
+    }
+
+    private func close(_ then: (() -> Void)? = nil) {
+        withAnimation(.easeOut(duration: 0.18)) {
+            shown = false
+            popped = false
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.19) {
+            onDismiss()
+            then?()
         }
     }
 }

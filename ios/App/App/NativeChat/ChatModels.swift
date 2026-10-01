@@ -70,6 +70,8 @@ struct ChatMessage: Identifiable, Equatable {
     /// 0912：他发语音时自己写的中文翻译（voice_speak.py --zh → 后端 extra.audio_zh）。展开转文字后点「译」才显示
     var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
+    /// 1001 她要的贴表情：谁贴了什么（"user" 她 / "assistant" 他 → emoji），一人一条只一种
+    var reactions: [String: String] = [:]
     // 0926 她要的「流式直接在原有气泡里」：他还在写的那几段先当成临时气泡塞进列表，
     // 用跟正式消息同一套画法（字体、气泡、主题都一样）；正式消息一到就收掉
     var isLive: Bool = false
@@ -309,6 +311,7 @@ struct ChatMessage: Identifiable, Equatable {
         else { self.asleepAtSend = false }
         self.msgType = json["msg_type"] as? String
         self.stickerId = json["sticker_id"] as? String
+        if let r = json["reactions"] as? [String: String] { self.reactions = r }
         // 服务端把 extra 摊平进记录，他写的中文翻译在 audio_zh
         if let zh = (json["audio_zh"] as? String)?.trimmingCharacters(in: .whitespacesAndNewlines), !zh.isEmpty {
             self.audioZh = zh
