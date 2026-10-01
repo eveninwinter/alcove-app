@@ -3381,8 +3381,53 @@ private struct SDKShadowChatView: View {
 // MARK: - 单条消息
 
 /// 0925 工作室气泡也用这套长按选字（询问 / 复制整轮），放开成 internal
-final class AskSelectableTextView: UITextView {
+final class AskSelectableTextView: UITextView, UIGestureRecognizerDelegate {
     var onAsk: ((String) -> Void)?
+    /// 1001 她报的「选完字点别的地方，选中的不消失」：点在字框外面 UITextView 自己不收选区。
+    /// 「选择文字」打开时在窗口上挂一个不抢点按的轻点识别，点在框外就收掉，再告诉外面退出选字
+    var onOutsideTap: (() -> Void)?
+    private var outsideTap: UITapGestureRecognizer?
+
+    func watchOutsideTaps(_ on: Bool) {
+        if on {
+            guard outsideTap == nil, let window else { return }
+            let g = UITapGestureRecognizer(target: self, action: #selector(outsideTapped(_:)))
+            g.cancelsTouchesInView = false
+            g.delegate = self
+            window.addGestureRecognizer(g)
+            outsideTap = g
+        } else if let g = outsideTap {
+            g.view?.removeGestureRecognizer(g)
+            outsideTap = nil
+        }
+    }
+
+    override func willMove(toWindow newWindow: UIWindow?) {
+        super.willMove(toWindow: newWindow)
+        if newWindow == nil { watchOutsideTaps(false) }
+    }
+
+    @objc private func outsideTapped(_ g: UITapGestureRecognizer) {
+        guard !bounds.contains(g.location(in: self)) else { return }
+        selectedRange = NSRange(location: 0, length: 0)
+        _ = resignFirstResponder()
+        watchOutsideTaps(false)
+        let done = onOutsideTap
+        DispatchQueue.main.async { done?() }
+    }
+
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldRecognizeSimultaneouslyWith other: UIGestureRecognizer) -> Bool { true }
+
+    /// 点在复制 / 询问那排菜单上不算「点别处」（菜单的动作还要读选区）
+    func gestureRecognizer(_ g: UIGestureRecognizer, shouldReceive touch: UITouch) -> Bool {
+        var v = touch.view
+        while let cur = v {
+            let name = NSStringFromClass(type(of: cur))
+            if name.contains("Menu") || name.contains("Callout") { return false }
+            v = cur.superview
+        }
+        return true
+    }
     var onCopyTurn: (() -> Void)?
     /// 0925 她要的「编辑」：只有她自己的文字气泡才给，长按选字冒出来的那排菜单里跟「询问」挨着
     var onEdit: (() -> Void)?
@@ -3470,16 +3515,19 @@ struct SelectableMessageText: UIViewRepresentable {
         view.onCopyTurn = onCopyTurn
         view.onEdit = onEdit
         context.coordinator.onSelectionEnded = onSelectionEnded
+        view.onOutsideTap = onSelectionEnded
         if view.isUserInteractionEnabled != selectionEnabled {
             view.isSelectable = selectionEnabled
             view.isUserInteractionEnabled = selectionEnabled
             context.coordinator.hadSelection = false
             if !selectionEnabled {
                 view.selectedRange = NSRange(location: 0, length: 0)
+                view.watchOutsideTaps(false)
             } else if selectAllOnEnable {
                 DispatchQueue.main.async {
                     _ = view.becomeFirstResponder()
                     view.selectedRange = NSRange(location: 0, length: (view.text as NSString).length)
+                    view.watchOutsideTaps(true)
                 }
             }
         }
@@ -4321,7 +4369,7 @@ struct MessageRow: View {
                         // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
                         // 1001 她要试的：信息主题换成跟打字框同一种系统玻璃（纸页照旧实心），大小排版一点不动
                         .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
-                                                     glass: theme.isMessages))
+                                                     glass: theme.isMessages && MessagesPalette.glass))
                 }
             }
         }

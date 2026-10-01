@@ -1884,6 +1884,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
     @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
+    @AppStorage(MessagesPalette.glassKey) private var bubbleGlass = true   // 1001：信息主题普通 / 玻璃气泡，两套颜色各存各的
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
@@ -1912,13 +1913,14 @@ private struct BubbleAppearanceSettingsView: View {
                 fontSizeSlider
                 bubbleGapSlider
                 turnGapSlider
-                if chatTheme.isMessages && !chatTheme.isKakao { glassFrostSlider }
+                if chatTheme.isMessages && !chatTheme.isKakao && bubbleGlass { glassFrostSlider }
             }
         case .colors:
             VStack(spacing: 12) {
-                ForEach(MessagesPalette.Item.allCases) { item in colorRow(item) }
+                bubbleStylePicker
+                ForEach(paletteItems) { item in colorRow(item) }
             }
-            Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走，现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套")
+            Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                 .font(.system(size: 10))
                 .foregroundColor(panelTheme.textLight)
                 .fixedSize(horizontal: false, vertical: true)
@@ -1938,9 +1940,10 @@ private struct BubbleAppearanceSettingsView: View {
                 if chatTheme.isMessages {
                     section("颜色 · 信息主题") {
                         VStack(spacing: 12) {
-                            ForEach(MessagesPalette.Item.allCases) { item in colorRow(item) }
+                            bubbleStylePicker
+                ForEach(paletteItems) { item in colorRow(item) }
                         }
-                        Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走，现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套")
+                        Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                             .font(.system(size: 10))
                             .foregroundColor(panelTheme.textLight)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1952,7 +1955,7 @@ private struct BubbleAppearanceSettingsView: View {
                         fontSizeSlider
                         bubbleGapSlider
                         turnGapSlider
-                        if chatTheme.isMessages && !chatTheme.isKakao { glassFrostSlider }
+                        if chatTheme.isMessages && !chatTheme.isKakao && bubbleGlass { glassFrostSlider }
                     }
                 }
 
@@ -2142,6 +2145,21 @@ private struct BubbleAppearanceSettingsView: View {
                 .foregroundColor(panelTheme.textDim)
                 .frame(width: 45, alignment: .trailing)
         }
+    }
+
+    /// 1001 她要的：信息主题普通气泡 / 玻璃气泡切换。两套颜色分开存，切回普通以前调的都还在
+    private var bubbleStylePicker: some View {
+        Picker("气泡", selection: Binding(get: { bubbleGlass },
+                                          set: { bubbleGlass = $0; MessagesPalette.bump() })) {
+            Text("普通气泡").tag(false)
+            Text("玻璃气泡").tag(true)
+        }
+        .pickerStyle(.segmented)
+    }
+
+    /// 玻璃气泡不带颜色，「我的气泡」「他的气泡」两项藏起来
+    private var paletteItems: [MessagesPalette.Item] {
+        MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
     }
 
     /// 1001 她要的：只管气泡的玻璃，照系统设置里 Liquid Glass 那条——左边透明、右边色调（更磨砂、字更清楚），不带颜色

@@ -418,10 +418,16 @@ enum MessagesPalette {
         }
         /// 旧键（0902 只有一套的时候）
         var legacyKey: String { "msgColor." + rawValue }
-        func key(dark: Bool) -> String { "msgColor.\(dark ? "night" : "day")." + rawValue }
+        /// 1001 她要的：普通气泡、玻璃气泡各存一套（普通沿用原来的键，切回去以前调的都在）
+        func key(dark: Bool, glass: Bool = MessagesPalette.glass) -> String {
+            (glass ? "msgColorGlass." : "msgColor.") + (dark ? "night" : "day") + "." + rawValue
+        }
     }
 
     static let stampKey = "msgPaletteStamp"
+    /// 1001 信息主题气泡用玻璃还是普通实心（设置「颜色 · 信息主题」顶上那个切换）。没设过＝玻璃（她正在试）
+    static let glassKey = "msgBubbleGlass"
+    static var glass: Bool { UserDefaults.standard.object(forKey: glassKey) as? Bool ?? true }
     private static let migratedKey = "msgColor.migratedToDayNight"
 
     /// 全屋现在是夜里还是白天（跟 AlcoveAppearance 那个开关走）
@@ -433,7 +439,7 @@ enum MessagesPalette {
         guard !d.bool(forKey: migratedKey) else { return }
         for item in Item.allCases {
             if let hex = d.string(forKey: item.legacyKey), !hex.isEmpty {
-                if d.string(forKey: item.key(dark: true)) == nil { d.set(hex, forKey: item.key(dark: true)) }
+                if d.string(forKey: item.key(dark: true, glass: false)) == nil { d.set(hex, forKey: item.key(dark: true, glass: false)) }
                 d.removeObject(forKey: item.legacyKey)
             }
         }
@@ -460,8 +466,8 @@ enum MessagesPalette {
         case .divider: return base.textDim
         case .bubbleUser: return base.bubbleUser
         case .bubbleAI: return base.bubbleAI
-        // 1001 信息主题气泡换成不带颜色的系统玻璃，白字在白天的玻璃上看不见了：默认跟他的正文一样（白天深、夜里浅）。她自己调过的照旧
-        case .textUser: return base.text
+        // 普通气泡：她的气泡上的字本来就是白的；1001 玻璃气泡不带颜色，白字在白天看不见，默认跟他的正文一样
+        case .textUser: return glass ? base.text : .white
         case .textAI: return base.text
         case .readTick, .sendButton: return Color(uiColor: .systemBlue)
         }
