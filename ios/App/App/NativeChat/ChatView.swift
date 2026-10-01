@@ -450,8 +450,10 @@ struct ChatView: View {
                 // 0914：罩与不罩是两条不同的分支，切到／切出信息主题时 SwiftUI 会把这个
                 // ScrollView 当成新视图重建，位置掉回最顶上（她原来报的那个 bug）。
                 // 重建发生在这一帧，下一帧再把锚点拉回最新一条。
-                .onChange(of: theme.isMessages) { _ in
-                    DispatchQueue.main.async { proxy.scrollTo("tail", anchor: .bottom) }
+                // 1001 她报「切换主题每次都飞到最顶上」：列表外面两层遮罩，一层看是不是信息主题、一层看是不是 Kakao，
+                // 哪层一翻都会重建；原来只盯了前一层，Kakao ↔ 信息就漏了。改成主题名一变就拉回最新（多拉两次等懒加载排好）
+                .onChange(of: themeName) { _ in
+                    scrollToTail(proxy, delays: [0, 0.1, 0.3], animated: false)
                 }
                 // 0927：进多选时底下多留了一截给多选栏；本来在最底的话跟着滚下去，最后一条别被栏盖住
                 .onChange(of: paragraphSelectionMode) { on in
@@ -6382,6 +6384,79 @@ struct PatLine: View {
 }
 
 // 任务#1308：一起听切歌的分割线。样子随 DreamDivider 一族：居中、细线、小字
+/// 1001 她要的「预览一定要跟当前主题一模一样（字体、气泡、壁纸等等）」：原来设置里三份手画的仿品（普通 / 信息 / Kakao 各一份），
+/// 聊天页一改就对不上。这里直接用聊天页同一个 MessageRow、同一张壁纸（ChatWallpaperStore.shared）、同样的分隔线和左右边距，
+/// 只是消息是写死的两条示例。整块不吃触摸。
+struct ChatLookPreview: View {
+    @ObservedObject private var wallpaper = ChatWallpaperStore.shared
+    @ObservedObject private var packs = KakaoPackStore.shared
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage("chatFontSize") private var fontSize = 14
+    @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
+    @AppStorage("wallStamp") private var wallStamp = 0.0
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
+    @AppStorage("msgGlassFrost") private var glassFrost = 0.3
+    @AppStorage("assistantName") private var assistantName = "陈璟"
+    @Namespace private var ns
+
+    private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
+
+    private func sample(_ role: String, _ text: String, minutesAgo: Double, extra: [String: Any] = [:]) -> ChatMessage? {
+        let ts = ISO8601DateFormatter().string(from: Date().addingTimeInterval(-minutesAgo * 60))
+        var json: [String: Any] = ["ts": ts, "role": role, "text": text, "turn_id": "preview-\(role)"]
+        json.merge(extra) { _, b in b }
+        return ChatMessage(json: json)
+    }
+
+    var body: some View {
+        let t = theme
+        let ai = sample("assistant", "这里慢慢调，我陪你看", minutesAgo: 3,
+                        extra: ["thinking": "她在挑颜色，我等着看她挑到哪一格", "heart_rate": 78])
+        let me = sample("user", "\(assistantName)，气泡再透一点", minutesAgo: 1)
+        GeometryReader { proxy in
+            ZStack(alignment: .bottom) {
+                ChatWallpaperRenderer(descriptor: wallpaper.descriptor)
+                VStack(alignment: .leading, spacing: CGFloat(bubbleGap)) {
+                    if t.isKakao {
+                        KakaoDateDivider(date: Date())
+                    } else if t.isMessages {
+                        MessagesTimeDivider(date: Date(), color: t.dividerColor)
+                    } else {
+                        TimeDivider(date: Date(), color: t.dividerColor)
+                    }
+                    if let ai {
+                        MessageRow(msg: ai, sticker: nil, theme: t, fontSize: fontSize,
+                                   photoNamespace: ns, onTapImages: { _, _ in },
+                                   kakaoHead: true, kakaoFirstBubble: true)
+                    }
+                    if let me {
+                        MessageRow(msg: me, sticker: nil, theme: t, fontSize: fontSize,
+                                   photoNamespace: ns, onTapImages: { _, _ in },
+                                   kakaoHead: true, kakaoFirstBubble: true, kakaoUnread: true)
+                            .padding(.top, 8)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .padding(.bottom, 14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            .coordinateSpace(name: "alcoveChatRoot")
+            .environment(\.chatWallpaperDescriptor, wallpaper.descriptor)
+            .environment(\.chatWallpaperViewportSize, proxy.size)
+        }
+        .allowsHitTesting(false)
+        .onAppear { refresh() }
+        .onChange(of: themeName) { _ in refresh() }
+        .onChange(of: wallStamp) { _ in refresh() }
+        .onReceive(packs.$stamp) { _ in refresh() }
+    }
+
+    /// 跟聊天页同一份壁纸：主题、相册换图、Kakao 换包 / 图到了都重读（同一把钥匙读过就不重复读）
+    private func refresh() {
+        wallpaper.refresh(themeName: themeName, theme: theme, wallStamp: wallStamp)
+    }
+}
+
 struct MusicChatDivider: View {
     let text: String
     let date: Date

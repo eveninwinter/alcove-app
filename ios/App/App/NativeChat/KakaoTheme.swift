@@ -648,67 +648,6 @@ struct KakaoPackPicker: View {
     }
 }
 
-/// 主题包预览：壁纸铺底，他一条（头像 + 名字 + 01 图）、她一条（01 图 + 小「1」+ 时间），
-/// 全走聊天页那几个零件，所见即所得
-struct KakaoPackPreview: View {
-    @ObservedObject var store = KakaoPackStore.shared
-    @AppStorage(KakaoPackStore.showAvatarKey) var showAvatar = true
-
-    var body: some View {
-        let t = AlcoveTheme.kakaoTheme()
-        let name = UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
-        ZStack {
-            // 0924 她报的「Kakao 按钮和字体栏点不动」：scaledToFill 的壁纸图会撑出 230 那个框，看不见但吃触摸，
-            // 把上面的兄弟视图全盖住。这里按框的尺寸硬裁，整块预览也不吃触摸。
-            GeometryReader { g in
-                if let wall = store.wallImage {
-                    Image(uiImage: wall).resizable().scaledToFill()
-                        .frame(width: g.size.width, height: g.size.height).clipped()
-                } else {
-                    (store.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255))
-                }
-            }
-            VStack(spacing: 10) {
-                KakaoDateDivider(date: Date()).padding(.vertical, -6)
-                HStack(alignment: .top, spacing: 8) {
-                    if showAvatar { KakaoAvatarView(visible: true) }
-                    VStack(alignment: .leading, spacing: 0) {
-                        HStack(alignment: .bottom, spacing: 5) {
-                            KakaoBubbleView(isUser: false, first: true) {
-                                Text("今天想吃什么")
-                                    .font(store.chatFont(14)).foregroundColor(t.textAI ?? t.text)
-                            }
-                            Text(KakaoClock.fmt.string(from: Date()))
-                                .font(.system(size: 10)).foregroundColor(t.timestamp).padding(.bottom, 2)
-                        }
-                    }
-                    Spacer(minLength: 24)
-                }
-                HStack(alignment: .bottom, spacing: 5) {
-                    Spacer(minLength: 48)
-                    VStack(alignment: .trailing, spacing: 2) {
-                        Text("1").font(.system(size: 10, weight: .medium)).foregroundColor(store.unreadColor)
-                        Text(KakaoClock.fmt.string(from: Date()))
-                            .font(.system(size: 10)).foregroundColor(t.timestamp)
-                    }
-                    .padding(.bottom, 2)
-                    KakaoBubbleView(isUser: true, first: true) {
-                        Text("你做的都行")
-                            .font(store.chatFont(14)).foregroundColor(t.textUser ?? t.text)
-                    }
-                }
-            }
-            .padding(12)
-        }
-        .frame(maxWidth: .infinity)
-        .frame(height: 230)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-            .stroke(Color.black.opacity(0.08), lineWidth: 0.6))
-        .allowsHitTesting(false)   // 纯预览，不吃触摸
-    }
-}
-
 /// 0924 她定的：字体是全局的，哪个聊天主题都吃。设置·外观 里单独一栏「字体」，
 /// 选了就下载注册，聊天正文、工作室、Kakao 预览一起换字；「系统」= 不动。
 struct ChatFontPicker: View {
