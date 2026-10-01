@@ -155,13 +155,15 @@ struct ChatView: View {
                 } else {
                     messageList
                 }
+
+                // 1001：长按贴表情那层挪进来，跟气泡同一套环境（玻璃气泡的折射要认 alcoveChatRoot），浮起来那份才画得一样
+                reactOverlay
             }
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
-        .overlay { reactOverlay }
         .sheet(isPresented: $showStickers) { stickerSheet.modifier(HouseColorScheme()) }
         .sheet(isPresented: $showEffectPanel) {
             TextEffectPanel(selection: effectSelectionText, onPick: applyTextEffect)
@@ -4131,15 +4133,15 @@ struct MessageRow: View {
     private var reactBubble: some View {
         VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
             bubble
-                .scaleEffect(reactPressing ? 0.95 : (reactLifted ? 1.04 : 1),
-                             anchor: isUser ? .trailing : .leading)
-                .animation(.spring(response: 0.3, dampingFraction: 0.62), value: reactPressing)
-                .animation(.spring(response: 0.36, dampingFraction: 0.58), value: reactLifted)
+                .scaleEffect(reactPressing ? ReactFeel.pressScale : 1, anchor: isUser ? .trailing : .leading)
+                .animation(reactPressing ? ReactFeel.pressAnimation : ReactFeel.releaseAnimation, value: reactPressing)
+                // 浮起来的是整屏那层上另画的一份，这份藏起来（收回时那份落回原位再换回这份）
+                .opacity(reactLifted ? 0 : 1)
                 .overlay(reactPressLayer)
             if !msg.reactions.isEmpty {
                 ReactionChips(reactions: msg.reactions, theme: theme)
                     .padding(.top, -5)
-                    .padding(isUser ? .trailing : .leading, reactChipInset)
+                    .padding(isUser ? .trailing : .leading, reactChipInset + reactEdgeInset)
                     .transition(.scale(scale: 0.5, anchor: isUser ? .topTrailing : .topLeading).combined(with: .opacity))
             }
         }
@@ -4149,8 +4151,9 @@ struct MessageRow: View {
     @ViewBuilder
     private func reactable<V: View>(_ v: V, kind: ReactTarget.Kind, urls: [URL] = []) -> some View {
         if let cb = onReactLongPress {
-            v.modifier(ReactPressable(lifted: reactLifted, anchor: isUser ? .trailing : .leading) { f in
-                cb(ReactTarget(msg: msg, frame: f, kind: kind, urls: urls))
+            let a: UnitPoint = isUser ? .trailing : .leading
+            v.modifier(ReactPressable(lifted: reactLifted, anchor: a) { f in
+                cb(ReactTarget(msg: msg, frame: f, kind: kind, urls: urls, ghost: AnyView(v), anchor: a))
             })
         } else {
             v
@@ -4184,16 +4187,27 @@ struct MessageRow: View {
         return kakaoTextLeading() + 2
     }
 
+    /// 1001 她抓的「小片跑到小鼯鼠底下」：Kakao 她那边的气泡图右边常带图案，框的右边不是看得见的气泡右边。
+    /// 按后端量的 body_right 让开（文字气泡的小片、表情条、菜单都用）；别的主题、他那边是 0
+    private var reactEdgeInset: CGFloat {
+        guard theme.isKakao, isUser else { return 0 }
+        let pack = KakaoPackStore.shared.current
+        let spec = pack?.bubbles[kakaoFirstBubble ? "send1" : "send2"] ?? pack?.bubbles["send1"]
+        return CGFloat(spec?.body_right ?? 0)
+    }
+
     @ViewBuilder private var reactPressLayer: some View {
         if let onReactLongPress, !textSelectable {
             GeometryReader { geo in
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture {}
-                    .onLongPressGesture(minimumDuration: 0.38, maximumDistance: 12, perform: {
+                    .onLongPressGesture(minimumDuration: ReactFeel.hold, maximumDistance: 12, perform: {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         reactPressing = false
-                        onReactLongPress(ReactTarget(msg: msg, frame: geo.frame(in: .global)))
+                        let a: UnitPoint = isUser ? .trailing : .leading
+                        onReactLongPress(ReactTarget(msg: msg, frame: geo.frame(in: .global),
+                                                     ghost: AnyView(bubble), anchor: a, edgeInset: reactEdgeInset))
                     }, onPressingChanged: { reactPressing = $0 })
             }
         }
@@ -7897,8 +7911,22 @@ struct ReactTarget: Equatable {
     let frame: CGRect
     var kind: Kind = .text
     var urls: [URL] = []
+    /// 1001 她要「就单独一个气泡」：整屏毛玻璃上面另画一份这条（不再挖洞，洞里会露壁纸）；按哪边缩放；
+    /// 看得见的气泡外侧边离框边多远（Kakao 她那边图右边带图案）
+    var ghost: AnyView? = nil
+    var anchor: UnitPoint = .center
+    var edgeInset: CGFloat = 0
     var isUser: Bool { msg.role == "user" }
     static func == (a: ReactTarget, b: ReactTarget) -> Bool { a.msg.id == b.msg.id && a.frame == b.frame }
+}
+
+/// 1001 她要的手感：按住全程一直在缩（跟等待一样长），缩满那一刻接弹簧浮起来，中间不停
+enum ReactFeel {
+    static let hold: Double = 0.38
+    static let pressScale: CGFloat = 0.93
+    static let liftScale: CGFloat = 1.04
+    static var pressAnimation: Animation { .linear(duration: hold) }
+    static var releaseAnimation: Animation { .spring(response: 0.3, dampingFraction: 0.62) }
 }
 
 /// 全部苹果 emoji（后端 /chat/emoji-list：emoji-datasource 15.1 ＋ CLDR 中文名），拿一次存进 Caches
@@ -8068,11 +8096,12 @@ struct ReactPressable: ViewModifier {
 
     func body(content: Content) -> some View {
         content
+            .scaleEffect(pressing ? ReactFeel.pressScale : 1, anchor: anchor)
+            .animation(pressing ? ReactFeel.pressAnimation : ReactFeel.releaseAnimation, value: pressing)
+            .opacity(lifted ? 0 : 1)
+            // 垫在缩放外面：量到的是没缩的那个框，整屏那层另画的一份按它摆
             .background(ReactFrameProbeView(probe: probe))
-            .scaleEffect(pressing ? 0.95 : (lifted ? 1.04 : 1), anchor: anchor)
-            .animation(.spring(response: 0.3, dampingFraction: 0.62), value: pressing)
-            .animation(.spring(response: 0.36, dampingFraction: 0.58), value: lifted)
-            .onLongPressGesture(minimumDuration: 0.38, maximumDistance: 12, perform: {
+            .onLongPressGesture(minimumDuration: ReactFeel.hold, maximumDistance: 12, perform: {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 pressing = false
                 onTrigger(probe.globalFrame)
@@ -8104,6 +8133,8 @@ struct ReactionOverlay: View {
     @ObservedObject private var catalog = EmojiCatalog.shared
     @State private var shown = false
     @State private var popped = false
+    /// 浮起来那份的大小：从按住缩满的地方起跳，弹到 1.04；收的时候落回 1 再换回列表里那份
+    @State private var ghostScale: CGFloat = ReactFeel.pressScale
     @State private var expanded = false
     @State private var picked: String?
     @State private var query = ""
@@ -8146,13 +8177,21 @@ struct ReactionOverlay: View {
             let o = geo.frame(in: .global).origin
             let f = target.frame.offsetBy(dx: -o.x, dy: -o.y)
             ZStack(alignment: .topLeading) {
+                // 1001 她要「气泡不要带壁纸」：有另画的那份就整屏糊满不挖洞；万一没带（老路）才照旧挖
                 Rectangle()
                     .fill(.ultraThinMaterial)
                     .overlay(Color.black.opacity(theme.isDark ? 0.28 : 0.06))
-                    .mask(holeMask(size: geo.size, hole: f.insetBy(dx: -8, dy: -8)))
+                    .mask(holeMask(size: geo.size, hole: target.ghost == nil ? f.insetBy(dx: -8, dy: -8) : .zero))
                     .opacity(shown ? 1 : 0)
                     .contentShape(Rectangle())
                     .onTapGesture { close() }
+                if let ghost = target.ghost {
+                    ghost
+                        .frame(width: f.width, height: f.height)
+                        .scaleEffect(ghostScale, anchor: target.anchor)
+                        .position(x: f.midX, y: f.midY)
+                        .allowsHitTesting(false)
+                }
                 if shown {
                     if expanded {
                         panel(size: geo.size, f: f)
@@ -8167,6 +8206,8 @@ struct ReactionOverlay: View {
         .onAppear {
             catalog.load()
             withAnimation(.spring(response: 0.34, dampingFraction: 0.8)) { shown = true }
+            // 接着按住时的缩，一路弹上去（阻尼小一点，过头再落回 1.04＝弹一弹）
+            withAnimation(.spring(response: 0.32, dampingFraction: 0.55)) { ghostScale = ReactFeel.liftScale }
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.04) { popped = true }
         }
     }
@@ -8184,14 +8225,43 @@ struct ReactionOverlay: View {
         .frame(width: size.width, height: size.height)
     }
 
-    // 一排：上面放得下就在气泡上面，放不下挪到下面
-    private func barCenter(size: CGSize, f: CGRect) -> CGPoint {
+    private var menuHeight: CGFloat { rowH * CGFloat(menuItems.count) }
+
+    /// 1001 她抓的「最新那条长按，表情条被菜单挡住」：三样谁也不压谁。
+    /// 先试「条在上、菜单在下」；下面放不下（贴着底的最新一条）就「菜单、条、气泡」自上而下都摆上面；
+    /// 上面也放不下（最顶上那条）就都摆下面；气泡高得哪边都不够，才条贴顶、菜单贴底。
+    /// 返回表情条中心的 y、菜单顶的 y
+    private func layout(size: CGSize, f: CGRect) -> (barY: CGFloat, menuTop: CGFloat) {
+        let top = Self.insets.top + 8
+        let bottom = size.height - Self.insets.bottom - 8
+        let gap: CGFloat = 10
+        let lift = f.height * (ReactFeel.liftScale - 1) / 2   // 浮起来放大，上下各多出这么点
+        let up = f.minY - lift, down = f.maxY + lift
+        let room = (above: up - top, below: bottom - down)
+        let needBar = barH + gap, needMenu = menuHeight + gap
+        if room.above >= needBar && room.below >= needMenu {
+            return (up - gap - barH / 2, down + gap)
+        }
+        if room.above >= needBar + needMenu {
+            let barY = up - gap - barH / 2
+            return (barY, barY - barH / 2 - gap - menuHeight)
+        }
+        if room.below >= needBar + needMenu {
+            let barY = down + gap + barH / 2
+            return (barY, barY + barH / 2 + gap)
+        }
+        return (top + barH / 2, bottom - menuHeight)
+    }
+
+    /// 横着：对齐看得见的气泡外侧边（Kakao 她那边扣掉图案那截），出不了屏
+    private func edgeX(width w: CGFloat, size: CGSize, f: CGRect) -> CGFloat {
         let pad: CGFloat = 10
-        let x0 = target.isUser ? f.maxX - barW : f.minX
-        let x = min(max(x0, pad), size.width - pad - barW) + barW / 2
-        let above = f.minY - 12 - barH
-        let y = above >= Self.insets.top + 8 ? above + barH / 2 : f.maxY + 12 + barH / 2
-        return CGPoint(x: x, y: y)
+        let x0 = target.isUser ? f.maxX - target.edgeInset - w : f.minX + target.edgeInset
+        return min(max(x0, pad), size.width - pad - w) + w / 2
+    }
+
+    private func barCenter(size: CGSize, f: CGRect) -> CGPoint {
+        CGPoint(x: edgeX(width: barW, size: size, f: f), y: layout(size: size, f: f).barY)
     }
 
     private func bar(size: CGSize, f: CGRect) -> some View {
@@ -8237,15 +8307,9 @@ struct ReactionOverlay: View {
 
     private func menu(size: CGSize, f: CGRect) -> some View {
         let items = menuItems
-        let h = rowH * CGFloat(items.count)
-        let bc = barCenter(size: size, f: f)
-        let barBelow = bc.y > f.maxY
-        var top = barBelow ? bc.y + barH / 2 + 8 : f.maxY + 10
-        let limit = size.height - Self.insets.bottom - 8
-        if top + h > limit { top = max(Self.insets.top + 8, limit - h) }
-        let pad: CGFloat = 10
-        let x0 = target.isUser ? f.maxX - menuW : f.minX
-        let x = min(max(x0, pad), size.width - pad - menuW) + menuW / 2
+        let h = menuHeight
+        let top = layout(size: size, f: f).menuTop
+        let x = edgeX(width: menuW, size: size, f: f)
         return VStack(spacing: 0) {
             ForEach(Array(items.enumerated()), id: \.offset) { i, item in
                 if i > 0 { Divider().padding(.leading, 16) }
@@ -8389,6 +8453,8 @@ struct ReactionOverlay: View {
             shown = false
             popped = false
         }
+        // 浮起来那份落回原大小，落稳了再换回列表里那份（看不出换过）
+        withAnimation(.spring(response: 0.2, dampingFraction: 0.9)) { ghostScale = 1 }
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.19) {
             onDismiss()
             then?()
