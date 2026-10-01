@@ -4195,8 +4195,10 @@ struct MessageRow: View {
         return CGFloat((pack?.bubbles["send2"] ?? pack?.bubbles["send1"])?.body_right ?? 0)
     }
 
-    /// 1001 她要的：Kakao 下她那边气泡上面那行引用（↪ …）右边对齐框里字的右边（包里写的字离右边多少）
-    private var kakaoUserQuoteInset: CGFloat {
+    /// 1001 她要的：气泡上面那行引用（↪ …）对齐框里的字，不对齐框边。
+    /// 信息主题：字离色块边 14（bubbleCore 里那个 padding）；Kakao 她那边：包里写的字离右边多少
+    private var quoteTextInset: CGFloat {
+        if theme.isMessages && !theme.isKakao { return 14 }
         guard theme.isKakao, isUser else { return 0 }
         let pack = KakaoPackStore.shared.current
         let spec = pack?.bubbles[kakaoFirstBubble ? "send1" : "send2"] ?? pack?.bubbles["send1"]
@@ -4322,7 +4324,7 @@ struct MessageRow: View {
                 }
                 .font(.system(size: 12))
                 .foregroundColor(theme.thoughtColor)
-                .padding(.trailing, kakaoUserQuoteInset)
+                .padding(isUser ? .trailing : .leading, quoteTextInset)
             }
             Group {
                 if theme.isKakao {
