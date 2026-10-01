@@ -167,32 +167,3 @@ extension EnvironmentValues {
         set { self[ChatWallpaperViewportInsetKey.self] = newValue }
     }
 }
-
-/// 0925 她定的「玻璃主题删掉、给 App 减负」：原来这里重画背后的壁纸再用 Metal 着色器实时折射（每个气泡都要显卡一直算），
-/// 着色器文件已删。名字和参数留着，工作室 / 设置预览这些老调用处照样能编译，画成一块普通的半透明圆角底。
-struct BubbleGlassBackground: View {
-    let tintColor: Color
-    var tintOpacity: CGFloat
-    var style: BubbleGlassStyle = .reference
-    var cornerRadius: CGFloat = 18
-
-    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
-
-    var body: some View {
-        GeometryReader { proxy in
-            let size = proxy.size
-            let radius = min(cornerRadius, min(size.width, size.height) / 2)
-            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
-            ZStack {
-                if reduceTransparency {
-                    shape.fill(tintColor.opacity(0.88))
-                } else {
-                    shape.fill(.ultraThinMaterial)
-                    shape.fill(tintColor.opacity(tintOpacity))
-                }
-                shape.stroke(Color.white.opacity(0.28), lineWidth: 0.8)
-            }
-        }
-        .allowsHitTesting(false)
-    }
-}

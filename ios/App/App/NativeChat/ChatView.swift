@@ -101,27 +101,11 @@ struct ChatView: View {
     @AppStorage("chatTurnGap") private var chatTurnGap = 22.0   // 0929 她要的：他连着两轮之间的空，设置里「轮与轮间距」
     @AppStorage(KakaoPackStore.showAvatarKey) private var listKakaoShowAvatar = true   // 0924 晚：换人那截空隙要知道他那边气泡是不是挪过
     @AppStorage("wallStamp") private var wallStamp = 0.0
-    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
-    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
-    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
-    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
-    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
-    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     /// 0902 信息主题调色板：她在设置页改一项，msgPaletteStamp 一变这里就重算
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
     /// 0925：弹出的面板用这套——Kakao 下跟全屋白天 / 黑夜开关走（聊天主题恒白天），别的主题就是聊天主题本身
     private var sheetTheme: AlcoveTheme { theme.isKakao ? .kakaoSheet(dark: AlcoveAppearance.isDark) : theme }
-    private var bubbleGlassStyle: BubbleGlassStyle {
-        BubbleGlassStyle(
-            strength: CGFloat(bubbleGlassStrength),
-            dispersion: CGFloat(bubbleGlassDispersion),
-            rimWidth: CGFloat(bubbleGlassRimWidth),
-            magnify: CGFloat(bubbleGlassMagnify),
-            backdropBlur: CGFloat(bubbleGlassBlur),
-            size: CGFloat(bubbleGlassSize)
-        )
-    }
     private var safeBottom: CGFloat {
         UIApplication.shared.connectedScenes
             .compactMap { $0 as? UIWindowScene }
@@ -162,7 +146,6 @@ struct ChatView: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
-            .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .sheet(isPresented: $showStickers) { stickerSheet.modifier(HouseColorScheme()) }
         .sheet(isPresented: $showEffectPanel) {
@@ -3621,7 +3604,6 @@ struct MessageRow: View {
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
     @State private var showPulse = false
-    @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
 
     private var isUser: Bool { msg.role == "user" }
     private var timestampTextInset: CGFloat {
@@ -4337,17 +4319,10 @@ struct MessageRow: View {
                         .padding(.horizontal, 14)
                         .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
                         .background {
-                            if theme.isMessages || theme.isPaper {
-                                // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
-                                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                    .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                            } else {
-                                BubbleGlassBackground(
-                                    tintColor: isUser ? theme.bubbleUser : theme.bubbleAI,
-                                    tintOpacity: isUser ? 0.14 : 0.09,
-                                    style: bubbleGlassStyle
-                                )
-                            }
+                            // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
+                            //（1001 玻璃主题残留删了，这里原来还有一支画玻璃气泡的）
+                            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
                         }
                 }
             }

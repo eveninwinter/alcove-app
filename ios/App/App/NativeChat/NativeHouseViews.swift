@@ -154,12 +154,6 @@ struct NativeHouseSheet: View {
     @State private var preparedTextureName: String
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @ObservedObject private var chatWall = ChatWallpaperStore.shared
-    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
-    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
-    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
-    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
-    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
-    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
 
     init(
         initial: HouseDestination,
@@ -180,16 +174,6 @@ struct NativeHouseSheet: View {
 
     private var theme: AlcoveTheme { .panelNamed(themeName) }
 
-    private var bubbleGlassStyle: BubbleGlassStyle {
-        BubbleGlassStyle(
-            strength: CGFloat(bubbleGlassStrength),
-            dispersion: CGFloat(bubbleGlassDispersion),
-            rimWidth: CGFloat(bubbleGlassRimWidth),
-            magnify: CGFloat(bubbleGlassMagnify),
-            backdropBlur: CGFloat(bubbleGlassBlur),
-            size: CGFloat(bubbleGlassSize)
-        )
-    }
 
     private var panelWallpaperDescriptor: ChatWallpaperDescriptor {
         ChatWallpaperDescriptor(
@@ -313,7 +297,6 @@ struct NativeHouseSheet: View {
         .coordinateSpace(name: "alcoveChatRoot")
         .environment(\.chatWallpaperDescriptor, panelWallpaperDescriptor)
         .environment(\.chatWallpaperViewportSize, root.size)
-        .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         // Panel wallpaper may extend under the home indicator, but keyboard safe-area
         // must remain live so editors/composers rise instead of being covered.
         .ignoresSafeArea(.container, edges: .all)
@@ -1903,27 +1886,11 @@ private struct BubbleAppearanceSettingsView: View {
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
-    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
-    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
-    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
-    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
-    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
-    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     /// 0902 信息主题调色板：改一项这个数就变，预览跟着重画
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
 
     private var panelTheme: AlcoveTheme { .panelNamed(themeName) }
     private var chatTheme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
-    private var bubbleStyle: BubbleGlassStyle {
-        BubbleGlassStyle(
-            strength: CGFloat(bubbleGlassStrength),
-            dispersion: CGFloat(bubbleGlassDispersion),
-            rimWidth: CGFloat(bubbleGlassRimWidth),
-            magnify: CGFloat(bubbleGlassMagnify),
-            backdropBlur: CGFloat(bubbleGlassBlur),
-            size: CGFloat(bubbleGlassSize)
-        )
-    }
 
     @ViewBuilder var body: some View {
         switch part {
@@ -2020,7 +1987,6 @@ private struct BubbleAppearanceSettingsView: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, proxy.size)
-            .environment(\.bubbleGlassStyle, bubbleStyle)
         }
         .frame(height: 250)
         .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
@@ -2254,12 +2220,6 @@ private struct BubbleAppearanceSettingsView: View {
 
     private func resetAppearance() {
         fontSize = 14
-        bubbleGlassStrength = 56.81
-        bubbleGlassDispersion = 0.39
-        bubbleGlassRimWidth = 0.28
-        bubbleGlassMagnify = 0
-        bubbleGlassBlur = 0.10
-        bubbleGlassSize = 174.33
     }
 }
 
@@ -6783,20 +6743,6 @@ private struct FoyerGlassContainer<Content: View>: View {
     }
 }
 
-private struct FoyerCardGlassBackground: View {
-    let theme: AlcoveTheme
-    @Environment(\.bubbleGlassStyle) private var bubbleGlassStyle
-
-    var body: some View {
-        BubbleGlassBackground(
-            tintColor: theme.fyCard,
-            tintOpacity: theme.isDark ? 0.12 : 0.10,
-            style: bubbleGlassStyle,
-            cornerRadius: 16
-        )
-    }
-}
-
 private extension View {
     func foyerShell(_ theme: AlcoveTheme) -> some View {
         let shape = RoundedRectangle(cornerRadius: theme.isPaper ? 0 : 28, style: .continuous)
@@ -6850,7 +6796,6 @@ private extension View {
                 .stroke(theme.glassBorder, lineWidth: 1))
     }
 
-    // 面板卡片与聊天气泡共用同一套折射、高光和六个调节参数。
     // iOS 26 必须把系统玻璃直接应用到内容视图，确保图标和文字绘制在玻璃上方。
     @ViewBuilder
     func foyerCard(_ theme: AlcoveTheme) -> some View {

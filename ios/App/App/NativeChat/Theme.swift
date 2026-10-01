@@ -179,24 +179,6 @@ struct AlcoveTheme {
                 shadow: Color.black.opacity(0.42),
                 textureAsset: "WetGlassMidnight"
             )
-        case "rain":
-            return haven.panelCopy(
-                splashBg: [
-                    Color(red: 117/255, green: 164/255, blue: 224/255).opacity(0.78),
-                    Color(red: 145/255, green: 187/255, blue: 239/255).opacity(0.72),
-                    Color(red: 104/255, green: 151/255, blue: 213/255).opacity(0.78)
-                ],
-                text: Color(red: 10/255, green: 25/255, blue: 67/255),
-                textDim: Color(red: 19/255, green: 43/255, blue: 92/255),
-                textLight: Color(red: 48/255, green: 76/255, blue: 124/255),
-                accent: Color(red: 13/255, green: 39/255, blue: 94/255),
-                accentSoft: Color(red: 28/255, green: 73/255, blue: 143/255).opacity(0.42),
-                card: Color.white.opacity(0.20),
-                cardSub: Color.white.opacity(0.18),
-                border: Color.white.opacity(0.53),
-                shadow: Color(red: 18/255, green: 54/255, blue: 112/255).opacity(0.20),
-                textureAsset: "WetGlassMidnight"   // 0925 玻璃主题删了，WetGlassRain 图一起删，这套走不到了
-            )
         default:
             return haven.panelCopy(
                 splashBg: [

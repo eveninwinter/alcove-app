@@ -271,12 +271,6 @@ struct RoundtableView: View {
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
-    @AppStorage("bubbleGlassStrength") private var bubbleGlassStrength = 56.81
-    @AppStorage("bubbleGlassDispersion") private var bubbleGlassDispersion = 0.39
-    @AppStorage("bubbleGlassRimWidth") private var bubbleGlassRimWidth = 0.28
-    @AppStorage("bubbleGlassMagnify") private var bubbleGlassMagnify = 0.0
-    @AppStorage("bubbleGlassBlur") private var bubbleGlassBlur = 0.10
-    @AppStorage("bubbleGlassSize") private var bubbleGlassSize = 174.33
     private var theme: AlcoveTheme { .named(themeName) }
     private var activeRTWallpaper: String {
         switch themeName {
@@ -289,16 +283,6 @@ struct RoundtableView: View {
         }
     }
 
-    private var bubbleGlassStyle: BubbleGlassStyle {
-        BubbleGlassStyle(
-            strength: CGFloat(bubbleGlassStrength),
-            dispersion: CGFloat(bubbleGlassDispersion),
-            rimWidth: CGFloat(bubbleGlassRimWidth),
-            magnify: CGFloat(bubbleGlassMagnify),
-            backdropBlur: CGFloat(bubbleGlassBlur),
-            size: CGFloat(bubbleGlassSize)
-        )
-    }
 
     private func refreshChatWall() {
         chatWall.refresh(themeName: themeName, theme: theme, wallStamp: wallStamp)
@@ -331,7 +315,6 @@ struct RoundtableView: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperDescriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
-            .environment(\.bubbleGlassStyle, bubbleGlassStyle)
         }
         .foregroundColor(theme.text)
         .onAppear {
@@ -1013,7 +996,6 @@ private struct RoundtableRow: View {
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
     @AppStorage("chatFontSize") private var fontSize = 14
-    @Environment(\.bubbleGlassStyle) private var glassStyle
 
     private var avatarImage: UIImage? {
         let raw: String
