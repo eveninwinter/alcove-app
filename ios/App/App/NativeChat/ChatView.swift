@@ -6826,6 +6826,8 @@ struct AudioBubble: View {
     private var ink: Color {
         // 0925：Kakao 下套的是包里的气泡图，字色跟正文气泡一样用包里写的收 / 发字色
         if theme.isKakao { return (isUser ? theme.textUser : theme.textAI) ?? theme.text }
+        // 1001 信息主题玻璃气泡不带颜色，白字看不见：玻璃时她这边跟正文一样用调色里「我的正文」
+        if theme.isMessages && isUser && MessagesPalette.glass { return theme.textUser ?? theme.text }
         return (theme.isMessages && isUser) ? .white : theme.text
     }
     // 转文字跟正文一样吃全局字体（她 0924 定的「字体全局，哪个主题都吃」）；换了字体这里跟着重画
@@ -6867,11 +6869,10 @@ struct AudioBubble: View {
                 // 带图案的 01 那张还是只给一串里第一条真说话的气泡（0924 她定的规矩），语音一律用 02
                 KakaoBubbleView(isUser: isUser, first: false) { card(kakao: true) }
             } else {
+                // 1001 她抓的「语音的气泡呢」：跟正文气泡同一个开关，信息主题选玻璃就是玻璃
                 card(kakao: false)
-                    .background {
-                        RoundedRectangle(cornerRadius: 18, style: .continuous)
-                            .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                    }
+                    .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
+                                                 glass: theme.isMessages && MessagesPalette.glass))
             }
         }
         .animation(.easeInOut(duration: 0.18), value: transcriptShown)
