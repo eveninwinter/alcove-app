@@ -76,6 +76,8 @@ struct KakaoFont: Decodable, Identifiable {
     let family: String?
     let ps_name: String?
     let size: Int?
+    /// 1001：终端页自己用的字（像素 Silkscreen、花体 Pinyon），架子上有但不进她的字体挑选栏
+    let hidden: Bool?
     var url: URL { AlcoveAPI.fullURL("/api/kakao/fonts/\(file)") }
 }
 
@@ -674,7 +676,7 @@ struct ChatFontPicker: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 8) {
                     fontChip(id: "", label: "系统", font: .system(size: 13))
-                    ForEach(store.fonts) { f in
+                    ForEach(store.fonts.filter { $0.hidden != true }) { f in
                         fontChip(id: f.id, label: f.name,
                                  font: store.registeredName(f.id).map { Font.custom($0, fixedSize: 13) } ?? .system(size: 13))
                     }
