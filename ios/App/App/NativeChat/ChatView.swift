@@ -3780,7 +3780,8 @@ struct MessageRow: View {
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
                     messagesProcessBlock
-                        .padding(.leading, theme.isKakao ? kakaoTextLeading() - 4 : 0)   // 0924 Kakao：看得见的气泡左边往里 4（块里自带 4 的左距，所以减掉）
+                        // 1001 Kakao：看得见的圆点对齐气泡边框（块里自带 4 的左距、圆点在按钮框里还往里 7.5，都扣掉）
+                        .padding(.leading, theme.isKakao ? kakaoTextLeading() - 4 - Self.kakaoDotInset : 0)
                 } else if !isUser && !turnBlocks.isEmpty {
                     ForEach(turnBlocks) { blk in
                         switch blk {
@@ -4215,7 +4216,7 @@ struct MessageRow: View {
     /// Kakao 他那边气泡整块往左挪过（头像让位），小片跟着看得见的气泡左边走
     private var reactChipInset: CGFloat {
         if isUser || !theme.isKakao { return 8 }
-        return kakaoTextLeading() + 2
+        return kakaoTextLeading() + 6   // 1001 基准从「边往里 4」改成边框本身，小片位置照旧（边往里 6）
     }
 
     /// 1001 她要的：Kakao 下她那边（没头像）图片右边对齐看得见的粉框——气泡图右边带透明边 / 图案，按 02 图（不带小人那张）的 body_right 让开
@@ -4306,26 +4307,28 @@ struct MessageRow: View {
     }
 
     private func kakaoTextLeading() -> CGFloat {
-        kakaoThoughtBase - kakaoCardIndent   // 整列让开过 kakaoCardIndent，这里扣回来，思绪 / 小按钮位置不变
+        kakaoThoughtBase - kakaoCardIndent   // 整列让开过 kakaoCardIndent，这里扣回来
     }
 
-    /// 思绪块 / 小按钮的左边（从头像后面那一列的左边算，不含让位）：看得见的气泡左边往里 4，有头像再减左挪的 14
+    /// 1001 她定的：他那边脚印、思绪那行、小按钮那排、截图 / 卡片，左边一律对齐看得见的气泡边框——
+    /// 是气泡本体的边，不是站在左边的小人 / 图案（body_edge，后端量的；老缓存没有退 body_left，再没有按 2）。
+    /// 从头像后面那一列的左边算，有头像再减左挪的 14。（0924 原来是 body_left 往里 4）
     private var kakaoThoughtBase: CGFloat {
         let shift = kakaoShowAvatar ? Self.kakaoBubbleShiftLeft : 0
         let pack = KakaoPackStore.shared.current
         let spec = pack?.bubbles[kakaoFirstBubble ? "recv1" : "recv2"] ?? pack?.bubbles["recv1"]
-        return CGFloat(spec?.body_left ?? 2) + 4 - shift
+        return CGFloat(spec?.body_edge ?? spec?.body_left ?? 2) - shift
     }
 
     /// 过程点那颗圆点 7 宽、在 22 宽的按钮框里居中，看得见的左边比框往里 7.5
     static let kakaoDotInset: CGFloat = 7.5
 
-    /// 0925 她定的：不管有没有头像，他的截图 / 卡片 / 语音左边跟思绪那颗圆点对齐（思绪不动）。
+    /// 0925 起他的截图 / 卡片 / 语音左边跟思绪那颗圆点对齐；1001 圆点挪到气泡边框上，卡片跟着对齐边框。
     /// 她的消息、整行居中的东西（晨报、旅行卡、塔罗）是 0；算出来是负的（极少数包）就按 0，卡片贴列左边
     private var kakaoCardIndent: CGFloat {
         guard theme.isKakao, !isUser, !isTarotRow,
               msg.morningPaperDate == nil, msg.journeyCard == nil else { return 0 }
-        return max(0, kakaoThoughtBase + Self.kakaoDotInset)
+        return max(0, kakaoThoughtBase)
     }
 
     private var kakaoSideMeta: some View {
