@@ -875,12 +875,12 @@ struct ChatView: View {
     }
 
     /// 1001 贴表情：长按文字气泡 → 整屏那层。还没落库的、流式临时气泡不给
-    private func reactLongPress(for message: ChatMessage) -> ((CGRect) -> Void)? {
-        guard !message.pending, !message.isLive, !message.displayText.isEmpty else { return nil }
-        return { frame in
+    private func reactLongPress(for message: ChatMessage) -> ((ReactTarget) -> Void)? {
+        guard !message.pending, !message.isLive, !message.isSticker else { return nil }
+        return { target in
             inputFocused = false
             selectingTs = nil
-            reactTarget = ReactTarget(msg: message, frame: frame)
+            reactTarget = target
         }
     }
 
@@ -892,12 +892,13 @@ struct ChatView: View {
                             canCopyTurn: t.msg.role == "assistant",
                             canEdit: editAction(for: t.msg) != nil,
                             onPick: { store.react(t.msg, emoji: $0) },
-                            onAction: { handleReactAction($0, t.msg) },
+                            onAction: { handleReactAction($0, t) },
                             onDismiss: { reactTarget = nil })
         }
     }
 
-    private func handleReactAction(_ action: ReactionOverlay.Action, _ m: ChatMessage) {
+    private func handleReactAction(_ action: ReactionOverlay.Action, _ t: ReactTarget) {
+        let m = t.msg
         switch action {
         case .copy: UIPasteboard.general.string = m.displayText
         case .ask:
@@ -906,6 +907,10 @@ struct ChatView: View {
         case .copyTurn: UIPasteboard.general.string = wholeTurnText(for: m)
         case .edit: editAction(for: m)?()
         case .select: selectingTs = m.ts
+        case .save:
+            let urls = t.urls
+            Task { for u in urls { await PhotoLibrarySaver.save(u) } }
+        case .favorite: store.favoriteMessage(m)
         }
     }
 
@@ -3625,7 +3630,7 @@ struct MessageRow: View {
     var onPlayMusic: ((MusicSong) -> Void)? = nil
     var onContentChange: (() -> Void)? = nil
     /// 1001 贴表情：长按文字气泡的回调（带气泡在屏幕上的位置）；这条是不是正浮起来；是不是点了「选择文字」
-    var onReactLongPress: ((CGRect) -> Void)? = nil
+    var onReactLongPress: ((ReactTarget) -> Void)? = nil
     var reactLifted = false
     var textSelectable = false
     var onExitTextSelection: (() -> Void)? = nil
@@ -3870,6 +3875,9 @@ struct MessageRow: View {
                 } else {
                   VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
                     photoBlock
+                    if hasPhotoBlock && !showsTextBubble && !msg.isAudio && !msg.reactions.isEmpty {
+                        mediaChips(inset: 8)
+                    }
                     if msg.isAudio, let raw = msg.attachmentUrl {
                       // 0927 她要的：Kakao 的时间是贴在气泡旁边的（kakaoSideMeta），原来只有正文气泡挂，
                       // 这一串最后一条是语音（比如她把后面那条字删了）时间就没了。语音条两边照正文气泡一样挂
@@ -3879,7 +3887,7 @@ struct MessageRow: View {
                         }
                         // 0822 她要的：一开始只有语音条，长按才「转文字」或「收藏」
                         // 0902 她给的参考图：转文字收在同一条气泡里，点右边的小箭头展开
-                        AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
+                        reactable(AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme,
                                     fontSize: CGFloat(fontSize),
                                     hasTranscript: !msg.audioTranscript.isEmpty,
                                     transcript: msg.audioTranscript,
@@ -3888,9 +3896,9 @@ struct MessageRow: View {
                                         withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
                                         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
                                     },
-                                    onFavorite: { onFavorite?() },
+                                    onFavorite: audioNativeFavorite,
                                     translation: msg.audioZh ?? "",
-                                    onContentChange: { onContentChange?() })
+                                    onContentChange: { onContentChange?() }), kind: .voice)
                         if theme.isKakao && !isUser {
                             kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
                         }
@@ -3899,6 +3907,7 @@ struct MessageRow: View {
                             // 可它跟截图 / 卡片一起让开了 kakaoCardIndent，比正文气泡往右缩一截。照正文气泡（bubble）抵回来
                             .padding(.leading, (theme.isKakao && !isUser)
                                      ? (kakaoShowAvatar ? -Self.kakaoBubbleShiftLeft : 0) - kakaoCardIndent : 0)
+                        if !msg.reactions.isEmpty { mediaChips(inset: reactChipInset) }
                     }
                     if msg.isDocument, let raw = msg.attachmentUrl {
                         DocumentAttachmentCard(
@@ -4169,6 +4178,39 @@ struct MessageRow: View {
         }
     }
 
+    /// 图 / 语音也能长按贴（表情包不行，她定的）。图片和语音条里有自己的点按，所以长按挂在它们本身上，不盖一层
+    @ViewBuilder
+    private func reactable<V: View>(_ v: V, kind: ReactTarget.Kind, urls: [URL] = []) -> some View {
+        if let cb = onReactLongPress {
+            v.modifier(ReactPressable(lifted: reactLifted, anchor: isUser ? .trailing : .leading) { f in
+                cb(ReactTarget(msg: msg, frame: f, kind: kind, urls: urls))
+            })
+        } else {
+            v
+        }
+    }
+
+    /// 有正文气泡的，小片挂在正文气泡下；没有的（纯图、语音）挂在图 / 语音条下
+    private var showsTextBubble: Bool {
+        msg.musicCard == nil && !msg.displayText.isEmpty && !msg.isSticker && !msg.isBareLink && !msg.isAudio
+    }
+
+    private var photoSaveURLs: [URL] {
+        if !photoURLs.isEmpty { return photoURLs }
+        if let raw = msg.attachmentUrl, msg.isImage { return [AlcoveAPI.attachmentURL(raw)] }
+        return []
+    }
+
+    private func mediaChips(inset: CGFloat) -> some View {
+        ReactionChips(reactions: msg.reactions, theme: theme)
+            .padding(.top, -5)
+            .padding(isUser ? .trailing : .leading, inset)
+            .transition(.scale(scale: 0.5, anchor: isUser ? .topTrailing : .topLeading).combined(with: .opacity))
+    }
+
+    /// 语音条长按走贴表情那层，原来系统那个「收藏」菜单就不挂了（收藏挪进那层的菜单里）
+    private var audioNativeFavorite: (() -> Void)? { onReactLongPress == nil ? onFavorite : nil }
+
     /// Kakao 他那边气泡整块往左挪过（头像让位），小片跟着看得见的气泡左边走
     private var reactChipInset: CGFloat {
         if isUser || !theme.isKakao { return 8 }
@@ -4184,7 +4226,7 @@ struct MessageRow: View {
                     .onLongPressGesture(minimumDuration: 0.38, maximumDistance: 12, perform: {
                         UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                         reactPressing = false
-                        onReactLongPress(geo.frame(in: .global))
+                        onReactLongPress(ReactTarget(msg: msg, frame: geo.frame(in: .global)))
                     }, onPressingChanged: { reactPressing = $0 })
             }
         }
@@ -4848,7 +4890,7 @@ struct MessageRow: View {
     private var photoBlockCore: some View {
         if !photoURLs.isEmpty {
             OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
-                                         onOpen: onTapImages)
+                                         onOpen: onTapImages, nativeMenu: onReactLongPress == nil)
                 .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         } else if msg.isImage, let raw = msg.attachmentUrl {
             imageBody(raw)
@@ -4872,6 +4914,8 @@ struct MessageRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { toggle() }
+        } else if hasPhotoBlock {
+            reactable(photoBlockCore, kind: .image, urls: photoSaveURLs)
         } else {
             photoBlockCore
         }
@@ -4894,9 +4938,12 @@ struct MessageRow: View {
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
         .contextMenu {
-            Button {
-                Task { await PhotoLibrarySaver.save(url) }
-            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+            // 1001：长按改走贴表情那层（「保存到相册」在那层的菜单里）；没接那层时还是系统菜单
+            if onReactLongPress == nil {
+                Button {
+                    Task { await PhotoLibrarySaver.save(url) }
+                } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+            }
         }
     }
 
@@ -6952,6 +6999,8 @@ struct OfficialPhotoGridMessageView: View {
     let urls: [URL]
     let messageID: String
     let onOpen: ([URL], Binding<Int>) -> Void
+    /// 1001：聊天页的长按给贴表情了，这里就不挂系统菜单
+    var nativeMenu = true
 
     @State private var currentIndex = 0
     private let side: CGFloat = 124
@@ -7007,9 +7056,11 @@ struct OfficialPhotoGridMessageView: View {
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .contextMenu {
-            Button {
-                Task { await PhotoLibrarySaver.save(url) }
-            } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+            if nativeMenu {
+                Button {
+                    Task { await PhotoLibrarySaver.save(url) }
+                } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
+            }
         }
     }
 }
@@ -7864,8 +7915,11 @@ private struct NativeThinkingSheet: View {
 // MARK: - 1001 贴表情（照 tg：长按气泡 → 一排 emoji ＋ 菜单，能展开全部苹果 emoji；贴上挂在气泡下角，头像在表情左边）
 
 struct ReactTarget: Equatable {
+    enum Kind { case text, image, voice }
     let msg: ChatMessage
     let frame: CGRect
+    var kind: Kind = .text
+    var urls: [URL] = []
     var isUser: Bool { msg.role == "user" }
     static func == (a: ReactTarget, b: ReactTarget) -> Bool { a.msg.id == b.msg.id && a.frame == b.frame }
 }
@@ -8006,6 +8060,49 @@ struct ReactionChips: View {
     }
 }
 
+/// 长按那一下要知道它在屏幕上的位置：背后垫一个不吃点按的 UIView，触发时现量（滚动中也准）
+final class ReactFrameProbe {
+    weak var view: UIView?
+    var globalFrame: CGRect {
+        guard let v = view else { return .zero }
+        return v.convert(v.bounds, to: nil)
+    }
+}
+
+private struct ReactFrameProbeView: UIViewRepresentable {
+    let probe: ReactFrameProbe
+    func makeUIView(context: Context) -> UIView {
+        let v = UIView()
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        probe.view = v
+        return v
+    }
+    func updateUIView(_ v: UIView, context: Context) { probe.view = v }
+}
+
+/// 图 / 语音条用：长按直接挂在它本身上（里面的点按照常用），按住先缩、触发时震一下弹起来
+struct ReactPressable: ViewModifier {
+    let lifted: Bool
+    let anchor: UnitPoint
+    let onTrigger: (CGRect) -> Void
+    @State private var pressing = false
+    @State private var probe = ReactFrameProbe()
+
+    func body(content: Content) -> some View {
+        content
+            .background(ReactFrameProbeView(probe: probe))
+            .scaleEffect(pressing ? 0.95 : (lifted ? 1.04 : 1), anchor: anchor)
+            .animation(.spring(response: 0.3, dampingFraction: 0.62), value: pressing)
+            .animation(.spring(response: 0.36, dampingFraction: 0.58), value: lifted)
+            .onLongPressGesture(minimumDuration: 0.38, maximumDistance: 12, perform: {
+                UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+                pressing = false
+                onTrigger(probe.globalFrame)
+            }, onPressingChanged: { pressing = $0 })
+    }
+}
+
 private struct ReactPressStyle: ButtonStyle {
     func makeBody(configuration: Configuration) -> some View {
         configuration.label
@@ -8017,7 +8114,7 @@ private struct ReactPressStyle: ButtonStyle {
 /// 长按之后整屏这一层：毛玻璃（被按的气泡那块挖空、它自己在列表里弹起来）＋ 一排 emoji ＋ 菜单；
 /// 点 ⌄ 那一排顺着变形成大面板（搜索 ＋ 分类 ＋ 全部 emoji）
 struct ReactionOverlay: View {
-    enum Action { case copy, ask, copyTurn, edit, select }
+    enum Action { case copy, ask, copyTurn, edit, select, save, favorite }
 
     let target: ReactTarget
     let theme: AlcoveTheme
@@ -8048,6 +8145,11 @@ struct ReactionOverlay: View {
     private var mine: String? { target.msg.reactions["user"] }
 
     private var menuItems: [(Action, String, String)] {
+        switch target.kind {
+        case .image: return [(.save, "保存到相册", "square.and.arrow.down")]
+        case .voice: return [(.favorite, "收藏", "heart")]
+        case .text: break
+        }
         var out: [(Action, String, String)] = [(.copy, "复制", "doc.on.doc"), (.ask, "询问", "quote.bubble")]
         if canCopyTurn { out.append((.copyTurn, "复制整轮", "doc.on.clipboard")) }
         if canEdit { out.append((.edit, "编辑", "pencil")) }
