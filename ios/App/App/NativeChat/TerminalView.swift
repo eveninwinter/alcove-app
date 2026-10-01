@@ -77,11 +77,16 @@ struct TerminalView: View {
 
     private func ensureFonts() {
         fontStore.ensureFont(id: TermPalette.pixelFontID)
+        fontStore.ensureFont(id: TermPalette.monoFontID)
         if night { fontStore.ensureFont(id: TermPalette.scriptFontID) }
     }
     private func pixel(_ size: CGFloat) -> Font {
         fontStore.registeredName(TermPalette.pixelFontID).map { Font.custom($0, fixedSize: size) }
             ?? .system(size: size - 0.5, weight: .semibold, design: .monospaced)
+    }
+    private func mono(_ size: CGFloat) -> Font {
+        fontStore.registeredName(TermPalette.monoFontID).map { Font.custom($0, fixedSize: size) }
+            ?? .system(size: size - 0.5, design: .monospaced)
     }
     private func script(_ size: CGFloat) -> Font {
         fontStore.registeredName(TermPalette.scriptFontID).map { Font.custom($0, fixedSize: size) }
@@ -110,7 +115,7 @@ struct TerminalView: View {
             Button {
                 if let onDismiss { onDismiss() } else { dismiss() }
             } label: {
-                Text("<").font(pixel(14)).foregroundColor(p.accent)
+                Text("<").font(pixel(14)).foregroundColor(p.keyText)
                     .frame(width: 32, height: 32)
                     .background(keycap(radius: 8, accent: false))
             }
@@ -176,6 +181,8 @@ struct TerminalView: View {
 
     private var tabRow: some View {
         sessionTabs(compact: false)
+            .mask(LinearGradient(stops: [.init(color: .black, location: 0.82), .init(color: .clear, location: 1)],
+                                 startPoint: .leading, endPoint: .trailing))
             .padding(.horizontal, 14)
             .padding(.top, 10)
     }
@@ -205,7 +212,7 @@ struct TerminalView: View {
                                            bottomTrailingRadius: compact ? 6 : 0, topTrailingRadius: 6)
         return HStack(spacing: 5) {
             PixelIcon(rows: PX.folder, ink: on ? p.icon(.accent) : p.icon(.quiet), scale: 1.4)
-            Text(name).font(pixel(11)).foregroundColor(on ? p.accent : p.sub)
+            Text(name).font(pixel(11)).foregroundColor(on ? p.accent : p.keyText)
         }
         .padding(.horizontal, 9)
         .padding(.top, 5)
@@ -238,7 +245,7 @@ struct TerminalView: View {
             dashedRule(p.frameSoft)
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 2) {
+                    VStack(alignment: .leading, spacing: 3) {
                         if parts.body.isEmpty {
                             Text("…").font(.system(size: 11.5, design: .monospaced)).foregroundColor(p.sub)
                         }
@@ -249,7 +256,7 @@ struct TerminalView: View {
                     .textSelection(.enabled)
                     .id("out")
                 }
-                .background(alignment: .bottomTrailing) { if night && !mini { ghostWords } }
+                .background { if night && !mini { ghostWords } }
                 .onTapGesture { cmdFocused = false }
                 .onChange(of: output) { _ in
                     proxy.scrollTo("out", anchor: .bottom)
@@ -261,7 +268,7 @@ struct TerminalView: View {
         .overlay(shape.stroke(p.frame, style: StrokeStyle(lineWidth: 1.5, dash: night ? [4, 3] : [])))
         .background(shape.fill(night ? .clear : p.frameShadow).offset(y: 4))
         .overlay(alignment: .topTrailing) { if !mini { stickerTop } }
-        .overlay(alignment: .bottomLeading) { if !mini { stickerSide } }
+        .overlay(alignment: .topLeading) { if !mini { stickerSide } }
         .padding(.horizontal, mini ? 8 : 12)
         .padding(.bottom, mini ? 8 : 0)
     }
@@ -282,62 +289,110 @@ struct TerminalView: View {
     }
 
     @ViewBuilder private func lineView(_ l: TermLine) -> some View {
-        let mono = Font.system(size: 11.5, design: .monospaced)
         switch l.kind {
         case .rule:
-            Line().stroke(p.ruleDots, style: StrokeStyle(lineWidth: 2, lineCap: .round, dash: [0.1, 6]))
-                .frame(height: 2).padding(.vertical, 6)
+            Line().stroke(p.sepColor, style: night
+                          ? StrokeStyle(lineWidth: 2.4, lineCap: .round, dash: [0.1, 7])
+                          : StrokeStyle(lineWidth: 2, dash: [3, 3]))
+                .frame(height: 3).padding(.vertical, 7)
         case .thought:
-            HStack(spacing: 6) {
-                PixelIcon(rows: PX.hourglass, ink: p.icon(.quiet), scale: 1.3)
-                Text(l.text)
-                    .font(night ? .system(size: 12, design: .serif).italic() : .system(size: 11, design: .monospaced))
-                    .foregroundColor(p.sub)
-                    .padding(.horizontal, 7).padding(.vertical, 1)
-                    .background(night ? .clear : p.tabOff, in: Capsule())
-                    .overlay(Capsule().stroke(night ? p.frameSoft : .clear, style: StrokeStyle(lineWidth: 1, dash: [2, 2])))
-            }
-            .padding(.vertical, 3)
+            thoughtRow(TermParse.thought(l.text))
         case .tool:
-            Text(l.text).font(.system(size: 11, design: .monospaced)).foregroundColor(p.sub)
+            (Text("▸ ").foregroundColor(p.toolMark) + Text(l.text).foregroundColor(p.sub))
+                .font(mono(12))
+                .lineSpacing(4)
                 .padding(.leading, 21)
         case .me, .him:
             HStack(alignment: .top, spacing: 7) {
                 Group {
-                    if l.kind == .me { PixelIcon(rows: PX.cursor, ink: p.icon(.accent), scale: 1.3) }
-                    else { PixelIcon(rows: PX.bubble, ink: p.icon(.second), scale: 1.3) }
+                    if l.kind == .me { PixelIcon(rows: PX.cursor, ink: p.icon(.accent), scale: 1.4) }
+                    else { PixelIcon(rows: PX.bubble, ink: p.icon(.second), scale: 1.4) }
                 }
-                .frame(width: 14).padding(.top, 2)
-                Text(l.text).font(mono).foregroundColor(l.kind == .me ? p.meText : p.ink)
+                .frame(width: 14).padding(.top, 4)
+                Text(l.text).font(mono(12.5)).lineSpacing(5).foregroundColor(l.kind == .me ? p.meText : p.ink)
             }
         case .meMore, .himMore, .plain:
-            Text(l.text).font(mono)
+            Text(l.text).font(mono(12.5)).lineSpacing(5)
                 .foregroundColor(l.kind == .meMore ? p.meText : (l.kind == .plain ? p.plain : p.ink))
                 .padding(.leading, l.kind == .plain ? 0 : 21)
         }
     }
 
-    /// 最后一道横线下面那几行（模型、上下文、用量、保活…）收进一张软盘标签
+    private func thoughtRow(_ tp: (pill: String, rest: String)) -> some View {
+        HStack(spacing: 6) {
+                PixelIcon(rows: PX.hourglass, ink: p.icon(.quiet), scale: 1.3)
+                Text(tp.pill)
+                    .font(pixel(10))
+                    .foregroundColor(night ? p.accent : p.keyText)
+                    .padding(.horizontal, 7).padding(.vertical, 1)
+                    .background(night ? .clear : p.tabOff, in: Capsule())
+                    .overlay(Capsule().stroke(night ? p.frameSoft : .clear, style: StrokeStyle(lineWidth: 1, dash: [2, 2])))
+                if !tp.rest.isEmpty {
+                    Text(tp.rest)
+                        .font(night ? .system(size: 13, design: .serif).italic() : mono(11))
+                        .foregroundColor(p.sub)
+                }
+            }
+            .padding(.leading, 21)
+            .padding(.top, 2).padding(.bottom, 6)
+    }
+
+    /// 最后一道横线下面那几行（模型、上下文、用量、保活…）收进一张软盘标签：认得出来就照预览画电池条，认不出原样列字
     private func statusLabel(_ lines: [String]) -> some View {
-        VStack(alignment: .leading, spacing: 0) {
+        let st = TermStatus(lines)
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 PixelIcon(rows: PX.floppy, ink: p.icon(.quiet), scale: 1.2)
                 Text("status.dat").font(pixel(10)).foregroundColor(p.labelHeadText)
                 Spacer()
-                PixelIcon(rows: PX.bolt, ink: p.icon(.accent), scale: 1.1)
+                if let m = st.model { Text(m.lowercased()).font(pixel(10)).foregroundColor(p.accent).lineLimit(1) }
             }
             .padding(.horizontal, 8).padding(.vertical, 4)
             .background(p.labelHead)
-            VStack(alignment: .leading, spacing: 1) {
-                ForEach(Array(lines.enumerated()), id: \.offset) { _, s in
-                    Text(s).font(.system(size: 10.5, design: .monospaced)).foregroundColor(p.sub)
-                        .lineLimit(2)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.vertical, 2)
-                        .overlay(alignment: .bottom) { Rectangle().fill(p.line.opacity(0.6)).frame(height: 1) }
+            VStack(alignment: .leading, spacing: 0) {
+                if st.parsed {
+                    statusRow {
+                        Text("ctx").font(pixel(10.5)).foregroundColor(p.rowText)
+                        battery(st.ctx ?? 0)
+                        Text("\(st.ctx ?? 0)%").font(pixel(10.5)).foregroundColor(p.accent)
+                        Spacer(minLength: 4)
+                        if let th = st.thinking {
+                            Text("thinking \(th)").font(.system(size: 10)).foregroundColor(p.pillText)
+                                .padding(.horizontal, 7).background(p.pillBg, in: Capsule())
+                        }
+                    }
+                    if st.h5 != nil || st.d7 != nil {
+                        statusRow {
+                            if let v = st.h5 {
+                                Text("5h").font(pixel(10.5)).foregroundColor(p.rowText)
+                                battery(v)
+                                Text("\(v)%").font(pixel(10.5)).foregroundColor(p.accent)
+                            }
+                            Spacer(minLength: 4)
+                            if let v = st.d7 {
+                                Text("7d").font(pixel(10.5)).foregroundColor(p.rowText)
+                                battery(v)
+                                Text("\(v)%").font(pixel(10.5)).foregroundColor(p.accent)
+                            }
+                        }
+                    }
+                    if st.bypass != nil || st.keep != nil {
+                        statusRow {
+                            if let b = st.bypass {
+                                PixelIcon(rows: PX.bolt, ink: p.icon(.accent), scale: 1.3)
+                                Text(b).font(.system(size: 10)).foregroundColor(p.sub).lineLimit(1)
+                            }
+                            Spacer(minLength: 4)
+                            if let k = st.keep { Text(k).font(.system(size: 10)).foregroundColor(p.sub).lineLimit(1) }
+                        }
+                    }
+                } else {
+                    ForEach(Array(lines.enumerated()), id: \.offset) { _, s in
+                        statusRow { Text(s).font(mono(10.5)).foregroundColor(p.sub).lineLimit(2) }
+                    }
                 }
             }
-            .padding(.horizontal, 10).padding(.vertical, 4)
+            .padding(.horizontal, 10).padding(.vertical, 2)
             .textSelection(.enabled)
         }
         .background(p.panel2)
@@ -347,32 +402,65 @@ struct TerminalView: View {
         .padding(.horizontal, 10).padding(.bottom, 10).padding(.top, 2)
     }
 
-    // 白天：光盘＋软盘＋笑脸贴纸；黑夜：半调像素花＋点线花茎（她递的参考）。都不吃触摸
+    /// 标签纸上的一行：22 高，底下一道横格线
+    private func statusRow<C: View>(@ViewBuilder _ c: () -> C) -> some View {
+        HStack(spacing: 7) { c() }
+            .frame(minHeight: 22)
+            .overlay(alignment: .bottom) { Rectangle().fill(p.line.opacity(0.7)).frame(height: 1) }
+    }
+
+    /// 小电池：10 格，按百分比填；右边一个小凸头
+    private func battery(_ pct: Int) -> some View {
+        let n = min(10, max(0, Int((Double(pct) / 10).rounded())))
+        return HStack(spacing: 1.5) {
+            ForEach(0..<10, id: \.self) { i in
+                Rectangle().fill(i < n ? p.batFill : .clear)
+            }
+        }
+        .padding(1.5)
+        .frame(width: 70, height: 12)
+        .background(p.panel)
+        .overlay(RoundedRectangle(cornerRadius: 2).stroke(p.batEdge, lineWidth: 1.5))
+        .overlay(alignment: .trailing) { Rectangle().fill(p.batEdge).frame(width: 2.5, height: 4).offset(x: 4) }
+    }
+
+    // 白天：光盘＋软盘＋笑脸贴纸；黑夜：半调像素花＋点线花茎（她递的参考）。位置照预览，都不吃触摸
     @ViewBuilder private var stickerTop: some View {
         if night {
-            HalftoneFlower(pink: p.accent, big: true).frame(width: 96, height: 120).offset(x: 20, y: 30)
+            HalftoneFlower(pink: p.accent, big: true).frame(width: 120, height: 150).offset(x: 22, y: 250)
         } else {
-            PixelDisc(colors: [p.pinkSoft, p.lilacSoft, p.mintSoft, .white], rim: p.sub).frame(width: 38, height: 38)
-                .offset(x: 14, y: 30)
+            ZStack(alignment: .topTrailing) {
+                PixelDisc(colors: [p.pinkSoft, p.lilacSoft, p.mintSoft, .white], rim: p.sub)
+                    .frame(width: 39, height: 39)
+                    .offset(x: 14, y: 22)
+                PixelIcon(rows: PX.smile, ink: p.icon(.accent), scale: 2)
+                    .background(Circle().fill(.white).padding(-1.5))
+                    .rotationEffect(.degrees(9))
+                    .offset(x: 9, y: 338)
+            }
         }
     }
     @ViewBuilder private var stickerSide: some View {
         if night {
-            HalftoneFlower(pink: p.accent, big: false).frame(width: 64, height: 72).offset(x: -16, y: -150)
+            HalftoneFlower(pink: p.accent, big: false).frame(width: 75, height: 85).offset(x: -18, y: 372)
         } else {
             PixelIcon(rows: PX.floppy, ink: p.icon(.second), scale: 2.6)
                 .background(Rectangle().fill(.white).padding(-2))
                 .rotationEffect(.degrees(-10))
-                .offset(x: -12, y: -140)
+                .offset(x: -12, y: 470)
         }
     }
     private var ghostWords: some View {
-        VStack(alignment: .trailing, spacing: 18) {
+        ZStack(alignment: .topLeading) {
+            Color.clear
             Text("trust the process").font(script(26))
-            Text("don't rush it").font(script(21)).padding(.trailing, 70)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .padding(.trailing, 18)
+                .offset(y: 300)
+            Text("don't rush it").font(script(21))
+                .offset(x: 110, y: 358)
         }
-        .foregroundColor(p.sub.opacity(0.32))
-        .padding(.trailing, 18).padding(.bottom, 24)
+        .foregroundColor(p.sub.opacity(0.36))
         .allowsHitTesting(false)
     }
 
@@ -426,7 +514,7 @@ struct TerminalView: View {
         Button(action: action) {
             Text(label)
                 .font(label.unicodeScalars.allSatisfy(\.isASCII) ? pixel(10.5) : .system(size: 12, weight: .medium))
-                .foregroundColor(accent ? p.accent : p.sub)
+                .foregroundColor(accent ? p.accent : p.keyText)
                 .frame(maxWidth: .infinity)
                 .frame(height: 32)
                 .background(keycap(radius: 7, accent: accent))
@@ -584,6 +672,7 @@ struct TerminalView: View {
 struct TermPalette {
     static let pixelFontID = "silkscreen"   // 后端字体架子上，hidden 不进她的字体栏
     static let scriptFontID = "pinyon"
+    static let monoFontID = "jbmono"         // 预览里终端正文那款 JetBrains Mono
 
     enum IconRole { case quiet, accent, second, onGo }
 
@@ -598,6 +687,9 @@ struct TermPalette {
     let promptMark: Color, go: Color, goShadow: Color, inputEdge: Color, inputShadow: Color
     let pinkSoft: Color, lilacSoft: Color, mintSoft: Color
     let icons: [IconRole: [Character: Color]]
+    // 1001 照预览补的：键帽 / 未选标签 / 状态行的字色，电池条，thinking 小标签，工具行的小三角
+    let keyText: Color, rowText: Color, batEdge: Color, batFill: Color
+    let pillBg: Color, pillText: Color, toolMark: Color, sepColor: Color
 
     func icon(_ r: IconRole) -> [Character: Color] { icons[r] ?? [:] }
 
@@ -620,7 +712,9 @@ struct TermPalette {
         icons: [.quiet: inks(o: "#8D7FC0", f: "#E4DDF6", h: "#FFFFFF", s: "#C9BDEC", w: "#FFFFFF"),
                 .accent: inks(o: "#D77FBD", f: "#F8D3EC", h: "#FFFFFF", s: "#EAB3DC", w: "#FFFFFF"),
                 .second: inks(o: "#4FBF98", f: "#B6F2DC", h: "#FFFFFF", s: "#86DCBF", w: "#FFFFFF"),
-                .onGo: inks(o: "#FFFFFF", f: "#FFFFFF", h: "#FFFFFF", s: "#FFFFFF", w: "#FFFFFF")])
+                .onGo: inks(o: "#FFFFFF", f: "#FFFFFF", h: "#FFFFFF", s: "#FFFFFF", w: "#FFFFFF")],
+        keyText: h("#8D7FC0"), rowText: h("#8D7FC0"), batEdge: h("#86DCBF"), batFill: h("#A9F0D6"),
+        pillBg: h("#F8D3EC"), pillText: h("#C46AAE"), toolMark: h("#86DCBF"), sepColor: h("#C9BDEC"))
 
     static let night = TermPalette(
         night: true,
@@ -636,7 +730,9 @@ struct TermPalette {
         icons: [.quiet: inks(o: "#A59FA8", f: "#3A3940", h: "#ECE7EC", s: "#55525A", w: "#ECE7EC"),
                 .accent: inks(o: "#F6B4DC", f: "#4D3A47", h: "#ECE7EC", s: "#B97AA2", w: "#ECE7EC"),
                 .second: inks(o: "#F6B4DC", f: "#3F343C", h: "#ECE7EC", s: "#8F7387", w: "#ECE7EC"),
-                .onGo: inks(o: "#323136", f: "#323136", h: "#323136", s: "#323136", w: "#323136")])
+                .onGo: inks(o: "#323136", f: "#323136", h: "#323136", s: "#323136", w: "#323136")],
+        keyText: h("#A59FA8"), rowText: h("#A59FA8"), batEdge: h("#8F7387"), batFill: h("#F6B4DC"),
+        pillBg: h("#4D3A47"), pillText: h("#F6B4DC"), toolMark: h("#8F7387"), sepColor: h("#F6B4DC"))
 }
 
 /// 页面底：白天淡紫小格纸，黑夜胶片颗粒（都是开门时画一次的小图铺满）
@@ -707,6 +803,8 @@ enum PX {
     static let bolt = ["...oo", "..ofo", ".ofo.", "offoo", "ooffo", "..ofo", ".ofo.", ".oo..", "o...."]
     static let bubble = [".ooooooo.", "offfffffo", "ofhfhfhfo", "offfffffo", ".oofoooo.", "..oo.....", ".o......."]
     static let folder = ["oooo......", "offfoooooo", "offffffffo", "offffffffo", "offffffffo", "oooooooooo"]
+    static let smile = ["..ooooo..", ".offfffo.", "offfffffo", "ofofffofo", "offfffffo", "ofofffofo", "offoooffo",
+                        ".offfffo.", "..ooooo.."]
     static let enter = [".......ooo", "...o...ofo", "..ofo..ofo", ".offoooofo", "offfffffo.", ".offoooo..", "..ofo.....", "...o......"]
 }
 
@@ -805,12 +903,21 @@ enum TermParse {
         String(t.dropFirst()).trimmingCharacters(in: .whitespaces)
     }
 
-    /// 最后一道横线下面不超过 6 行的算状态行（模型 / 上下文 / 用量 / 保活），收进软盘标签；其余是正文
+    /// 「Cogitated for 54s · done 7:32 PM」→ 小标签「thought 54s」＋后面「done 7:32 PM」；认不出就整句当标签
+    static func thought(_ text: String) -> (pill: String, rest: String) {
+        guard let r = text.range(of: #"for ([0-9hms ]+?)(\s*[·•(]|$)"#, options: .regularExpression) else { return (text, "") }
+        let dur = text[r].replacingOccurrences(of: "for ", with: "")
+            .trimmingCharacters(in: CharacterSet(charactersIn: " ·•("))
+        let rest = String(text[r.upperBound...]).trimmingCharacters(in: CharacterSet(charactersIn: " ·•)"))
+        return ("thought " + dur, rest)
+    }
+
+    /// 最后一道横线下面不超过 8 行（状态行会折行）的算状态行（模型 / 上下文 / 用量 / 保活），收进软盘标签；其余是正文
     static func split(_ output: String) -> (body: [TermLine], status: [String]) {
         var lines = output.components(separatedBy: "\n")
         while let last = lines.last, last.trimmingCharacters(in: .whitespaces).isEmpty { lines.removeLast() }
         var status: [String] = []
-        if let last = lines.lastIndex(where: isRule), lines.count - last - 1 <= 6, last < lines.count - 1 {
+        if let last = lines.lastIndex(where: isRule), lines.count - last - 1 <= 8, last < lines.count - 1 {
             status = lines[(last + 1)...].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             lines = Array(lines[...last])
         }
@@ -827,10 +934,15 @@ enum TermParse {
                 kind = .me; out.append(TermLine(kind: .me, text: strip(t))); continue
             }
             if t.hasPrefix("●") || t.hasPrefix("⏺") {
-                kind = .him; out.append(TermLine(kind: .him, text: strip(t))); continue
+                let body = strip(t)
+                // 他调工具那行（Bash(…) / Read(…)）照预览画成小三角那种灰行，不算他说话
+                if body.range(of: #"^[A-Za-z][A-Za-z0-9_\-]*\("#, options: .regularExpression) != nil {
+                    kind = .plain; out.append(TermLine(kind: .tool, text: body)); continue
+                }
+                kind = .him; out.append(TermLine(kind: .him, text: body)); continue
             }
             if t.hasPrefix("⎿") {
-                out.append(TermLine(kind: .tool, text: "▸ " + strip(t))); continue
+                out.append(TermLine(kind: .tool, text: strip(t))); continue
             }
             if (t.hasPrefix("✻") || t.hasPrefix("✽") || t.hasPrefix("✶") || t.hasPrefix("* ")) && t.contains(" for ") {
                 kind = .plain; out.append(TermLine(kind: .thought, text: strip(t))); continue
@@ -843,5 +955,36 @@ enum TermParse {
             }
         }
         return (out, status)
+    }
+}
+
+/// Claude Code 底下那几行状态（她屏幕上：「Opus 5  thinking:on  ctx [█░░] 28%」「5h [█░] 19%  7d [█░] 20%」「▸▸ bypass permissions on …」「保活 20:25 已敲·无回执」）
+/// 认出上下文百分比才算 parsed，照预览画；格式变了认不出就原样列字
+struct TermStatus {
+    var model: String?, thinking: String?, ctx: Int?, h5: Int?, d7: Int?, bypass: String?, keep: String?
+    var parsed: Bool { ctx != nil }
+
+    init(_ lines: [String]) {
+        func pct(_ key: String, _ s: String) -> Int? {
+            guard let r = s.range(of: key + #"\s*\[[^\]]*\]\s*(\d+)%"#, options: .regularExpression) else { return nil }
+            let digits = s[r].reversed().drop { !$0.isNumber }.prefix { $0.isNumber }
+            return Int(String(digits.reversed()))
+        }
+        for s in lines {
+            if ctx == nil, let v = pct("ctx", s) {
+                ctx = v
+                if let r = s.range(of: #"thinking:\s*(on|off)"#, options: .regularExpression) {
+                    thinking = s[r].replacingOccurrences(of: "thinking:", with: "").trimmingCharacters(in: .whitespaces)
+                    let head = s[..<r.lowerBound].trimmingCharacters(in: .whitespaces)
+                    if !head.isEmpty { model = head }
+                }
+            }
+            if h5 == nil, let v = pct("5h", s) { h5 = v }
+            if d7 == nil, let v = pct("7d", s) { d7 = v }
+            if bypass == nil, s.contains("bypass permissions") {
+                bypass = s.contains("bypass permissions on") ? "bypass permissions on" : "bypass permissions"
+            }
+            if keep == nil, s.hasPrefix("保活") { keep = s.replacingOccurrences(of: "·", with: " · ") }
+        }
     }
 }
