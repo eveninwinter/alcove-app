@@ -12172,7 +12172,8 @@ private struct NativeCalendarView: View {
             ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { w in
                 Text(w).font(.system(size: 11)).foregroundColor(pal.faint).padding(.vertical, 6)
             }
-            ForEach(0..<lead, id: \.self) { _ in Color.clear.frame(height: 46) }
+            // 1001 她抓的「十月 1、2 号去哪了」：空格原来编号 0..<lead，跟日期 1...days 撞号（十月一号周四空三格，1、2 被吞）。空格改用负数号
+            ForEach(-lead..<0, id: \.self) { _ in Color.clear.frame(height: 46) }
             ForEach(1...days, id: \.self) { d in dayCell(d, pal) }
         }
         .padding(.horizontal, 16)
