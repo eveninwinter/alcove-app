@@ -147,9 +147,13 @@ struct WindowPaper {
 
     static func of(_ dark: Bool) -> WindowPaper {
         dark
-            ? WindowPaper(paper: Color(red: 0.10, green: 0.09, blue: 0.08), paperDeep: Color(red: 0.07, green: 0.06, blue: 0.05),
-                          ink: Color(red: 0.91, green: 0.87, blue: 0.80), inkSoft: Color(red: 0.63, green: 0.58, blue: 0.51),
-                          rubric: Color(red: 0.80, green: 0.55, blue: 0.43), rule: Color(red: 0.91, green: 0.87, blue: 0.80).opacity(0.18))
+            // 1001 她挑的黑夜 B「炭灰」：中性灰，不要深黑别太沉、不带棕；小标题淡紫
+            ? WindowPaper(paper: Color(red: 0x32/255, green: 0x32/255, blue: 0x38/255),
+                          paperDeep: Color(red: 0x2A/255, green: 0x2A/255, blue: 0x30/255),
+                          ink: Color(red: 0xEF/255, green: 0xEE/255, blue: 0xF2/255),
+                          inkSoft: Color(red: 0xA9/255, green: 0xA8/255, blue: 0xB3/255),
+                          rubric: Color(red: 0xC9/255, green: 0xB4/255, blue: 0xEC/255),
+                          rule: Color(red: 0xEF/255, green: 0xEE/255, blue: 0xF2/255).opacity(0.18))
             : WindowPaper(paper: Color(red: 0.96, green: 0.94, blue: 0.90), paperDeep: Color(red: 0.92, green: 0.89, blue: 0.84),
                           ink: Color(red: 0.17, green: 0.15, blue: 0.13), inkSoft: Color(red: 0.49, green: 0.45, blue: 0.40),
                           rubric: Color(red: 0.49, green: 0.18, blue: 0.16), rule: Color(red: 0.17, green: 0.15, blue: 0.13).opacity(0.16))
@@ -337,7 +341,7 @@ final class DropCapTextView: UITextView {
 
 struct NativeWindowView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""   // 1001：黑白跟全屋那一个开关走
     @StateObject private var store = WindowStore()
     @State private var page = 0
     @State private var opened: WindowCard?
@@ -349,7 +353,7 @@ struct NativeWindowView: View {
     /// 读过的记在手机本地就够了（不上后端），留最近 400 张
     @AppStorage("windowReadIDs") private var readRaw = ""
     @Namespace private var zoomNS
-    private var paper: WindowPaper { .of(AlcoveTheme.named(themeName).isDark) }
+    private var paper: WindowPaper { _ = houseAppearance; return .of(AlcoveAppearance.isDark) }
     private var readIDs: Set<String> { Set(readRaw.split(separator: ",").map(String.init)) }
 
     /// 0925 她抓的「世界之窗又没做安全区」：这间屋是 ownsFullScreen，外面那层把安全区全吃了，
