@@ -838,11 +838,11 @@ final class ChatStore: ObservableObject {
 
     /// 1001 她贴一个：先在本地挂上（不等服务器），再告诉后端
     func react(_ msg: ChatMessage, emoji: String) {
+        // 1001 她报的「贴完十几秒才出来」：原来套着 withAnimation，小片从无到有的入场动画在懒加载列表里卡半路不画，
+        // 等下一次轮询整页重画才出来。直接写，立刻出；换表情那下 ReactionChips 自己的弹簧照样弹
         if let idx = messages.firstIndex(where: { $0.ts == msg.ts && $0.role == msg.role }),
            messages[idx].reactions["user"] != emoji {
-            withAnimation(.spring(response: 0.35, dampingFraction: 0.6)) {
-                messages[idx].reactions["user"] = emoji
-            }
+            messages[idx].reactions["user"] = emoji
         }
         Task { try? await AlcoveAPI.react(ts: msg.ts, role: msg.role, emoji: emoji) }
     }
