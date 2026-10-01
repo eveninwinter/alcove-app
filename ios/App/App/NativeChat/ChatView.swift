@@ -3844,8 +3844,9 @@ struct MessageRow: View {
                 } else {
                   VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
                     photoBlock
+                        .padding(.trailing, kakaoUserPhotoInset)
                     if hasPhotoBlock && !showsTextBubble && !msg.isAudio && !msg.reactions.isEmpty {
-                        mediaChips(inset: 8)
+                        mediaChips(inset: 8 + kakaoUserPhotoInset)
                     }
                     if msg.isAudio, let raw = msg.attachmentUrl {
                       // 0927 她要的：Kakao 的时间是贴在气泡旁边的（kakaoSideMeta），原来只有正文气泡挂，
@@ -4187,6 +4188,21 @@ struct MessageRow: View {
         return kakaoTextLeading() + 2
     }
 
+    /// 1001 她要的：Kakao 下她那边（没头像）图片右边对齐看得见的粉框——气泡图右边带透明边 / 图案，按 02 图（不带小人那张）的 body_right 让开
+    private var kakaoUserPhotoInset: CGFloat {
+        guard theme.isKakao, isUser else { return 0 }
+        let pack = KakaoPackStore.shared.current
+        return CGFloat((pack?.bubbles["send2"] ?? pack?.bubbles["send1"])?.body_right ?? 0)
+    }
+
+    /// 1001 她要的：Kakao 下她那边气泡上面那行引用（↪ …）右边对齐框里字的右边（包里写的字离右边多少）
+    private var kakaoUserQuoteInset: CGFloat {
+        guard theme.isKakao, isUser else { return 0 }
+        let pack = KakaoPackStore.shared.current
+        let spec = pack?.bubbles[kakaoFirstBubble ? "send1" : "send2"] ?? pack?.bubbles["send1"]
+        return spec?.textInsets.trailing ?? 0
+    }
+
     /// 1001 她抓的「小片跑到小鼯鼠底下」：Kakao 她那边的气泡图右边常带图案，框的右边不是看得见的气泡右边。
     /// 按后端量的 body_right 让开（文字气泡的小片、表情条、菜单都用）；别的主题、他那边是 0
     private var reactEdgeInset: CGFloat {
@@ -4306,6 +4322,7 @@ struct MessageRow: View {
                 }
                 .font(.system(size: 12))
                 .foregroundColor(theme.thoughtColor)
+                .padding(.trailing, kakaoUserQuoteInset)
             }
             Group {
                 if theme.isKakao {
