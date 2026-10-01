@@ -4318,12 +4318,10 @@ struct MessageRow: View {
                     bubbleContents
                         .padding(.horizontal, 14)
                         .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
-                        .background {
-                            // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
-                            //（1001 玻璃主题残留删了，这里原来还有一支画玻璃气泡的）
-                            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                                .fill(isUser ? theme.bubbleUser : theme.bubbleAI)
-                        }
+                        // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
+                        // 1001 她要试的：信息主题换成跟打字框同一种系统玻璃（纸页照旧实心），大小排版一点不动
+                        .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
+                                                     isUser: isUser, glass: theme.isMessages))
                 }
             }
         }
@@ -7384,6 +7382,27 @@ private struct TailPillGlassModifier: ViewModifier {
                 .background(.ultraThinMaterial, in: Capsule())
                 .background(fallbackTint, in: Capsule())
                 .overlay(Capsule().stroke(fallbackBorder, lineWidth: 1))
+        }
+    }
+}
+
+/// 1001 她要试的玻璃气泡：iOS 26 系统液态玻璃（跟打字框同一种），用原来的气泡色压一层底，
+/// 她蓝他灰照样分得开、花壁纸上字也看得清；不用 .interactive()，免得跟长按贴表情的缩放打架。
+/// 系统低于 26 或纸页主题：照旧实心圆角
+private struct MessagesBubbleFill: ViewModifier {
+    let fill: Color
+    let isUser: Bool
+    let glass: Bool
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
+        if !glass {
+            content.background(fill, in: shape)
+        } else if #available(iOS 26.0, *) {
+            content.glassEffect(.regular.tint(fill.opacity(isUser ? 0.68 : 0.5)), in: shape)
+        } else {
+            content.background(fill, in: shape)
         }
     }
 }
