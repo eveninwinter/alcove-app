@@ -460,7 +460,8 @@ enum MessagesPalette {
         case .divider: return base.textDim
         case .bubbleUser: return base.bubbleUser
         case .bubbleAI: return base.bubbleAI
-        case .textUser: return .white          // 信息主题里她的气泡上的字本来就是白的
+        // 1001 信息主题气泡换成不带颜色的系统玻璃，白字在白天的玻璃上看不见了：默认跟他的正文一样（白天深、夜里浅）。她自己调过的照旧
+        case .textUser: return base.text
         case .textAI: return base.text
         case .readTick, .sendButton: return Color(uiColor: .systemBlue)
         }

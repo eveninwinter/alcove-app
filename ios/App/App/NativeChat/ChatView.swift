@@ -4321,7 +4321,7 @@ struct MessageRow: View {
                         // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
                         // 1001 她要试的：信息主题换成跟打字框同一种系统玻璃（纸页照旧实心），大小排版一点不动
                         .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
-                                                     isUser: isUser, glass: theme.isMessages))
+                                                     glass: theme.isMessages))
                 }
             }
         }
@@ -7386,13 +7386,14 @@ private struct TailPillGlassModifier: ViewModifier {
     }
 }
 
-/// 1001 她要试的玻璃气泡：iOS 26 系统液态玻璃（跟打字框同一种），用原来的气泡色压一层底，
-/// 她蓝他灰照样分得开、花壁纸上字也看得清；不用 .interactive()，免得跟长按贴表情的缩放打架。
-/// 系统低于 26 或纸页主题：照旧实心圆角
+/// 1001 她要试的玻璃气泡：iOS 26 系统液态玻璃（跟打字框同一种），跟系统一模一样不带颜色（她：「不需要颜色！」）。
+/// 设置里「气泡玻璃」滑条照系统那个「透明 ↔ 色调」：0 是最透的 .clear，往右在玻璃上垫一层白（夜里黑）越来越磨砂。
+/// 不用 .interactive()，免得跟长按贴表情的缩放打架。系统低于 26 或纸页主题：照旧实心圆角
 private struct MessagesBubbleFill: ViewModifier {
     let fill: Color
-    let isUser: Bool
     let glass: Bool
+    @AppStorage("msgGlassFrost") private var frost = 0.3
+    @Environment(\.colorScheme) private var scheme
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -7400,7 +7401,9 @@ private struct MessagesBubbleFill: ViewModifier {
         if !glass {
             content.background(fill, in: shape)
         } else if #available(iOS 26.0, *) {
-            content.glassEffect(.regular.tint(fill.opacity(isUser ? 0.68 : 0.5)), in: shape)
+            content
+                .background((scheme == .dark ? Color.black : Color.white).opacity(frost * 0.6), in: shape)
+                .glassEffect(.clear, in: shape)
         } else {
             content.background(fill, in: shape)
         }

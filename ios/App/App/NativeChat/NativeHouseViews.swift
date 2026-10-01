@@ -1883,6 +1883,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
     @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
+    @AppStorage("msgGlassFrost") private var glassFrost = 0.3   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
@@ -1911,6 +1912,7 @@ private struct BubbleAppearanceSettingsView: View {
                 fontSizeSlider
                 bubbleGapSlider
                 turnGapSlider
+                if chatTheme.isMessages && !chatTheme.isKakao { glassFrostSlider }
             }
         case .colors:
             VStack(spacing: 12) {
@@ -1950,6 +1952,7 @@ private struct BubbleAppearanceSettingsView: View {
                         fontSizeSlider
                         bubbleGapSlider
                         turnGapSlider
+                        if chatTheme.isMessages && !chatTheme.isKakao { glassFrostSlider }
                     }
                 }
 
@@ -2138,6 +2141,24 @@ private struct BubbleAppearanceSettingsView: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(panelTheme.textDim)
                 .frame(width: 45, alignment: .trailing)
+        }
+    }
+
+    /// 1001 她要的：只管气泡的玻璃，照系统设置里 Liquid Glass 那条——左边透明、右边色调（更磨砂、字更清楚），不带颜色
+    private var glassFrostSlider: some View {
+        HStack(spacing: 9) {
+            Text("气泡玻璃")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+
+            Text("透明")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textDim)
+            Slider(value: $glassFrost, in: 0...1)
+                .tint(panelTheme.fyAccent)
+            Text("色调")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textDim)
         }
     }
 
