@@ -718,21 +718,26 @@ struct RecallItem {
     let prompt: String
     let content: String
     let ts: String
+    /// 1001 打字卡：聊天页每按一键都会把可见的轮重算一遍、每轮翻全部召回，
+    /// 日期和压空白后的 prompt 原来每次现算，改成收到时算一次存着
+    let date: Date?
+    let normPrompt: String
 
     init?(json: [String: Any]) {
         guard let prompt = json["prompt"] as? String,
               let content = json["content"] as? String else { return nil }
         self.prompt = prompt
         self.content = content
-        self.ts = json["ts"] as? String ?? ""
+        let stamp = json["ts"] as? String ?? ""
+        self.ts = stamp
+        self.date = Self.isoFrac.date(from: stamp) ?? Self.iso.date(from: stamp)
+        self.normPrompt = Self.norm(prompt)
     }
 
     private static let isoFrac: ISO8601DateFormatter = {
         let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
     }()
     private static let iso = ISO8601DateFormatter()
-    /// 存档时间（后端存的是带时区的 ISO 串）；解析不了就是 nil
-    var date: Date? { Self.isoFrac.date(from: ts) ?? Self.iso.date(from: ts) }
 
     // 与 PWA formatRecallCards 同款切卡：按 [bucket_id: 分段
     var cards: [(date: String, body: String)] {

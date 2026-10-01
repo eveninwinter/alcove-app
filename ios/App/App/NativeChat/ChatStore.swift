@@ -199,7 +199,7 @@ final class ChatStore: ObservableObject {
         guard let items = try? await AlcoveAPI.recalls() else { return }
         var map: [String: RecallItem] = [:]
         for it in items { // list 新→旧，保留最新
-            let k = RecallItem.norm(it.prompt)
+            let k = it.normPrompt
             if !k.isEmpty && map[k] == nil { map[k] = it }
         }
         orderedRecalls = items
@@ -221,7 +221,7 @@ final class ChatStore: ObservableObject {
         guard key.count >= 4 else { return nil }
         return orderedRecalls.first {
             guard near($0) else { return false }
-            let prompt = RecallItem.norm($0.prompt)
+            let prompt = $0.normPrompt
             return prompt.hasPrefix(key + " ") || prompt.contains(key)
         }
     }
