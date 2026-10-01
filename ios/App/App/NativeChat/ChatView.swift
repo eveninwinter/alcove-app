@@ -4935,6 +4935,7 @@ struct MessageRow: View {
         }
         .frame(width: 124, height: 124)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .chatPhotoRim()
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
         .contextMenu {
@@ -7055,6 +7056,7 @@ struct OfficialPhotoGridMessageView: View {
         }
         .frame(width: side, height: side)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .chatPhotoRim()
         .contextMenu {
             if nativeMenu {
                 Button {
@@ -7063,6 +7065,25 @@ struct OfficialPhotoGridMessageView: View {
             }
         }
     }
+}
+
+/// 1001 她要的：图跟壁纸一个色就融进去了（Kakao 小猪灰点壁纸＋白底图）。
+/// 照 iOS 信息：所有主题发的图一律描一圈细线，白天淡黑、黑夜淡白；表情包不描。
+private struct ChatPhotoRim: ViewModifier {
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            RoundedRectangle(cornerRadius: 14, style: .continuous)
+                .strokeBorder(scheme == .dark ? Color.white.opacity(0.2) : Color.black.opacity(0.14),
+                              lineWidth: 1)
+                .allowsHitTesting(false)
+        )
+    }
+}
+
+extension View {
+    func chatPhotoRim() -> some View { modifier(ChatPhotoRim()) }
 }
 
 enum PhotoLibrarySaver {
