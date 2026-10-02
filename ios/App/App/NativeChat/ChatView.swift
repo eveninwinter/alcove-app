@@ -975,7 +975,7 @@ struct ChatView: View {
                 // 0827 拍一拍：居中一行小字。她拍我常规、我拍她加粗，黑底白底各一套灰
                 PatLine(text: message.text,
                         strong: message.msgType == "pat_incoming",
-                        isDark: theme.isDark)
+                        isDark: theme.isDark && !theme.isKakao)   // 1002：这行直接压在 Kakao 包的壁纸上，壁纸不分黑白，字色照旧不跟按钮翻
             } else if message.msgType == "divider" && message.source == "dream" {
                 // 0822 她定的：做梦之后聊天页只落这一道线，梦本身在梦面板
                 DreamDivider(text: message.text, date: message.date, color: theme.dividerColor)
@@ -3595,6 +3595,11 @@ struct MessageRow: View {
     var theme: AlcoveTheme = .haven
     /// 0925：思绪 / 工具这些弹出面板用这套——Kakao 下跟全屋白天 / 黑夜开关走，别的主题就是聊天主题本身
     private var sheetTheme: AlcoveTheme { theme.isKakao ? .kakaoSheet(dark: AlcoveAppearance.isDark) : theme }
+    /// 1002：聊天里的卡片（选择卡、页面卡、券卡……）Kakao 下一律用信息主题那套——深浅只认全屋按钮，
+    /// 不借主题包的字色（豹纹黑包的白字配卡片浅底，整张选择卡白字白底看不见）。输入框 composerTheme 是同一个做法
+    private var cardTheme: AlcoveTheme {
+        theme.isKakao ? .named(AlcoveAppearance.isDark ? "imessage-dark" : "imessage") : theme
+    }
     var fontSize: Int = 14
     var showTime: Bool = true
     var recall: RecallItem? = nil
@@ -3812,31 +3817,31 @@ struct MessageRow: View {
                 }
                 if !theme.isMessages && !isUser { nativeThinkingButton.padding(.bottom, rowPartGap) }
                 if let paperDate = msg.morningPaperDate {
-                    MorningPaperMessageCard(date: paperDate, theme: theme, messageID: msg.id)
+                    MorningPaperMessageCard(date: paperDate, theme: cardTheme, messageID: msg.id)
                 } else if let inside = msg.insideText {
-                    InsideMessageCard(text: inside, date: msg.date, theme: theme, messageID: msg.id)
+                    InsideMessageCard(text: inside, date: msg.date, theme: cardTheme, messageID: msg.id)
                         .frame(maxWidth: .infinity)   // 0929 她要的：整行居中
                 } else if let ghost = msg.ghostCard {
-                    GhostActivityMessageCard(card: ghost, theme: theme)
+                    GhostActivityMessageCard(card: ghost, theme: cardTheme)
                 } else if let play = msg.playCard {
-                    PlayPageMessageCard(card: play, theme: theme)
+                    PlayPageMessageCard(card: play, theme: cardTheme)
                 } else if let forward = msg.favoriteForward {
                     FavoriteForwardMessageCard(card: forward)
                 } else if let reading = msg.readingCard {
-                    ReadingShareMessageCard(card: reading, theme: theme)
+                    ReadingShareMessageCard(card: reading, theme: cardTheme)
                 } else if let tarot = msg.tarotCard {
-                    TarotMessageCard(card: tarot, theme: theme)
+                    TarotMessageCard(card: tarot, theme: cardTheme)
                         .frame(maxWidth: .infinity)   // 整行居中
                 } else if let offer = msg.tarotOffer {
-                    TarotOfferMessageCard(card: offer, theme: theme, onContentChange: onContentChange)
+                    TarotOfferMessageCard(card: offer, theme: cardTheme, onContentChange: onContentChange)
                         .frame(maxWidth: .infinity)
                 } else if msg.msgType == "tarot_answer" {
                     // 她抽满了他出的题：服务端落的那条（全文给他读），聊天页只画一句小条子，牌在上面那张卡里
                     ChoiceAnswerStrip(text: "🔮 抽好了，牌在上面那张卡里", theme: theme)
                 } else if let work = msg.workCard {
-                    WorkDeliveryMessageCard(card: work, theme: theme)
+                    WorkDeliveryMessageCard(card: work, theme: cardTheme)
                 } else if let album = msg.albumSavedCard {
-                    AlbumSavedMessageCard(batch: album, theme: theme)
+                    AlbumSavedMessageCard(batch: album, theme: cardTheme)
                 } else if let pond = msg.pondCard {
                     PondChatMessageCard(card: pond)
                         .frame(maxWidth: .infinity)
@@ -3848,22 +3853,22 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity)
                 } else if let buy = msg.buyCard {
                     // 0907 二期审批卡：她要它「跟他的气泡列在一堆」，所以不居中，走左侧
-                    BuyApprovalMessageCard(card: buy, theme: theme)
+                    BuyApprovalMessageCard(card: buy, theme: cardTheme)
                 } else if let paid = msg.paidCard {
                     // 0909 付款单：跟审批卡一样列在他的气泡那一堆里，不居中
-                    PaidReceiptMessageCard(card: paid, theme: theme)
+                    PaidReceiptMessageCard(card: paid, theme: cardTheme)
                 } else if let ticket = msg.ticketCard {
                     // 0909 券卡：她点确认才核销，跟审批卡一样列在他的气泡那堆里
-                    TicketUseMessageCard(card: ticket, theme: theme)
+                    TicketUseMessageCard(card: ticket, theme: cardTheme)
                 } else if let choice = msg.choiceCard {
-                    ChoiceQuestionMessageCard(card: choice, theme: theme)
+                    ChoiceQuestionMessageCard(card: choice, theme: cardTheme)
                 } else if msg.msgType == "choice_answer" {
                     ChoiceAnswerStrip(text: msg.displayText, theme: theme)
                 } else if let letter = msg.letterCard {
-                    LetterMessageCard(card: letter, theme: theme)
+                    LetterMessageCard(card: letter, theme: cardTheme)
                         .frame(maxWidth: .infinity)   // 信封也走正中间，跟旅行卡一个待遇
                 } else if let journey = msg.journeyCard {
-                    JourneyMessageCard(ref: journey, theme: theme)
+                    JourneyMessageCard(ref: journey, theme: cardTheme)
                         .frame(maxWidth: .infinity)   // 她要卡片在聊天页正中间
                 } else if let call = msg.callSummary {
                     // 0831 任务#1195：打完电话聊天页只留这一条，点开展开这一通的记录。

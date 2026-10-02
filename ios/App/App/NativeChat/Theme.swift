@@ -368,6 +368,7 @@ enum AlcoveAppearance {
         d.set(dark ? "dark" : "light", forKey: key)
         let current = d.string(forKey: themeKey) ?? "haven"
         d.set(themeName(family: family(of: current), dark: dark), forKey: themeKey)
+        MessagesPalette.bump()   // 1002：Kakao 下 themeName 不变，靠这一下让盯着 paletteStamp 的页面重算主题
     }
 
     /// 换皮不换深浅

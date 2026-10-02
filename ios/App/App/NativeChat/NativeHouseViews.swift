@@ -4045,7 +4045,13 @@ struct MusicMiniPlayer: View {
     @ObservedObject var model: MusicModel
     let open: () -> Void
     @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .named(themeName) }
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    /// 1002：Kakao 下跟输入框一样借信息主题那套，深浅只认全屋按钮（原来拿包的输入框底＋包的字色，不跟黑白翻）
+    private var theme: AlcoveTheme {
+        _ = houseAppearance
+        guard AlcoveAppearance.family(of: themeName) == "kakao" else { return .named(themeName) }
+        return .named(AlcoveAppearance.isDark ? "imessage-dark" : "imessage")
+    }
 
     var body: some View {
         if let song = model.nowPlaying {

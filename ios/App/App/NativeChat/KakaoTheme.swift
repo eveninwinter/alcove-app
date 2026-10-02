@@ -379,8 +379,9 @@ extension AlcoveTheme {
         let ink = Color.kakaoHex(c?.main_text, Color(red: 0.22, green: 0.22, blue: 0.22))
         let sub = Color.kakaoHex(c?.main_sub, Color(red: 0.49, green: 0.46, blue: 0.46))
         let inputBg = Color.kakaoHex(c?.input_bg, .white)
+        // 1002 她：「app 里的一切只跟黑夜白天那两个按钮走」。原来写死 false，五十多处问 theme.isDark 的地方在 Kakao 下全当白天
         var copy = AlcoveTheme(
-            isDark: false, isPaper: false, usesWallImage: false,
+            isDark: AlcoveAppearance.isDark, isPaper: false, usesWallImage: false,
             wallGradient: [inputBg, inputBg],
             bubbleUser: main, bubbleAI: .white,
             text: ink, textDim: sub, textLight: sub.opacity(0.8), timestamp: sub,
