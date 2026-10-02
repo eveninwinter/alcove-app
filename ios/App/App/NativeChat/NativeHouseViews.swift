@@ -12043,9 +12043,17 @@ private struct NativeCalendarView: View {
     @State private var diaryFirst = ""
     @State private var bloomOn = false
     @State private var opened: DiaryOpen?
+    // 1002 日程提醒：这个月每天的铃铛、最近三件、新建那张卡
+    @State private var reminders: [String: [ReminderItem]] = [:]
+    @State private var upcoming: [ReminderItem] = []
+    @State private var showNewReminder = false
+    @ObservedObject private var fontStore = KakaoPackStore.shared
     @Namespace private var zoomNS
 
+    /// 阅读页（DiaryReader）还是原来那套梅花
     private var palette: DiaryPalette { _ = houseAppearance; return DiaryPalette(dark: AlcoveAppearance.isDark) }
+    /// 1002 她要的：日记页整页走终端那套像素风（效果图 /root/workroom/mock/diary-remind/）
+    private var pp: DiaryPixelPalette { _ = houseAppearance; return DiaryPixelPalette(dark: AlcoveAppearance.isDark) }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
     private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
 
@@ -12061,78 +12069,114 @@ private struct NativeCalendarView: View {
     }
 
     private static let monthNames = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"]
+    private static let monthEN = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+
+    private var todayKey: String {
+        let c = Calendar.current.dateComponents([.year, .month, .day], from: Date())
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
 
     var body: some View {
-        let pal = palette
-        ZStack(alignment: .top) {
-            LinearGradient(colors: [pal.sky, pal.paper], startPoint: .top, endPoint: UnitPoint(x: 0.5, y: 0.4))
-                .ignoresSafeArea()
+        let p = pp
+        ZStack(alignment: .bottomTrailing) {
+            DiaryPixelPaper(pal: p)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
-                    header(pal)
+                    header(p)
                     if loading && events.isEmpty {
-                        ProgressView().tint(pal.accent).frame(maxWidth: .infinity).padding(.top, 60)
+                        ProgressView().tint(p.pinkInk).frame(maxWidth: .infinity).padding(.top, 60)
                     } else if displayMode == 0 {
-                        monthBar(pal)
-                        grid(pal)
-                        if periodDates.values.contains(where: { _ in true }) {
-                            HStack(spacing: 5) {
-                                Circle().fill(pal.accent.opacity(0.5)).frame(width: 5, height: 5)
-                                Text("姨妈期").font(.system(size: 10)).foregroundColor(pal.dim)
-                            }
-                            .padding(.horizontal, 26).padding(.top, 6)
+                        if !upcoming.isEmpty {
+                            ReminderNextStrip(items: upcoming, pal: p).padding(.top, 14)
                         }
-                        dayCards(pal)
+                        DiaryPixelWindow(pal: p, title: String(format: "C:\\DIARY\\%04d-%02d", year, month)) {
+                            VStack(spacing: 0) {
+                                monthBar(p)
+                                grid(p)
+                            }
+                        }
+                        .padding(.horizontal, 12).padding(.top, 14)
+                        legend(p)
+                        dayCards(p)
                     } else {
-                        monthBar(pal)
-                        monthList(pal)
+                        DiaryPixelWindow(pal: p, title: String(format: "C:\\DIARY\\%04d-%02d\\ALL", year, month)) {
+                            monthBar(p)
+                        }
+                        .padding(.horizontal, 12).padding(.top, 14)
+                        monthList(p)
                     }
                 }
                 .padding(.top, max(safeTop, 20))
-                .padding(.bottom, max(safeBottom, 16) + 20)
+                .padding(.bottom, max(safeBottom, 16) + 80)
             }
-            DiaryPetalFall(palette: pal, count: 5)
-                .ignoresSafeArea()
+            Button { showNewReminder = true } label: {
+                PixelGlyph(rows: DPX.plus, colors: ["o": p.goInk], scale: 4)
+                    .frame(width: 52, height: 52)
+                    .modifier(PixelKeycap(fill: p.go, edge: p.goD, radius: 14, drop: 4))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("加提醒")
+            .padding(.trailing, 18).padding(.bottom, max(safeBottom, 16) + 8)
         }
-        .foregroundColor(pal.ink)
+        .foregroundColor(p.ink)
         .task {
             WindowFont.requestSongti()
+            DiaryFonts.ensure()
             await loadMonth()
         }
+        .onReceive(fontStore.$fonts) { _ in DiaryFonts.ensure() }
         .fullScreenCover(item: $opened) { item in
-            DiaryReader(item: item, palette: pal)
+            DiaryReader(item: item, palette: palette)
                 .navigationTransition(.zoom(sourceID: item.id, in: zoomNS))
+        }
+        .sheet(isPresented: $showNewReminder) {
+            NewReminderSheet(pal: p, initialDay: selectedDate) {
+                Task { await loadReminders() }
+            }
         }
     }
 
     // ── 头 ──
-    private func header(_ pal: DiaryPalette) -> some View {
+    private func header(_ p: DiaryPixelPalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack {
+            HStack(spacing: 8) {
                 Button { dismiss() } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 17, weight: .medium))
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel("返回")
+                    Text("<").font(DiaryFonts.pixel(14)).foregroundColor(p.lilacInk)
+                        .frame(width: 32, height: 32)
+                        .modifier(PixelKeycap(fill: p.card, edge: p.lilacD))
+                }
+                .buttonStyle(.plain).accessibilityLabel("返回")
+                HStack(spacing: 6) {
+                    PixelGlyph(rows: DPX.flower, colors: p.flower, scale: 2)
+                    (Text("diary").foregroundColor(p.lilacInk) + Text(".log").foregroundColor(p.pinkInk))
+                        .font(DiaryFonts.pixel(12)).tracking(0.5)
+                }
                 Spacer()
                 Button {
                     withAnimation(.easeInOut(duration: 0.25)) { displayMode = displayMode == 0 ? 1 : 0 }
                 } label: {
                     Image(systemName: displayMode == 0 ? "list.bullet" : "calendar")
-                        .font(.system(size: 16))
-                        .frame(width: 44, height: 44).contentShape(Rectangle())
-                }.buttonStyle(.plain).accessibilityLabel(displayMode == 0 ? "本月条目" : "日历")
+                        .font(.system(size: 14, weight: .medium)).foregroundColor(p.lilacInk)
+                        .frame(width: 32, height: 32)
+                        .modifier(PixelKeycap(fill: p.card, edge: p.lilacD))
+                }
+                .buttonStyle(.plain).accessibilityLabel(displayMode == 0 ? "本月条目" : "日历")
             }
-            .foregroundColor(pal.dim)
-            .padding(.horizontal, 8)
-            VStack(alignment: .leading, spacing: 6) {
-                Text("Diary")
-                    .font(.system(size: 38, weight: .regular, design: .serif)).italic()
-                Text("写一篇，开一朵")
-                    .font(WindowFont.swiftUI(13)).tracking(1).foregroundColor(pal.dim)
-                Text(countLine)
-                    .font(.system(size: 13, design: .serif)).italic().foregroundColor(pal.dim)
+            .padding(.horizontal, 12)
+            ZStack(alignment: .topTrailing) {
+                VStack(alignment: .leading, spacing: 2) {
+                    HStack(alignment: .lastTextBaseline, spacing: 12) {
+                        Text("Diary").font(DiaryFonts.script(40)).foregroundColor(p.pinkInk)
+                        Text("写一篇，开一朵").font(WindowFont.swiftUI(12)).tracking(1.5).foregroundColor(p.sub)
+                    }
+                    Text(countLine).font(DiaryFonts.pixel(10)).tracking(0.5).foregroundColor(p.lilacInk)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                PixelGlyph(rows: DPX.smile, colors: ["o": p.pinkInk, "f": p.pink], scale: 3)
+                    .rotationEffect(.degrees(12))
+                    .padding(.trailing, 16).padding(.top, 2)
             }
-            .padding(.horizontal, 26).padding(.top, 8)
+            .padding(.horizontal, 24).padding(.top, 10)
         }
     }
 
@@ -12143,72 +12187,122 @@ private struct NativeCalendarView: View {
         }
         let p = diaryFirst.split(separator: "-")
         if p.count == 3, let m = Int(p[1]), let d = Int(p[2]) {
-            return "\(diaryTotal) 篇 · 从 \(m) 月 \(d) 日开始"
+            return String(format: "%d 篇 · SINCE %02d/%02d", diaryTotal, m, d)
         }
         return "\(diaryTotal) 篇"
     }
 
-    private func monthBar(_ pal: DiaryPalette) -> some View {
+    private func monthBar(_ p: DiaryPixelPalette) -> some View {
         HStack {
             Button { shiftMonth(-1) } label: {
-                Image(systemName: "chevron.left").font(.system(size: 13)).frame(width: 36, height: 36).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundColor(pal.faint)
+                Text("<").font(DiaryFonts.pixel(12)).frame(width: 36, height: 30).contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundColor(p.sub)
             Spacer()
-            Text("\(String(year)) · \(Self.monthNames[max(0, min(11, month - 1))])")
-                .font(WindowFont.swiftUI(15)).tracking(3)
+            Text("\(String(year)) · \(Self.monthEN[max(0, min(11, month - 1))])")
+                .font(DiaryFonts.pixel(12)).tracking(2).foregroundColor(p.lilacInk)
             Spacer()
             Button { shiftMonth(1) } label: {
-                Image(systemName: "chevron.right").font(.system(size: 13)).frame(width: 36, height: 36).contentShape(Rectangle())
-            }.buttonStyle(.plain).foregroundColor(pal.faint)
+                Text(">").font(DiaryFonts.pixel(12)).frame(width: 36, height: 30).contentShape(Rectangle())
+            }.buttonStyle(.plain).foregroundColor(p.sub)
         }
-        .padding(.horizontal, 18).padding(.top, 22).padding(.bottom, 4)
+        .padding(.horizontal, 6).padding(.top, 6)
     }
 
-    // ── 日历：写了日记的那天开一朵花，换月份时一朵朵开出来 ──
-    private func grid(_ pal: DiaryPalette) -> some View {
+    // ── 日历：写了日记的那天开一朵像素小花，换月份时一朵朵开出来；有提醒的挂铃铛（她右上、他右下） ──
+    private func grid(_ p: DiaryPixelPalette) -> some View {
         let cols = Array(repeating: GridItem(.flexible(), spacing: 0), count: 7)
         let lead = leadingBlanks
         let days = daysInMonth
-        return LazyVGrid(columns: cols, spacing: 4) {
-            ForEach(["一", "二", "三", "四", "五", "六", "日"], id: \.self) { w in
-                Text(w).font(.system(size: 11)).foregroundColor(pal.faint).padding(.vertical, 6)
+        return LazyVGrid(columns: cols, spacing: 2) {
+            ForEach(["MO", "TU", "WE", "TH", "FR", "SA", "SU"], id: \.self) { w in
+                Text(w).font(DiaryFonts.pixel(9)).foregroundColor(p.sub).padding(.vertical, 5)
             }
-            // 1001 她抓的「十月 1、2 号去哪了」：空格原来编号 0..<lead，跟日期 1...days 撞号（十月一号周四空三格，1、2 被吞）。空格改用负数号
-            ForEach(-lead..<0, id: \.self) { _ in Color.clear.frame(height: 46) }
-            ForEach(1...days, id: \.self) { d in dayCell(d, pal) }
+            // 1001 她抓的「十月 1、2 号去哪了」：空格原来编号 0..<lead，跟日期 1...days 撞号（十月一号周四空三格），
+            // SwiftUI 按号认人，1、2 号被当成空格吞掉。空格改用负数号
+            ForEach(-lead..<0, id: \.self) { _ in Color.clear.frame(height: 42) }
+            ForEach(1...days, id: \.self) { d in dayCell(d, p) }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 8).padding(.bottom, 10)
     }
 
-    private func dayCell(_ d: Int, _ pal: DiaryPalette) -> some View {
+    private func dayCell(_ d: Int, _ p: DiaryPixelPalette) -> some View {
         let key = String(format: "%04d-%02d-%02d", year, month, d)
         let has = !(events[key] ?? []).isEmpty
         let sel = selectedDate == key
+        let isToday = key == todayKey
+        let rems = reminders[key] ?? []
+        let hers = rems.filter { !$0.isHim }.count
+        let his = rems.filter { $0.isHim }.count
         return Button {
             withAnimation(.easeInOut(duration: 0.2)) { selectedDate = key }
             Task { await loadDay(key) }
         } label: {
             ZStack {
                 if has {
-                    DiaryBloom(palette: pal)
-                        .frame(width: 38, height: 38)
+                    PixelGlyph(rows: DPX.flower, colors: p.flower, scale: 3.4)
                         .scaleEffect(bloomOn ? 1 : 0.1)
                         .opacity(bloomOn ? 1 : 0)
                         .animation(.spring(response: 0.45, dampingFraction: 0.62).delay(Double(d) * 0.025), value: bloomOn)
                 }
                 if sel {
-                    Circle().stroke(pal.accent, lineWidth: 1.2).frame(width: 42, height: 42)
+                    RoundedRectangle(cornerRadius: 6)
+                        .stroke(p.pinkInk, style: StrokeStyle(lineWidth: 1.5, dash: [3, 2]))
+                        .padding(2)
                 }
-                Text("\(d)")
-                    .font(.system(size: 14, weight: has ? .semibold : .regular))
-                    .foregroundColor(has ? pal.ink : pal.dim)
+                dayNumber(d, has: has, today: isToday, p)
                 if periodDates[key] != nil {
-                    Circle().fill(pal.accent.opacity(0.5)).frame(width: 4, height: 4).offset(y: 17)
+                    Rectangle().fill(p.pinkD).frame(width: 4, height: 4).offset(y: 16)
                 }
+                if hers > 0 { bell(him: false, count: hers, p).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing) }
+                if his > 0 { bell(him: true, count: his, p).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .bottomTrailing) }
             }
-            .frame(height: 46).frame(maxWidth: .infinity).contentShape(Rectangle())
+            .frame(height: 42).frame(maxWidth: .infinity).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
+    }
+
+    private func dayNumber(_ d: Int, has: Bool, today: Bool, _ p: DiaryPixelPalette) -> some View {
+        Text("\(d)")
+            .font(DiaryFonts.pixel(12))
+            .foregroundColor(today ? p.card : (has ? p.ink : p.sub))
+            .padding(.horizontal, today ? 3 : 0).padding(.vertical, today ? 1 : 0)
+            .background(RoundedRectangle(cornerRadius: 3).fill(today ? p.pinkInk : Color.clear))
+    }
+
+    /// 1002 她选的 B：她的铃铛右上、他的右下；同一个人一天好几件，铃铛旁边小数字
+    private func bell(him: Bool, count: Int, _ p: DiaryPixelPalette) -> some View {
+        HStack(spacing: 1) {
+            if count > 1 {
+                Text("\(count)").font(DiaryFonts.pixel(7)).foregroundColor(him ? p.blueInk : p.pinkInk)
+            }
+            PixelGlyph(rows: DPX.bell, colors: p.bell(him: him), scale: 1.4)
+        }
+        .padding(.horizontal, 3).padding(.vertical, 3)
+    }
+
+    private func legend(_ p: DiaryPixelPalette) -> some View {
+        HStack(spacing: 12) {
+            HStack(spacing: 3) {
+                PixelGlyph(rows: DPX.flower, colors: p.flower, scale: 1)
+                Text("写了日记")
+            }
+            HStack(spacing: 3) {
+                PixelGlyph(rows: DPX.bell, colors: p.bell(him: false), scale: 1)
+                Text("你加的")
+            }
+            HStack(spacing: 3) {
+                PixelGlyph(rows: DPX.bell, colors: p.bell(him: true), scale: 1)
+                Text("他加的")
+            }
+            if !periodDates.isEmpty {
+                HStack(spacing: 3) {
+                    Rectangle().fill(p.pinkD).frame(width: 4, height: 4)
+                    Text("姨妈期")
+                }
+            }
+        }
+        .font(.system(size: 10)).foregroundColor(p.sub)
+        .padding(.horizontal, 22).padding(.top, 10)
     }
 
     private var leadingBlanks: Int {
@@ -12225,20 +12319,36 @@ private struct NativeCalendarView: View {
         return r.count
     }
 
-    // ── 选中那天的卡片 ──
-    @ViewBuilder private func dayCards(_ pal: DiaryPalette) -> some View {
+    // ── 选中那天：先提醒，再日记卡片 ──
+    @ViewBuilder private func dayCards(_ p: DiaryPixelPalette) -> some View {
         if let sel = selectedDate {
-            Text(dayLabel(sel, compact: true))
-                .font(.system(size: 12)).tracking(3).foregroundColor(pal.dim)
-                .padding(.horizontal, 26).padding(.top, 20).padding(.bottom, 10)
+            let rems = reminders[sel] ?? []
+            if !rems.isEmpty {
+                ReminderDayPanel(title: dayTag(sel) + " · 提醒", items: rems, pal: p,
+                                 onToggle: { it in toggleReminder(it) },
+                                 onDelete: { it in deleteReminder(it) })
+                    .padding(.horizontal, 12).padding(.top, 14)
+            }
             if selectedEvents.isEmpty {
-                Text("这天没有记录").font(WindowFont.swiftUI(13)).foregroundColor(pal.dim)
+                Text(rems.isEmpty ? "这天没有记录" : "这天没写日记").font(WindowFont.swiftUI(13)).foregroundColor(p.sub)
                     .frame(maxWidth: .infinity).padding(20)
             }
             ForEach(Array(selectedEvents.enumerated()), id: \.offset) { _, evt in
-                entryCard(date: sel, evt: evt, pal: pal)
+                entryCard(date: sel, evt: evt, p: p)
             }
         }
+    }
+
+    /// 「10/02 · FRI」
+    private func dayTag(_ date: String) -> String {
+        let parts = date.split(separator: "-").compactMap { Int($0) }
+        guard parts.count == 3 else { return date }
+        var comps = DateComponents(); comps.year = parts[0]; comps.month = parts[1]; comps.day = parts[2]
+        var wd = ""
+        if let dt = Calendar.current.date(from: comps) {
+            wd = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
+        }
+        return String(format: "%02d/%02d · ", parts[1], parts[2]) + wd
     }
 
     private func kindLabel(_ type: String) -> String {
@@ -12249,13 +12359,14 @@ private struct NativeCalendarView: View {
         }
     }
 
-    private func entryCard(date: String, evt: [String: Any], pal: DiaryPalette) -> some View {
+    private func entryCard(date: String, evt: [String: Any], p: DiaryPixelPalette) -> some View {
         let time = evt.string("time")
         let key = "\(date)_\(time)"
         let content = diaryContents[key] ?? ""
         let chars = content.filter { !$0.isWhitespace }.count
         let open = DiaryOpen(id: key, date: date, time: time, kind: kindLabel(evt.string("type")),
                              title: evt.string("title"), content: content)
+        let shape = RoundedRectangle(cornerRadius: 10, style: .continuous)
         return Button {
             if content.isEmpty {
                 Task { await loadDay(date); openIfReady(open) }
@@ -12264,28 +12375,31 @@ private struct NativeCalendarView: View {
             }
         } label: {
             VStack(alignment: .leading, spacing: 0) {
-                Text("\(open.kind) · \(time)")
-                    .font(.system(size: 11)).tracking(2.5).foregroundColor(pal.accent)
+                HStack(spacing: 5) {
+                    PixelGlyph(rows: DPX.flower, colors: p.flower, scale: 1)
+                    Text("\(open.kind) · \(time)").font(DiaryFonts.pixel(9)).tracking(0.6).foregroundColor(p.pinkInk)
+                }
                 Text(open.title.isEmpty ? "无题" : open.title)
-                    .font(WindowFont.swiftUI(19)).padding(.top, 6).padding(.bottom, 4)
+                    .font(WindowFont.swiftUI(17)).foregroundColor(p.ink).padding(.top, 6).padding(.bottom, 4)
                 if chars > 0 {
                     Text("\(chars.formatted()) 字 · 约 \(max(1, Int((Double(chars) / 400).rounded()))) 分钟")
-                        .font(.system(size: 12, design: .serif)).foregroundColor(pal.dim)
+                        .font(.system(size: 11)).foregroundColor(p.sub)
                     Text(content.replacingOccurrences(of: "\n", with: " "))
-                        .font(WindowFont.swiftUI(13)).foregroundColor(pal.dim)
+                        .font(WindowFont.swiftUI(12.5)).foregroundColor(p.sub)
                         .lineSpacing(6).lineLimit(2)
-                        .padding(.top, 10)
+                        .padding(.top, 8)
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(.horizontal, 18).padding(.vertical, 16)
-            .background(RoundedRectangle(cornerRadius: 20, style: .continuous).fill(pal.card))
-            .overlay(RoundedRectangle(cornerRadius: 20, style: .continuous).stroke(pal.line, lineWidth: 1))
-            .contentShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .background(shape.fill(p.card))
+            .overlay(shape.stroke(p.lilacD, lineWidth: 1.5))
+            .background(shape.fill(p.lilac).offset(y: 4))
+            .contentShape(shape)
         }
         .buttonStyle(.plain)
         .matchedTransitionSource(id: key, in: zoomNS)
-        .padding(.horizontal, 18).padding(.bottom, 12)
+        .padding(.horizontal, 12).padding(.top, 12)
     }
 
     private func openIfReady(_ o: DiaryOpen) {
@@ -12295,10 +12409,10 @@ private struct NativeCalendarView: View {
     }
 
     // ── 本月全部（原来的「本月条目」） ──
-    private func monthList(_ pal: DiaryPalette) -> some View {
+    private func monthList(_ p: DiaryPixelPalette) -> some View {
         VStack(spacing: 10) {
             if monthEntries.isEmpty {
-                Text("这个月还没有记录").font(WindowFont.swiftUI(13)).foregroundColor(pal.dim).padding(30)
+                Text("这个月还没有记录").font(WindowFont.swiftUI(13)).foregroundColor(p.sub).padding(30)
             }
             ForEach(Array(monthEntries.enumerated()), id: \.offset) { _, item in
                 Button {
@@ -12308,34 +12422,22 @@ private struct NativeCalendarView: View {
                 } label: {
                     HStack(spacing: 12) {
                         VStack(alignment: .leading, spacing: 4) {
-                            Text("\(kindLabel(item.event.string("type"))) · \(dayLabel(item.date, compact: true))")
-                                .font(.system(size: 10.5)).tracking(2).foregroundColor(pal.accent)
+                            Text("\(kindLabel(item.event.string("type"))) · \(dayTag(item.date))")
+                                .font(DiaryFonts.pixel(9)).tracking(0.5).foregroundColor(p.pinkInk)
                             Text(item.event.string("title").isEmpty ? "无题" : item.event.string("title"))
-                                .font(WindowFont.swiftUI(15)).lineLimit(1)
+                                .font(WindowFont.swiftUI(15)).foregroundColor(p.ink).lineLimit(1)
                         }
                         Spacer()
-                        Text(item.event.string("time")).font(.system(size: 11, design: .monospaced)).foregroundColor(pal.dim)
-                        Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundColor(pal.faint)
+                        Text(item.event.string("time")).font(DiaryFonts.pixel(10)).foregroundColor(p.sub)
+                        Text(">").font(DiaryFonts.pixel(10)).foregroundColor(p.lilacD)
                     }
-                    .padding(14)
-                    .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(pal.card))
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(pal.line, lineWidth: 1))
+                    .padding(12)
+                    .modifier(PixelKeycap(fill: p.card, edge: p.lilacD, radius: 10, drop: 3))
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 18).padding(.top, 10)
-    }
-
-    private func dayLabel(_ date: String, compact: Bool) -> String {
-        let p = date.split(separator: "-")
-        guard p.count == 3, let y = Int(p[0]), let m = Int(p[1]), let d = Int(p[2]) else { return date }
-        var comps = DateComponents(); comps.year = y; comps.month = m; comps.day = d
-        var wd = ""
-        if let dt = Calendar.current.date(from: comps) {
-            wd = ["日", "一", "二", "三", "四", "五", "六"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
-        }
-        return compact ? String(format: "%02d.%02d · 周%@", m, d, wd) : "\(y)/\(m)/\(d) · 周\(wd)"
+        .padding(.horizontal, 12).padding(.top, 14)
     }
 
     // ── 数据 ──
@@ -12351,6 +12453,7 @@ private struct NativeCalendarView: View {
         loading = events.isEmpty
         bloomOn = false
         defer { loading = false }
+        await loadReminders()
         guard let obj = try? await NativeHouseAPI.object(
             "/api/calendar/month?year=\(year)&month=\(month)") else { return }
         if let evts = obj["events"] as? [String: Any] {
@@ -12368,6 +12471,34 @@ private struct NativeCalendarView: View {
         try? await Task.sleep(nanoseconds: 80_000_000)
         bloomOn = true
         if let sel = selectedDate { await loadDay(sel) }
+    }
+
+    /// 1002：这个月的铃铛＋最近三件（加完、勾完、删完都重拉一遍）
+    private func loadReminders() async {
+        let items = await ReminderAPI.month(year: year, month: month)
+        var byDay: [String: [ReminderItem]] = [:]
+        for it in items { byDay[it.day, default: []].append(it) }
+        reminders = byDay
+        upcoming = await ReminderAPI.upcoming(3)
+    }
+
+    private func toggleReminder(_ it: ReminderItem) {
+        let next = !it.done
+        if var list = reminders[it.day], let i = list.firstIndex(of: it) {
+            list[i].done = next
+            reminders[it.day] = list
+        }
+        Task {
+            await ReminderAPI.setDone(it, next)
+            upcoming = await ReminderAPI.upcoming(3)
+        }
+    }
+
+    private func deleteReminder(_ it: ReminderItem) {
+        Task {
+            await ReminderAPI.delete(it)
+            await loadReminders()
+        }
     }
 
     private func loadDay(_ date: String) async {

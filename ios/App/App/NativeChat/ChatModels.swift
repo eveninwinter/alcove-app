@@ -170,6 +170,13 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(PondChatCard.self, from: data)
     }
 
+    /// 1002：日程提醒到点（alcove-backend/reminders.py 投的）→ 聊天页像素小卡，整行居中
+    var reminderCard: ReminderChatCard? {
+        guard let raw = Self.taggedBody(text, tag: "REMINDER_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(ReminderChatCard.self, from: data)
+    }
+
     /// 0929：他亲笔记下一条记忆（lmc5/mine.py 投的）→ 聊天页「不忘」小卡
     var memoryCard: MemoryChatCard? {
         guard role == "assistant", !pending,
