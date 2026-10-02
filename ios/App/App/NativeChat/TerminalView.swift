@@ -821,7 +821,10 @@ private struct PixelDisc: View {
                 let col: Color
                 if d > 6.4 || d < 2.4 { col = rim }
                 else {
-                    let i = Int((atan2(Double(y) - c, Double(x) - c) + .pi) / (.pi / 3) + d / 2) % colors.count
+                    // 1002 构建红：一行里 atan2＋.pi＋字面量混着推类型，编译器算超时，拆开并写死 Double
+                    let ang: Double = atan2(Double(y) - c, Double(x) - c) + Double.pi
+                    let band: Double = ang / (Double.pi / 3) + d / 2
+                    let i = Int(band) % colors.count
                     col = colors[i]
                 }
                 ctx.fill(Path(CGRect(x: Double(x) * s, y: Double(y) * s, width: s + 0.02, height: s + 0.02)), with: .color(col))
