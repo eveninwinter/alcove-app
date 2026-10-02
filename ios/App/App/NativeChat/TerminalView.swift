@@ -54,8 +54,10 @@ struct TerminalView: View {
             }
         }
         .padding(.bottom, mini ? 0 : 8)
-        // 1002 她要的：整页铺满不漏黑边白边。底下不留安全区，命令行贴到底只留一点缝（键盘弹起照样让）
-        .ignoresSafeArea(.container, edges: mini ? [] : .bottom)
+        .padding(.top, mini ? 0 : Self.topGap)
+        // 1002 她要的：整页铺满不漏黑边白边。底下不留安全区，命令行贴到底只留一点缝（键盘弹起照样让）；
+        // 顶上也不吃整个安全区，只让到灵动岛 / 刘海下面（topGap）
+        .ignoresSafeArea(.container, edges: mini ? [] : [.top, .bottom])
         .background(mini ? TermPaper(p: p) : nil)
         .clipShape(RoundedRectangle(cornerRadius: mini ? 24 : 0, style: .continuous))
         // 整页时格子纸 / 颗粒底放在剪框外面，才能铺进顶上安全区（原来被剪掉，露出底下那层的黑 / 白）
@@ -77,6 +79,12 @@ struct TerminalView: View {
         }
         .onReceive(fontStore.$fonts) { _ in ensureFonts() }
         .onDisappear { pollTask?.cancel() }
+    }
+
+    /// 顶上让多少：有灵动岛 / 刘海的机子安全区比岛本身高出十来点，扣掉 10，标题刚好在岛下面；没刘海的老机子照旧
+    private static var topGap: CGFloat {
+        let s = FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0
+        return s > 40 ? s - 10 : s
     }
 
     private func ensureFonts() {
