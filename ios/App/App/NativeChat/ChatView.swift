@@ -831,9 +831,9 @@ struct ChatView: View {
         return { rerollConfirmShown = true }
     }
 
-    /// 1001 贴表情：长按文字气泡 → 整屏那层。还没落库的、流式临时气泡不给
+    /// 1001 贴表情：长按文字气泡 → 整屏那层。还没落库的、流式临时气泡不给（1002 起表情包也能贴）
     private func reactLongPress(for message: ChatMessage) -> ((ReactTarget) -> Void)? {
-        guard !message.pending, !message.isLive, !message.isSticker else { return nil }
+        guard !message.pending, !message.isLive else { return nil }
         return { target in
             inputFocused = false
             selectingTs = nil
@@ -3865,14 +3865,18 @@ struct MessageRow: View {
                 } else if msg.isSticker {
                     // 0928 她抓的：一串最后一条是表情时 Kakao 的时间没了——时间贴在气泡旁边（kakaoSideMeta），
                     // 表情原来不挂。照语音条那样两边挂上
-                    HStack(alignment: .bottom, spacing: 0) {
-                        if theme.isKakao && isUser {
-                            kakaoSideMeta.padding(.trailing, 5).fixedSize().frame(width: 0, alignment: .trailing)
+                    // 1002 她要的：表情包也能长按贴表情（原来她定过不行），小片挂在表情包下面，跟图一样
+                    VStack(alignment: isUser ? .trailing : .leading, spacing: 0) {
+                        HStack(alignment: .bottom, spacing: 0) {
+                            if theme.isKakao && isUser {
+                                kakaoSideMeta.padding(.trailing, 5).fixedSize().frame(width: 0, alignment: .trailing)
+                            }
+                            reactable(stickerBody, kind: .image, urls: stickerSaveURLs)
+                            if theme.isKakao && !isUser {
+                                kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
+                            }
                         }
-                        stickerBody
-                        if theme.isKakao && !isUser {
-                            kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
-                        }
+                        if !msg.reactions.isEmpty { mediaChips(inset: 8) }
                     }
                 } else {
                   VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
@@ -4181,7 +4185,7 @@ struct MessageRow: View {
         }
     }
 
-    /// 图 / 语音也能长按贴（表情包不行，她定的）。图片和语音条里有自己的点按，所以长按挂在它们本身上，不盖一层
+    /// 图 / 语音 / 表情包也能长按贴（表情包 1002 她改口要了）。图片和语音条里有自己的点按，所以长按挂在它们本身上，不盖一层
     @ViewBuilder
     private func reactable<V: View>(_ v: V, kind: ReactTarget.Kind, urls: [URL] = []) -> some View {
         if let cb = onReactLongPress {
@@ -4197,6 +4201,12 @@ struct MessageRow: View {
     /// 有正文气泡的，小片挂在正文气泡下；没有的（纯图、语音）挂在图 / 语音条下
     private var showsTextBubble: Bool {
         msg.musicCard == nil && !msg.displayText.isEmpty && !msg.isSticker && !msg.isBareLink && !msg.isAudio
+    }
+
+    /// 表情包长按菜单的「保存到相册」存的就是这张表情
+    private var stickerSaveURLs: [URL] {
+        guard let stk = sticker else { return [] }
+        return [AlcoveAPI.stickerURL(stk.url)]
     }
 
     private var photoSaveURLs: [URL] {
