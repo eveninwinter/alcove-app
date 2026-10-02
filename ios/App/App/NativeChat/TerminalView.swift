@@ -53,9 +53,13 @@ struct TerminalView: View {
                 inputBar
             }
         }
-        .padding(.bottom, mini ? 0 : 6)
-        .background(TermPaper(p: p))
+        .padding(.bottom, mini ? 0 : 8)
+        // 1002 她要的：整页铺满不漏黑边白边。底下不留安全区，命令行贴到底只留一点缝（键盘弹起照样让）
+        .ignoresSafeArea(.container, edges: mini ? [] : .bottom)
+        .background(mini ? TermPaper(p: p) : nil)
         .clipShape(RoundedRectangle(cornerRadius: mini ? 24 : 0, style: .continuous))
+        // 整页时格子纸 / 颗粒底放在剪框外面，才能铺进顶上安全区（原来被剪掉，露出底下那层的黑 / 白）
+        .background(mini ? nil : TermPaper(p: p))
         .overlay {
             if mini {
                 RoundedRectangle(cornerRadius: 24, style: .continuous)
