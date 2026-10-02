@@ -748,7 +748,12 @@ struct ObliqueText: UIViewRepresentable {
 
     func sizeThatFits(_ proposal: ProposedViewSize, uiView: UILabel, context: Context) -> CGSize? {
         let w = proposal.width.flatMap { $0.isFinite && $0 > 0 ? $0 : nil } ?? (UIScreen.main.bounds.width - 40)
+        // 1002 她抓的：思绪最后一行被吃。原来按 w 量完高、宽却报成量出来的最宽那行，
+        // 行尾挂着的中文标点不算进宽度，标签拿到这个窄一丁点的宽重新折行就多出一行，高度还是旧的 → 末行裁掉。
+        // 一行放得下才收窄；要折行就老老实实占满 w，高度也按 w 量，量的和画的是同一个宽。
+        let one = uiView.sizeThatFits(CGSize(width: CGFloat.greatestFiniteMagnitude, height: .greatestFiniteMagnitude))
+        if one.width <= w { return CGSize(width: min(w, ceil(one.width) + 1), height: ceil(one.height)) }
         let s = uiView.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude))
-        return CGSize(width: min(w, ceil(s.width)), height: ceil(s.height))
+        return CGSize(width: w, height: ceil(s.height))
     }
 }
