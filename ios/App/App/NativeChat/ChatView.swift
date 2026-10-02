@@ -3876,7 +3876,9 @@ struct MessageRow: View {
                                 kakaoSideMeta.padding(.leading, 5).fixedSize().frame(width: 0, alignment: .leading)
                             }
                         }
-                        if !msg.reactions.isEmpty { mediaChips(inset: 8) }
+                        // 1002 她要的：Kakao 下她的表情包右边对齐看得见的粉框（跟图片一样扣 body_right），不对齐框外的小人图案
+                        .padding(.trailing, kakaoUserPhotoInset)
+                        if !msg.reactions.isEmpty { mediaChips(inset: 8 + kakaoUserPhotoInset) }
                     }
                 } else {
                   VStack(alignment: isUser ? .trailing : .leading, spacing: CGFloat(chatBubbleGap)) {
