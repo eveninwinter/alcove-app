@@ -30,6 +30,7 @@
 	<key>UIAppFonts</key>
 	<array>
 		<string>silkscreen.ttf</string>
+		<string>pinyon.ttf</string>
 	</array>
 </dict>
 </plist>

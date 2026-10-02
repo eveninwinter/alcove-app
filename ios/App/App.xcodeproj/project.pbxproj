@@ -81,6 +81,7 @@
 		CA0000000000000000000025 /* BroadcastUpload.appex in Embed App Extensions */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000002 /* BroadcastUpload.appex */; settings = {ATTRIBUTES = (CodeSignOnCopy, RemoveHeadersOnCopy, ); }; };
 		CA0000000000000000000027 /* WidgetAssets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000014 /* WidgetAssets.xcassets */; };
 		CA0000000000000000000028 /* silkscreen.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000015 /* silkscreen.ttf */; };
+		CA0000000000000000000029 /* pinyon.ttf in Resources */ = {isa = PBXBuildFile; fileRef = CA0000000000000000000016 /* pinyon.ttf */; };
 		AB0911000000000000000111 /* AlbumModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000122 /* AlbumModels.swift */; };
 		AB0911000000000000000211 /* AlbumView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0911000000000000000222 /* AlbumView.swift */; };
 		AB0923000000000000000311 /* WindowView.swift in Sources */ = {isa = PBXBuildFile; fileRef = AB0923000000000000000322 /* WindowView.swift */; };
@@ -186,6 +187,7 @@
 		CA0000000000000000000013 /* SampleHandler.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SampleHandler.swift; sourceTree = "<group>"; };
 		CA0000000000000000000014 /* WidgetAssets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = WidgetAssets.xcassets; sourceTree = "<group>"; };
 		CA0000000000000000000015 /* silkscreen.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = silkscreen.ttf; sourceTree = "<group>"; };
+		CA0000000000000000000016 /* pinyon.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = pinyon.ttf; sourceTree = "<group>"; };
 		AB0911000000000000000122 /* AlbumModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumModels.swift; sourceTree = "<group>"; };
 		AB0911000000000000000222 /* AlbumView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlbumView.swift; sourceTree = "<group>"; };
 		AB0923000000000000000322 /* WindowView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowView.swift; sourceTree = "<group>"; };
@@ -349,7 +351,7 @@
 		};
 		CA0000000000000000000031 /* Widget */ = {
 			isa = PBXGroup;
-			children = (CA0000000000000000000011 /* AlcoveCapabilityWidget.swift */, CA0000000000000000000012 /* AlcoveLabAttributes.swift */, CA0000000000000000000014 /* WidgetAssets.xcassets */, CA0000000000000000000015 /* silkscreen.ttf */, );
+			children = (CA0000000000000000000011 /* AlcoveCapabilityWidget.swift */, CA0000000000000000000012 /* AlcoveLabAttributes.swift */, CA0000000000000000000014 /* WidgetAssets.xcassets */, CA0000000000000000000015 /* silkscreen.ttf */, CA0000000000000000000016 /* pinyon.ttf */, );
 			path = Widget;
 			sourceTree = "<group>";
 		};
@@ -461,7 +463,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
-		CA0000000000000000000061 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (CA0000000000000000000027 /* WidgetAssets.xcassets in Resources */, CA0000000000000000000028 /* silkscreen.ttf in Resources */, ); runOnlyForDeploymentPostprocessing = 0; };
+		CA0000000000000000000061 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (CA0000000000000000000027 /* WidgetAssets.xcassets in Resources */, CA0000000000000000000028 /* silkscreen.ttf in Resources */, CA0000000000000000000029 /* pinyon.ttf in Resources */, ); runOnlyForDeploymentPostprocessing = 0; };
 		CA0000000000000000000062 /* Resources */ = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = ( ); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXResourcesBuildPhase section */
 

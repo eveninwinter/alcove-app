@@ -82,8 +82,7 @@ private struct AlcoveWidgetView: View {
                         .modifier(WRavenEdge(pal: pal))
                     VStack(alignment: .center, spacing: 6) {
                         Text("Time, gently kept.")
-                            .font(.system(size: 19, weight: .regular, design: .serif))
-                            .italic()
+                            .font(WFont.script(24))
                             .foregroundStyle(pal.lilacInk)
                             .lineLimit(1)
                             .minimumScaleFactor(0.7)
@@ -119,18 +118,18 @@ private struct AlcoveWidgetView: View {
             .widgetAccentable()
 
         case .accessoryRectangular:
+            // 锁屏长条：系统会染成单色，颜色出不来，字和心换成像素的
             HStack(spacing: 7) {
                 SleepingRavenMark(size: 40)
-                VStack(alignment: .leading, spacing: 1) {
-                    Text("Present")
-                        .font(.headline)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("PRESENT")
+                        .font(WFont.pixel(13))
                     Text("NEAR, ALWAYS.")
-                        .font(.system(size: 9, weight: .medium, design: .rounded))
+                        .font(WFont.pixel(8))
                         .foregroundStyle(.secondary)
                 }
                 Spacer(minLength: 2)
-                Image(systemName: "heart.fill")
-                    .font(.caption)
+                WPixel(rows: WPX.heart, colors: ["o": .primary], scale: 2)
             }
             .widgetAccentable()
 
@@ -339,6 +338,12 @@ private struct WPal {
 
 private enum WFont {
     /// 打包进小组件扩展的 silkscreen.ttf（Info.plist UIAppFonts），找不到就退等宽
+    /// 花体 Pinyon Script（同样打包进扩展），找不到就退系统衬线斜体
+    static func script(_ size: CGFloat) -> Font {
+        UIFont(name: "PinyonScript-Regular", size: size) != nil
+            ? Font.custom("PinyonScript-Regular", fixedSize: size)
+            : .system(size: size * 0.8, design: .serif).italic()
+    }
     static func pixel(_ size: CGFloat) -> Font {
         UIFont(name: "Silkscreen-Regular", size: size) != nil
             ? Font.custom("Silkscreen-Regular", fixedSize: size)
