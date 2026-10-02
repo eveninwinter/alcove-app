@@ -538,7 +538,12 @@ struct TerminalView: View {
     }
 
     private var inputBar: some View {
-        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        // 1002 她要的：下面两个角弧度大一点，跟手机屏幕下面两个圆角顺着走；上面两个角、高度不变
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 12, bottomLeadingRadius: 26,
+                                           bottomTrailingRadius: 26, topTrailingRadius: 12, style: .continuous)
+        // 发送键在右下角，离框边 6，它的右下角跟着大框的弧度缩一圈（26 − 6），不然方角戳出虚线
+        let goShape = UnevenRoundedRectangle(topLeadingRadius: 8, bottomLeadingRadius: 8,
+                                             bottomTrailingRadius: 20, topTrailingRadius: 8, style: .continuous)
         return HStack(spacing: 8) {
             Text(">_").font(pixel(12)).foregroundColor(p.promptMark)
             TextField("", text: $cmd, prompt: Text("命令").foregroundColor(p.sub))
@@ -551,8 +556,8 @@ struct TerminalView: View {
             Button(action: sendCmd) {
                 PixelIcon(rows: PX.enter, ink: p.icon(.onGo), scale: 1.8)
                     .frame(width: 38, height: 32)
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(p.go))
-                    .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(p.goShadow).offset(y: 3))
+                    .background(goShape.fill(p.go))
+                    .background(goShape.fill(p.goShadow).offset(y: 3))
                     .opacity(cmd.isEmpty ? 0.6 : 1)
             }
             .buttonStyle(.plain)
@@ -560,7 +565,7 @@ struct TerminalView: View {
         .padding(.leading, 12)
         .padding(.trailing, 6)
         .padding(.vertical, 6)
-        .background(p.panel, in: shape)
+        .background(shape.fill(p.panel))
         .overlay(shape.stroke(p.inputEdge, style: StrokeStyle(lineWidth: 1.5, dash: night ? [4, 3] : [])))
         .background(shape.fill(night ? .clear : p.inputShadow).offset(y: 4))
         .padding(.horizontal, 12)
