@@ -562,6 +562,75 @@ enum KakaoClock {
 }
 
 /// 设置·外观 里的主题包选择条：一排壁纸缩略图，点哪个换哪个，不用重新构建
+/// 1002 她要的：Kakao 的发送键。默认用当前主题包自己的发送键色（包里 colors.main 就是 -ios-send-normal-background-color，
+/// 箭头用 send_fg）；设置里手动调过就用她调的。单独存，不跟信息主题那份「发送键」混
+enum KakaoSendButton {
+    static let key = "kakaoColor.sendButton"
+    static var stored: Color? {
+        guard let hex = UserDefaults.standard.string(forKey: key), !hex.isEmpty else { return nil }
+        return Color(hexString: hex)
+    }
+    static func set(_ color: Color?) {
+        if let color, let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: key)
+        } else {
+            UserDefaults.standard.removeObject(forKey: key)
+        }
+        MessagesPalette.bump()      // 聊天页盯着这个数重画
+    }
+    static var packFill: Color {
+        Color.kakaoHex(KakaoPackStore.shared.current?.colors.main, Color(uiColor: .systemBlue))
+    }
+    static var fill: Color { stored ?? packFill }
+    /// 箭头：跟包走就用包里配好的 send_fg；她自己挑的颜色按深浅配黑或白，免得白底白箭头
+    static var arrow: Color {
+        guard let c = stored else {
+            return Color.kakaoHex(KakaoPackStore.shared.current?.colors.send_fg, .white)
+        }
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(c).getRed(&r, green: &g, blue: &b, alpha: &a)
+        let lum: CGFloat = 0.299 * r + 0.587 * g + 0.114 * b
+        return lum > 0.72 ? Color(white: 0.18) : .white
+    }
+}
+
+/// 设置「主题」里 Kakao 下面那一行：几个常用色、自选色、「跟主题包」回到包自己的颜色
+struct KakaoSendButtonRow: View {
+    let theme: AlcoveTheme
+    @AppStorage(MessagesPalette.stampKey) private var stamp = 0.0
+    @ObservedObject private var store = KakaoPackStore.shared
+
+    var body: some View {
+        let followsPack = KakaoSendButton.stored == nil
+        HStack(spacing: 8) {
+            Text("发送键")
+                .font(.system(size: 12))
+                .frame(width: 52, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Array(MessagesPalette.presets.enumerated()), id: \.offset) { _, c in
+                        Button { KakaoSendButton.set(c) } label: {
+                            Circle().fill(c)
+                                .frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(theme.fyBorder, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            ColorPicker("", selection: Binding(get: { KakaoSendButton.fill },
+                                               set: { KakaoSendButton.set($0) }), supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 30)
+            Button("跟主题包") { KakaoSendButton.set(nil) }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(followsPack ? theme.textLight : theme.fyAccent)
+                .disabled(followsPack)
+        }
+        .id(stamp)
+    }
+}
+
 struct KakaoPackPicker: View {
     let theme: AlcoveTheme
     @ObservedObject var store = KakaoPackStore.shared

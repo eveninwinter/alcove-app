@@ -1377,6 +1377,7 @@ private struct NativeSettingsView: View {
                     }
                     if themeFamily == "kakao" {
                         KakaoPackPicker(theme: theme)
+                        KakaoSendButtonRow(theme: theme)    // 1002 发送键：默认跟包，能单独调
                     }
                 } }
                 // 0924 她定的：字体全局，哪个主题都吃；0925 字号、气泡间距从「气泡与文字」搬来，三样一栏

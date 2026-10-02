@@ -1516,8 +1516,12 @@ struct ChatView: View {
     /// 0929 她要的：Kakao 的输入框整体跟信息主题一模一样（白天 / 黑夜、调色板都走信息主题那套）
     private var composerTheme: AlcoveTheme {
         guard theme.isKakao else { return theme }
-        return .named(AlcoveAppearance.isDark ? "imessage-dark" : "imessage")
+        var t = AlcoveTheme.named(AlcoveAppearance.isDark ? "imessage-dark" : "imessage")
+        t.sendButton = KakaoSendButton.fill     // 1002：Kakao 发送键跟主题包 / 她单独调的走，不借信息主题那份
+        return t
     }
+
+    private var sendArrowColor: Color { theme.isKakao ? KakaoSendButton.arrow : .white }
 
     private var composerPlusMenu: some View {
         Menu {
@@ -1733,7 +1737,7 @@ struct ChatView: View {
                             .font(.system(size: isGenerating ? 12 : (showBlue ? 15 : 17), weight: showBlue ? .semibold : .regular))
                             .contentTransition(.symbolEffect(.replace))
                             .animation(.easeInOut(duration: 0.18), value: isGenerating)
-                            .foregroundColor(showBlue ? .white : composerTheme.textDim)
+                            .foregroundColor(showBlue ? sendArrowColor : composerTheme.textDim)
                             .frame(width: 30, height: 30)
                             .background(showBlue ? composerTheme.sendButtonColor : Color.clear, in: Circle())
                         if store.heldCount > 0 {
