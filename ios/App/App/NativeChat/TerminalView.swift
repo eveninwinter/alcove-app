@@ -53,13 +53,14 @@ struct TerminalView: View {
                 inputBar
             }
         }
-        .padding(.bottom, mini ? 0 : 8)
+        .padding(.bottom, mini ? 0 : 20)
         .padding(.top, mini ? 0 : Self.topGap)
-        // 1002 她要的：整页铺满不漏黑边白边。底下不留安全区，命令行贴到底只留一点缝（键盘弹起照样让）；
-        // 顶上也不吃整个安全区，只让到灵动岛 / 刘海下面（topGap）
-        .ignoresSafeArea(.container, edges: mini ? [] : [.top, .bottom])
         .background(mini ? TermPaper(p: p) : nil)
         .clipShape(RoundedRectangle(cornerRadius: mini ? 24 : 0, style: .continuous))
+        // 1002 她要的：整页铺满不漏黑边白边。底下不留安全区，命令行离底留一小段（键盘弹起照样让）；
+        // 顶上也不吃整个安全区，只让到灵动岛 / 刘海下面（topGap）。
+        // 必须放在剪框外面：放里面的话剪框还是按安全区的大小剪，顶上返回键、底下命令框被切掉一截（505d86c 那版）
+        .ignoresSafeArea(.container, edges: mini ? [] : [.top, .bottom])
         // 整页时格子纸 / 颗粒底放在剪框外面，才能铺进顶上安全区（原来被剪掉，露出底下那层的黑 / 白）
         .background(mini ? nil : TermPaper(p: p))
         .overlay {
