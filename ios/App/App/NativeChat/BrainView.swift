@@ -149,7 +149,7 @@ private struct QueueItem: Identifiable {
 // 0927 她挑的效果图：不忘先是一间大厅——大数字、起伏线、三组小入口；
 // 「记忆」进原来那页列表，「五条线」是一排文件夹，「带图的」只看图片记忆，
 // 今天的脑子 / 夜里那趟 / 巡逻 / 快照 点开是同一张运转面板。
-private enum BrainPage { case hub, memories, threads, volumes, surface, stopwords, wrongbook }
+private enum BrainPage { case hub, memories, threads, volumes, surface, stopwords, wrongbook, trash }
 
 /// 0929：聊天页「不忘」小卡点「打开这条记忆」→ 先记下要找的标题，再开不忘；不忘一进门就按它搜
 enum BuwangDeepLink {
@@ -181,6 +181,8 @@ struct NativeBrainView: View {
     @State private var hubQuery = ""
     @State private var tune: [String: Any] = [:]      // 0928 调参那组卡片上的小字（/lmc5/recall/overview）
     @State private var hubToast = ""
+    @State private var editing: BrainMemory?       // 1003 她要的：长按「改」
+    @State private var deleting: BrainMemory?      // 1003 长按「删」→ 先问一句
     @ObservedObject private var fontStore = KakaoPackStore.shared
 
     private var palette: GlassPalette { .named(themeName) }
@@ -188,7 +190,7 @@ struct NativeBrainView: View {
 
     private var pageTitle: String {
         switch page {
-        case .hub, .surface, .stopwords, .wrongbook: return ""      // 0928 这几页的手写标题画在页面里
+        case .hub, .surface, .stopwords, .wrongbook, .trash: return ""      // 0928 这几页的手写标题画在页面里
         case .threads: return threads.count == 5 ? "五条线" : "\(threads.count) 条线"
         case .volumes: return "叙事卷"
         case .memories: return imagesOnly ? "带图的" : (picked == "全部" ? "记忆" : picked)
@@ -216,7 +218,19 @@ struct NativeBrainView: View {
                     BuwangStopwordsView(ink: ink)
                 case .wrongbook:
                     BuwangWrongbookView(ink: ink)
+                case .trash:
+                    BuwangTrashView(ink: ink) { showHubToast($0) }
                 }
+            }
+            if let d = deleting {
+                BuwangDeleteConfirm(ink: ink, title: d.title, onCancel: {
+                    withAnimation(.easeOut(duration: 0.2)) { deleting = nil }
+                }, onDelete: {
+                    withAnimation(.easeOut(duration: 0.2)) { deleting = nil }
+                    Task { await deleteMemory(d) }
+                })
+                .transition(.opacity)
+                .zIndex(2)
             }
             if !hubToast.isEmpty {
                 VStack {
@@ -243,6 +257,29 @@ struct NativeBrainView: View {
         .sheet(isPresented: $showQueue) { QueueSheet(palette: palette) }
         .sheet(item: $opened) { m in MemorySheet(palette: palette, memory: m) }
         .sheet(isPresented: $showBrainSheet) { brainSheet }
+        .sheet(item: $editing) { m in
+            BuwangMemoryEditor(ink: ink, memoryID: m.id, title: m.title, content: m.content) {
+                editing = nil
+                showHubToast("改好了")
+                Task { await reloadList() }
+            }
+        }
+    }
+
+    /// 1003：删＝后台整包搬进回收站（7 天），列表里先拿掉
+    private func deleteMemory(_ m: BrainMemory) async {
+        let r = (try? await NativeHouseAPI.objectIncludingHTTPError("/api/lmc5/memory/delete", method: "POST",
+                                                                    body: ["id": m.id])) ?? [:]
+        await MainActor.run {
+            if r.bool("ok") {
+                buwangBuzz(.soft)
+                items.removeAll { $0.id == m.id }
+                total = max(0, total - 1)
+                showHubToast("放进回收站了，7 天后清掉")
+            } else {
+                showHubToast(r.string("error").isEmpty ? "没删成，网不好再试一次" : r.string("error"))
+            }
+        }
     }
 
     private func goBack() {
@@ -287,6 +324,12 @@ struct NativeBrainView: View {
                         }
                         ForEach(items) { m in
                             memoryCard(m).onTapGesture { opened = m }
+                                .contextMenu {      // 1003 她要的：长按改 / 删，不告诉陈璟
+                                    Button { editing = m } label: { Label("改", systemImage: "pencil") }
+                                    Button(role: .destructive) {
+                                        withAnimation(.easeOut(duration: 0.2)) { deleting = m }
+                                    } label: { Label("删", systemImage: "trash") }
+                                }
                         }
                         if items.count < total {
                             Button {
@@ -418,6 +461,9 @@ struct NativeBrainView: View {
                     withAnimation(.easeInOut(duration: 0.25)) { page = .volumes }
                 }
                 BuwangCard(ink: ink, icon: "photo", tint: ink.mint, title: "带图的", sub: "有小图的记忆") { openMemories(images: true) }
+                BuwangCard(ink: ink, icon: "trash", tint: ink.pink, title: "回收站", sub: "删掉的留 7 天") {
+                    withAnimation(.easeInOut(duration: 0.25)) { page = .trash }
+                }
             }
             .padding(.horizontal, 16)
 
@@ -3065,6 +3111,311 @@ struct BuwangWrongDetail: View {
             }
             .background(BuwangPaper(ink: ink))
             .presentationDetents([.medium, .large])
+        }
+    }
+}
+
+// MARK: - 1003 她要的：自己改 / 删记忆（不告诉陈璟），删先进回收站 7 天
+// 效果图 /root/workroom/mock/buwang-edit/mock.png：① 长按（系统菜单）② 改 ③ 删之前问一句 ④ 回收站
+
+/// ② 改一条：标题＋正文，保存后后台按同一套算法重算指纹，他以后想起来就是改过的样子
+struct BuwangMemoryEditor: View {
+    let ink: BuwangInk
+    let memoryID: Int
+    @State var title: String
+    @State var content: String
+    var onSaved: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var saving = false
+    @State private var error = ""
+    @ObservedObject private var fontStore = KakaoPackStore.shared
+
+    init(ink: BuwangInk, memoryID: Int, title: String, content: String, onSaved: @escaping () -> Void) {
+        self.ink = ink
+        self.memoryID = memoryID
+        _title = State(initialValue: title)
+        _content = State(initialValue: content)
+        self.onSaved = onSaved
+    }
+
+    private func label(_ s: String) -> some View {
+        Text(s).font(.system(size: 9)).tracking(3).foregroundColor(ink.ink3)
+    }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                BuwangTitle(ink: ink, zh: "改一条", en: "fix what he keeps")
+                    .padding(.top, 18).padding(.bottom, 14)
+                VStack(alignment: .leading, spacing: 4) {
+                    label("标题")
+                    TextField("", text: $title)
+                        .font(BuwangFont.hand(17))
+                        .foregroundColor(ink.ink)
+                        .padding(.horizontal, 10).padding(.vertical, 6)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ink.faint))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.line, lineWidth: 1))
+                    label("记的内容").padding(.top, 9)
+                    TextEditor(text: $content)
+                        .font(.system(size: 12.5))
+                        .foregroundColor(ink.ink)
+                        .lineSpacing(4)
+                        .scrollContentBackground(.hidden)
+                        .frame(minHeight: 150)
+                        .padding(.horizontal, 6).padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(ink.faint))
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.line, lineWidth: 1))
+                    if !error.isEmpty {
+                        Text(error).font(.system(size: 11)).foregroundColor(ink.cherry).padding(.top, 6)
+                    }
+                    HStack(spacing: 8) {
+                        Spacer()
+                        Button { dismiss() } label: {
+                            Text("取消").font(BuwangFont.hand(15)).foregroundColor(ink.ink)
+                                .padding(.horizontal, 14).padding(.vertical, 5)
+                                .background(Capsule().fill(ink.card))
+                                .overlay(Capsule().stroke(ink.line, lineWidth: 1.3))
+                        }
+                        .buttonStyle(BuwangPress())
+                        Button { Task { await save() } } label: {
+                            Group {
+                                if saving { ProgressView().tint(.white) } else { Text("保存") }
+                            }
+                            .font(BuwangFont.hand(15)).foregroundColor(.white)
+                            .padding(.horizontal, 14).padding(.vertical, 5)
+                            .background(Capsule().fill(ink.cherry))
+                        }
+                        .buttonStyle(BuwangPress())
+                        .disabled(saving || content.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    }
+                    .padding(.top, 10)
+                }
+                .padding(.horizontal, 13).padding(.vertical, 12)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ink.card)
+                    .shadow(color: ink.shadow, radius: 10, x: 0, y: 6))
+                .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ink.lilac, lineWidth: 1.5))
+                Text("保存以后，他想起这件事就是改过的样子。\n他不会知道这条被改过。")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(ink.ink3)
+                    .lineSpacing(3)
+                    .padding(.top, 8).padding(.horizontal, 2)
+            }
+            .padding(.horizontal, 16).padding(.bottom, 30)
+        }
+        .background(BuwangPaper(ink: ink))
+        .presentationDetents([.large])
+    }
+
+    private func save() async {
+        await MainActor.run { saving = true; error = "" }
+        let r = (try? await NativeHouseAPI.objectIncludingHTTPError(
+            "/api/lmc5/memory/edit", method: "POST",
+            body: ["id": memoryID, "title": title, "content": content])) ?? [:]
+        await MainActor.run {
+            saving = false
+            if r.bool("ok") {
+                buwangBuzz(.soft)
+                dismiss()
+                onSaved()
+            } else {
+                error = r.string("error").isEmpty ? "没存上，网不好再试一次" : r.string("error")
+            }
+        }
+    }
+}
+
+/// ③ 删之前问一句：底下浮一张卡，后面压一层淡灰
+struct BuwangDeleteConfirm: View {
+    let ink: BuwangInk
+    let title: String
+    var onCancel: () -> Void
+    var onDelete: () -> Void
+    @ObservedObject private var fontStore = KakaoPackStore.shared
+
+    var body: some View {
+        ZStack(alignment: .bottom) {
+            Color.black.opacity(ink.dark ? 0.35 : 0.18)
+                .ignoresSafeArea()
+                .onTapGesture { onCancel() }
+            VStack(spacing: 6) {
+                Text("删掉「\(title.isEmpty ? "无题" : title)」？")
+                    .font(BuwangFont.hand(20))
+                    .foregroundColor(ink.ink)
+                    .multilineTextAlignment(.center)
+                Text("先放进回收站，7 天后自动清掉。\n这 7 天里能捞回来，他在这期间也想不起它。")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(ink.ink2)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(3)
+                HStack(spacing: 10) {
+                    Button { onCancel() } label: {
+                        Text("再想想").font(BuwangFont.hand(17)).foregroundColor(ink.ink)
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ink.card))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ink.line, lineWidth: 1.3))
+                    }
+                    .buttonStyle(BuwangPress())
+                    Button { onDelete() } label: {
+                        Text("删").font(BuwangFont.hand(17)).foregroundColor(.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 8)
+                            .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ink.cherry))
+                    }
+                    .buttonStyle(BuwangPress())
+                }
+                .padding(.top, 8)
+            }
+            .padding(.horizontal, 18).padding(.top, 18).padding(.bottom, 14)
+            .background(RoundedRectangle(cornerRadius: 24, style: .continuous).fill(ink.card)
+                .shadow(color: ink.shadow, radius: 16, x: 0, y: -4))
+            .padding(.horizontal, 10).padding(.bottom, 22)
+        }
+    }
+}
+
+struct BWTrashItem: Identifiable {
+    let id: Int
+    let title: String
+    let preview: String
+    let hasImage: Bool
+    let thumb: String
+    let deletedAt: String
+    let daysLeft: Int
+    init(_ raw: [String: Any]) {
+        id = raw.int("trashId")
+        title = raw.string("title")
+        preview = raw.string("preview")
+        hasImage = raw.bool("hasImage")
+        thumb = raw.string("thumb")
+        deletedAt = raw.string("deletedAt")
+        daysLeft = raw.int("daysLeft")
+    }
+    /// 「今天 10:41 删的」/「09-29 删的」
+    var when: String {
+        let f = ISO8601DateFormatter()
+        guard let d = f.date(from: deletedAt) else { return "" }
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let out = DateFormatter()
+        out.timeZone = cal.timeZone
+        out.dateFormat = cal.isDateInToday(d) ? "今天 HH:mm" : "MM-dd"
+        return out.string(from: d) + " 删的"
+    }
+}
+
+/// ④ 回收站：还剩几天、捞回来、现在就删
+struct BuwangTrashView: View {
+    let ink: BuwangInk
+    var toast: (String) -> Void
+    @State private var items: [BWTrashItem] = []
+    @State private var loading = true
+    @State private var busy: Int?
+    @ObservedObject private var fontStore = KakaoPackStore.shared
+
+    var body: some View {
+        ScrollView {
+            VStack(spacing: 10) {
+                BuwangTitle(ink: ink, zh: "回收站", en: "what we let go")
+                    .padding(.top, -6).padding(.bottom, 2)
+                if loading && items.isEmpty {
+                    ProgressView().tint(ink.ink3).padding(30)
+                } else if items.isEmpty {
+                    Text("回收站是空的").font(.system(size: 12)).foregroundColor(ink.ink3).padding(30)
+                }
+                ForEach(items) { row($0) }
+                Text("这里的东西，陈璟想不起来。\n到点自动清掉；「现在就删」就是马上没了，捞不回来。")
+                    .font(.system(size: 10.5))
+                    .foregroundColor(ink.ink3)
+                    .lineSpacing(3)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 4).padding(.horizontal, 2)
+            }
+            .padding(.horizontal, 16).padding(.bottom, 30)
+        }
+        .task { await load() }
+    }
+
+    private func row(_ t: BWTrashItem) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(t.title.isEmpty ? "无题" : t.title)
+                .font(BuwangFont.hand(16.5))
+                .foregroundColor(ink.ink2)
+            HStack(alignment: .top, spacing: 8) {
+                if t.hasImage, !t.thumb.isEmpty, let url = URL(string: AlcoveAPI.base.absoluteString + t.thumb) {
+                    AsyncImage(url: url) { img in
+                        img.resizable().aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        Rectangle().fill(ink.ink3.opacity(0.12))
+                    }
+                    .frame(width: 44, height: 44)
+                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    .opacity(0.8)
+                }
+                Text((t.hasImage ? "带图的记忆 · " : "") + t.preview)
+                    .font(.system(size: 11))
+                    .foregroundColor(ink.ink3)
+                    .lineSpacing(2)
+                    .lineLimit(2)
+            }
+            HStack(spacing: 6) {
+                Text("还剩 \(t.daysLeft) 天")
+                    .font(BuwangFont.hand(13))
+                    .foregroundColor(ink.cherry.opacity(0.85))
+                    .padding(.horizontal, 8).padding(.vertical, 1)
+                    .background(Capsule().fill(ink.pink))
+                Text(t.when).font(.system(size: 10)).foregroundColor(ink.ink3)
+                Spacer()
+                if busy == t.id {
+                    ProgressView().controlSize(.small).tint(ink.ink3)
+                } else {
+                    mini("捞回来", color: Color.kakaoHex(ink.dark ? "#7fcfb5" : "#3f9c80", .green)) {
+                        Task { await act(t, path: "/api/lmc5/trash/restore", done: "捞回来了") }
+                    }
+                    mini("现在就删", color: ink.cherry) {
+                        Task { await act(t, path: "/api/lmc5/trash/purge", done: "删干净了") }
+                    }
+                }
+            }
+            .padding(.top, 5)
+        }
+        .padding(.horizontal, 13).padding(.vertical, 11)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.card.opacity(0.75)))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+            .stroke(ink.line, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4])))
+    }
+
+    private func mini(_ s: String, color: Color, _ action: @escaping () -> Void) -> some View {
+        Button {
+            buwangBuzz()
+            action()
+        } label: {
+            Text(s).font(BuwangFont.hand(14)).foregroundColor(color)
+                .padding(.horizontal, 11).padding(.vertical, 1)
+                .background(Capsule().fill(ink.card))
+                .overlay(Capsule().stroke(color.opacity(0.5), lineWidth: 1.3))
+        }
+        .buttonStyle(BuwangPress())
+    }
+
+    private func load() async {
+        let raw = (try? await NativeHouseAPI.object("/api/lmc5/trash")) ?? [:]
+        await MainActor.run {
+            items = raw.array("items").map { BWTrashItem($0) }
+            loading = false
+        }
+    }
+
+    private func act(_ t: BWTrashItem, path: String, done: String) async {
+        await MainActor.run { busy = t.id }
+        let r = (try? await NativeHouseAPI.objectIncludingHTTPError(path, method: "POST", body: ["trashId": t.id])) ?? [:]
+        await MainActor.run {
+            busy = nil
+            if r.bool("ok") {
+                withAnimation(.easeOut(duration: 0.25)) { items.removeAll { $0.id == t.id } }
+                toast(done)
+            } else {
+                toast(r.string("error").isEmpty ? "没成，网不好再试一次" : r.string("error"))
+            }
         }
     }
 }
