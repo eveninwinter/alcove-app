@@ -3874,7 +3874,7 @@ struct MessageRow: View {
                     // 0831 任务#1195：打完电话聊天页只留这一条，点开展开这一通的记录。
                     // 左右不用这里判——服务端已经把 role 写成打电话那个人了
                     //（她打的=user 在右，他打的=assistant 在左），拒绝也照这条走。
-                    CallSummaryBubble(info: call, text: msg.displayText, theme: theme)
+                    CallSummaryBubble(info: call, text: msg.displayText, theme: cardTheme)   // 1003：Kakao 黑夜白字白底，跟卡片一样走 cardTheme
                 } else if msg.isSticker {
                     // 0928 她抓的：一串最后一条是表情时 Kakao 的时间没了——时间贴在气泡旁边（kakaoSideMeta），
                     // 表情原来不挂。照语音条那样两边挂上
@@ -3935,7 +3935,7 @@ struct MessageRow: View {
                         DocumentAttachmentCard(
                             url: AlcoveAPI.attachmentURL(raw),
                             filename: msg.attachmentFilename ?? "文件",
-                            theme: theme
+                            theme: cardTheme
                         )
                     }
                     if let song = msg.musicCard {
@@ -3966,7 +3966,7 @@ struct MessageRow: View {
                     }
                     // 正文里有链接：气泡下面长一张小卡片（只有链接的话就只留卡）
                     if let link = msg.firstLinkURL, msg.musicCard == nil, !msg.isSticker {
-                        LinkPreviewCard(url: link, theme: theme, isUser: isUser)
+                        LinkPreviewCard(url: link, theme: cardTheme, isUser: isUser)
                     }
                   }
                 }
