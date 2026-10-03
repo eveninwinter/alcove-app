@@ -7,6 +7,11 @@ import WebKit
 import MapKit
 import UniformTypeIdentifiers
 
+extension Notification.Name {
+    /// 1003：工作室点列表收键盘——只让 StudioInputBar 的输入框失焦，别的（比如正选着的字）不碰
+    static let studioDropKeyboard = Notification.Name("studioDropKeyboard")
+}
+
 private struct HouseOwnsHeaderKey: EnvironmentKey { static let defaultValue = false }
 private extension EnvironmentValues {
     var houseOwnsHeader: Bool {
@@ -6979,9 +6984,10 @@ private struct NativeStudioView: View {
                 .defaultScrollAnchor(.bottom)
                 // 0904 她报的「工作室键盘下不去，只有发一条才收」：往下滑列表跟手收，点列表任何地方也收
                 .scrollDismissesKeyboard(.interactively)
+                // 1003 她报的「一复制你的消息，选中的字一秒就没了」：原来这里叫「当前第一响应者」全体退下，
+                // 长按选字松手也算点了一下，选中的那段跟着被收掉。改成跟主聊天一样只让输入框失焦（输入框在 StudioInputBar 里，发通知过去）
                 .simultaneousGesture(TapGesture().onEnded {
-                    UIApplication.shared.sendAction(#selector(UIResponder.resignFirstResponder),
-                                                    to: nil, from: nil, for: nil)
+                    NotificationCenter.default.post(name: .studioDropKeyboard, object: nil)
                 })
                 .onChange(of: messages.last?.int("id") ?? 0) { _ in
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("studio-tail", anchor: .bottom) }
@@ -7465,6 +7471,7 @@ private struct StudioInputBar: View {
                     Button { onPickFile() } label: { Label("文件", systemImage: "doc") }
                 } label: { Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 38, height: 38).background(.white.opacity(0.50), in: Circle()) }
                 TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($focused)
+                    .onReceive(NotificationCenter.default.publisher(for: .studioDropKeyboard)) { _ in focused = false }
                     .padding(.horizontal, 14).padding(.vertical, 10).background(.white.opacity(0.58), in: RoundedRectangle(cornerRadius: 19))
                 Button {
                     let typed = draft
