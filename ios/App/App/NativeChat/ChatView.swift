@@ -5335,236 +5335,463 @@ private struct WorkDeliveryMessageCard: View {
     }
 }
 
-/// 0902 深夜她要的：塔罗卡。顶上「抽了牌 · 牌阵 · 时间」，问题用「」括起来，
-/// 下面一排牌面（复用占星室的 TarotCardFace，颜色跟她在占星室调的染色走），每张底下位置 · 牌名 · 正逆位，
-/// 底下一块关键词。牌默认亮着——翻面版等「陈璟让她抽牌」那一单再做。死解不进卡，占星室记录里有。
-/// 塔罗卡的字色：卡底是她那张淡紫底纹的边框，不跟聊天主题走，固定深紫
-private enum TarotCardInk {
-    static let ink = Color(red: 0.20, green: 0.16, blue: 0.30)
-    static let dim = Color(red: 0.20, green: 0.16, blue: 0.30).opacity(0.62)
-    static let accent = Color(red: 0.44, green: 0.30, blue: 0.66)
-    static let sub = Color.white.opacity(0.32)
+/// 1004 她要的：塔罗小卡改成像素铁艺蕾丝风。她点头的效果图 /root/workroom/mock/tarot-card/v2/day.jpg、night.jpg（施工图），
+/// 花纹原图和生成脚本在同一个目录（gen2.py）。灰颗粒卡底、粉色像素卷草角花＋心形冠饰、实线＋虚线两道边、底下一排小旋花边、
+/// 两行像素小字；卡后面伸出半调花枝和碎闪卷草。客观解读不进卡（她：只留关键词），没有「去占星室」按钮。
+/// 花枝和冠饰伸出去的部分算进卡自己的高度，不压上下消息（她 1004 点名）。深浅只认全屋黑白开关；牌面颜色仍跟占星室的染色走。
+private struct TarotLaceInk {
+    let dark: Bool
+    var lace: Color { dark ? cardRGB(0xF6B4DC) : cardRGB(0xDE8CC8) }
+    var laceSoft: Color { dark ? cardRGB(0x7A5A70) : cardRGB(0xEFC3E2) }
+    var lilac: Color { dark ? cardRGB(0x6F6A76) : cardRGB(0xC4B8E8) }
+    var lilacInk: Color { dark ? cardRGB(0xC9C2CF) : cardRGB(0x8D7FC0) }
+    var laceRow: Color { dark ? cardRGB(0x96909C) : cardRGB(0xC4B8E8) }
+    var ink: Color { dark ? cardRGB(0xECE7EC) : cardRGB(0x5C566B) }
+    var sub: Color { dark ? cardRGB(0xA59FA8) : cardRGB(0xA49EB2) }
+    var tag: Color { dark ? cardRGB(0x3B3A40) : .white }
+    var tagInk: Color { dark ? cardRGB(0xF6B4DC) : cardRGB(0xC46AAE) }
+    var mat: Color { dark ? cardRGB(0x3B3A40) : .white }
+    var spark2: Color { dark ? cardRGB(0xECE7EC) : cardRGB(0x86DCBF) }
+    var rose: Color { dark ? cardRGB(0xB97AA2) : cardRGB(0xE8AAD6) }
+    var vine: Color { dark ? cardRGB(0xECE7EC) : cardRGB(0xC4B8E8) }
+    var glitter: Color { dark ? cardRGB(0xECE7EC) : cardRGB(0xAAA6BA) }
+    var grain: String { dark ? "TarotChatGrainNight" : "TarotChatGrainDay" }
+}
+
+/// 塔罗卡外框：304 宽，四角卷草（58 格画成 72pt）、顶上冠饰（72 格 × 1.5）、两道边；卡后面三枝花
+private struct TarotLaceFramed: ViewModifier {
+    let ink: TarotLaceInk
+
+    private var corner: some View {
+        CardPixelArt(rows: TarotLacePixels.corner, px: 72.0 / 58, colors: ["o": ink.lace]).allowsHitTesting(false)
+    }
+
+    private func tinted(_ name: String, _ color: Color, _ w: CGFloat) -> some View {
+        Image(name).renderingMode(.template).resizable().scaledToFit()
+            .frame(width: w, height: w).foregroundColor(color).allowsHitTesting(false)
+    }
+
+    func body(content: Content) -> some View {
+        content
+            .foregroundColor(ink.ink)
+            .padding(.horizontal, 20).padding(.top, 20).padding(.bottom, 16)
+            .frame(width: 304)
+            .background(Image(ink.grain).resizable(resizingMode: .tile))
+            .overlay(Rectangle().stroke(ink.lace, lineWidth: 1).padding(6.5).allowsHitTesting(false))
+            .overlay(Rectangle().stroke(ink.lilac, style: StrokeStyle(lineWidth: 1, dash: [3, 3])).padding(9.5).allowsHitTesting(false))
+            .overlay(alignment: .topLeading) { corner }
+            .overlay(alignment: .topTrailing) { corner.scaleEffect(x: -1, y: 1) }
+            .overlay(alignment: .bottomLeading) { corner.scaleEffect(x: 1, y: -1) }
+            .overlay(alignment: .bottomTrailing) { corner.scaleEffect(x: -1, y: -1) }
+            .overlay(alignment: .top) {
+                CardPixelArt(rows: TarotLacePixels.crest, px: 1.5, colors: ["o": ink.lace]).offset(y: -22).allowsHitTesting(false)
+            }
+            .background(alignment: .bottomLeading) { tinted("TarotChatRose", ink.rose, 150).rotationEffect(.degrees(-8)).offset(x: -39, y: 61) }
+            .background(alignment: .topTrailing) { tinted("TarotChatVine", ink.vine, 118).rotationEffect(.degrees(12)).offset(x: 31, y: -30) }
+            .background(alignment: .bottomTrailing) { tinted("TarotChatGlitter", ink.glitter, 130).offset(x: 41, y: -29) }
+            .padding(.top, 42).padding(.bottom, 72)   // 冠饰、花枝伸出去的那截留出位置，不压上下消息
+    }
+}
+
+/// 卡头（像素字牌阵＋时间、谁抽的、问题）和卡尾（小旋花边、两行像素小字、just now）
+private enum TarotLaceBits {
+    static func meta(spread: String, question: String, ts: String) -> String {
+        let name: String
+        if question == "每日一牌" {
+            name = "DAILY CARD"
+        } else {
+            switch spread {
+            case "one": name = "ONE CARD"
+            case "three": name = "THREE CARDS"
+            case "week": name = "THIS WEEK"
+            case "relation": name = "RELATIONSHIP"
+            case "desire": name = "SECRET DESIRE"
+            case "yesno": name = "YES OR NO"
+            default: name = "TAROT"
+            }
+        }
+        let date = ISO8601DateFormatter.alcove.date(from: ts) ?? ISO8601DateFormatter.alcoveFrac.date(from: ts)
+        guard let date else { return "· \(name) ·" }
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = "MM.dd · HH:mm"
+        return "· \(name) · \(f.string(from: date)) ·"
+    }
+
+    static func head(meta: String, who: String, question: String, ink: TarotLaceInk) -> some View {
+        VStack(spacing: 0) {
+            Text(meta).font(DiaryFonts.pixel(9)).tracking(1.3).foregroundColor(ink.lilacInk)
+                .lineLimit(1).minimumScaleFactor(0.7)
+                .padding(.top, 22)
+            Text(who).font(.system(size: 11)).foregroundColor(ink.sub).padding(.top, 4)
+            if !question.isEmpty {
+                Text("「\(question)」")
+                    .font(.system(size: 13.5, weight: .medium, design: .serif)).lineSpacing(3)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 4).padding(.top, 9)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 13)
+    }
+
+    static func foot(ink: TarotLaceInk) -> some View {
+        VStack(spacing: 0) {
+            TarotLaceRow(color: ink.laceRow).frame(height: 12).padding(.horizontal, -4)
+                .padding(.top, 14).padding(.bottom, 6)
+            Text("A CARD DRAWN IN THE ALCOVE\nPLEASE HANDLE GENTLY · THANK YOU")
+                .font(DiaryFonts.pixel(7.5)).tracking(0.9).lineSpacing(2.5)
+                .multilineTextAlignment(.center).foregroundColor(ink.sub)
+            HStack {
+                Text("just now").font(DiaryFonts.script(14)).foregroundColor(ink.lace)
+                Spacer()
+            }
+            .padding(.leading, 30).padding(.top, 8)
+        }
+    }
+
+    static func roman(_ n: Int) -> String {
+        guard n > 0 else { return "0" }
+        let table: [(Int, String)] = [(10, "X"), (9, "IX"), (5, "V"), (4, "IV"), (1, "I")]
+        var n = n, out = ""
+        for (v, s) in table { while n >= v { out += s; n -= v } }
+        return out
+    }
+}
+
+/// 一排连环小旋（12×8 格一节，1.5pt 一格），横着铺满
+private struct TarotLaceRow: View {
+    let color: Color
+    var body: some View {
+        Canvas { ctx, size in
+            let rows = TarotLacePixels.laceTile
+            let px: CGFloat = 1.5
+            let tw = CGFloat(rows.first?.count ?? 12) * px
+            var path = Path()
+            var x0: CGFloat = 0
+            while x0 < size.width {
+                for (y, row) in rows.enumerated() {
+                    for (x, ch) in row.enumerated() where ch == "o" {
+                        path.addRect(CGRect(x: x0 + CGFloat(x) * px, y: CGFloat(y) * px, width: px + 0.2, height: px + 0.2))
+                    }
+                }
+                x0 += tw
+            }
+            ctx.fill(path, with: .color(color))
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 关键词小方签：四角各缺 2pt 的像素方块
+private struct TarotNotch: Shape {
+    func path(in r: CGRect) -> Path {
+        let n: CGFloat = 2
+        var p = Path()
+        p.addLines([
+            CGPoint(x: r.minX + n, y: r.minY), CGPoint(x: r.maxX - n, y: r.minY), CGPoint(x: r.maxX - n, y: r.minY + n),
+            CGPoint(x: r.maxX, y: r.minY + n), CGPoint(x: r.maxX, y: r.maxY - n), CGPoint(x: r.maxX - n, y: r.maxY - n),
+            CGPoint(x: r.maxX - n, y: r.maxY), CGPoint(x: r.minX + n, y: r.maxY), CGPoint(x: r.minX + n, y: r.maxY - n),
+            CGPoint(x: r.minX, y: r.maxY - n), CGPoint(x: r.minX, y: r.minY + n), CGPoint(x: r.minX + n, y: r.minY + n)
+        ])
+        p.closeSubpath()
+        return p
+    }
+}
+
+/// 一张牌：白衬纸（黑夜深灰）＋一圈细粉边＋右下错开的一块浅粉实影；单张时左上、右下各贴一颗像素星芒
+private struct TarotLaceMat: View {
+    let card: TarotAskCard.Card
+    let width: CGFloat
+    let ink: TarotLaceInk
+    var on = true
+    var sparkles = false
+    @ObservedObject private var decor = TarotDecor.shared
+
+    var body: some View {
+        Image("Tarot_" + card.id)
+            .resizable()
+            .scaledToFill()
+            .saturation(decor.saturation)
+            .colorMultiply(decor.multiply)
+            .brightness(ink.dark ? -0.05 : 0)
+            .frame(width: width, height: width * 1.72)
+            .clipped()
+            .rotationEffect(.degrees(card.reversed ? 180 : 0))
+            .padding(4)
+            .background(ink.mat)
+            .overlay(Rectangle().stroke(on ? ink.lace : ink.lilac, lineWidth: 1).padding(-0.5))
+            .background(Rectangle().fill(ink.laceSoft).padding(-1).offset(x: 3, y: 3))
+            .overlay(alignment: .topLeading) {
+                if sparkles {
+                    CardPixelArt(rows: TarotLacePixels.sparkBig, px: 18.0 / 7, colors: ["o": ink.lace, "w": .white]).offset(x: -9, y: -9)
+                }
+            }
+            .overlay(alignment: .bottomTrailing) {
+                if sparkles {
+                    CardPixelArt(rows: TarotLacePixels.sparkSmall, px: 2.6, colors: ["o": ink.spark2]).offset(x: 8, y: 8)
+                }
+            }
+    }
 }
 
 private struct TarotMessageCard: View {
     let card: TarotAskCard
     let theme: AlcoveTheme
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: TarotLaceInk { _ = houseAppearance; return TarotLaceInk(dark: AlcoveAppearance.isDark) }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(TarotCardInk.accent)
-                Text(card.byHim ? "陈璟抽了牌" : "抽了牌").font(.system(size: 15, weight: .semibold, design: .serif))
-                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(TarotCardInk.dim)
-                Spacer()
-                Text(TarotChatBits.timeText(card.ts)).font(.system(size: 8.5, design: .monospaced)).foregroundColor(TarotCardInk.dim)
-            }
-            if !card.question.isEmpty {
-                Text("「\(card.question)」")
-                    .font(.system(size: 14, weight: .medium, design: .serif)).lineSpacing(3)
-                    .multilineTextAlignment(.center)
-                    .frame(maxWidth: .infinity)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            TarotChatBits.facesBlock(cards: card.cards, theme: theme, spread: card.spread)
-            if let interp = card.interp {
-                TarotInterpBlock(interp: interp, theme: theme)
-            }
+        VStack(spacing: 0) {
+            TarotLaceBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
+                               who: card.byHim ? "陈璟抽了牌" : "陈霁抽了牌", question: card.question, ink: ink)
+            TarotSpreadView(cards: card.cards, spread: card.spread, ink: ink)
+            TarotLaceBits.foot(ink: ink)
         }
-        .modifier(TarotFramed())
+        .modifier(TarotLaceFramed(ink: ink))
+        .onAppear { DiaryFonts.ensure() }
     }
 }
 
-/// 0903 她要的：塔罗卡不要底，贴她给的那张边框（Assets/TarotFrame，透明 PNG，按 3x 放进去：
-/// 367×275pt，四角各 110×82pt 固定不变形，中间的边拉伸）。内容往里缩，别压到角上的月亮和水晶。
-private struct TarotFramed: ViewModifier {
-    func body(content: Content) -> some View {
-        content
-            .foregroundColor(TarotCardInk.ink)
-            .padding(.horizontal, 44)
-            .padding(.top, 52)                           // 0903 她说还有点空间：从角饰下面再往上提一点
-            .padding(.bottom, 56)
-            .frame(width: 372, alignment: .leading)      // 横着的长方形，跟边框原本的比例走；整行居中
-            .background(
-                Image("TarotFrame")
-                    .resizable(capInsets: EdgeInsets(top: 82, leading: 110, bottom: 82, trailing: 110),
-                               resizingMode: .stretch)
-                    .allowsHitTesting(false)
-            )
-    }
-}
-
-/// 0903 她要的：卡里带一段客观解读（查表拼的，陈璟那边读到的是同一段）。默认只露整体 + 一句话，点开看逐牌
-private struct TarotInterpBlock: View {
-    let interp: TarotInterpCard
-    let theme: AlcoveTheme
-    @State private var expanded = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("客观解读 · 按\(interp.categoryName)").font(.system(size: 9.5, weight: .semibold)).tracking(0.5)
-                    .foregroundColor(TarotCardInk.accent)
-                Spacer()
-                Button(expanded ? "收起" : "逐牌") { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } }
-                    .font(.system(size: 9.5, weight: .semibold)).foregroundColor(TarotCardInk.accent)
-            }
-            // 0903 她要的：默认只留一句话；整体印象和逐牌都收进「逐牌」
-            if expanded {
-                Text(interp.overall).font(.system(size: 11.5, design: .serif)).lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-                ForEach(interp.cards) { c in
-                    VStack(alignment: .leading, spacing: 3) {
-                        Text((c.positionName.isEmpty || interp.cards.count == 1 ? "" : c.positionName + " · ")
-                             + c.name + (c.reversed ? " 逆位" : " 正位"))
-                            .font(.system(size: 11, weight: .semibold, design: .serif))
-                        Text(c.text).font(.system(size: 11, design: .serif)).lineSpacing(3)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                }
-                if !interp.relations.isEmpty {
-                    Text("牌面关系：" + interp.relations.joined(separator: " "))
-                        .font(.system(size: 11, design: .serif)).lineSpacing(3).foregroundColor(TarotCardInk.dim)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-                if !interp.advice.isEmpty {
-                    Text("建议：" + interp.advice.joined(separator: " "))
-                        .font(.system(size: 11, design: .serif)).lineSpacing(3)
-                        .fixedSize(horizontal: false, vertical: true)
-                }
-            }
-            Text(interp.oneline).font(.system(size: 11, weight: .medium, design: .serif))
-                .foregroundColor(TarotCardInk.accent)
-                .fixedSize(horizontal: false, vertical: true)
-        }
-        .padding(10).frame(maxWidth: .infinity, alignment: .leading)
-        .background(TarotCardInk.sub, in: RoundedRectangle(cornerRadius: 12))
-    }
-}
-
-/// 塔罗两种卡共用的零件：一排亮着的牌面 + 关键词块 + 时间格式
-private enum TarotChatBits {
-    static func timeText(_ ts: String) -> String {
-        let date = ISO8601DateFormatter.alcove.date(from: ts) ?? ISO8601DateFormatter.alcoveFrac.date(from: ts)
-        guard let date else { return String(ts.replacingOccurrences(of: "T", with: " ").prefix(16)) }
-        let f = DateFormatter()
-        f.locale = Locale(identifier: "zh_CN")
-        f.dateFormat = "M月d日 HH:mm"
-        return f.string(from: date)
-    }
-
-    @ViewBuilder
-    static func facesBlock(cards: [TarotAskCard.Card], theme: AlcoveTheme, spread: String) -> some View {
-        TarotSpreadView(cards: cards, spread: spread)
-    }
-}
-
-/// 0903 她定的多牌排法（方案二）：单张还是牌左字右；三张一排；关系五张按牌阵本来的形状摆——
-/// 「我」「他」左右对望在上，「我们之间」居中，「阻碍」「走向」在下，两行的高度塞下五张。
-/// 多牌时关键词只显示选中那张的（默认第一张），点哪张看哪张，选中的牌浮起来描金边。
+/// 0903 她定的多牌排法（方案二）：单张牌左字右；三张一排；关系五张按牌阵本来的形状摆——
+/// 「我」「他」左右对望在上，「我们之间」居中，「阻碍」「走向」在下。
+/// 多牌时牌名和关键词只显示选中那张的（默认第一张），点哪张看哪张，选中的牌浮起来、描粉边。
 private struct TarotSpreadView: View {
     let cards: [TarotAskCard.Card]
     let spread: String
+    let ink: TarotLaceInk
+    @ObservedObject private var store = TarotStore.shared
     @State private var selected = 0
 
     private var n: Int { cards.count }
-    private var faceW: CGFloat { n <= 3 ? 56 : 44 }
-    private var cellH: CGFloat { faceW * 1.72 + 18 }
+    private var faceW: CGFloat { n <= 3 ? 60 : 42 }
+    private var cellH: CGFloat { faceW * 1.72 + 8 + 20 }
 
     var body: some View {
-        if n <= 1, let c = cards.first {
-            single(c)
-        } else {
-            VStack(spacing: 8) {
-                if spread == "relation" && n == 5 {
-                    GeometryReader { geo in
-                        let w = geo.size.width
-                        let h = geo.size.height
-                        ZStack {
-                            cell(0).position(x: w * 0.22, y: cellH / 2)
-                            cell(1).position(x: w * 0.78, y: cellH / 2)
-                            cell(2).position(x: w * 0.5, y: h / 2)
-                            cell(3).position(x: w * 0.22, y: h - cellH / 2)
-                            cell(4).position(x: w * 0.78, y: h - cellH / 2)
+        Group {
+            if n <= 1, let c = cards.first {
+                single(c)
+            } else {
+                VStack(spacing: 12) {
+                    if spread == "relation" && n == 5 {
+                        GeometryReader { geo in
+                            let w = geo.size.width
+                            let h = geo.size.height
+                            ZStack {
+                                cell(0).position(x: w * 0.22, y: cellH / 2)
+                                cell(1).position(x: w * 0.78, y: cellH / 2)
+                                cell(2).position(x: w * 0.5, y: h / 2)
+                                cell(3).position(x: w * 0.22, y: h - cellH / 2)
+                                cell(4).position(x: w * 0.78, y: h - cellH / 2)
+                            }
                         }
+                        .frame(height: cellH * 2 + 2)
+                    } else {
+                        HStack(alignment: .top, spacing: 12) {
+                            ForEach(cards.indices, id: \.self) { i in cell(i) }
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(height: cellH * 2 + 2)
-                } else {
-                    HStack(alignment: .top, spacing: n > 3 ? 6 : 12) {
-                        ForEach(cards.indices, id: \.self) { i in cell(i) }
+                    if cards.indices.contains(selected) {
+                        let c = cards[selected]
+                        VStack(spacing: 0) {
+                            info(c, align: .center)
+                            tags(c.keywords, columns: c.keywords.allSatisfy { $0.count <= 3 } ? 4 : 2)
+                        }
+                        .frame(maxWidth: .infinity)
                     }
-                    .frame(maxWidth: .infinity)
-                }
-                if cards.indices.contains(selected) {
-                    keywordsRow(cards[selected])
                 }
             }
         }
+        .task { await store.loadDeck() }
     }
 
     /// 单张：牌左字右
     private func single(_ c: TarotAskCard.Card) -> some View {
-        HStack(alignment: .center, spacing: 14) {
-            TarotCardFace(cardID: c.id, reversed: c.reversed, width: 84)
-            VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 6) {
-                    Text(c.name).font(.system(size: 13.5, weight: .medium, design: .serif))
-                    Text(c.reversed ? "逆位" : "正位").font(.system(size: 9)).foregroundColor(TarotCardInk.dim)
-                }
-                let rows = stride(from: 0, to: c.keywords.count, by: 2).map { Array(c.keywords[$0..<min($0 + 2, c.keywords.count)]) }
-                ForEach(Array(rows.enumerated()), id: \.offset) { row in
-                    HStack(spacing: 5) {
-                        ForEach(row.element, id: \.self) { k in pill(k) }
-                    }
-                }
+        HStack(alignment: .center, spacing: 16) {
+            TarotLaceMat(card: c, width: 92, ink: ink, sparkles: true)
+            VStack(alignment: .leading, spacing: 0) {
+                info(c, align: .leading)
+                tags(c.keywords, columns: 2)
             }
+            .frame(width: 128, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
-        .padding(.vertical, 2)
+    }
+
+    /// 花体英文牌名 / 中文牌名＋UPRIGHT / ARCANA · XIX
+    private func info(_ c: TarotAskCard.Card, align: HorizontalAlignment) -> some View {
+        let meta = store.card(c.id)
+        let line: String? = meta.map {
+            $0.arcana == "major" ? "ARCANA · \(TarotLaceBits.roman($0.number))"
+                                 : "\($0.suit == "pents" ? "PENTACLES" : $0.suit.uppercased()) · \(TarotLaceBits.roman($0.number))"
+        }
+        return VStack(alignment: align, spacing: 0) {
+            if let en = meta?.en, !en.isEmpty {
+                Text(en).font(DiaryFonts.script(27)).foregroundColor(ink.lace)
+                    .lineLimit(1).minimumScaleFactor(0.5)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(c.name).font(.system(size: 16, weight: .semibold, design: .serif)).foregroundColor(ink.ink)
+                Text(c.reversed ? "REVERSED" : "UPRIGHT").font(DiaryFonts.pixel(9)).tracking(0.9).foregroundColor(ink.lilacInk)
+            }
+            .padding(.top, 3)
+            if let line {
+                Text(line).font(DiaryFonts.pixel(9)).tracking(1.26).foregroundColor(ink.sub).padding(.top, 2)
+            }
+        }
+    }
+
+    private func tags(_ words: [String], columns: Int) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: columns), spacing: 7) {
+            ForEach(words, id: \.self) { k in
+                Text(k).font(.system(size: 11, weight: .medium)).foregroundColor(ink.tagInk)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .padding(.leading, 8).padding(.vertical, 3)
+                    .frame(maxWidth: .infinity)
+                    .background(ink.tag)
+                    .overlay(alignment: .leading) {
+                        CardPixelArt(rows: TarotLacePixels.heart, px: 1, colors: ["o": ink.lace]).padding(.leading, 7)
+                    }
+                    .clipShape(TarotNotch())
+                    .overlay(TarotNotch().stroke(ink.lace, lineWidth: 3).clipShape(TarotNotch()))
+            }
+        }
+        .padding(.top, 10)
     }
 
     private func cell(_ i: Int) -> some View {
         let c = cards[i]
         let on = i == selected
-        return VStack(spacing: 3) {
-            TarotCardFace(cardID: c.id, reversed: c.reversed, width: faceW)
-                .overlay(RoundedRectangle(cornerRadius: faceW * 0.07, style: .continuous)
-                    .stroke(TarotCardInk.accent.opacity(on ? 0.95 : 0), lineWidth: 1.5))
-                .shadow(color: TarotCardInk.accent.opacity(on ? 0.35 : 0), radius: 8)
-                .offset(y: on ? -4 : 0)
+        return VStack(spacing: 6) {
+            TarotLaceMat(card: c, width: faceW, ink: ink, on: on)
+                .offset(y: on ? -3 : 0)
             // 0903 她要的：牌位和牌名并一行
             HStack(spacing: 3) {
                 Text(c.positionName).font(.system(size: 8.5, weight: .semibold))
-                    .foregroundColor(on ? TarotCardInk.accent : TarotCardInk.dim)
-                Text(c.name).font(.system(size: 10, weight: .medium, design: .serif))
+                    .foregroundColor(on ? ink.lace : ink.sub)
+                Text(c.name).font(.system(size: 10, weight: .medium, design: .serif)).foregroundColor(ink.ink)
             }
             .lineLimit(1).minimumScaleFactor(0.6)
         }
-        .frame(width: faceW + 24)
+        .frame(width: faceW + 16)
         .contentShape(Rectangle())
         .onTapGesture { withAnimation(.spring(response: 0.3, dampingFraction: 0.8)) { selected = i } }
     }
+}
 
-    private func keywordsRow(_ c: TarotAskCard.Card) -> some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
-                Text(c.name + (c.reversed ? " · 逆位" : " · 正位"))
-                    .font(.system(size: 10.5, weight: .medium, design: .serif))
-                    .foregroundColor(TarotCardInk.accent)
-                ForEach(c.keywords, id: \.self) { k in pill(k) }
-            }
-            .padding(.horizontal, 2)
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    private func pill(_ k: String) -> some View {
-        Text(k).font(.system(size: 10, weight: .medium))
-            .foregroundColor(TarotCardInk.ink)
-            .padding(.horizontal, 8).padding(.vertical, 3)
-            .background(Capsule().fill(TarotCardInk.sub))
-            .overlay(Capsule().stroke(TarotCardInk.accent.opacity(0.35), lineWidth: 0.8))
-    }
+/// 像素花纹：corner / crest / laceTile 由 /root/workroom/mock/tarot-card/v2/gen2.py 画出来再按格导出，改花纹去那儿重导
+private enum TarotLacePixels {
+    static let heart = [".oo.oo.", "ooooooo", "ooooooo", ".ooooo.", "..ooo..", "...o..."]
+    static let sparkBig = ["...o...", "...o...", "..ooo..", "ooowooo", "..ooo..", "...o...", "...o..."]
+    static let sparkSmall = ["..o..", "..o..", "ooooo", "..o..", "..o.."]
+    static let corner: [String] = [
+        "..........................................................",
+        "....oo....................................................",
+        "...oooo...................................................",
+        "..oo..oo.ooooooooooooo............oooooooo.........ooooooo",
+        ".oo.oo.oo..........oooooooooooooooo.......ooo....oo.......",
+        ".oo.oo.oo...........o......ooo..............oo..o.........",
+        "..oo..oo............o.............oo..........o...........",
+        "...oooo.............oo...........oo.ooo........o..........",
+        "....oo.........o.....o...........o.....o...oooo.o...o.....",
+        "...o......oo..........o...........o....o..o...o.o.........",
+        "...o.....oo.oooo.......oooooo.....o....o..o...o.o.........",
+        "...o.....o......o............o....o.....o.oo...o..........",
+        "...o......o......o........ooooo....ooo.oo..oooo...........",
+        "...o......o.......o.......o...o.......oo..................",
+        "...o......o.......o.......o..oo...........................",
+        "...o....o.o.......o........ooo............................",
+        "...o.......o......o.......................................",
+        "...o........o......o..................o...................",
+        "...o.........oooo.oo......................................",
+        "...oo............oo.......................................",
+        "...ooooo..................................................",
+        "...oo..oo.................................................",
+        "....o....o............o...................................",
+        "....o.....o...............................................",
+        "....o.....o...............................................",
+        "....o.....o..............o................................",
+        "....o.....o.ooo...........................................",
+        "....oo....o.o..o..........................................",
+        "....oo....o.o..o..........................................",
+        "....oo.....oo.oo..........................................",
+        "....o.......ooo...........................................",
+        "....o.....................................................",
+        "....o.....................................................",
+        "....o..oo.................................................",
+        "...oo.oo.ooo..............................................",
+        "...o..o.....o.............................................",
+        "...o...o....o.............................................",
+        "...o...o....o.............................................",
+        "...o...o.....o...o........................................",
+        "...o....ooo.oo............................................",
+        "...o.......oo.............................................",
+        "...o......................................................",
+        "....o....ooo..............................................",
+        "....o...o..oo.............................................",
+        "....oo..o...o.............................................",
+        ".....o..o...o.............................................",
+        "......o.ooo.o.............................................",
+        ".......o...o..............................................",
+        ".....o..ooo...............................................",
+        "....o.....................................................",
+        "....o.....................................................",
+        "...o......................................................",
+        "...o....o.................................................",
+        "...o......................................................",
+        "...o......................................................",
+        "...o......................................................",
+        "...o......................................................",
+        "...o......................................................"
+    ]
+    static let crest: [String] = [
+        "........................................................................",
+        "...................................oo...................................",
+        "........................................................................",
+        "..........................oooooo........oooooo..........................",
+        "...............oo.......ooo....ooo....ooo....ooo.......oo...............",
+        ".......................oo........oo..oo........oo.......................",
+        "......................oo..........oooo..........oo......................",
+        "......................o............oo............o......................",
+        "......................o..........................o......................",
+        "..........oooo.......oo......oo..........oo......oo.......oooo..........",
+        "........oo...oooo....o......ooooooo..ooooooo......o....oooo...oo........",
+        ".......oo.......oo...oo.....oo..oooooooo..oo.....oo...oo.......oo.......",
+        ".......o.oooo.....oo.oo.....o...oooooooo...o.....oo.oo.....oooo.o.......",
+        ".........o...o.....oo.o.....o...oooooooo...o.....o.oo.....o...o.........",
+        "........oo...o......o.o......oooo.oooo.oooo......o.o......o...oo........",
+        ".......ooo...o.........o......o....oo....o......o.........o...ooo.......",
+        "........oo..oo.........o....o..............o....o.........oo..oo........",
+        ".........oooooooo.......o...o..............o...o.......oooooooo.........",
+        "...o........o...o.......oo...o............o...oo.......o...o........o...",
+        "............o....o.......o...oo..........oo...o.......o....o............",
+        ".............o...o........o....o........o....o........o...o.............",
+        ".............ooooo.........o....o......o....o.........ooooo.............",
+        ".......................o...oo....o....o....oo...o.......................",
+        ".....................oo.....oo....o..o....oo.....oo.....................",
+        ".......oo.......ooooo........oo..........oo........ooooo.......oo.......",
+        ".....oooooooooooo.............oo........oo.............oooooooooooo.....",
+        "....ooo..o.....................oo......oo.....................o..ooo....",
+        "...o.o..o.......................oo....oo.......................o..o.o...",
+        "......oo.........................oo..oo.........................oo......",
+        "..................................oooo..................................",
+        "...................................oo...................................",
+        "........................................................................",
+        "...........................o................o...........................",
+        "........................................................................"
+    ]
+    static let laceTile: [String] = [
+        "............",
+        ".....ooo....",
+        "....o..oo...",
+        "...o.o..o...",
+        "....oo..o...",
+        ".....oooo...",
+        "............",
+        "oooooooooooo"
+    ]
 }
 
 /// 0903 凌晨她要的：陈璟出题、她就在这张卡里抽。
@@ -5577,6 +5804,8 @@ private struct TarotOfferMessageCard: View {
     var onContentChange: (() -> Void)? = nil
     @ObservedObject private var store = TarotStore.shared
     @ObservedObject private var decor = TarotDecor.shared
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: TarotLaceInk { _ = houseAppearance; return TarotLaceInk(dark: AlcoveAppearance.isDark) }
 
     private struct Pick { let id: String; let reversed: Bool }
     @State private var deck: [String] = []
@@ -5588,8 +5817,6 @@ private struct TarotOfferMessageCard: View {
     @State private var busy = false
     @State private var error = ""
     @State private var finished = false
-    /// 抽满那一下服务端一起回来的客观解读（重进以后走 card.interp）
-    @State private var interpLocal: TarotInterpCard?
 
     private var cards: [TarotAskCard.Card] { drawn.isEmpty ? card.cards : drawn }
     private var done: Bool { card.done || finished || cards.count >= card.positions.count }
@@ -5598,28 +5825,19 @@ private struct TarotOfferMessageCard: View {
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 8) {
-                Image(systemName: "sparkles").font(.system(size: 15)).foregroundColor(TarotCardInk.accent)
-                Text(done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽").font(.system(size: 15, weight: .semibold, design: .serif))
-                Spacer()
-                Text("· \(card.spreadName)").font(.system(size: 11)).foregroundColor(TarotCardInk.dim)
-            }
-            if !card.question.isEmpty {
-                Text("「\(card.question)」")
-                    .font(.system(size: 14, weight: .medium, design: .serif)).lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
+        // 1004：跟 TarotMessageCard 同一套蕾丝外框；抽满以后只留牌和关键词（解读不进卡）
+        VStack(spacing: 0) {
+            TarotLaceBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
+                               who: done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽", question: card.question, ink: ink)
             if done {
-                TarotChatBits.facesBlock(cards: cards, theme: theme, spread: card.spread)
-                if let interp = card.interp ?? interpLocal {
-                    TarotInterpBlock(interp: interp, theme: theme)
-                }
+                TarotSpreadView(cards: cards, spread: card.spread, ink: ink)
             } else {
                 drawArea
             }
+            TarotLaceBits.foot(ink: ink)
         }
-        .modifier(TarotFramed())
+        .modifier(TarotLaceFramed(ink: ink))
+            .onAppear { DiaryFonts.ensure() }
             .task {
                 await store.loadDeck()
                 if deck.isEmpty {
@@ -5639,20 +5857,21 @@ private struct TarotOfferMessageCard: View {
                 ForEach(card.positions) { pos in
                     VStack(spacing: 4) {
                         if let d = cards.first(where: { $0.position == pos.key }) {
-                            TarotCardFace(cardID: d.id, reversed: d.reversed, width: slotW)
+                            TarotLaceMat(card: d, width: slotW, ink: ink)
                                 .transition(.scale(scale: 0.3).combined(with: .opacity))
                         } else {
                             ZStack {
                                 TarotCardBack(width: slotW).opacity(pos.key == nextPosition?.key ? 0.4 : 0.16)
                                 RoundedRectangle(cornerRadius: slotW * 0.07, style: .continuous)
-                                    .stroke(TarotCardInk.accent.opacity(pos.key == nextPosition?.key ? 0.8 : 0.3),
+                                    .stroke(ink.lace.opacity(pos.key == nextPosition?.key ? 0.9 : 0.4),
                                             style: StrokeStyle(lineWidth: 1, dash: [3, 4]))
                             }
                             .frame(width: slotW, height: slotW * 1.72)
+                            .padding(4)   // 跟抽好的牌（TarotLaceMat 带 4pt 衬纸）一样大
                         }
                         if card.positions.count > 1 {
                             Text(pos.name).font(.system(size: 9, weight: .medium))
-                                .foregroundColor(pos.key == nextPosition?.key ? TarotCardInk.accent : TarotCardInk.dim)
+                                .foregroundColor(pos.key == nextPosition?.key ? ink.lace : ink.sub)
                         }
                     }
                 }
@@ -5669,7 +5888,7 @@ private struct TarotOfferMessageCard: View {
                         Text(card.positions.count > 1 ? "为「\(pos.name)」抽一张" : "抽一张")
                             .font(.system(size: 12, weight: .medium, design: .serif))
                         Text(busy ? "记着…" : "左右滑整副牌，中间那张再点一下")
-                            .font(.system(size: 10)).foregroundColor(TarotCardInk.dim)
+                            .font(.system(size: 10)).foregroundColor(ink.sub)
                     }
                     if deck.isEmpty {
                         ProgressView().controlSize(.small).frame(height: 130)
@@ -5726,11 +5945,6 @@ private struct TarotOfferMessageCard: View {
                 position: pos.key, positionName: pos.name,
                 keywords: store.card(id)?.keywords(reversed: pick.reversed) ?? [])
             let isDone = obj["done"] as? Bool ?? false
-            if isDone, let raw = (obj["offer"] as? [String: Any])?["interp"],
-               let data = try? JSONSerialization.data(withJSONObject: raw),
-               let parsed = try? JSONDecoder().decode(TarotInterpCard.self, from: data) {
-                interpLocal = parsed
-            }
             deck.remove(at: index)
             flip = 0
             bigScale = 0.4
