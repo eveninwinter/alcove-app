@@ -2254,11 +2254,8 @@ final class MusicModel: ObservableObject {
     @Published var duration: Double = 0
     @Published var lyrics: [MusicLyric] = []
     @Published var lyricsLoading = false
-    // 任务#1345：她在一起听大卡上手滑挑中的那一行。nil = 跟着歌自己走。
-    @Published var pickedLyric: Int?
     @Published var lineSending = false
     @Published var lineSentFlash = false
-    private var pickResetTask: Task<Void, Never>?
     @Published var playlists: [MusicPlaylist] = []
     @Published var recommended: [MusicPlaylist] = []
     @Published var playlistSongs: [MusicSong] = []
@@ -2596,40 +2593,23 @@ final class MusicModel: ObservableObject {
         ])
     }
 
-    /// 大卡上高亮的那一行：她手滑挑了就是她挑的，没挑就是正在唱的那句。
-    var boardLyricIndex: Int {
-        if let picked = pickedLyric, lyrics.indices.contains(picked) { return picked }
-        return lyrics.lastIndex(where: { $0.time <= progress }) ?? -1
-    }
-
-    /// 手滑挑中一行。5 秒不碰就放开，让歌词滑回正在唱的那句——
-    /// 不然她滑一下就再也跟不上歌了。
-    func pickLyric(_ index: Int) {
-        pickedLyric = index
-        pickResetTask?.cancel()
-        pickResetTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 5_000_000_000)
-            guard !Task.isCancelled else { return }
-            self?.pickedLyric = nil
-        }
-    }
-
-    /// 把大卡上高亮那句发给他。
-    /// 发的是**她屏幕上那句原文**，直接打包送走；服务端一个字都不许自己算，
-    /// 两边各算各的必然差半句，她明确要求所见即所发。
-    func sendPickedLyric() async {
-        let index = boardLyricIndex
-        guard lyrics.indices.contains(index), let song = nowPlaying, !lineSending else { return }
-        let line = lyrics[index]
-        let end = index + 1 < lyrics.count ? lyrics[index + 1].time : line.time + 4
+    /// 1006 她要的：发歌词从一起听大卡搬到半屏播放器的歌词页。她点选的几句（按顺序拼成一句，中间「 / 」），
+    /// 一句没选就发正在唱的那句。发的是**她屏幕上的原文**，直接打包送走；服务端一个字都不许自己算，
+    /// 两边各算各的必然差半句，她明确要求所见即所发。start/end 给 18003 切这一段的声学证据。
+    func sendLyrics(_ picked: [Int]) async -> Bool {
+        let indices = picked.filter { lyrics.indices.contains($0) }.sorted()
+        guard let first = indices.first, let last = indices.last, let song = nowPlaying, !lineSending else { return false }
+        let text = indices.map { lyrics[$0].text }.joined(separator: " / ")
+        let start = lyrics[first].time
+        let end = last + 1 < lyrics.count ? lyrics[last + 1].time : lyrics[last].time + 4
         lineSending = true
         defer { lineSending = false }
         let obj = try? await NativeHouseAPI.object("/api/music/line", method: "POST", body: [
             "song_id": song.id, "name": song.name, "artist": song.artist,
-            "text": line.text, "start": line.time, "end": end])
+            "text": text, "start": start, "end": end])
         guard obj?.bool("ok") == true else {
             message = "这句没发出去"
-            return
+            return false
         }
         UINotificationFeedbackGenerator().notificationOccurred(.success)
         lineSentFlash = true
@@ -2637,6 +2617,7 @@ final class MusicModel: ObservableObject {
             try? await Task.sleep(nanoseconds: 1_400_000_000)
             self?.lineSentFlash = false
         }
+        return true
     }
 
     func loadLyrics(_ songID: String) async {
@@ -3499,212 +3480,74 @@ struct ListenPanel: ViewModifier {
     }
 }
 
-/// 一起听大卡（她的参考图）：头像弧线+累计时长在上，播放器在下，
-/// 一起听开着就钉在聊天页顶部，聊天在卡下面照聊。右上角小叉 = 结束一起听。
-/// 任务#1345：量一下展开态排完有多高，折叠态照这个高度来。
-private struct ListenBoardHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = max(value, nextValue())
-    }
-}
-
-struct ListenBoardCard: View {
+/// 1006 她要的：一起听不再钉白瓷大卡，改成陈璟名字下面一条胶囊（效果图 /root/workroom/mock/listen-capsule/chat.jpg，照她发的参考图）：
+/// 两颗叠着的小头像、音柱（放歌时跳）、歌名 · 歌手、右边播放/暂停。半透原生玻璃，不染色（跟顶栏按钮同一种）。
+/// 点胶囊 → 半屏播放器（歌词、发歌词都在那儿）；长按 → 收成小唱片 / 结束一起听。
+struct ListenCapsule: View {
     @ObservedObject var model: MusicModel
     let dark: Bool
     let off: () -> Void
     let openPlayer: () -> Void
-    let openInsight: () -> Void
-    /// 0902 她定的：左上角缩小键（跟右上角的叉对称）→ 大卡收走，小唱片浮到屏幕边上
-    var minimize: () -> Void = {}
+    let minimize: () -> Void
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
 
-    private var p: ListenPorcelain { ListenPorcelain(dark: dark) }
+    private var ink: Color { dark ? .white : Color(red: 0.114, green: 0.114, blue: 0.133) }
+    private var dim: Color { dark ? .white.opacity(0.62) : Color(red: 0.36, green: 0.376, blue: 0.416) }
 
-    private var activeLine: Int { model.boardLyricIndex }
-
-    // 0902：任务#1345 的「左滑收成半张」拆了——缩小键替代它，少一种手势少一种误触。
     var body: some View {
-        expandedCard
-            .modifier(ListenPanel(p: p, corner: 20, dotted: true))
-            .overlay(alignment: .topTrailing) {
-                Button(action: off) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(p.inkDim)
-                        .frame(width: 28, height: 28).contentShape(Rectangle())
-                }.buttonStyle(.plain).padding(2)
+        HStack(spacing: 7) {
+            HStack(spacing: -9) {
+                avatar(userAvatar, fallback: "霁")
+                avatar(assistantAvatar, fallback: "璟")
             }
-            .overlay(alignment: .topLeading) {
-                Button(action: minimize) {
-                    Image(systemName: "arrow.down.right.and.arrow.up.left")
-                        .font(.system(size: 11, weight: .semibold))
-                        .foregroundColor(p.inkDim)
-                        .frame(width: 28, height: 28).contentShape(Rectangle())
-                }.buttonStyle(.plain).padding(2)
-            }
-    }
-
-    // MARK: 展开态
-
-    private var expandedCard: some View {
-        VStack(spacing: 8) {
-            avatarArc
+            ListenEqualizer(playing: model.isPlaying, color: ink)
+                .padding(.leading, 3)
             if let song = model.nowPlaying {
-                VStack(spacing: 6) {
-                    Button(action: openPlayer) {
-                        HStack(spacing: 5) {
-                            Text(song.name).font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(p.ink).lineLimit(1)
-                            Text("— \(song.artist)").font(.system(size: 11))
-                                .foregroundColor(p.inkDim).lineLimit(1)
-                        }.contentShape(Rectangle())
-                    }.buttonStyle(.plain)
-                    lyricStrip
-                    progressRow
-                    controlRow
-                }
-                .padding(.horizontal, 12).padding(.vertical, 9)
-                .background(p.panel, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .stroke(p.line, lineWidth: 1))
-            }
-        }
-        .padding(12)
-    }
-
-    /// 上半部分：头像弧。
-    private var avatarArc: some View {
-        ZStack {
-            ListenArc()
-                .stroke(p.accent.opacity(0.4),
-                        style: StrokeStyle(lineWidth: 1.5, dash: [3, 4]))
-                .frame(height: 52).padding(.horizontal, 28)
-            HStack {
-                avatarView(userAvatar, fallback: "霁")
-                Spacer()
-                VStack(spacing: 2) {
-                    Text("霁 · 璟").font(.system(size: 13, weight: .medium)).foregroundColor(p.ink)
-                    Text(model.listenTimeText).font(.system(size: 10)).foregroundColor(p.inkDim)
-                }
-                Spacer()
-                avatarView(assistantAvatar, fallback: "璟")
-            }.padding(.horizontal, 6)
-        }
-        .frame(height: 56)
-        .contentShape(Rectangle())
-    }
-
-    /// 三行滚动歌词 + 纸飞机。高亮那句就是点纸飞机会发出去的那句。
-    private var lyricStrip: some View {
-        HStack(spacing: 8) {
-            ScrollViewReader { proxy in
-                ScrollView(.vertical, showsIndicators: false) {
-                    VStack(spacing: 3) {
-                        if model.lyrics.isEmpty {
-                            Text(model.lyricsLoading ? "歌词加载中" : "这首没有歌词")
-                                .font(.system(size: 11)).foregroundColor(p.inkDim)
-                                .frame(maxWidth: .infinity, minHeight: 52)
-                        } else {
-                            ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
-                                Button { model.pickLyric(index) } label: {
-                                    Text(line.text)
-                                        .font(.system(size: index == activeLine ? 12.5 : 11,
-                                                      weight: index == activeLine ? .semibold : .regular))
-                                        .foregroundColor(index == activeLine
-                                                         ? p.ink : p.inkDim.opacity(0.7))
-                                        .lineLimit(1).truncationMode(.tail)
-                                        .multilineTextAlignment(.center)
-                                        .frame(maxWidth: .infinity, minHeight: 15)
-                                        .contentShape(Rectangle())
-                                }.buttonStyle(.plain).id(index)
-                            }
-                        }
-                    }.padding(.vertical, 1)
-                }
-                .frame(height: 52)
-                .onChange(of: activeLine) { index in
-                    guard index >= 0 else { return }
-                    withAnimation(.easeOut(duration: 0.28)) { proxy.scrollTo(index, anchor: .center) }
-                }
-                .onAppear {
-                    let index = activeLine
-                    if index >= 0 { proxy.scrollTo(index, anchor: .center) }
+                HStack(spacing: 5) {
+                    Text(song.name).font(.system(size: 15, weight: .semibold)).foregroundColor(ink)
+                        .lineLimit(1).layoutPriority(1)
+                    if !song.artist.isEmpty {
+                        Text("·").font(.system(size: 13)).foregroundColor(dim)
+                        Text(song.artist).font(.system(size: 14.5)).foregroundColor(dim).lineLimit(1)
+                    }
                 }
             }
-            sendButton
-        }
-    }
-
-    private var sendButton: some View {
-        Button { Task { await model.sendPickedLyric() } } label: {
-            ZStack {
-                Circle()
-                    .fill(model.lineSentFlash ? p.accent.opacity(0.9) : p.accent.opacity(0.16))
-                    .frame(width: 30, height: 30)
-                if model.lineSending {
-                    ProgressView().controlSize(.mini).tint(p.ink)
-                } else {
-                    Image(systemName: model.lineSentFlash ? "checkmark" : "paperplane.fill")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundColor(model.lineSentFlash ? .white : p.ink)
-                }
-            }.contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .disabled(model.lyrics.isEmpty || model.lineSending)
-        .opacity(model.lyrics.isEmpty ? 0.3 : 1)
-        .accessibilityLabel("把这句发给他")
-    }
-
-    private var progressRow: some View {
-        VStack(spacing: 1) {
-            Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                   in: 0...max(model.duration, 1)).tint(p.accent)
-            HStack {
-                Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
-            }.font(.system(size: 9, design: .monospaced)).foregroundColor(p.inkDim)
-        }
-    }
-
-    private var controlRow: some View {
-        HStack {
-            Button { Task { await model.toggleLike() } } label: {
-                Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
-                    .foregroundColor(model.currentIsLiked ? .red : p.ink)
-            }
-            Spacer()
-            Button { model.prev() } label: { Image(systemName: "backward.fill") }
-            Spacer()
             Button { model.toggle() } label: {
                 Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 20))
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(ink)
+                    .frame(width: 28, height: 28)
+                    .glassEffect(.regular.interactive(), in: Circle())
+                    .contentShape(Circle())
             }
-            Spacer()
-            Button { model.next() } label: { Image(systemName: "forward.fill") }
-            Spacer()
-            Button { model.cyclePlayMode() } label: { Image(systemName: model.playMode.icon) }
-            Spacer()
-            Button(action: openInsight) { Image(systemName: "waveform.badge.magnifyingglass") }
+            .buttonStyle(.plain)
+            .padding(.leading, 4)
         }
-        .font(.system(size: 15)).foregroundColor(p.ink)
-        .buttonStyle(.plain).padding(.horizontal, 2)
+        .padding(.horizontal, 4)
+        .frame(height: 36)
+        .glassEffect(.regular.interactive(), in: Capsule())
+        .contentShape(Capsule())
+        .onTapGesture(perform: openPlayer)
+        .contextMenu {
+            Button { minimize() } label: { Label("收成小唱片", systemImage: "record.circle") }
+            Button(role: .destructive) { off() } label: { Label("结束一起听", systemImage: "xmark") }
+        }
     }
 
-    private func avatarView(_ dataURL: String, fallback: String) -> some View {
+    private func avatar(_ dataURL: String, fallback: String) -> some View {
         Group {
             if let image = Self.decode(dataURL) {
                 Image(uiImage: image).resizable().scaledToFill()
             } else {
                 ZStack {
-                    p.panel
-                    Text(fallback).font(.system(size: 19, weight: .medium)).foregroundColor(p.ink)
+                    Color.white.opacity(0.35)
+                    Text(fallback).font(.system(size: 11, weight: .medium)).foregroundColor(ink)
                 }
             }
         }
-        .frame(width: 56, height: 56).clipShape(Circle())
-        .overlay(Circle().stroke(p.accent.opacity(0.45), lineWidth: 1.5))
+        .frame(width: 28, height: 28).clipShape(Circle())
+        .overlay(Circle().stroke(.white.opacity(0.9), lineWidth: 1.5))
     }
 
     private static func decode(_ dataURL: String) -> UIImage? {
@@ -3712,10 +3555,25 @@ struct ListenBoardCard: View {
         guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : dataURL) else { return nil }
         return UIImage(data: data)
     }
+}
 
-    private static func time(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+/// 胶囊里的三根音柱：放歌时上下跳，暂停停在一高一矮
+private struct ListenEqualizer: View {
+    let playing: Bool
+    let color: Color
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: !playing)) { context in
+            let t = context.date.timeIntervalSinceReferenceDate
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(0..<3, id: \.self) { i in
+                    let rest: [CGFloat] = [7, 12, 9]
+                    let h = playing ? 4 + 8 * CGFloat(abs(sin(t * (5.2 + Double(i) * 1.7) + Double(i) * 1.1))) : rest[i]
+                    RoundedRectangle(cornerRadius: 1).fill(color).frame(width: 3, height: h)
+                }
+            }
+            .frame(height: 12, alignment: .bottom)
+        }
     }
 }
 
@@ -4102,6 +3960,10 @@ struct MusicPlayerSheet: View {
     @State private var page = 0
     @State private var showQueue = false
     @State private var showInsight = false
+    /// 1006 她报：一滑歌词，到下一句又被拽回正在唱的那句。手一碰就不跟了，点「回到正在唱」或换歌才接着跟
+    @State private var followLyric = true
+    /// 1006 她要的：发歌词搬到这儿。点一句选中（可以选几句），再点取消
+    @State private var pickedLines: Set<Int> = []
 
     var body: some View {
         GeometryReader { bounds in
@@ -4185,42 +4047,134 @@ struct MusicPlayerSheet: View {
             if let song = model.nowPlaying { playerHeader(song) }
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .center, spacing: 20) {
+                    LazyVStack(alignment: .center, spacing: 4) {
                     Color.clear.frame(height: 70)
                     if model.lyricsLoading { ProgressView().frame(maxWidth: .infinity) }
                     else if model.lyrics.isEmpty {
                         Text("这首没有歌词").foregroundColor(theme.textDim).frame(maxWidth: .infinity)
                     } else {
                         ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
-                            Button { model.seek(to: line.time) } label: {
-                                VStack(alignment: .center, spacing: 5) {
-                                    Text(line.text).font(.system(size: index == activeLyric ? 19 : 15,
-                                                                weight: index == activeLyric ? .semibold : .regular))
-                                        .multilineTextAlignment(.center)
-                                        .foregroundColor(index == activeLyric ? .white : .white.opacity(0.68))
-                                    if let trans = line.translation, !trans.isEmpty {
-                                        Text(trans).font(.system(size: 11)).foregroundColor(.white.opacity(0.62))
-                                            .multilineTextAlignment(.center)
-                                    }
-                                }.frame(maxWidth: .infinity, alignment: .center)
-                                    .opacity(index == activeLyric ? 1 : 0.86)
-                            }.buttonStyle(.plain).id(index)
+                            lyricRow(index, line).id(index)
                         }
                     }
                     Color.clear.frame(height: 110)
                 }.frame(maxWidth: .infinity).padding(.horizontal, 26)
                 }
-            .onChange(of: activeLyric) { idx in
-                guard idx >= 0 else { return }
-                withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) }
+                .onScrollPhaseChange { _, phase in
+                    if phase == .interacting { followLyric = false }
+                }
+                .onChange(of: activeLyric) { idx in
+                    guard followLyric, idx >= 0 else { return }
+                    withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) }
+                }
+                .onChange(of: model.nowPlaying?.id) { _ in
+                    followLyric = true
+                    pickedLines = []
+                }
+                .overlay(alignment: .bottom) {
+                    if !followLyric {
+                        Button {
+                            followLyric = true
+                            let idx = activeLyric
+                            if idx >= 0 { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) } }
+                        } label: {
+                            Text("回到正在唱 ↓").font(.system(size: 12, weight: .medium))
+                                .padding(.horizontal, 14).padding(.vertical, 6)
+                                .glassEffect(.regular.interactive(), in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 10)
+                        .transition(.opacity)
+                    }
+                }
+                .animation(.easeOut(duration: 0.2), value: followLyric)
             }
+            HStack {
+                likeButton
+                Spacer()
+                sendLyricButton
             }
-            HStack { likeButton; Spacer(); Image(systemName: "quote.bubble").font(.system(size: 19)) }
-                .padding(.horizontal, 34).padding(.top, 8)
+                .padding(.horizontal, 30).padding(.top, 8)
             progressControls
             playbackControls
             pageDots
         }
+    }
+
+    /// 一句歌词：点了选中（左边打勾、套一层浅玻璃框），选中的右边一颗小播放键＝从这句放
+    private func lyricRow(_ index: Int, _ line: MusicLyric) -> some View {
+        let now = index == activeLyric
+        let picked = pickedLines.contains(index)
+        return VStack(alignment: .center, spacing: 5) {
+            Text(line.text).font(.system(size: now ? 19 : 15, weight: now ? .semibold : .regular))
+                .multilineTextAlignment(.center)
+                .foregroundColor(now || picked ? .white : .white.opacity(0.68))
+            if let trans = line.translation, !trans.isEmpty {
+                Text(trans).font(.system(size: 11)).foregroundColor(.white.opacity(0.62))
+                    .multilineTextAlignment(.center)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .center)
+        .padding(.horizontal, picked ? 34 : 0)
+        .padding(.vertical, 9)
+        .background {
+            if picked {
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.14))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.45), lineWidth: 1))
+            }
+        }
+        .overlay(alignment: .leading) {
+            if picked {
+                Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundColor(.black.opacity(0.8))
+                    .frame(width: 18, height: 18).background(.white, in: Circle())
+                    .padding(.leading, 12)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if picked {
+                Button { model.seek(to: line.time) } label: {
+                    Image(systemName: "play.fill").font(.system(size: 8))
+                        .frame(width: 22, height: 22)
+                        .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 10)
+            }
+        }
+        .opacity(now || picked ? 1 : 0.86)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            withAnimation(.easeOut(duration: 0.15)) {
+                if picked { pickedLines.remove(index) } else { pickedLines.insert(index) }
+            }
+        }
+    }
+
+    /// 右下角：没选就发正在唱的那句，选了就发选中的几句；发完清掉选中
+    private var sendLyricButton: some View {
+        let count = pickedLines.count
+        let title = model.lineSentFlash ? "发好了" : (count > 1 ? "把这 \(count) 句发给他" : "把这句发给他")
+        return Button {
+            let lines = pickedLines.isEmpty ? [activeLyric] : Array(pickedLines)
+            Task {
+                if await model.sendLyrics(lines) {
+                    withAnimation(.easeOut(duration: 0.15)) { pickedLines = [] }
+                }
+            }
+        } label: {
+            HStack(spacing: 6) {
+                if model.lineSending { ProgressView().controlSize(.mini).tint(.white) }
+                else { Image(systemName: model.lineSentFlash ? "checkmark" : "paperplane.fill").font(.system(size: 12, weight: .semibold)) }
+                Text(title).font(.system(size: 13, weight: .medium))
+            }
+            .padding(.horizontal, 15).padding(.vertical, 7)
+            .background(.white.opacity(0.18), in: Capsule())
+            .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 1))
+        }
+        .buttonStyle(.plain)
+        .disabled(model.lyrics.isEmpty || model.lineSending || (pickedLines.isEmpty && activeLyric < 0))
+        .opacity(model.lyrics.isEmpty ? 0.35 : 1)
     }
 
     private func playerHeader(_ song: MusicSong) -> some View {

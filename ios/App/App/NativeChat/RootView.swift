@@ -94,19 +94,18 @@ struct RootView: View {
                     .blur(radius: showHouseDrawer ? 5.0 : 0)
                     .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             }
-            // 任务#1309/#1310：一起听开着且在放歌 → 大卡常驻聊天页顶部（她的参考图）
+            // 1006 她要的：一起听开着且在放歌 → 陈璟名字下面一条玻璃胶囊（原来的白瓷大卡撤了）。
+            // 72 = 信息顶栏头像 45 + 名字胶囊 32 − 叠 15，再空 10；Kakao / 旧顶栏只有一行，往上提
             if listenMusic.nowPlaying != nil && listenMusic.togetherOn && !listenMinimized
                 && !showTerminal && !showRoundtable && !showHouseDrawer {
-                ListenBoardCard(
+                ListenCapsule(
                     model: listenMusic, dark: theme.isDark,
                     off: { withAnimation(.easeOut(duration: 0.22)) { listenMusic.togetherOn = false } },
                     openPlayer: { showChatPlayer = true },
-                    openInsight: { showChatInsight = true },
                     minimize: { withAnimation(.easeOut(duration: 0.22)) { listenMinimized = true } })
-                    .padding(.horizontal, 12)
-                    // 任务#1345：她要卡顶到灵动岛正下方、把整条顶栏盖住。
-                    // 左滑收起后卡只占左半边，右边那排按钮就露出来能点了。
-                    .padding(.top, 2)
+                    .padding(.horizontal, 24)
+                    .padding(.top, theme.isMessages && !theme.isKakao ? 72 : 50)
+                    .frame(maxWidth: .infinity, alignment: .top)
                     .zIndex(6)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
@@ -376,20 +375,29 @@ struct RootView: View {
                                 .overlay(Text("R").font(.system(size: 18, design: .serif)).foregroundColor(textDim))
                         }
                     }
-                    .frame(width: 56, height: 56)
+                    // 1006 她要的：照一起听胶囊那张效果图——头像带一圈白边，名字装进同一种不染色玻璃胶囊、压在头像下沿，
+                    // 整体比效果图小 20%（头像 56→45、名字胶囊 40→32）
+                    .frame(width: 45, height: 45)
                     .clipShape(Circle())
+                    .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.6))
                     if assistantAsleep {
-                        Text("💤").font(.system(size: 15)).offset(x: 6, y: -4)
+                        Text("💤").font(.system(size: 13)).offset(x: 5, y: -3)
                     }
                 }
-                HStack(spacing: 2) {
+                HStack(spacing: 5) {
                     Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                        .font(topBarNameFont(12, .medium))
-                    Image(systemName: "chevron.right").font(.system(size: 8, weight: .semibold))
+                        .font(topBarNameFont(14.5, .semibold))
+                    Image(systemName: "chevron.right").font(.system(size: 10.5, weight: .semibold))
+                        .foregroundColor(textDim)
                 }
                 .foregroundColor(theme.text)
-                .padding(.horizontal, 8).padding(.vertical, 3)
-                .background(theme.capsuleTint.opacity(theme.isDark ? 0.9 : 0.7), in: Capsule())
+                .padding(.horizontal, 13)
+                .frame(height: 32)
+                .modifier(InteractiveTopBarGlassModifier(
+                    fallbackTint: theme.capsuleTint,
+                    fallbackBorder: glassStroke
+                ))
+                .padding(.top, -19)   // 外面 VStack 有 4 的间距，净叠 15
                 if chatRoom == "api" { ApiContextHeaderBar(textColor: theme.text) }
                 }
             }
