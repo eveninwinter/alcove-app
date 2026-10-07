@@ -12085,6 +12085,16 @@ private struct NativeCalendarView: View {
             .accessibilityLabel("加提醒")
             .padding(.trailing, 18).padding(.bottom, max(safeBottom, 16) + 8)
         }
+        // 1007 她要的：返回键不跟着滚走，钉在左上角（位置跟头部那一排对齐，头部那里留了同样大的空位）
+        .overlay(alignment: .topLeading) {
+            Button { dismiss() } label: {
+                Text("<").font(DiaryFonts.pixel(14)).foregroundColor(p.lilacInk)
+                    .frame(width: 32, height: 32)
+                    .modifier(PixelKeycap(fill: p.card, edge: p.lilacD))
+            }
+            .buttonStyle(.plain).accessibilityLabel("返回")
+            .padding(.leading, 12).padding(.top, max(safeTop, 20))
+        }
         .foregroundColor(p.ink)
         .task {
             WindowFont.requestSongti()
@@ -12107,12 +12117,8 @@ private struct NativeCalendarView: View {
     private func header(_ p: DiaryPixelPalette) -> some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Button { dismiss() } label: {
-                    Text("<").font(DiaryFonts.pixel(14)).foregroundColor(p.lilacInk)
-                        .frame(width: 32, height: 32)
-                        .modifier(PixelKeycap(fill: p.card, edge: p.lilacD))
-                }
-                .buttonStyle(.plain).accessibilityLabel("返回")
+                // 返回键钉在外面（body 的 overlay），这里只占位
+                Color.clear.frame(width: 32, height: 32)
                 HStack(spacing: 6) {
                     PixelGlyph(rows: DPX.flower, colors: p.flower, scale: 2)
                     (Text("diary").foregroundColor(p.lilacInk) + Text(".log").foregroundColor(p.pinkInk))
