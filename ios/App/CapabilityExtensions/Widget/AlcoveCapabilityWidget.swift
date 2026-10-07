@@ -63,9 +63,10 @@ private struct AlcoveWidgetView: View {
     var body: some View {
         switch family {
         case .systemSmall, .systemMedium:
-            // 1002 她要的：跟 App 里一样的像素风（终端 / 日记页那套），白天小格纸、黑夜灰颗粒，跟手机深浅走
+            // 1002 她要的：跟 App 里一样的像素风（终端 / 日记页那套），跟手机深浅走
+            // 1007 她要去边框：外圈纸边、粉框、粉影全拿掉，窗口本身铺满整块（效果图 mock/widget-noframe/a）
             widgetContent
-                .containerBackground(for: .widget) { WPaper(pal: pal) }
+                .containerBackground(for: .widget) { pal.card }
         default:
             widgetContent
                 .containerBackground(.clear, for: .widget)
@@ -76,7 +77,7 @@ private struct AlcoveWidgetView: View {
     private var widgetContent: some View {
         switch family {
         case .systemMedium:
-            WWindow(pal: pal, title: "ALCOVE.EXE", squares: 3) {
+            WWindow(pal: pal, title: "ALCOVE.EXE", squares: 3, framed: false, barInset: 14) {
                 HStack(spacing: 10) {
                     SleepingRavenMark(size: 112)
                         .modifier(WRavenEdge(pal: pal))
@@ -105,10 +106,10 @@ private struct AlcoveWidgetView: View {
                     }
                     .frame(maxWidth: .infinity)
                 }
-                .padding(.leading, 6).padding(.trailing, 12)
+                .padding(.leading, 8).padding(.trailing, 14)
                 .frame(maxHeight: .infinity)
             }
-            .padding(.horizontal, 10).padding(.top, 10).padding(.bottom, 14)
+            .padding(.top, 2)
 
         case .accessoryCircular:
             ZStack {
@@ -137,7 +138,7 @@ private struct AlcoveWidgetView: View {
             Label("Still here", systemImage: "heart.fill")
 
         default:
-            WWindow(pal: pal, title: "ONLINE", squares: 1) {
+            WWindow(pal: pal, title: "ONLINE", squares: 1, framed: false, barInset: 13) {
                 VStack(spacing: 3) {
                     RavenMark(size: 70)
                         .modifier(WRavenEdge(pal: pal))
@@ -154,7 +155,7 @@ private struct AlcoveWidgetView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
-            .padding(.horizontal, 9).padding(.top, 9).padding(.bottom, 13)
+            .padding(.top, 2).padding(.bottom, 4)
         }
     }
 
@@ -207,7 +208,7 @@ private struct AlcoveLabLiveActivity: Widget {
             LiveBanner(name: context.attributes.name, message: context.state.message, bpm: context.state.bpm)
         } dynamicIsland: { context in
             DynamicIsland {
-                // 1002 她要的：展开时黑框里镶一块像素窗口。四个区里只用最下面那块（整宽），别的空着
+                // 1002 展开时黑框里镶一块像素窗口；1007 她嫌框套框：不镶了，直接画在黑上。四个区里只用最下面那块（整宽），别的空着
                 DynamicIslandExpandedRegion(.bottom) {
                     IslandCard(name: context.attributes.name, message: context.state.message, bpm: context.state.bpm)
                 }
@@ -231,20 +232,18 @@ private struct AlcoveLabLiveActivity: Widget {
     }
 }
 
-/// 灵动岛展开那块：跟锁屏那条同一个窗口，只是外面一圈是苹果锁死的黑
+/// 灵动岛展开那块：没有窗口底和框，标题栏＋虚线＋那一行直接画在苹果锁死的黑上，所以永远用黑夜配色
 private struct IslandCard: View {
     let name: String
     let message: String
     let bpm: Int
-    @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let pal = WPal(dark: scheme == .dark)
-        WWindow(pal: pal, title: "ALCOVE.LIVE", squares: 2, radius: 24) {
+        let pal = WPal(dark: true)
+        WWindow(pal: pal, title: "ALCOVE.LIVE", squares: 2, framed: false, barInset: 6) {
             LiveRow(pal: pal, name: name, message: message, bpm: bpm, raven: 46)
-                .padding(.horizontal, 10).padding(.vertical, 6)
+                .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 2)
         }
-        .background(WPaper(pal: pal).clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous)))
     }
 }
 
@@ -256,13 +255,14 @@ private struct LiveBanner: View {
 
     var body: some View {
         let pal = WPal(dark: scheme == .dark)
-        WWindow(pal: pal, title: "ALCOVE.LIVE", squares: 2) {
+        // 1007 去边框：外圈纸边和粉框拿掉，窗口本身就是整条
+        WWindow(pal: pal, title: "ALCOVE.LIVE", squares: 2, framed: false, barInset: 14) {
             LiveRow(pal: pal, name: name, message: message, bpm: bpm, raven: 50)
-                .padding(.horizontal, 12).padding(.vertical, 8)
+                .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 10)
         }
-        .padding(10)
-        .background(WPaper(pal: pal))
-        .activityBackgroundTint(pal.paper)
+        .padding(.top, 2)
+        .background(pal.card)
+        .activityBackgroundTint(pal.card)
         .activitySystemActionForegroundColor(pal.pinkInk)
     }
 }
@@ -415,15 +415,30 @@ private struct WPaper: View {
 }
 
 /// 像素小窗口：标题栏（心＋字＋小方块）＋粉虚线＋内容；白卡粉框、底下一道粉色实影
+/// framed = false：不画卡底、粉框、粉影，只留标题栏＋虚线＋内容（1007 小组件/锁屏/灵动岛去边框）
 private struct WWindow<Content: View>: View {
     let pal: WPal
     let title: String
     var squares: Int = 3
     var radius: CGFloat = 12
+    var framed: Bool = true
+    var barInset: CGFloat = 9
     @ViewBuilder var content: () -> Content
 
+    @ViewBuilder
     var body: some View {
-        let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+        if framed {
+            let shape = RoundedRectangle(cornerRadius: radius, style: .continuous)
+            stack
+                .background(shape.fill(pal.card))
+                .overlay(shape.stroke(pal.pinkD, lineWidth: 1.5))
+                .background(shape.fill(pal.pink).offset(y: 4))
+        } else {
+            stack
+        }
+    }
+
+    private var stack: some View {
         VStack(spacing: 0) {
             HStack(spacing: 6) {
                 WPixel(rows: WPX.heartOutline, colors: ["o": pal.pinkInk, "f": pal.pink], scale: 1)
@@ -440,13 +455,10 @@ private struct WWindow<Content: View>: View {
                     }
                 }
             }
-            .padding(.horizontal, 9).padding(.vertical, 5)
+            .padding(.horizontal, barInset).padding(.vertical, 5)
             WDash(color: pal.pinkD)
             content()
         }
-        .background(shape.fill(pal.card))
-        .overlay(shape.stroke(pal.pinkD, lineWidth: 1.5))
-        .background(shape.fill(pal.pink).offset(y: 4))
     }
 }
 
