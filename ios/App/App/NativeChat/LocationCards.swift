@@ -132,6 +132,7 @@ struct LocationMessageCard: View {
     @State private var snapshot: UIImage?
     @State private var live: LiveShareState?
     @State private var stopping = false
+    @State private var showDetail = false     // 1008 她要的：点卡片在 Alcove 里开半屏，不直接跳苹果地图
 
     private let width: CGFloat = 252
     private let mapHeight: CGFloat = 146
@@ -166,7 +167,15 @@ struct LocationMessageCard: View {
         .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous)
             .stroke(dark ? Color.white.opacity(0.08) : Color.black.opacity(0.08), lineWidth: 0.5))
         .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-        .onTapGesture { openInMaps() }
+        .onTapGesture { showDetail = true }
+        .sheet(isPresented: $showDetail) {
+            LocationDetailSheet(title: detailTitle, address: detailAddress, coordinate: center,
+                                isLive: isLive, liveActive: liveActive, canStop: isUser && liveActive,
+                                avatar: Self.image(fromDataURL: userAvatar),
+                                onStop: { if let id = card.shareID { Task { await PlacesAPI.stop(id) } } })
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .task(id: "\(center.latitude),\(center.longitude),\(dark)") {
             snapshot = await MapSnapshotCache.shared.image(center: center, size: CGSize(width: width, height: mapHeight),
                                                            meters: isLive ? 900 : 600, dark: dark)
@@ -270,10 +279,13 @@ struct LocationMessageCard: View {
         return [when, addr].filter { !$0.isEmpty }.joined(separator: " · ")
     }
 
-    private func openInMaps() {
-        let item = MKMapItem(placemark: MKPlacemark(coordinate: center))
-        item.name = isLive ? "陈霁" : (card.kind == "current" ? "陈霁的位置" : card.name)
-        item.openInMaps(launchOptions: [MKLaunchOptionsMapCenterKey: NSValue(mkCoordinate: center)])
+    private var detailTitle: String {
+        isLive ? "陈霁" : (card.kind == "current" ? "陈霁的位置" : card.name)
+    }
+
+    private var detailAddress: String {
+        if isLive { return liveLine }
+        return card.kind == "current" ? (card.address?.isEmpty == false ? card.address! : card.name) : (card.address ?? "")
     }
 
     static func parseTS(_ s: String) -> Date? {
@@ -455,5 +467,92 @@ struct LocationPickerSheet: View {
         onSend(LocationChatCard.message(kind: "place", name: item.name ?? c.title,
                                         address: addr.isEmpty ? c.subtitle : addr, coordinate: pm.coordinate))
         dismiss()
+    }
+}
+
+
+// MARK: - 点卡片弹的半屏：能拖能放大的地图＋地名地址＋导航 / 在苹果地图中打开（按了这两个才跳出去）
+
+struct LocationDetailSheet: View {
+    let title: String
+    let address: String
+    let coordinate: CLLocationCoordinate2D
+    let isLive: Bool
+    let liveActive: Bool
+    let canStop: Bool
+    let avatar: UIImage?
+    let onStop: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var position: MapCameraPosition = .automatic
+
+    var body: some View {
+        VStack(spacing: 0) {
+            Map(position: $position) {
+                if isLive {
+                    Annotation(title, coordinate: coordinate) {
+                        Group {
+                            if let avatar {
+                                Image(uiImage: avatar).resizable().aspectRatio(contentMode: .fill)
+                            } else {
+                                Color(red: 0.96, green: 0.71, blue: 0.86)
+                                    .overlay(Text("霁").font(.system(size: 15, weight: .semibold)).foregroundColor(.white))
+                            }
+                        }
+                        .frame(width: 40, height: 40)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(.white, lineWidth: 3))
+                        .shadow(color: .black.opacity(0.25), radius: 3, y: 1)
+                    }
+                } else {
+                    Marker(title, coordinate: coordinate).tint(.red)
+                }
+            }
+            .frame(maxHeight: .infinity)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.system(size: 20, weight: .semibold))
+                if isLive {
+                    HStack(spacing: 5) {
+                        Circle().fill(liveActive ? Color(red: 0.2, green: 0.78, blue: 0.35) : Color.gray).frame(width: 7, height: 7)
+                        Text(liveActive ? "实时位置 · 共享中" : "实时位置 · 已结束共享")
+                    }
+                    .font(.system(size: 13)).foregroundColor(.secondary)
+                }
+                if !address.isEmpty {
+                    Text(address).font(.system(size: 14)).foregroundColor(.secondary).lineLimit(3)
+                }
+                HStack(spacing: 10) {
+                    Button { open(directions: true) } label: {
+                        Label("导航", systemImage: "car.fill").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.borderedProminent)
+                    Button { open(directions: false) } label: {
+                        Label("在苹果地图中打开", systemImage: "map").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                }
+                .controlSize(.large)
+                .padding(.top, 10)
+                if canStop {
+                    Button(role: .destructive) { onStop(); dismiss() } label: {
+                        Text("结束共享").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.large)
+                }
+            }
+            .padding(.horizontal, 20).padding(.top, 14).padding(.bottom, 20)
+        }
+        .onAppear {
+            position = .region(MKCoordinateRegion(center: coordinate, latitudinalMeters: 800, longitudinalMeters: 800))
+        }
+        .preferredColorScheme(AlcoveAppearance.isDark ? .dark : .light)     // 深浅只认全屋按钮
+    }
+
+    private func open(directions: Bool) {
+        let item = MKMapItem(placemark: MKPlacemark(coordinate: coordinate))
+        item.name = title
+        var opts: [String: Any] = [MKLaunchOptionsMapCenterKey: NSValue(mkCoordinate: coordinate)]
+        if directions { opts[MKLaunchOptionsDirectionsModeKey] = MKLaunchOptionsDirectionsModeDefault }
+        item.openInMaps(launchOptions: opts)
     }
 }
