@@ -376,8 +376,8 @@ struct RootView: View {
                         }
                     }
                     // 1006 她要的：照一起听胶囊那张效果图——头像带一圈白边，名字装进同一种不染色玻璃胶囊、压在头像下沿，
-                    // 整体比效果图小 20%（头像 56→45、名字胶囊 40→32）
-                    .frame(width: 45, height: 45)
+                    // 整体比效果图小 20%（头像 56→45、名字胶囊 40→32）；1008 她「头像放大一丢丢 名字框缩小一丢丢」：头像 45→50、胶囊 32→29
+                    .frame(width: 50, height: 50)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.6))
                     if assistantAsleep {
@@ -386,13 +386,13 @@ struct RootView: View {
                 }
                 HStack(spacing: 5) {
                     Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                        .font(topBarNameFont(14.5, .semibold))
-                    Image(systemName: "chevron.right").font(.system(size: 10.5, weight: .semibold))
+                        .font(topBarNameFont(13.5, .semibold))
+                    Image(systemName: "chevron.right").font(.system(size: 9.5, weight: .semibold))
                         .foregroundColor(textDim)
                 }
                 .foregroundColor(theme.text)
-                .padding(.horizontal, 13)
-                .frame(height: 32)
+                .padding(.horizontal, 11)
+                .frame(height: 29)
                 .modifier(InteractiveTopBarGlassModifier(
                     fallbackTint: theme.capsuleTint,
                     fallbackBorder: glassStroke
