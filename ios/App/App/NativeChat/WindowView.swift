@@ -348,6 +348,9 @@ struct NativeWindowView: View {
     @State private var showDays = false
     // 0927 她挑的效果图：一幅一屏 / 目录 两种看法；目录里分 今天 / 往期 / 我们留过言的
     @State private var gridMode = false
+    // 1008 她要的第三栏「审美积累」：Are.na 图板里每天挑九张（后端 aesthetic.py）
+    @State private var aestheticMode = false
+    @StateObject private var aesthetic = AestheticStore()
     @State private var tab = 0
     @State private var commented: [WindowCard] = []
     /// 读过的记在手机本地就够了（不上后端），留最近 400 张
@@ -370,11 +373,13 @@ struct NativeWindowView: View {
             paper.paper.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                if store.cards.isEmpty && !gridMode {
+                if store.cards.isEmpty && !gridMode && !aestheticMode {
                     emptyState
                 } else {
                     dateline
-                    if gridMode {
+                    if aestheticMode {
+                        AestheticBoard(store: aesthetic, paper: paper, bottomPad: max(safeBottom, 10) + 20)
+                    } else if gridMode {
                         catalog
                     } else {
                         TabView(selection: $page) {
@@ -479,12 +484,14 @@ struct NativeWindowView: View {
 
     private var dateline: some View {
         HStack {
-            Text(store.day.isEmpty ? "" : "\(cnDay(store.day)) · 今天\(Self.cn(store.cards.count))幅")
+            Text(aestheticMode ? (aesthetic.day.isEmpty ? "" : cnDay(aesthetic.day))
+                 : (store.day.isEmpty ? "" : "\(cnDay(store.day)) · 今天\(Self.cn(store.cards.count))幅"))
                 .font(WindowFont.swiftUI(12)).tracking(1.5).foregroundColor(paper.inkSoft)
             Spacer()
             HStack(spacing: 0) {
-                modeButton("一幅一屏", on: !gridMode) { gridMode = false }
-                modeButton("目录", on: gridMode) { gridMode = true }
+                modeButton("一幅一屏", on: !gridMode && !aestheticMode) { gridMode = false; aestheticMode = false }
+                modeButton("目录", on: gridMode && !aestheticMode) { gridMode = true; aestheticMode = false }
+                modeButton("审美积累", on: aestheticMode) { aestheticMode = true }
             }
             .overlay(Capsule().stroke(paper.rule, lineWidth: 1))
             .clipShape(Capsule())
@@ -987,6 +994,150 @@ private struct WindowCardPage: View {
         .padding(.bottom, 8)
         .background(paper.paper.opacity(0.96))
         .overlay(alignment: .top) { Rectangle().fill(paper.rule).frame(height: 0.6) }
+    }
+}
+
+// MARK: - 1008 审美积累（效果图 /root/workroom/mock/aesthetic/mock.jpg，她说「行」）
+
+struct AestheticPin: Identifiable, Equatable {
+    let id: String
+    let caption: String
+    let boardTitle: String
+    let boardZh: String
+    let imageUrl: String
+    let thumbUrl: String
+    let width: Int
+    let height: Int
+
+    init?(json: [String: Any]) {
+        guard let id = json["pin_id"] as? String, let image = json["image_url"] as? String else { return nil }
+        self.id = id
+        caption = json["caption"] as? String ?? ""
+        boardTitle = json["board_title"] as? String ?? ""
+        boardZh = json["board_zh"] as? String ?? ""
+        imageUrl = image
+        thumbUrl = json["thumb_url"] as? String ?? image
+        width = json["width"] as? Int ?? 0
+        height = json["height"] as? Int ?? 0
+    }
+
+    var imageURL: URL? { AlbumAPI.imageURL("/api" + imageUrl) }
+    var thumbURL: URL? { AlbumAPI.imageURL("/api" + thumbUrl) }
+    /// 高 / 宽，压在 0.5～2.2 之间，免得超长图把一列撑爆
+    var ratio: CGFloat {
+        guard width > 0, height > 0 else { return 1.2 }
+        return min(2.2, max(0.5, CGFloat(height) / CGFloat(width)))
+    }
+}
+
+final class AestheticStore: ObservableObject {
+    @Published var day = ""
+    @Published var pins: [AestheticPin] = []
+    @Published var loaded = false
+
+    func load(day: String? = nil) async {
+        let q = (day ?? "").isEmpty ? "" : "?day=\(day!)"
+        if let d = try? await NativeHouseAPI.object("/api/window/aesthetic\(q)") {
+            self.day = d["day"] as? String ?? ""
+            pins = (d["pins"] as? [[String: Any]] ?? []).compactMap(AestheticPin.init(json:))
+        }
+        loaded = true
+    }
+}
+
+private struct AestheticBoard: View {
+    @ObservedObject var store: AestheticStore
+    let paper: WindowPaper
+    let bottomPad: CGFloat
+    @State private var zoomed: AestheticPin?
+
+    private static func cn(_ n: Int) -> String {
+        let d = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
+        if n < 10 { return d[max(0, n)] }
+        if n < 20 { return "十" + (n % 10 == 0 ? "" : d[n % 10]) }
+        return "\(n)"
+    }
+
+    /// 两列按图的高矮贪心分：每张放进当前更矮的那列（跟效果图一样错落）
+    private var columns: ([AestheticPin], [AestheticPin]) {
+        var l: [AestheticPin] = [], r: [AestheticPin] = []
+        var hl: CGFloat = 0, hr: CGFloat = 0
+        for p in store.pins {
+            if hl <= hr { l.append(p); hl += p.ratio + 0.25 } else { r.append(p); hr += p.ratio + 0.25 }
+        }
+        return (l, r)
+    }
+
+    private var boardLine: String {
+        var names: [String] = []
+        for p in store.pins where !p.boardZh.isEmpty && !names.contains(p.boardZh) { names.append(p.boardZh) }
+        return names.prefix(4).joined(separator: "、")
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    (Text("审美积累") + Text("。").foregroundColor(paper.rubric))
+                        .font(WindowFont.swiftUI(26, bold: true)).tracking(1)
+                    Text("A CABINET OF PRETTY THINGS").font(WindowFont.smallCaps(8.5)).tracking(2.6)
+                        .foregroundColor(paper.rubric)
+                    Group {
+                        if store.pins.isEmpty {
+                            Text(store.loaded ? "今天的还在挑，过一会儿再来。" : "")
+                        } else {
+                            Text("今天从\(boardLine)几个图板里，挑了\(Self.cn(store.pins.count))幅。\n点开看大图，长按收进相册。")
+                        }
+                    }
+                    .font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft).lineSpacing(5)
+                    .padding(.top, 4)
+                }
+                .padding(.horizontal, 22).padding(.top, 14)
+                Text("❦").font(.system(size: 14)).foregroundColor(paper.rubric)
+                    .frame(maxWidth: .infinity).padding(.top, 12).padding(.bottom, 12)
+                let cols = columns
+                HStack(alignment: .top, spacing: 12) {
+                    VStack(spacing: 16) { ForEach(cols.0) { pin($0) } }
+                    VStack(spacing: 16) { ForEach(cols.1) { pin($0) } }
+                }
+                .padding(.horizontal, 16)
+            }
+            .padding(.bottom, bottomPad)
+        }
+        .task { if !store.loaded { await store.load() } }
+        .refreshable { await store.load() }
+        .fullScreenCover(item: $zoomed) { p in WindowZoomView(url: p.imageURL) }
+    }
+
+    private func pin(_ p: AestheticPin) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear
+                .aspectRatio(1 / p.ratio, contentMode: .fit)
+                .overlay {
+                    CachedPhaseImage(url: p.thumbURL ?? p.imageURL) { phase in
+                        switch phase {
+                        case .success(let image): image.resizable().aspectRatio(contentMode: .fill)
+                        default: paper.paperDeep
+                        }
+                    }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .onTapGesture { zoomed = p }
+                .contextMenu {
+                    Button {
+                        if let u = p.imageURL { Task { await PhotoLibrarySaver.save(u) } }
+                    } label: { Label("存到手机相册", systemImage: "square.and.arrow.down") }
+                }
+            if !p.caption.isEmpty {
+                Text(p.caption).font(WindowFont.swiftUI(12.5)).tracking(0.5).foregroundColor(paper.ink)
+                    .lineLimit(2).padding(.top, 7)
+            }
+            if !p.boardTitle.isEmpty {
+                Text("FROM · \(p.boardTitle.uppercased())").font(WindowFont.smallCaps(7)).tracking(1.8)
+                    .foregroundColor(paper.inkSoft).lineLimit(1).padding(.top, 3)
+            }
+        }
     }
 }
 
