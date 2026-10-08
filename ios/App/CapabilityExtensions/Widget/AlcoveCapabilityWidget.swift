@@ -1,4 +1,5 @@
 import ActivityKit
+import AppIntents
 import SwiftUI
 import UIKit
 import WidgetKit
@@ -8,6 +9,7 @@ struct AlcoveCapabilityWidgetBundle: WidgetBundle {
     var body: some Widget {
         AlcoveHomeWidget()
         AlcoveLabLiveActivity()
+        AlcoveCallLiveActivity()
     }
 }
 
@@ -505,5 +507,126 @@ private struct PulseNumber: View {
             .monospacedDigit()
             .contentTransition(.numericText())
             .accessibilityLabel(bpm > 0 ? "心率 \(bpm)" : "心率暂无数据")
+    }
+}
+
+
+// MARK: - 1008 通话灵动岛 / 锁屏条（她给的参考图：黑岛＋头像＋名字＋「通话中 · 计时」＋消息、免提两个圆按钮）
+
+private struct AlcoveCallLiveActivity: Widget {
+    var body: some WidgetConfiguration {
+        ActivityConfiguration(for: CallActivityAttributes.self) { context in
+            // 锁屏：半透明玻璃条，白字
+            CallRow(context: context, avatar: 56, button: 48, nameSize: 17)
+                .padding(.horizontal, 16).padding(.vertical, 14)
+                .activityBackgroundTint(Color.black.opacity(0.28))
+                .activitySystemActionForegroundColor(.white)
+        } dynamicIsland: { context in
+            DynamicIsland {
+                DynamicIslandExpandedRegion(.leading) {
+                    HStack(spacing: 12) {
+                        CallAvatar(data: context.attributes.avatarJPEG, size: 52)
+                        CallTitle(context: context, nameSize: 17)
+                    }
+                    .padding(.leading, 6)
+                    .dynamicIsland(verticalPlacement: .belowIfTooWide)
+                }
+                DynamicIslandExpandedRegion(.trailing) {
+                    CallButtons(speakerOn: context.state.speakerOn, size: 46)
+                        .padding(.trailing, 6)
+                        .dynamicIsland(verticalPlacement: .belowIfTooWide)
+                }
+            } compactLeading: {
+                CallAvatar(data: context.attributes.avatarJPEG, size: 24)
+            } compactTrailing: {
+                Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
+                    .font(.system(size: 13, weight: .medium)).monospacedDigit()
+                    .foregroundStyle(.white.opacity(0.85))
+                    .frame(maxWidth: 54)
+            } minimal: {
+                CallAvatar(data: context.attributes.avatarJPEG, size: 24)
+            }
+        }
+    }
+}
+
+/// 左边头像：圆角方块（参考图那样），没有头像就退小乌鸦
+private struct CallAvatar: View {
+    let data: Data?
+    let size: CGFloat
+
+    var body: some View {
+        Group {
+            if let data, let ui = UIImage(data: data) {
+                Image(uiImage: ui).resizable().aspectRatio(contentMode: .fill)
+            } else {
+                Image("RavenOutlined").resizable().interpolation(.none).aspectRatio(contentMode: .fit)
+                    .padding(size * 0.12).background(Color.white.opacity(0.12))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: size * 0.24, style: .continuous))
+    }
+}
+
+private struct CallTitle: View {
+    let context: ActivityViewContext<CallActivityAttributes>
+    let nameSize: CGFloat
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 3) {
+            Text(context.attributes.name)
+                .font(.system(size: nameSize, weight: .semibold)).foregroundStyle(.white).lineLimit(1)
+            HStack(spacing: 0) {
+                Text("通话中 · ")
+                Text(timerInterval: context.state.startedAt...Date.distantFuture, countsDown: false)
+                    .monospacedDigit()
+            }
+            .font(.system(size: nameSize - 3)).foregroundStyle(.white.opacity(0.62)).lineLimit(1)
+        }
+    }
+}
+
+/// 右边两个圆按钮：消息（弹一条能长按回复的通知，打的字发进通话）、免提（开着就亮成白底）
+private struct CallButtons: View {
+    let speakerOn: Bool
+    let size: CGFloat
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Button(intent: CallMessageIntent()) {
+                Image(systemName: "text.bubble.fill")
+                    .font(.system(size: size * 0.38, weight: .medium)).foregroundStyle(.white)
+                    .frame(width: size, height: size)
+                    .background(Circle().fill(Color.white.opacity(0.18)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("给他说句话")
+            Button(intent: CallSpeakerIntent()) {
+                Image(systemName: speakerOn ? "speaker.wave.2.fill" : "speaker.fill")
+                    .font(.system(size: size * 0.36, weight: .medium))
+                    .foregroundStyle(speakerOn ? Color.black : Color.white)
+                    .frame(width: size, height: size)
+                    .background(Circle().fill(speakerOn ? Color.white : Color.white.opacity(0.18)))
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(speakerOn ? "免提已开" : "免提已关")
+        }
+    }
+}
+
+private struct CallRow: View {
+    let context: ActivityViewContext<CallActivityAttributes>
+    let avatar: CGFloat
+    let button: CGFloat
+    let nameSize: CGFloat
+
+    var body: some View {
+        HStack(spacing: 14) {
+            CallAvatar(data: context.attributes.avatarJPEG, size: avatar)
+            CallTitle(context: context, nameSize: nameSize)
+            Spacer(minLength: 6)
+            CallButtons(speakerOn: context.state.speakerOn, size: button)
+        }
     }
 }

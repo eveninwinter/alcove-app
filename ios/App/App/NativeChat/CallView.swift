@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import ActivityKit
 import UIKit
 
 // 语音通话页。0831 任务#1195 大改：通话的对话搬出主聊天，只在这一页显示。
@@ -235,6 +236,9 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
     /// 0902：通话页可以收起再展开，start 只准跑一次
     private var started = false
 
+    /// 1008 通话灵动岛 / 锁屏条（CallActivityAttributes，样子在小组件扩展里）
+    private var activity: Activity<CallActivityAttributes>?
+
     private var callID = ""
     /// 已经念过的（按通话记录的行号）。反复取记录不会把念过的再念一遍
     private var playedIDs: Set<Int> = []
@@ -260,6 +264,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         }
         armRecorder()            // 0902：通话一开始就把第一只录音机备好
         AlcoveNotify.shared.inCall = true
+        startActivity()
         timer = Timer.scheduledTimer(withTimeInterval: 1, repeats: true) { [weak self] _ in
             Task { @MainActor in self?.seconds += 1 }
         }
@@ -447,10 +452,81 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         speakerOn.toggle()
         UserDefaults.standard.set(speakerOn, forKey: "callSpeakerOn")
         applySpeaker()
+        updateActivity()
     }
 
+    // MARK: 灵动岛 / 锁屏条（1008）
+
+    private var activityStart = Date()
+
+    private func startActivity() {
+        // 上一通没收干净的（闪退之类）先清掉，别挂两条
+        for a in Activity<CallActivityAttributes>.activities {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+        activityStart = Date()
+        CallActivityBridge.toggleSpeaker = { [weak self] in
+            Task { @MainActor in self?.toggleSpeaker() }
+        }
+        CallActivityBridge.askMessage = {
+            AlcoveNotify.shared.callMessagePrompt()
+        }
+        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        let attrs = CallActivityAttributes(name: "陈璟", avatarJPEG: Self.tinyAvatar())
+        let state = CallActivityAttributes.ContentState(startedAt: activityStart, speakerOn: speakerOn)
+        activity = try? Activity.request(attributes: attrs,
+                                         content: ActivityContent(state: state, staleDate: nil),
+                                         pushType: nil)
+    }
+
+    private func updateActivity() {
+        guard let activity else { return }
+        let state = CallActivityAttributes.ContentState(startedAt: activityStart, speakerOn: speakerOn)
+        Task { await activity.update(ActivityContent(state: state, staleDate: nil)) }
+    }
+
+    private func endActivity() {
+        CallActivityBridge.toggleSpeaker = nil
+        CallActivityBridge.askMessage = nil
+        if let a = activity {
+            Task { await a.end(nil, dismissalPolicy: .immediate) }
+        }
+        activity = nil
+    }
+
+    /// 他的头像（聊天里存的那张 data URL）缩成小 JPEG：ActivityKit 整条只给 4KB，压到 2.6KB 以内，压不下去就不带（退小乌鸦）
+    private static func tinyAvatar() -> Data? {
+        let raw = UserDefaults.standard.string(forKey: "assistantAvatarDataURL") ?? ""
+        guard let comma = raw.firstIndex(of: ","),
+              let data = Data(base64Encoded: String(raw[raw.index(after: comma)...])),
+              let img = UIImage(data: data) else { return nil }
+        for (edge, q) in [(96.0, 0.6), (84.0, 0.5), (72.0, 0.45), (60.0, 0.4), (48.0, 0.4)] as [(CGFloat, CGFloat)] {
+            let side = min(img.size.width, img.size.height)
+            let crop = CGRect(x: (img.size.width - side) / 2, y: (img.size.height - side) / 2, width: side, height: side)
+            let fmt = UIGraphicsImageRendererFormat()
+            fmt.scale = 1
+            let out = UIGraphicsImageRenderer(size: CGSize(width: edge, height: edge), format: fmt).image { _ in
+                let k = edge / side
+                img.draw(in: CGRect(x: -crop.minX * k, y: -crop.minY * k, width: img.size.width * k, height: img.size.height * k))
+            }
+            if let d = out.jpegData(compressionQuality: q), d.count <= 2600 { return d }
+        }
+        return nil
+    }
+
+    /// 1008 她报「怎么按都是听筒」：只靠 overrideOutputAudioPort 在 .voiceChat 下不可靠（录音、播放、CallKit 接管都会冲掉）。
+    /// 改成连模式一起换：开免提 = .default 模式＋.defaultToSpeaker（系统默认就走外放），关 = .voiceChat（默认听筒、带回声消除），
+    /// 再补一次 override 兜底。类别本身一直是 playAndRecord，录音机不受影响。
     private func applySpeaker() {
-        try? AVAudioSession.sharedInstance().overrideOutputAudioPort(speakerOn ? .speaker : .none)
+        let s = AVAudioSession.sharedInstance()
+        let mode: AVAudioSession.Mode = speakerOn ? .default : .voiceChat
+        let opts: AVAudioSession.CategoryOptions = speakerOn ? [.defaultToSpeaker, .allowBluetooth] : [.allowBluetooth]
+        if s.category != .playAndRecord || s.mode != mode || s.categoryOptions != opts {
+            do { try s.setCategory(.playAndRecord, mode: mode, options: opts) }
+            catch { NSLog("call speaker: setCategory failed \(error.localizedDescription)") }
+        }
+        do { try s.overrideOutputAudioPort(speakerOn ? .speaker : .none) }
+        catch { NSLog("call speaker: override failed \(error.localizedDescription)") }
     }
 
     // MARK: 当下那一段
@@ -497,6 +573,7 @@ final class CallSessionModel: NSObject, ObservableObject, AVAudioPlayerDelegate 
         if let o = hangupObserver { NotificationCenter.default.removeObserver(o) }
         if let o = routeObserver { NotificationCenter.default.removeObserver(o) }
         if isOutgoing { CallManager.shared.endOutgoing() }
+        endActivity()
         AlcoveNotify.shared.inCall = false
         try? AVAudioSession.sharedInstance()
             .setActive(false, options: .notifyOthersOnDeactivation)

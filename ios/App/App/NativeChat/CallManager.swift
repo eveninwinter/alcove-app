@@ -89,6 +89,14 @@ final class CallManager: NSObject, CXProviderDelegate {
     func outgoingConnected() {
         guard let uuid = outgoingUUID else { return }
         provider.reportOutgoingCall(with: uuid, connectedAt: Date())
+        // 1008：灵动岛 / 锁屏换成自己画的那条（CallActivityAttributes），系统通话界面会抢灵动岛，
+        // 接通后跟来电一样收掉（「最近通话」里照样有这一笔，只是时长很短）。收掉时 CallKit 可能把音频会话关了，重新开一下
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+            guard let self, self.outgoingUUID == uuid else { return }
+            self.outgoingUUID = nil
+            self.provider.reportCall(with: uuid, endedAt: Date(), reason: .remoteEnded)
+            try? AVAudioSession.sharedInstance().setActive(true)
+        }
     }
 
     func endOutgoing() {
@@ -161,7 +169,13 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
             options: [], textInputButtonTitle: "发送", textInputPlaceholder: "说点什么…")
         let cat = UNNotificationCategory(identifier: "alcove_msg", actions: [reply],
                                          intentIdentifiers: [], options: [])
-        center.setNotificationCategories([cat])
+        // 1008：通话中点灵动岛 / 锁屏的「消息」弹这条，长按打字，发进通话（他在电话里听到、用语音回）
+        let callReply = UNTextInputNotificationAction(
+            identifier: "alcove_call_reply", title: "说给他听",
+            options: [], textInputButtonTitle: "发送", textInputPlaceholder: "打字，他在电话里听到…")
+        let callCat = UNNotificationCategory(identifier: "alcove_call_msg", actions: [callReply],
+                                             intentIdentifiers: [], options: [])
+        center.setNotificationCategories([cat, callCat])
     }
 
     /// 新消息进来喊一声。她盯着聊天页时闭嘴，其他情况（别的页面/后台/锁屏）都响。
@@ -177,6 +191,16 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
         content.categoryIdentifier = "alcove_msg"
         let req = UNNotificationRequest(identifier: UUID().uuidString,
                                         content: content, trigger: nil)
+        UNUserNotificationCenter.current().add(req)
+    }
+
+    /// 1008：灵动岛 / 锁屏条上点「消息」→ 弹这条，长按就能打字（跟平时长按回复一样），发进通话
+    func callMessagePrompt() {
+        let content = UNMutableNotificationContent()
+        content.title = "给陈璟说句话"
+        content.body = "长按这条打字，发进通话，他在电话里听到"
+        content.categoryIdentifier = "alcove_call_msg"
+        let req = UNNotificationRequest(identifier: "call_msg_prompt", content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
     }
 
@@ -220,6 +244,28 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
                 }
                 completionHandler()
             }
+            return
+        }
+        // 1008 通话里的「说给他听」：字发进通话，不进聊天
+        if let input = response as? UNTextInputNotificationResponse,
+           response.actionIdentifier == "alcove_call_reply" {
+            let text = input.userText.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { completionHandler(); return }
+            Task {
+                if (try? await AlcoveAPI.callSayText(text)) == nil {
+                    let c = UNMutableNotificationContent()
+                    c.title = "没送进通话"
+                    c.body = "刚才那句「\(String(text.prefix(40)))」没发出去，再点一次消息试试"
+                    c.sound = .default
+                    try? await UNUserNotificationCenter.current()
+                        .add(UNNotificationRequest(identifier: UUID().uuidString, content: c, trigger: nil))
+                }
+                completionHandler()
+            }
+            return
+        }
+        if response.notification.request.content.categoryIdentifier == "alcove_call_msg" {
+            completionHandler()      // 点了这条但没打字：别跳去聊天页，通话页该在哪还在哪
             return
         }
         // 普通点按=回聊天页（跟接听是两码事，接听会开通话页）
