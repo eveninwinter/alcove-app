@@ -60,6 +60,7 @@ struct ChatView: View {
     @State private var olderPagingArmed = false
     @State private var showCamera = false
     @State private var showDocPicker = false
+    @State private var showLocationPicker = false   // 1008 加号里的「位置」
     @State private var showPhotoPicker = false
     @Namespace private var photoTransition
     @State private var previewImage: UIImage?
@@ -210,6 +211,9 @@ struct ChatView: View {
                     pendingImages.append(prepared)
                 }
             }
+        }
+        .sheet(isPresented: $showLocationPicker) {
+            LocationPickerSheet { text in store.sendText(text) }
         }
         .sheet(isPresented: $showDocPicker) {
             DocumentPicker { urls in
@@ -1214,6 +1218,7 @@ struct ChatView: View {
             || m.ticketCard != nil || m.choiceCard != nil || m.letterCard != nil || m.journeyCard != nil
             || m.callSummary != nil || m.musicCard != nil { return false }
         if m.reminderCard != nil { return false }   // 1002 单独一行，上面那串够长了，别再让编译器算超时
+        if m.locationCard != nil { return false }   // 1008 位置卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
     }
@@ -1537,6 +1542,9 @@ struct ChatView: View {
             }
             Button { showDocPicker = true } label: {
                 Label("选取文件", systemImage: "doc")
+            }
+            Button { showLocationPicker = true } label: {
+                Label("位置", systemImage: "location")       // 1008 iMessage 那样发位置 / 共享实时位置 / 搜地点
             }
             if composerTheme.isMessages {
                 // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
@@ -3851,6 +3859,8 @@ struct MessageRow: View {
                 } else if let rem = msg.reminderCard {
                     ReminderMessageCard(card: rem)      // 1002 日程提醒到点
                         .frame(maxWidth: .infinity)
+                } else if let loc = msg.locationCard {
+                    LocationMessageCard(card: loc, isUser: isUser)   // 1008 位置卡：iMessage 那样的圆角地图卡，跟着说话的人那一边
                 } else if let buy = msg.buyCard {
                     // 0907 二期审批卡：她要它「跟他的气泡列在一堆」，所以不居中，走左侧
                     BuyApprovalMessageCard(card: buy, theme: cardTheme)

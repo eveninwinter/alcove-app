@@ -27,7 +27,13 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     private var bgUpdatesOn = false
     private let fgInterval: TimeInterval = 30
     // 同一段时间里别把位置报两遍；后台放宽，不然持续定位的回调会刷屏
-    private var minGap: TimeInterval { inBackground ? 240 : 20 }
+    // 1008 她在共享实时位置（位置卡）时，后台也一分钟报一次，卡片上的点才跟得上
+    private var minGap: TimeInterval {
+        let sharing = !(UserDefaults.standard.string(forKey: "placesLiveShareID") ?? "").isEmpty
+        return inBackground ? (sharing ? 60 : 240) : 20
+    }
+    /// 1008 位置卡「发送我的当前位置」直接用最近一次定位
+    private(set) var lastLocation: CLLocation?
     // 上报钥匙由 CI 从 GitHub Secrets 注入 Info.plist（AlcoveLocToken），
     // 源码里不落任何真实 token；没配钥匙时只授权定位、不上报
     private var secret: String {
@@ -146,7 +152,9 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last, !secret.isEmpty else { return }
+        guard let loc = locations.last else { return }
+        lastLocation = loc
+        guard !secret.isEmpty else { return }
         // 后台持续定位会一直往回丢点，这里再挡一道，节奏由 minGap 说了算
         guard Date().timeIntervalSince(lastReport) > minGap else { return }
         lastReport = Date()

@@ -265,7 +265,8 @@ struct ChatMessage: Identifiable, Equatable {
         return t.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    private static func taggedBody(_ text: String, tag: String) -> String? {
+    /// 1008 放开成 internal：位置卡（LocationCards.swift）也要用
+    static func taggedBody(_ text: String, tag: String) -> String? {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         let open = "[\(tag)]", close = "[/\(tag)]"
         guard trimmed.hasPrefix(open), trimmed.hasSuffix(close) else { return nil }

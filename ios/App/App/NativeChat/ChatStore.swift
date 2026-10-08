@@ -816,7 +816,11 @@ final class ChatStore: ObservableObject {
         guard !fresh.isEmpty else { return }
         for rec in fresh {
             notifiedTs.insert(rec.ts)
-            AlcoveNotify.shared.newMessage(rec.text)
+            if let loc = rec.locationCard {
+                AlcoveNotify.shared.newMessage("📍 " + loc.name)    // 1008 位置卡别把 json 推上锁屏
+            } else {
+                AlcoveNotify.shared.newMessage(rec.text)
+            }
         }
     }
 
