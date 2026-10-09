@@ -352,7 +352,7 @@ void main(){vec2 c=gl_PointCoord-.5;float m=smoothstep(.5,.22,length(c));gl_Frag
     resize(px, R) {
       moonC.width = moonC.height = px; gl.viewport(0, 0, px, px);
       pt = Math.max(1, px / (2 * MOON_SCALE * R)) * .92;
-      if (pending) build(Math.round(clamp(R * R * 3.4, 16000, 48000)), Math.round(R * 7), pending.a, pending.h);
+      if (pending) build(Math.round(clamp(R * R * 4.8, 20000, 64000)), Math.round(R * 7), pending.a, pending.h);   // #3515 点画密度回到成品（3.4 那次她说月亮越来越看不见）
     },
     draw(s) {
       if (!count) return;
