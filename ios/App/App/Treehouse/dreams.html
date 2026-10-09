@@ -377,7 +377,7 @@ function layout() {
   S = clamp(Math.min(W / 390, H / 780), .82, 1.5);
   const hb = $('#hd').getBoundingClientRect();
   cardR = $('#card').getBoundingClientRect(); evR = $('#events').getBoundingClientRect();
-  fieldTop = hb.bottom + 52;   // 1009 标题上移 24、小字再收 14，画布原地不动 fieldBot = cardR.top - 26;
+  fieldTop = hb.bottom + 52; fieldBot = cardR.top - 26;   // 1009 标题上移 24、小字再收 14，画布起算线补 38 原地不动
   R = Math.round(clamp(Math.min(W * .275, (fieldBot - fieldTop) * .187), 66, 187));
   CX = W < 760 ? W / 2 : W * .45;
   CY = Math.round(lerp(fieldTop, fieldBot, .46));
