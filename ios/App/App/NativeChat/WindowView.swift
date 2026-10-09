@@ -1008,6 +1008,9 @@ struct AestheticPin: Identifiable, Equatable {
     let thumbUrl: String
     let width: Int
     let height: Int
+    let why: String
+    /// 1009 她要审美积累也能批注，跟一幅一屏同一张表、同一个接口（card_id 填 pin_id）
+    let comments: [WindowComment]
 
     init?(json: [String: Any]) {
         guard let id = json["pin_id"] as? String, let image = json["image_url"] as? String else { return nil }
@@ -1019,6 +1022,8 @@ struct AestheticPin: Identifiable, Equatable {
         thumbUrl = json["thumb_url"] as? String ?? image
         width = json["width"] as? Int ?? 0
         height = json["height"] as? Int ?? 0
+        why = json["why"] as? String ?? ""
+        comments = (json["comments"] as? [[String: Any]] ?? []).compactMap(WindowComment.init(json:))
     }
 
     var imageURL: URL? { AlbumAPI.imageURL("/api" + imageUrl) }
@@ -1043,13 +1048,20 @@ final class AestheticStore: ObservableObject {
         }
         loaded = true
     }
+
+    func comment(_ id: String, text: String) async -> Bool {
+        let body: [String: Any] = ["card_id": id, "author": "陈霁", "text": text]
+        guard (try? await NativeHouseAPI.object("/api/window/comment", method: "POST", body: body)) != nil else { return false }
+        await load(day: day)
+        return true
+    }
 }
 
 private struct AestheticBoard: View {
     @ObservedObject var store: AestheticStore
     let paper: WindowPaper
     let bottomPad: CGFloat
-    @State private var zoomed: AestheticPin?
+    @State private var opened: AestheticPin?
 
     private static func cn(_ n: Int) -> String {
         let d = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"]
@@ -1086,7 +1098,7 @@ private struct AestheticBoard: View {
                         if store.pins.isEmpty {
                             Text(store.loaded ? "今天的还在挑，过一会儿再来。" : "")
                         } else {
-                            Text("今天从\(boardLine)几个图板里，挑了\(Self.cn(store.pins.count))幅。\n点开看大图，长按收进相册。")
+                            Text("今天从\(boardLine)几个图板里，挑了\(Self.cn(store.pins.count))幅。\n点开看大图、留批注，长按收进相册。")
                         }
                     }
                     .font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft).lineSpacing(5)
@@ -1106,7 +1118,7 @@ private struct AestheticBoard: View {
         }
         .task { if !store.loaded { await store.load() } }
         .refreshable { await store.load() }
-        .fullScreenCover(item: $zoomed) { p in WindowZoomView(url: p.imageURL) }
+        .fullScreenCover(item: $opened) { p in AestheticPinPage(store: store, pinId: p.id, paper: paper) }
     }
 
     private func pin(_ p: AestheticPin) -> some View {
@@ -1123,7 +1135,7 @@ private struct AestheticBoard: View {
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
                 .contentShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .onTapGesture { zoomed = p }
+                .onTapGesture { opened = p }
                 .contextMenu {
                     Button {
                         if let u = p.imageURL { Task { await PhotoLibrarySaver.save(u) } }
@@ -1137,7 +1149,157 @@ private struct AestheticBoard: View {
                 Text("FROM · \(p.boardTitle.uppercased())").font(WindowFont.smallCaps(7)).tracking(1.8)
                     .foregroundColor(paper.inkSoft).lineLimit(1).padding(.top, 3)
             }
+            if !p.comments.isEmpty {
+                HStack(spacing: 4) {
+                    Image(systemName: "text.bubble").font(.system(size: 9.5))
+                    Text("\(p.comments.count)").font(WindowFont.swiftUI(11))
+                }
+                .foregroundColor(paper.inkSoft).padding(.top, 4)
+            }
         }
+    }
+}
+
+/// 1009 点开一张审美积累：跟一幅一屏的「一页图录」一个样子——大图（点了全屏放大）、标题、出处、批注、底下留字栏
+private struct AestheticPinPage: View {
+    @ObservedObject var store: AestheticStore
+    let pinId: String
+    let paper: WindowPaper
+    @Environment(\.dismiss) private var dismiss
+    @State private var draft = ""
+    @State private var sending = false
+    @State private var zoom = false
+    @FocusState private var focused: Bool
+
+    private var pin: AestheticPin? { store.pins.first { $0.id == pinId } }
+
+    var body: some View {
+        ZStack(alignment: .topLeading) {
+            paper.paper.ignoresSafeArea()
+            if let pin {
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        CachedPhaseImage(url: pin.imageURL) { phase in
+                            switch phase {
+                            case .success(let image): image.resizable().aspectRatio(contentMode: .fit)
+                            default: paper.paperDeep.frame(height: 280).overlay(ProgressView().tint(paper.inkSoft))
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .contentShape(Rectangle())
+                        .onTapGesture { zoom = true }
+                        .contextMenu {
+                            Button {
+                                if let u = pin.imageURL { Task { await PhotoLibrarySaver.save(u) } }
+                            } label: { Label("存到手机相册", systemImage: "square.and.arrow.down") }
+                        }
+
+                        VStack(alignment: .leading, spacing: 14) {
+                            if !pin.boardTitle.isEmpty {
+                                Text("审美积累  ·  FROM \(pin.boardTitle.uppercased())")
+                                    .font(WindowFont.smallCaps(10)).tracking(2.2).foregroundColor(paper.rubric)
+                            }
+                            Text(pin.caption.isEmpty ? "无题" : pin.caption)
+                                .font(WindowFont.swiftUI(27, bold: true)).foregroundColor(paper.ink).lineSpacing(5)
+                                .fixedSize(horizontal: false, vertical: true)
+                            if !pin.why.isEmpty {
+                                Text(pin.why).font(WindowFont.swiftUI(15)).foregroundColor(paper.inkSoft).lineSpacing(6)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                            ornament
+                            marginalia(pin)
+                        }
+                        .padding(.horizontal, 24)
+                        .padding(.top, 22)
+                        .padding(.bottom, 40)
+                    }
+                }
+                .scrollDismissesKeyboard(.interactively)
+                .safeAreaInset(edge: .bottom, spacing: 0) { commentBar(pin) }
+            }
+            Button { dismiss() } label: {
+                Image(systemName: "xmark").font(.system(size: 14, weight: .semibold))
+                    .foregroundColor(paper.ink)
+                    .frame(width: 36, height: 36)
+                    .background(.ultraThinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 16).padding(.top, 8)
+            .accessibilityLabel("合上")
+        }
+        .fullScreenCover(isPresented: $zoom) {
+            WindowZoomView(url: pin?.imageURL)
+        }
+    }
+
+    private var ornament: some View {
+        HStack(spacing: 12) {
+            Rectangle().fill(paper.rule).frame(height: 0.6)
+            Text("❦").font(.system(size: 15, design: .serif)).foregroundColor(paper.rubric.opacity(0.8))
+            Rectangle().fill(paper.rule).frame(height: 0.6)
+        }
+        .padding(.vertical, 6)
+    }
+
+    /// 页边批注：两个人的留言（照抄一页图录那段）
+    private func marginalia(_ pin: AestheticPin) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            Text("批 注").font(WindowFont.swiftUI(15, bold: true)).tracking(6).foregroundColor(paper.ink)
+            if pin.comments.isEmpty {
+                Text("还没有人在这一页留字。").font(WindowFont.swiftUI(13)).foregroundColor(paper.inkSoft)
+            }
+            ForEach(pin.comments) { c in
+                HStack(alignment: .top, spacing: 12) {
+                    Rectangle().fill(c.author == "陈璟" ? paper.rubric : paper.inkSoft.opacity(0.6)).frame(width: 1.5)
+                    VStack(alignment: .leading, spacing: 5) {
+                        HStack(spacing: 8) {
+                            Text(c.author).font(WindowFont.swiftUI(13, bold: true)).foregroundColor(paper.ink)
+                            Text(c.shortTime).font(.system(size: 10.5, design: .serif)).foregroundColor(paper.inkSoft)
+                        }
+                        Text(c.text).font(WindowFont.swiftUI(15)).foregroundColor(paper.ink).lineSpacing(6)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .textSelection(.enabled)
+                    }
+                }
+                .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
+    private func commentBar(_ pin: AestheticPin) -> some View {
+        HStack(spacing: 10) {
+            TextField("在这一页留字……", text: $draft, axis: .vertical)
+                .lineLimit(1...4)
+                .font(WindowFont.swiftUI(15))
+                .foregroundColor(paper.ink)
+                .focused($focused)
+                .padding(.horizontal, 14).padding(.vertical, 10)
+                .background(paper.paperDeep, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+            Button {
+                let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                guard !text.isEmpty, !sending else { return }
+                sending = true
+                Task {
+                    if await store.comment(pin.id, text: text) { draft = ""; focused = false }
+                    sending = false
+                }
+            } label: {
+                Group {
+                    if sending { ProgressView().tint(paper.paper) }
+                    else { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)) }
+                }
+                .foregroundColor(paper.paper)
+                .frame(width: 38, height: 38)
+                .background(paper.rubric.opacity(draft.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? 0.35 : 1), in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("留字")
+        }
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .padding(.bottom, 8)
+        .background(paper.paper.opacity(0.96))
+        .overlay(alignment: .top) { Rectangle().fill(paper.rule).frame(height: 0.6) }
     }
 }
 
