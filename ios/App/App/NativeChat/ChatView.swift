@@ -365,8 +365,11 @@ struct ChatView: View {
                                           + (showMiniTerminal ? miniTerminalHeight + 18 : 0))
                         Color.clear.frame(height: 1).id("tail")
                             .onAppear {
-                                atBottom = true
-                                farFromTail = false
+                                // #3538：懒加载会在离底一段距离时就把它建出来，不能一出现就当「在底部」
+                                if nearBox.near {
+                                    atBottom = true
+                                    farFromTail = false
+                                }
                                 if store.isViewingHistory && !historyJumpInProgress {
                                     Task {
                                         await store.returnToLatest()
@@ -653,6 +656,7 @@ struct ChatView: View {
                 scrollToTail(proxy, delays: [0, 0.12, 0.32], animated: true)
             }
             .onChange(of: scrollKick) { _ in
+                // 只剩最后一条变高才会踢到这（见 onContentChange）；它一变高 near 先翻成 false，所以这里不能再看 nearBox
                 if shouldFollowTail {
                     // 展开 thinking/activity 时内容本身已经在做 0.15s 动画。
                     // 再连跑三次滚尾会让整页先上再下，真机看起来像闪一下。
@@ -1137,7 +1141,8 @@ struct ChatView: View {
                     kakaoFirstBubble: theme.isKakao ? kakaoFirstBubble(at: index) : kakaoHead,
                     kakaoUnread: message.role == "user" && next == nil,
                     onPlayMusic: { song in Task { await music.play(song) } },
-                    onContentChange: { scrollKick += 1 },
+                    // #3538 她：「点开思绪看工作流程 页面又会跳到最新消息」——只有最后一条变高才踢，上面的展开不动列表
+                    onContentChange: { if next == nil { scrollKick += 1 } },
                     onReactLongPress: reactLongPress(for: message),
                     reactLifted: reactTarget?.msg.id == message.id,
                     textSelectable: selectingTs == message.ts,
