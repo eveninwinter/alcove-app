@@ -4345,7 +4345,8 @@ struct MessageRow: View {
         // 0924 晚她定的：所有主题气泡之间看得见的空隙 = 设置里的「气泡间距」，行上下不再各垫 2 / 5。
         // （0922 那 3 点差的源头是他每条头上那个空的过程点占位行，0924 下午 7651dba 已经不画了。）
         // 只剩非 Kakao 主题一串末尾（底下有时间那行）照旧留 12；Kakao 的时间在气泡旁边，不留。
-        .padding(.bottom, (showTime && !theme.isKakao) ? 12 : 0)
+        // 树屋时间在气泡内，不能再给这行加尾部空隙，否则后接语音会被推远。
+        .padding(.bottom, (showTime && !theme.isKakao && !theme.isTreehouse) ? 12 : 0)
         .sheet(item: Binding(get: { openedThink.map { OneThought(text: $0) } },
                              set: { openedThink = $0?.text })) { one in
             NavigationStack {

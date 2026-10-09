@@ -421,7 +421,11 @@ struct RootView: View {
                                 .stroke(ink, style: StrokeStyle(lineWidth: 0.75, lineCap: .round, lineJoin: .round))
                                 .frame(width: 16, height: 16)
                             Text("\(bpm)").font(.system(size: 15, design: .serif))
+                                .lineLimit(1)
+                                .fixedSize(horizontal: true, vertical: false)
                         }
+                        .fixedSize(horizontal: true, vertical: false)
+                        .layoutPriority(1)
                     }
                     Button { activeCall = .outgoing } label: {
                         Image(systemName: "phone").font(.system(size: 18, weight: .light))
