@@ -2087,8 +2087,8 @@ private struct BubbleAppearanceSettingsView: View {
 
     /// 玻璃气泡不带颜色，「我的气泡」「他的气泡」两项藏起来
     private var paletteItems: [MessagesPalette.Item] {
-        // 树屋是实心气泡，没有玻璃那回事，九项全给
-        if chatTheme.isTreehouse { return MessagesPalette.Item.allCases }
+        // 树屋是实心气泡，没有玻璃那回事；时间戳不单独调了，跟着两边正文的 80% 走（#3511），所以少这一项
+        if chatTheme.isTreehouse { return MessagesPalette.Item.allCases.filter { $0 != .timestamp } }
         return MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
     }
 

@@ -3856,7 +3856,8 @@ struct MessageRow: View {
     /// 树屋把这一行搬进了气泡，颜色得跟气泡底走：她的墨色泡用浅字，他的纸白泡用墨字。
     private var metaTint: Color {
         guard theme.isTreehouse else { return theme.timestamp }
-        return MessagesPalette.thStored(.timestamp) ?? (isUser ? TreehouseInk.white.opacity(0.58) : TreehouseInk.ink.opacity(0.42))
+        // 1009 #3511 她：「树屋的时间戳颜色直接跟着双方正文颜色的百分之80走 不单独调节了」
+        return ((isUser ? theme.textUser : theme.textAI) ?? theme.text).opacity(0.8)
     }
 
     @ViewBuilder private var metaRow: some View {
@@ -4591,7 +4592,8 @@ struct MessageRow: View {
                     // 1009 晚 她要的：一串最后那条，时间那一行收进气泡里（左下角，与正文左缘对齐），壁纸太杂放外面看不清。
                     // 顺移是白送的：showTime 由列表现算（isGroupTail 看下一条是不是同一个人），
                     // 她删掉最后一条，下一帧新的尾巴自己长出这一行。
-                    VStack(alignment: .leading, spacing: 3) {
+                    // 1009 #3510 她：「我的时间戳是跟我最右边的文字对齐 陈璟跟最左边对齐」
+                    VStack(alignment: isUser ? .trailing : .leading, spacing: 6) {   // #3511 时间和正文之间再空一丢丢（3 → 6）
                         bubbleContents
                         if shouldShowMetaRow {
                             metaRow
@@ -7088,10 +7090,15 @@ struct TreehouseContextLine: View {
         HStack(alignment: .center, spacing: 9) {
             line
             if !tokenText.isEmpty {
+                // 1009 #3510 她：「换成手写字体 现在的太丑了 用一小块雾玻璃小胶囊做边框」——回到 Diary 那个 Pinyon 花体，套一颗雾玻璃小胶囊
                 Text(tokenText)
-                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .font(.custom("PinyonScript-Regular", size: 15))
                     .foregroundColor(TreehouseInk.ink.opacity(0.9))
                     .fixedSize()
+                    .padding(.horizontal, 8)
+                    .padding(.top, 1)
+                    .padding(.bottom, 2)
+                    .modifier(TreehouseFogGlass(shape: Capsule(), border: 0.3))
                     .animation(.easeOut(duration: 0.4), value: tokenText)
             }
         }

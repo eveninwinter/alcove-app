@@ -70,6 +70,12 @@ h1{font-family:var(--serif);font-weight:700;font-size:34px;letter-spacing:.32em;
 /* ===== 1009 App 里用：宋体随包、去掉记梦、卡片里加「那一夜」统计 / 00–07 时间轴 / 夜里的留痕 ===== */
 @font-face{font-family:"Noto Serif SC";src:url(serif-sc.woff2) format("woff2");font-weight:200 900}
 .write{display:none!important}
+@font-face{font-family:"Pinyon Script";src:url(pinyon.ttf)}
+h1 .script{font-family:"Pinyon Script",cursive;font-weight:400;font-size:44px;letter-spacing:0;line-height:1}
+h1 small{font-family:var(--serif);font-weight:400;font-size:11px;letter-spacing:.3em;color:#8a8a88;margin-left:9px;position:relative;top:-4px}
+.events{display:none!important}
+#tonight{position:absolute;z-index:7;right:22px;bottom:calc(env(safe-area-inset-bottom,0px) + 30px);display:flex;flex-direction:column;align-items:center;gap:8px;background:none;border:0;color:var(--ink);cursor:pointer;font-family:var(--serif);font-size:12px;letter-spacing:.24em;padding-left:.24em}
+#tonight i{width:58px;height:58px;border:1px solid var(--ink);border-radius:50%;display:grid;place-items:center}
 .card{right:26px}
 .ex{display:-webkit-box!important;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:-2px;height:47px}
 .card h2{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;height:1.3em}
@@ -91,13 +97,13 @@ h1{font-family:var(--serif);font-weight:700;font-size:34px;letter-spacing:.32em;
 
   <header id="hd">
     <button class="back" aria-label="返回"><svg width="16" height="22" viewBox="0 0 16 22" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 2 3 11l9 9"/></svg></button>
-    <h1 id="ttl">梦境</h1>
+    <h1 id="ttl"><span class="script">Dreams</span><small>梦境</small></h1>
     <p class="stats" id="stats"></p>
     <button class="menu" aria-label="菜单"><svg width="26" height="16" viewBox="0 0 26 16" stroke="currentColor" stroke-width="1.4"><path d="M1 1h24M1 8h24M7 15h18"/></svg></button>
   </header>
 
   <div class="events" id="events"></div>
-  <p class="vert"><span>DRIFT&nbsp;/</span><b>靠近会连上 · 飘远就断</b></p>
+  <p class="vert"><span>DRIFT</span></p>
 
   <section class="card" id="card">
     <p class="night" id="cNight"></p>
@@ -111,6 +117,7 @@ h1{font-family:var(--serif);font-weight:700;font-size:34px;letter-spacing:.32em;
     <div class="trl" id="cTrL"></div>
     <p class="hint">按住空白处拖动 · 把梦拢到一起</p>
   </section>
+  <button id="tonight" aria-label="回到今夜的梦"><i><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round"><path d="M13.5 4.5a8 8 0 1 0 6 12.9A6.6 6.6 0 0 1 13.5 4.5z"/><path d="M19 2.6v3.6M17.2 4.4h3.6" stroke="#1638ff" stroke-width="1.2" stroke-linecap="round"/></svg></i>今夜</button>
   <button class="write" id="write"><i><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.3"><path d="M15.5 3.5a8.5 8.5 0 1 0 5 13.6A7 7 0 0 1 15.5 3.5z"/></svg></i>记梦</button>
 </div>
 
@@ -172,6 +179,10 @@ const MOON_HRANGE = 0.015887;
     d.excerpt = excerpt; d.seg = seg;
     if (cur === d) { q('#cEx').textContent = excerpt || ''; q('#cSeg').textContent = seg != null ? `${seg} 段记忆` : ''; }
   };
+  // 1009 #3510「今夜」：今天做了梦就是今天最近那场，没做就是最近那一夜的——DREAMS 新的在前，第一条就是
+  addEventListener('DOMContentLoaded', () => {
+    q('#tonight').addEventListener('click', () => { if (window.__dream && (window.DREAMS || []).length) window.__dream.select(0); });
+  });
   window.__dreamSelect = id => {
     const i = (window.DREAMS || []).findIndex(x => String(x.id) === String(id));
     if (i >= 0 && window.__dream) window.__dream.select(i);
@@ -367,7 +378,7 @@ function layout() {
   const hb = $('#hd').getBoundingClientRect();
   cardR = $('#card').getBoundingClientRect(); evR = $('#events').getBoundingClientRect();
   fieldTop = hb.bottom + 14; fieldBot = cardR.top - 26;
-  R = Math.round(clamp(Math.min(W * .25, (fieldBot - fieldTop) * .17), 60, 170));
+  R = Math.round(clamp(Math.min(W * .275, (fieldBot - fieldTop) * .187), 66, 187));
   CX = W < 760 ? W / 2 : W * .45;
   CY = Math.round(lerp(fieldTop, fieldBot, .46));
   FW = Math.min(W / 2, Math.max(R * 3.0, 230 * S));
@@ -505,7 +516,8 @@ function update(dt) {
     if (Math.random() < .2) { const h = $('#ttl'); h.classList.add('gl'); setTimeout(() => h.classList.remove('gl'), 140); } }
   mv.glitch = T < mv.gUntil ? 1 : 0;
   if (ptr.mode !== 'moon') mv.dragTilt *= Math.exp(-dt * .6);
-  mv.yaw += dt * (.055 + mv.dragYaw); mv.dragYaw *= Math.exp(-dt * 1.2);
+  const holdMoon = ptr.on && ptr.mode === 'moon';
+  if (holdMoon) mv.dragYaw *= Math.exp(-dt * 8); else { mv.yaw += dt * (.055 + mv.dragYaw); mv.dragYaw *= Math.exp(-dt * 1.2); }
 
   const gathering = ptr.on && ptr.mode === 'gather';
   for (const n of nodes) {
@@ -745,13 +757,13 @@ app.addEventListener('pointerdown', e => {
   app.setPointerCapture?.(e.pointerId);
   const x = e.clientX, y = e.clientY;
   Object.assign(ptr, { on: true, x, y, sx: x, sy: y, t: performance.now(), moved: 0 });
-  ptr.mode = Math.hypot(x - CX, y - CY) < R ? 'moon' : (nearest(x, y, 18 * S) >= 0 ? 'node' : 'gather');
+  ptr.mode = Math.hypot(x - CX, y - CY) < R * 1.2 ? 'moon' : (nearest(x, y, 18 * S) >= 0 ? 'node' : 'gather');
 });
 app.addEventListener('pointermove', e => {
   const x = e.clientX, y = e.clientY;
   if (!ptr.on) { ptr.hx = e.pointerType === 'mouse' ? x : -1; ptr.hy = y; return; }
   ptr.moved = Math.max(ptr.moved, Math.hypot(x - ptr.sx, y - ptr.sy));
-  if (ptr.mode === 'moon') { mv.dragYaw = clamp(mv.dragYaw + (x - ptr.x) * .02, -2.5, 2.5); mv.dragTilt = clamp(mv.dragTilt - (y - ptr.y) * .004, -.4, .4); }
+  if (ptr.mode === 'moon') { const ddx = (x - ptr.x) / R, ddy = (y - ptr.y) / R; mv.yaw -= ddx; mv.dragYaw = clamp(-ddx * 30, -2.5, 2.5); mv.dragTilt = clamp(mv.dragTilt - ddy, -.6, .6); }
   if (ptr.mode === 'node' && ptr.moved > 10) ptr.mode = 'gather';
   ptr.x = x; ptr.y = y;
 });
