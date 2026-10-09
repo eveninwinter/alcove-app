@@ -3884,7 +3884,7 @@ struct MessageRow: View {
                                 Image(systemName: "checkmark")
                             }
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(theme.isTreehouse ? MessagesPalette.thCurrent(.readTick) : metaTint)
+                            .foregroundColor(theme.isTreehouse ? MessagesPalette.thCurrent(.readTick, dark: theme.isDark) : metaTint)
                         }
                         // 0907 她抓的：原来要求这条有正文才给按钮，
                         // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
@@ -7025,13 +7025,16 @@ enum TreehouseBubbleMode {
     static var whole: Bool { UserDefaults.standard.bool(forKey: key) }
 }
 
+/// #3518 起分白天 / 黑夜，跟全屋那个按钮走（树屋 themeName 也跟着在 treehouse / treehouse-dark 之间翻）。
+/// fog＝底色，ink＝字和线，white＝他的泡 / 图的纸边 / 思绪底，dark＝她的泡
 enum TreehouseInk {
-    static let fog = Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
-    static let ink = Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
-    static let blue = Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255)
-    static let white = Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
-    static let dark = Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255)
-    static let gray = Color(red: 0x7A/255, green: 0x79/255, blue: 0x75/255)
+    static var night: Bool { AlcoveAppearance.isDark }
+    static var fog: Color { night ? Color(red: 0x1B/255, green: 0x1C/255, blue: 0x20/255) : Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255) }
+    static var ink: Color { night ? Color(red: 0xE9/255, green: 0xE8/255, blue: 0xE4/255) : Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255) }
+    static var blue: Color { night ? Color(red: 0x3A/255, green: 0x55/255, blue: 0xFF/255) : Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255) }
+    static var white: Color { night ? Color(red: 0x2A/255, green: 0x2B/255, blue: 0x31/255) : Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255) }
+    static var dark: Color { night ? Color(red: 0xE4/255, green: 0xE3/255, blue: 0xDE/255) : Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255) }
+    static var gray: Color { night ? Color(red: 0x8E/255, green: 0x8E/255, blue: 0x94/255) : Color(red: 0x7A/255, green: 0x79/255, blue: 0x75/255) }
 }
 
 /// 树屋顶栏要的两样：他最近一次心率（「● 88」）、模型名（名字底下那行斜体）
@@ -7066,6 +7069,7 @@ final class TreehouseHeaderModel: ObservableObject {
 /// tmux / SDK 读 /api/sdk-shadow/status 里当前通道那份，API 房间读 /api/api-room/context；隔 8 秒问一次
 struct TreehouseContextLine: View {
     let room: String
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""   // #3518 白天 / 黑夜一翻就重画
     @State private var ratio: Double = 0
     // 1009 晚 她要的：线最右边写「230k/1m」，手写花体
     @State private var used: Double = 0
@@ -7087,6 +7091,7 @@ struct TreehouseContextLine: View {
     }
 
     var body: some View {
+        let _ = houseAppearance
         HStack(alignment: .center, spacing: 9) {
             line
             if !tokenText.isEmpty {
@@ -7159,6 +7164,7 @@ struct TreehouseBubbleFill: ViewModifier {
     let isUser: Bool
     let fill: Color
     var showsCorner: Bool = true
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     func body(content: Content) -> some View {
         let shape = UnevenRoundedRectangle(topLeadingRadius: 18,
                                            bottomLeadingRadius: !isUser && showsCorner ? 5 : 18,
@@ -7173,7 +7179,9 @@ struct TreehouseBubbleFill: ViewModifier {
 /// 树屋的图：外面垫一圈白纸边（6），12 圆角，跟她成品里那张图一样
 struct TreehousePhotoFrame: ViewModifier {
     let on: Bool
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @ViewBuilder func body(content: Content) -> some View {
+        let _ = houseAppearance
         if on {
             content
                 .padding(6)
@@ -7188,8 +7196,10 @@ struct TreehousePhotoFrame: ViewModifier {
 struct TreehouseFogGlass<S: InsettableShape>: ViewModifier {
     let shape: S
     let border: Double
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     func body(content: Content) -> some View {
-        content
+        let _ = houseAppearance
+        return content
             .background { shape.fill(.ultraThinMaterial).opacity(0.55) }
             .background(TreehouseInk.fog.opacity(0.42), in: shape)
             .overlay(shape.strokeBorder(TreehouseInk.ink.opacity(border), lineWidth: 1))

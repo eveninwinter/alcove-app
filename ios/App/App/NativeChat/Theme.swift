@@ -142,6 +142,7 @@ struct AlcoveTheme {
     static let messages = haven.messagesCopy(dark: false)
     static let messagesDark = midnight.messagesCopy(dark: true)
     static let treehouse = haven.treehouseCopy()
+    static let treehouseNight = haven.treehouseCopy(dark: true)
 
     static func named(_ name: String) -> AlcoveTheme {
         switch name {
@@ -152,7 +153,8 @@ struct AlcoveTheme {
         case "imessage-dark": return MessagesPalette.apply(to: .messagesDark, dark: true)
         case "kakao": return .kakaoTheme()
         // 1009 #3507 她要的：脚印、时间、思绪那几行跟信息主题一模一样——连她在信息主题里调过的颜色也一起借（白天那份）
-        case "treehouse", "treehouse-dark": return MessagesPalette.applyTreehouse(to: .treehouse)
+        case "treehouse": return MessagesPalette.applyTreehouse(to: .treehouse, dark: false)
+        case "treehouse-dark": return MessagesPalette.applyTreehouse(to: .treehouseNight, dark: true)
         default: return .haven
         }
     }
@@ -294,17 +296,19 @@ struct AlcoveTheme {
 
     /// 树屋：颜色全照她的成品 alcove chat page.html —— 冷白颗粒底 #EFEFED、他的泡 #FBFAF7 黑字、
     /// 她的泡 #2A2826 白字、墨 #141414、电光蓝 #0B1BFF。抽屉那些面板不读这里（panelNamed 走纸页）
-    fileprivate func treehouseCopy() -> AlcoveTheme {
-        let bg = Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
-        let white = Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
-        let dark = Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255)
-        let ink = Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
+    /// 1009 #3516–3518 黑夜版（她看过效果图说「这个颜色可以」）：中性炭灰底 #1B1C20、浅墨 #E9E8E4、
+    /// 气泡反过来——他的炭灰泡 #2A2B31 浅字、她的纸白泡 #E4E3DE 深字，电光蓝提亮成 #3A55FF
+    fileprivate func treehouseCopy(dark night: Bool = false) -> AlcoveTheme {
+        let bg = night ? Color(red: 0x1B/255, green: 0x1C/255, blue: 0x20/255) : Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
+        let white = night ? Color(red: 0x2A/255, green: 0x2B/255, blue: 0x31/255) : Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
+        let dark = night ? Color(red: 0xE4/255, green: 0xE3/255, blue: 0xDE/255) : Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255)
+        let ink = night ? Color(red: 0xE9/255, green: 0xE8/255, blue: 0xE4/255) : Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
         // 时间、思绪、脚印这些小字跟信息主题同一个系统灰（#3507）；顶栏模型名那行另用成品的 #7A7975
         let dim = Color(red: 142/255, green: 142/255, blue: 147/255)
-        let blue = Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255)
+        let blue = night ? Color(red: 0x3A/255, green: 0x55/255, blue: 0xFF/255) : Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255)
         let line = ink.opacity(0.14)
         var t = AlcoveTheme(
-            isDark: false, isPaper: false, usesWallImage: false,
+            isDark: night, isPaper: false, usesWallImage: false,
             wallGradient: [bg, bg],
             bubbleUser: dark, bubbleAI: white, text: ink, textDim: dim,
             textLight: dim.opacity(0.8), timestamp: dim,
@@ -316,9 +320,9 @@ struct AlcoveTheme {
             splashPetal: blue.opacity(0.3), splashTitle: ink,
             fyAccent: blue, fyAccentSoft: blue.opacity(0.14), fyCard: white,
             fyCardSub: bg, fyBorder: line,
-            fyShadow: Color.black.opacity(0.05),
+            fyShadow: Color.black.opacity(night ? 0.3 : 0.05),
             fyFold: line, fyDash: dim.opacity(0.3),
-            panelTextureAsset: "PaperLight"
+            panelTextureAsset: night ? "PaperDark" : "PaperLight"
         )
         t.isMessages = true
         t.isTreehouse = true
@@ -395,13 +399,13 @@ enum AlcoveAppearance {
         case "paper": return dark ? "paper-dark" : "paper"
         case "imessage": return dark ? "imessage-dark" : "imessage"
         case "kakao": return "kakao"   // 主题包自己带颜色，没有夜里那版
-        case "treehouse": return "treehouse"   // 树屋也只有一版
+        case "treehouse": return dark ? "treehouse-dark" : "treehouse"   // #3518 起树屋也分白天黑夜
         default: return dark ? "midnight" : "haven"
         }
     }
 
     static func isDark(_ themeName: String) -> Bool {
-        themeName == "midnight" || themeName == "paper-dark" || themeName == "imessage-dark"
+        themeName == "midnight" || themeName == "paper-dark" || themeName == "imessage-dark" || themeName == "treehouse-dark"
     }
 
     /// 开关当下是不是黑夜（读不到就按聊天主题的深浅兜底）
@@ -563,56 +567,58 @@ enum MessagesPalette {
     }
 
     // MARK: - 树屋自己那套（1009 晚 她：「信息主题不是可以调节一大堆颜色吗，把我们树屋主题也加上那些调节的」）
-    // 树屋只有一版，不分白天黑夜，所以键里不带 day/night；跟信息主题分开存，各调各的互不影响。
+    // 跟信息主题分开存，各调各的。#3518 有了黑夜版：白天沿用原来的键（她调过的不丢），黑夜另存一套 msgColorTreehouseNight.*
 
-    static func thKey(_ item: Item) -> String { "msgColorTreehouse." + item.rawValue }
+    static func thKey(_ item: Item, dark: Bool = AlcoveAppearance.isDark) -> String {
+        (dark ? "msgColorTreehouseNight." : "msgColorTreehouse.") + item.rawValue
+    }
 
     /// 树屋原本的颜色 = 这一项的默认值
-    static func thDefault(_ item: Item) -> Color {
-        let base = AlcoveTheme.treehouse
+    static func thDefault(_ item: Item, dark: Bool = AlcoveAppearance.isDark) -> Color {
+        let base = dark ? AlcoveTheme.treehouseNight : AlcoveTheme.treehouse
         switch item {
         case .timestamp: return base.timestamp
         case .thought: return base.textDim
         case .divider: return base.textDim
         case .bubbleUser: return base.bubbleUser
         case .bubbleAI: return base.bubbleAI
-        case .textUser: return Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)   // 她的墨色泡上是纸白字
+        case .textUser: return base.textUser ?? base.text   // 她的泡上的字：白天纸白、黑夜炭灰
         case .textAI: return base.text
         case .readTick: return base.textDim
-        case .sendButton: return Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
+        case .sendButton: return base.sendButton ?? base.text
         }
     }
 
-    static func thStored(_ item: Item) -> Color? {
-        guard let hex = UserDefaults.standard.string(forKey: thKey(item)), !hex.isEmpty else { return nil }
+    static func thStored(_ item: Item, dark: Bool = AlcoveAppearance.isDark) -> Color? {
+        guard let hex = UserDefaults.standard.string(forKey: thKey(item, dark: dark)), !hex.isEmpty else { return nil }
         return Color(hexString: hex)
     }
 
-    static func thCurrent(_ item: Item) -> Color { thStored(item) ?? thDefault(item) }
+    static func thCurrent(_ item: Item, dark: Bool = AlcoveAppearance.isDark) -> Color { thStored(item, dark: dark) ?? thDefault(item, dark: dark) }
 
-    static func thIsDefault(_ item: Item) -> Bool { thStored(item) == nil }
+    static func thIsDefault(_ item: Item, dark: Bool = AlcoveAppearance.isDark) -> Bool { thStored(item, dark: dark) == nil }
 
-    static func thSet(_ item: Item, _ color: Color?) {
+    static func thSet(_ item: Item, _ color: Color?, dark: Bool = AlcoveAppearance.isDark) {
         if let color, let hex = color.hexString {
-            UserDefaults.standard.set(hex, forKey: thKey(item))
+            UserDefaults.standard.set(hex, forKey: thKey(item, dark: dark))
         } else {
-            UserDefaults.standard.removeObject(forKey: thKey(item))
+            UserDefaults.standard.removeObject(forKey: thKey(item, dark: dark))
         }
         bump()
     }
 
-    /// 九项全上：她在树屋里调过的盖上去，没调过的还是树屋原样
-    static func applyTreehouse(to theme: AlcoveTheme) -> AlcoveTheme {
+    /// 九项全上：她在树屋（这一档白天 / 黑夜）里调过的盖上去，没调过的还是树屋原样
+    static func applyTreehouse(to theme: AlcoveTheme, dark: Bool) -> AlcoveTheme {
         var t = theme   // 树屋恢复默认时使用树屋本身，不继承其他主题的自选色。
-        if let c = thStored(.timestamp) { t.timestamp = c }
-        if let c = thStored(.thought) { t.thought = c }
-        if let c = thStored(.divider) { t.divider = c }
-        if let c = thStored(.bubbleUser) { t.bubbleUser = c }
-        if let c = thStored(.bubbleAI) { t.bubbleAI = c }
-        if let c = thStored(.textUser) { t.textUser = c }
-        if let c = thStored(.textAI) { t.textAI = c }
-        if let c = thStored(.readTick) { t.readTick = c }
-        if let c = thStored(.sendButton) { t.sendButton = c }
+        if let c = thStored(.timestamp, dark: dark) { t.timestamp = c }
+        if let c = thStored(.thought, dark: dark) { t.thought = c }
+        if let c = thStored(.divider, dark: dark) { t.divider = c }
+        if let c = thStored(.bubbleUser, dark: dark) { t.bubbleUser = c }
+        if let c = thStored(.bubbleAI, dark: dark) { t.bubbleAI = c }
+        if let c = thStored(.textUser, dark: dark) { t.textUser = c }
+        if let c = thStored(.textAI, dark: dark) { t.textAI = c }
+        if let c = thStored(.readTick, dark: dark) { t.readTick = c }
+        if let c = thStored(.sendButton, dark: dark) { t.sendButton = c }
         return t
     }
 

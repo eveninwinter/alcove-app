@@ -385,7 +385,7 @@ struct RootView: View {
                             if let img = avatarImage {
                                 Image(uiImage: img).resizable().scaledToFill()
                             } else {
-                                Circle().fill(Color(red: 0xF3/255, green: 0xF0/255, blue: 0xEA/255))
+                                Circle().fill(TreehouseInk.night ? TreehouseInk.white : Color(red: 0xF3/255, green: 0xF0/255, blue: 0xEA/255))
                                     .overlay(Image(systemName: "sparkle").font(.system(size: 13))
                                         .foregroundColor(TreehouseInk.blue))
                             }

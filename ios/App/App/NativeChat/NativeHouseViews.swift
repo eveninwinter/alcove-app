@@ -1993,12 +1993,12 @@ private struct BubbleAppearanceSettingsView: View {
 
     private func colorRow(_ item: MessagesPalette.Item) -> some View {
         let dark = chatTheme.isDark
-        // 1009 晚：树屋有自己那套键（不分日夜），信息主题照旧按日夜分开存
+        // 1009 晚：树屋有自己那套键；#3518 起树屋也分白天 / 黑夜，跟信息主题一样按眼下这一档存
         let th = chatTheme.isTreehouse
         let binding = Binding<Color>(
-            get: { th ? MessagesPalette.thCurrent(item) : MessagesPalette.current(item, dark: dark) },
-            set: { th ? MessagesPalette.thSet(item, $0) : MessagesPalette.set(item, $0, dark: dark) })
-        let isDefault = th ? MessagesPalette.thIsDefault(item) : MessagesPalette.isDefault(item, dark: dark)
+            get: { th ? MessagesPalette.thCurrent(item, dark: dark) : MessagesPalette.current(item, dark: dark) },
+            set: { th ? MessagesPalette.thSet(item, $0, dark: dark) : MessagesPalette.set(item, $0, dark: dark) })
+        let isDefault = th ? MessagesPalette.thIsDefault(item, dark: dark) : MessagesPalette.isDefault(item, dark: dark)
         return HStack(spacing: 8) {
             Text(item.title)
                 .font(.system(size: 12))
@@ -2006,7 +2006,7 @@ private struct BubbleAppearanceSettingsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
                     ForEach(Array(MessagesPalette.presets.enumerated()), id: \.offset) { _, c in
-                        Button { th ? MessagesPalette.thSet(item, c) : MessagesPalette.set(item, c, dark: dark) } label: {
+                        Button { th ? MessagesPalette.thSet(item, c, dark: dark) : MessagesPalette.set(item, c, dark: dark) } label: {
                             Circle().fill(c)
                                 .frame(width: 22, height: 22)
                                 .overlay(Circle().stroke(panelTheme.fyBorder, lineWidth: 1))
@@ -2018,7 +2018,7 @@ private struct BubbleAppearanceSettingsView: View {
             ColorPicker("", selection: binding, supportsOpacity: true)
                 .labelsHidden()
                 .frame(width: 30)
-            Button("默认") { th ? MessagesPalette.thSet(item, nil) : MessagesPalette.set(item, nil, dark: dark) }
+            Button("默认") { th ? MessagesPalette.thSet(item, nil, dark: dark) : MessagesPalette.set(item, nil, dark: dark) }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isDefault ? panelTheme.textLight : panelTheme.fyAccent)
                 .disabled(isDefault)

@@ -36,7 +36,8 @@ final class ChatWallpaperStore: ObservableObject {
         case "imessage": return "chatwall_imessage.jpg"
         case "imessage-dark": return "chatwall_imessage_dark.jpg"
         case "kakao": return "chatwall_kakao.jpg"
-        case "treehouse", "treehouse-dark": return "chatwall_treehouse.jpg"
+        case "treehouse": return "chatwall_treehouse.jpg"
+        case "treehouse-dark": return "chatwall_treehouse_dark.jpg"   // #3518 黑夜单独一格，她自己换的壁纸白天黑夜各管各的
         default: return "chatwall_haven.jpg"
         }
     }
@@ -71,7 +72,7 @@ final class ChatWallpaperStore: ObservableObject {
             }
         } else if theme.isTreehouse {
             // 1009 树屋：她成品里那层字符画树 + 蓝蝴蝶 + 颗粒，原样渲成一张图；设置里换壁纸照样能盖掉
-            descriptor = ChatWallpaperDescriptor(source: .asset("ChatWallTreehouse"))
+            descriptor = ChatWallpaperDescriptor(source: .asset(theme.isDark ? "ChatWallTreehouseNight" : "ChatWallTreehouse"))
         } else if theme.usesWallImage {
             descriptor = ChatWallpaperDescriptor(source: .asset("ChatWall"))
         } else {
