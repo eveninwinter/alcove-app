@@ -1081,7 +1081,7 @@ struct ChatView: View {
                     sticker: message.stickerId.flatMap(store.sticker(for:)),
                     theme: theme,
                     fontSize: chatFontSize,
-                    showTime: isGroupTail(cur: store.messages[groupEnd], next: next),
+                    showTime: thShowTime(rowEnd: groupEnd, next: next),
                     recall: recall,
                     hoistedThought: hoist.thought,
                     hoistedActivity: hoist.activity,
@@ -1307,6 +1307,40 @@ struct ChatView: View {
         if m.locationCard != nil { return false }   // 1008 位置卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
+    }
+
+    /// 1009 #3536 她：「最后一条消息如果是语音或者图片 时间戳就还是留在最后一条正文」——
+    /// 树屋里一串的末尾是语音 / 图时，时间不挂在它们外面，挂回这一串最后那个文字气泡里（气泡里那行）。
+    /// 这一串里一个文字泡都没有（只发了图 / 语音），照旧挂在末尾外面。别的主题不动。
+    private func thShowTime(rowEnd: Int, next: ChatMessage?) -> Bool {
+        let msgs = store.messages
+        let normal = isGroupTail(cur: msgs[rowEnd], next: next)
+        guard theme.isTreehouse else { return normal }
+        func isMedia(_ m: ChatMessage) -> Bool { m.isAudio || (m.isImage && m.displayText.isEmpty) }
+        func isTextBubble(_ m: ChatMessage) -> Bool {
+            m.musicCard == nil && !m.displayText.isEmpty && !m.isSticker && !m.isBareLink && !m.isAudio
+        }
+        let cur = msgs[rowEnd]
+        if normal {
+            // 末尾是语音 / 图：往前找同一串里有没有文字泡，有就把时间让给它
+            guard isMedia(cur) else { return true }
+            var i = rowEnd - 1
+            while i >= 0, !isGroupTail(cur: msgs[i], next: msgs[i + 1]) {
+                if isTextBubble(msgs[i]) { return false }
+                if !isMedia(msgs[i]) { break }
+                i -= 1
+            }
+            return true
+        }
+        // 不是末尾的文字泡：后面直到这一串结束全是语音 / 图，它就是「最后一条正文」，时间挂它这
+        guard isTextBubble(cur) else { return false }
+        var j = rowEnd + 1
+        while j < msgs.count {
+            guard isMedia(msgs[j]) else { return false }
+            if isGroupTail(cur: msgs[j], next: j + 1 < msgs.count ? msgs[j + 1] : nil) { return true }
+            j += 1
+        }
+        return false
     }
 
     // PWA 同款：一轮的最后一个气泡才落时间（下一条换人或隔了 2 分钟）
