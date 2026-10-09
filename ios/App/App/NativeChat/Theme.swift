@@ -151,7 +151,8 @@ struct AlcoveTheme {
         case "imessage": return MessagesPalette.apply(to: .messages, dark: false)
         case "imessage-dark": return MessagesPalette.apply(to: .messagesDark, dark: true)
         case "kakao": return .kakaoTheme()
-        case "treehouse", "treehouse-dark": return .treehouse
+        // 1009 #3507 她要的：脚印、时间、思绪那几行跟信息主题一模一样——连她在信息主题里调过的颜色也一起借（白天那份）
+        case "treehouse", "treehouse-dark": return MessagesPalette.applyMeta(to: .treehouse)
         default: return .haven
         }
     }
@@ -298,14 +299,15 @@ struct AlcoveTheme {
         let white = Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
         let dark = Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255)
         let ink = Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
-        let dim = Color(red: 0x7A/255, green: 0x79/255, blue: 0x75/255)
+        // 时间、思绪、脚印这些小字跟信息主题同一个系统灰（#3507）；顶栏模型名那行另用成品的 #7A7975
+        let dim = Color(red: 142/255, green: 142/255, blue: 147/255)
         let blue = Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255)
         let line = ink.opacity(0.14)
         var t = AlcoveTheme(
             isDark: false, isPaper: false, usesWallImage: false,
             wallGradient: [bg, bg],
             bubbleUser: dark, bubbleAI: white, text: ink, textDim: dim,
-            textLight: dim.opacity(0.8), timestamp: ink,
+            textLight: dim.opacity(0.8), timestamp: dim,
             glassTint: white, glassBorder: line,
             capsuleTint: bg.opacity(0.42), capsuleBorder: ink.opacity(0.55),
             sendTop: ink, sendBottom: ink,
@@ -548,6 +550,16 @@ enum MessagesPalette {
 
     static func bump() {
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: stampKey)
+    }
+
+    /// 1009 树屋：只借她在信息主题里调的那几行小字的颜色（时间、思绪、截断线、已读勾），气泡和正文还是树屋自己的
+    static func applyMeta(to theme: AlcoveTheme) -> AlcoveTheme {
+        var t = theme
+        if let c = stored(.timestamp, dark: false) { t.timestamp = c }
+        if let c = stored(.thought, dark: false) { t.thought = c }
+        if let c = stored(.divider, dark: false) { t.divider = c }
+        if let c = stored(.readTick, dark: false) { t.readTick = c }
+        return t
     }
 
     static func apply(to theme: AlcoveTheme, dark: Bool) -> AlcoveTheme {
