@@ -43,6 +43,10 @@ struct ChatView: View {
     @State private var photoViewer: PhotoViewerSelection?
     @StateObject private var recorder = VoiceRecorder()
     @State private var atBottom = true
+    /// 1009 #3532：手指正在拖 / 甩的时候才是 true。「离开底部」只认她自己翻上去，内容长高、键盘顶起来都不算
+    @State private var userScrolling = false
+    /// 最近一次量到的「离底 120 以内」，不触发重画；她手指松开那一刻拿它把 atBottom 校准一次
+    @State private var nearBox = TailNearBox()
     // 0924 她要的：「回到最新」那颗药丸别一动就冒出来。atBottom（离底 120pt）继续管跟不跟流式输出，
     // 药丸另看这个：往上翻超过 tailPillRevealScreens 屏才出现。想改灵敏度只动这个数。
     @State private var farFromTail = false
@@ -381,8 +385,25 @@ struct ChatView: View {
                 .onScrollGeometryChange(for: Bool.self) { g in
                     g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 120
                 } action: { _, near in
-                    if near != atBottom { atBottom = near }
+                    // 1009 #3532 她报的「树屋他发新消息不会自动顶上去、打开键盘也是」：他一条长消息落下来，
+                    // 内容一下长高好几百，这里先把 atBottom 判成 false，等 messages.count 那条去滚时一看「不在底部」就不滚了，
+                    // 之后点键盘也跟着不顶。树屋时间收进气泡、「整个」模式一整轮并成一泡，长得更猛，最容易撞上。
+                    // 改成：回到底部随时算；离开底部只认她手指拖 / 甩出来的
+                    nearBox.near = near
+                    if near {
+                        if !atBottom { atBottom = true }
+                    } else if userScrolling, atBottom {
+                        atBottom = false
+                    }
                     if near && (store.live?.active == true || store.isTyping) { followLiveOutput = true }
+                }
+                .onScrollPhaseChange { old, phase in
+                    let isUser = { (p: ScrollPhase) in p == .interacting || p == .decelerating || p == .tracking }
+                    let on = isUser(phase)
+                    if on != userScrolling { userScrolling = on }
+                    // 她手指停下来：按此刻真实位置校准（内容先长高没滚回去、她再往上翻，那一下几何回调不会再响）。
+                    // 只认手指滚完的那一下，程序自己滚完的不算
+                    if phase == .idle, isUser(old), atBottom != nearBox.near { atBottom = nearBox.near }
                 }
                 // 0924：药丸的门槛单独算——离最底超过一整屏才算「翻远了」
                 .onScrollGeometryChange(for: Bool.self) { g in
@@ -7024,6 +7045,9 @@ struct TreehouseTimeDivider: View {
     static let hm: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
     static let md: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM.dd"; return f }()
 }
+
+/// 1009 #3532：存「离底 120 以内」的最新一次，改它不触发重画
+final class TailNearBox { var near = true }
 
 /// 树屋的几样颜色（她成品 alcove chat page.html 里的 BG / INK / BLUE / WHITE / DARK）
 
