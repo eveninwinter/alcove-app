@@ -4604,7 +4604,8 @@ struct MessageRow: View {
                     }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI, showsCorner: isUser || showTime))
+                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI, showsCorner: isUser || showTime,
+                                                      glass: MessagesPalette.thGlass))
                 } else {
                     bubbleContents
                         .padding(.horizontal, 14)
@@ -7052,7 +7053,7 @@ final class TreehouseHeaderModel: ObservableObject {
         guard ticker == nil else { return }
         ticker = Task { [weak self] in
             while !Task.isCancelled {
-                if let o = try? await AlcoveAPI.getRaw("/api/pulse-now"),
+                if let o = try? await AlcoveAPI.getRaw("/api/pulse-range/now"),   // #3519 /api/pulse-now 外网门不放行，换别名
                    o["ok"] as? Bool == true,
                    let n = (o["bpm"] as? NSNumber)?.intValue, n > 0 {
                     await MainActor.run {
@@ -7164,12 +7165,32 @@ struct TreehouseBubbleFill: ViewModifier {
     let isUser: Bool
     let fill: Color
     var showsCorner: Bool = true
+    /// #3519 树屋也能切玻璃：跟信息主题那种一样——系统玻璃，上面薄薄一层白（夜里黑），浓淡跟「玻璃」那根滑条走
+    var glass: Bool = false
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @AppStorage("msgGlassFrost") private var frost = 0.3
+
+    @ViewBuilder
     func body(content: Content) -> some View {
+        let _ = houseAppearance
         let shape = UnevenRoundedRectangle(topLeadingRadius: 18,
                                            bottomLeadingRadius: !isUser && showsCorner ? 5 : 18,
                                            bottomTrailingRadius: isUser && showsCorner ? 5 : 18,
                                            topTrailingRadius: 18, style: .continuous)
+        if glass {
+            if #available(iOS 26.0, *) {
+                content
+                    .background((TreehouseInk.night ? Color.black : Color.white).opacity(frost * 0.6), in: shape)
+                    .glassEffect(.clear, in: shape)
+            } else {
+                solid(content, shape)
+            }
+        } else {
+            solid(content, shape)
+        }
+    }
+
+    private func solid(_ content: Content, _ shape: UnevenRoundedRectangle) -> some View {
         content
             .background(fill, in: shape)
             .overlay(shape.stroke(TreehouseInk.ink.opacity(isUser ? 0 : 0.06), lineWidth: 1).allowsHitTesting(false))
@@ -7595,6 +7616,8 @@ struct AudioBubble: View {
     private var ink: Color {
         // 0925：Kakao 下套的是包里的气泡图，字色跟正文气泡一样用包里写的收 / 发字色
         if theme.isKakao { return (isUser ? theme.textUser : theme.textAI) ?? theme.text }
+        // 树屋：两边各用各的正文色（夜里她的泡是浅底，原来写死白字会看不见；玻璃时也一样）
+        if theme.isTreehouse { return (isUser ? theme.textUser : theme.textAI) ?? theme.text }
         // 1001 信息主题玻璃气泡不带颜色，白字看不见：玻璃时她这边跟正文一样用调色里「我的正文」
         if theme.isMessages && isUser && MessagesPalette.glass { return theme.textUser ?? theme.text }
         return (theme.isMessages && isUser) ? .white : theme.text
@@ -7639,7 +7662,8 @@ struct AudioBubble: View {
                 KakaoBubbleView(isUser: isUser, first: false) { card(kakao: true) }
             } else if theme.isTreehouse {
                 card(kakao: false)
-                    .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI))
+                    .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI,
+                                                  glass: MessagesPalette.thGlass))
             } else {
                 // 1001 她抓的「语音的气泡呢」：跟正文气泡同一个开关，信息主题选玻璃就是玻璃
                 card(kakao: false)

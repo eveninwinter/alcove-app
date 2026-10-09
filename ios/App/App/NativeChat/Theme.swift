@@ -484,6 +484,9 @@ enum MessagesPalette {
     static let stampKey = "msgPaletteStamp"
     /// 1001 信息主题气泡用玻璃还是普通实心（设置「颜色 · 信息主题」顶上那个切换）。没设过＝玻璃（她正在试）
     static let glassKey = "msgBubbleGlass"
+    /// 1009 #3519 树屋也能切玻璃气泡：单独一个开关，不跟信息主题那个连着；默认实心（成品那样）
+    static let thGlassKey = "treehouseBubbleGlass"
+    static var thGlass: Bool { UserDefaults.standard.bool(forKey: thGlassKey) }
     static var glass: Bool { UserDefaults.standard.object(forKey: glassKey) as? Bool ?? true }
     private static let migratedKey = "msgColor.migratedToDayNight"
 
@@ -619,6 +622,8 @@ enum MessagesPalette {
         if let c = thStored(.textAI, dark: dark) { t.textAI = c }
         if let c = thStored(.readTick, dark: dark) { t.readTick = c }
         if let c = thStored(.sendButton, dark: dark) { t.sendButton = c }
+        // 玻璃气泡不带底色：她那边原来是「深泡配浅字」，换成玻璃浅字就看不见了，没单独调过就跟正文墨色走
+        if thGlass && thStored(.textUser, dark: dark) == nil { t.textUser = t.text }
         return t
     }
 

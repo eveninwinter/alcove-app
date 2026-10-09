@@ -1902,6 +1902,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
     @AppStorage(MessagesPalette.glassKey) private var bubbleGlass = true   // 1001：信息主题普通 / 玻璃气泡，两套颜色各存各的
+    @AppStorage(MessagesPalette.thGlassKey) private var thGlass = false     // 1009 #3519：树屋自己的普通 / 玻璃
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
@@ -1921,15 +1922,15 @@ private struct BubbleAppearanceSettingsView: View {
                 fontSizeSlider
                 bubbleGapSlider
                 turnGapSlider
-                if chatTheme.isMessages && !chatTheme.isKakao && !chatTheme.isTreehouse && bubbleGlass { glassFrostSlider }
+                if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassFrostSlider }
             }
         case .colors:
             VStack(spacing: 12) {
-                if chatTheme.isTreehouse { treehouseBubbleModePicker } else { bubbleStylePicker }
+                if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                 ForEach(paletteItems) { item in colorRow(item) }
             }
             Text(chatTheme.isTreehouse
-                 ? "树屋的气泡与颜色独立保存，不分白天黑夜；每项的默认只恢复该项。"
+                 ? "树屋的气泡与颜色跟信息主题分开存；白天、黑夜各一套，跟全屋的日夜开关走；每项的默认只恢复该项。"
                  : "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                 .font(.system(size: 10))
                 .foregroundColor(panelTheme.textLight)
@@ -1950,12 +1951,12 @@ private struct BubbleAppearanceSettingsView: View {
                 if chatTheme.isMessages {
                     section(chatTheme.isTreehouse ? "颜色 · 树屋" : "颜色 · 信息主题") {
                         VStack(spacing: 12) {
-                            // 树屋是实心气泡，没有普通 / 玻璃这回事；换成「他的气泡分段还是整个」
-                            if chatTheme.isTreehouse { treehouseBubbleModePicker } else { bubbleStylePicker }
+                            // 树屋：普通 / 玻璃（#3519）＋「他的气泡分段还是整个」
+                            if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                             ForEach(paletteItems) { item in colorRow(item) }
                         }
                         Text(chatTheme.isTreehouse
-                             ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。树屋只有一版，不分白天黑夜，跟信息主题那套分开存，各调各的"
+                             ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。树屋跟信息主题那套分开存，各调各的；白天、黑夜各一套，跟全屋的日夜开关走。现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套"
                              : "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                             .font(.system(size: 10))
                             .foregroundColor(panelTheme.textLight)
@@ -1968,7 +1969,7 @@ private struct BubbleAppearanceSettingsView: View {
                         fontSizeSlider
                         bubbleGapSlider
                         turnGapSlider
-                        if chatTheme.isMessages && !chatTheme.isKakao && !chatTheme.isTreehouse && bubbleGlass { glassFrostSlider }
+                        if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassFrostSlider }
                     }
                 }
 
@@ -2075,6 +2076,16 @@ private struct BubbleAppearanceSettingsView: View {
         }
     }
 
+    /// 1009 #3519 树屋也能切玻璃气泡：单独一个开关（跟信息主题那个不连着）；玻璃没有底色，「我的 / 他的气泡」两项藏起来
+    private var treehouseGlassPicker: some View {
+        Picker("气泡", selection: Binding(get: { thGlass },
+                                          set: { thGlass = $0; MessagesPalette.bump() })) {
+            Text("普通气泡").tag(false)
+            Text("玻璃气泡").tag(true)
+        }
+        .pickerStyle(.segmented)
+    }
+
     /// 1001 她要的：信息主题普通气泡 / 玻璃气泡切换。两套颜色分开存，切回普通以前调的都还在
     private var bubbleStylePicker: some View {
         Picker("气泡", selection: Binding(get: { bubbleGlass },
@@ -2088,7 +2099,9 @@ private struct BubbleAppearanceSettingsView: View {
     /// 玻璃气泡不带颜色，「我的气泡」「他的气泡」两项藏起来
     private var paletteItems: [MessagesPalette.Item] {
         // 树屋是实心气泡，没有玻璃那回事；时间戳不单独调了，跟着两边正文的 80% 走（#3511），所以少这一项
-        if chatTheme.isTreehouse { return MessagesPalette.Item.allCases.filter { $0 != .timestamp } }
+        if chatTheme.isTreehouse {
+            return MessagesPalette.Item.allCases.filter { $0 != .timestamp && !(thGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
+        }
         return MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
     }
 
