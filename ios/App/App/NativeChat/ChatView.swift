@@ -1309,14 +1309,14 @@ struct ChatView: View {
         return !m.displayText.isEmpty
     }
 
-    /// 1009 #3536 她：「最后一条消息如果是语音或者图片 时间戳就还是留在最后一条正文」——
-    /// 树屋里一串的末尾是语音 / 图时，时间不挂在它们外面，挂回这一串最后那个文字气泡里（气泡里那行）。
+    /// 1009 #3536 她：「最后一条消息如果是语音或者图片 时间戳就还是留在最后一条正文」（#3537 表情包当然也一样）——
+    /// 树屋里一串的末尾是语音 / 图 / 表情时，时间不挂在它们外面，挂回这一串最后那个文字气泡里（气泡里那行）。
     /// 这一串里一个文字泡都没有（只发了图 / 语音），照旧挂在末尾外面。别的主题不动。
     private func thShowTime(rowEnd: Int, next: ChatMessage?) -> Bool {
         let msgs = store.messages
         let normal = isGroupTail(cur: msgs[rowEnd], next: next)
         guard theme.isTreehouse else { return normal }
-        func isMedia(_ m: ChatMessage) -> Bool { m.isAudio || (m.isImage && m.displayText.isEmpty) }
+        func isMedia(_ m: ChatMessage) -> Bool { m.isAudio || m.isSticker || (m.isImage && m.displayText.isEmpty) }   // #3537 表情包同理
         func isTextBubble(_ m: ChatMessage) -> Bool {
             m.musicCard == nil && !m.displayText.isEmpty && !m.isSticker && !m.isBareLink && !m.isAudio
         }
