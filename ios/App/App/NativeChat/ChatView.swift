@@ -4819,7 +4819,7 @@ struct MessageRow: View {
         VStack(alignment: .leading, spacing: showActivity ? 7 : 0) {
             Button {
                 showActivity = true
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }   // 这条会在行内展开，留着（只有最后一条才真踢）
             } label: {
                 HStack(spacing: 4) {
                     Image(systemName: "wrench.and.screwdriver")
@@ -5025,8 +5025,7 @@ struct MessageRow: View {
     private func thinkPanelRow(_ text: String, index: Int, showRecall: Bool) -> some View {
         HStack(spacing: 4) {
             Button {
-                openedThink = text
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                openedThink = text   // #3539 弹单子不踢列表
             } label: {
                 HStack(spacing: 4) {
                 Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
@@ -5047,8 +5046,7 @@ struct MessageRow: View {
 
     private func toolRow(_ items: [ActivityItem], index: Int) -> some View {
         Button {
-            openedTools = items
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+            openedTools = items   // #3539 弹单子不踢列表
         } label: {
             HStack(spacing: 4) {
                 Image(systemName: "wrench.and.screwdriver")
@@ -5070,8 +5068,7 @@ struct MessageRow: View {
             // 统一的是布局，不是说法。
             HStack(spacing: 4) {
                 Button {
-                    showThinking = true
-                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                    showThinking = true   // #3539 她：「我一点开思绪就跳」——弹单子不改列表高度，不踢
                 } label: {
                     HStack(spacing: 4) {
                     Image(systemName: "clock.arrow.trianglehead.counterclockwise.rotate.90")
