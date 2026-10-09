@@ -1875,8 +1875,9 @@ struct ChatView: View {
                     Spacer(minLength: 0)
                 } else {
                     TextField("", text: $draft,
-                              prompt: Text("drop a leaf…").font(.system(size: 16, design: .serif).italic())
-                                .foregroundColor(ink.opacity(0.6)),
+                              // #3524–3525 她挑的 A：Pinyon 花体（跟 Diary、进度条数字一套），颜色浅到 35%
+                              prompt: Text("drop a leaf…").font(.custom("PinyonScript-Regular", size: 19))
+                                .foregroundColor(ink.opacity(0.35)),
                               axis: .vertical)
                         .focused($inputFocused)
                         .lineLimit(1...5)
