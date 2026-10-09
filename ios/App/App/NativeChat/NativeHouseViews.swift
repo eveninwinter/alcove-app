@@ -1925,10 +1925,12 @@ private struct BubbleAppearanceSettingsView: View {
             }
         case .colors:
             VStack(spacing: 12) {
-                bubbleStylePicker
+                if chatTheme.isTreehouse { treehouseBubbleModePicker } else { bubbleStylePicker }
                 ForEach(paletteItems) { item in colorRow(item) }
             }
-            Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
+            Text(chatTheme.isTreehouse
+                 ? "树屋的气泡与颜色独立保存，不分白天黑夜；每项的默认只恢复该项。"
+                 : "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                 .font(.system(size: 10))
                 .foregroundColor(panelTheme.textLight)
                 .fixedSize(horizontal: false, vertical: true)
@@ -12817,6 +12819,7 @@ extension NativeCalendarView {
             VStack(alignment: .leading, spacing: 8) {
                 Text("UPCOMING").font(THD.mono(19)).tracking(2).foregroundColor(THD.blue)
                 Text(thUpcomingLine).font(THD.serif(23)).lineLimit(2)
+                    .foregroundColor(upcoming.first.map { $0.isHim ? THD.blue : THD.pink } ?? THD.dim)
             }
             .frame(width: 250, alignment: .leading)
             .offset(x: 548, y: 234)
@@ -12843,6 +12846,7 @@ extension NativeCalendarView {
                             .padding(.vertical, 6)
                         }
                         .buttonStyle(.plain)
+                        .foregroundColor(it.isHim ? THD.blue : THD.pink)
                     }
                 }
             }
@@ -12892,23 +12896,7 @@ extension NativeCalendarView {
             .disabled(diary == nil)
             .offset(x: 427, y: 624)
 
-            // 上一篇
-            if let prev = thPrevDate, let e = thDiary(prev) {
-                Button { thOpen(prev) } label: {
-                    VStack(alignment: .leading, spacing: 0) {
-                        Text(String(prev.suffix(5)).replacingOccurrences(of: "-", with: "."))
-                            .font(THD.mono(17)).tracking(2).foregroundColor(THD.dim)
-                        Text(thTitle(e.string("title"), cut: false)).font(THD.serif(30)).lineLimit(1)
-                            .truncationMode(.tail).padding(.vertical, 13)
-                        Text("原文留在这里。").font(THD.serif(21)).foregroundColor(THD.dim)
-                            .lineSpacing(10).frame(width: 160, alignment: .leading)
-                    }
-                    .frame(width: 367, alignment: .leading)
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .offset(x: 427, y: 892)
-            }
+
             }
 
             Group {
@@ -13099,6 +13087,10 @@ private struct TreehouseNewReminderSheet: View {
     @State private var date: Date
     @State private var time: Date
     @State private var title = ""
+    @State private var allDay = false
+    @State private var repeatKind = "none"
+    @State private var alertMin = 60
+    @State private var note = ""
     @State private var saving = false
     @State private var error: String?
 
@@ -13113,6 +13105,7 @@ private struct TreehouseNewReminderSheet: View {
     }
 
     var body: some View {
+        ScrollView {
         VStack(alignment: .leading, spacing: 16) {
             HStack {
                 Text("新增日程").font(THD.serif(22))
@@ -13120,8 +13113,9 @@ private struct TreehouseNewReminderSheet: View {
                 Button { dismiss() } label: { Text("×").font(.system(size: 22)).frame(width: 44, height: 44) }
                     .buttonStyle(.plain)
             }
-            field("日期") { DatePicker("", selection: $date, displayedComponents: .date).labelsHidden() }
-            field("时间") { DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden() }
+            Toggle("全天", isOn: $allDay).tint(THD.pink)
+            field("日期") { DatePicker("日期", selection: $date, in: Calendar.current.startOfDay(for: Date())..., displayedComponents: .date).datePickerStyle(.graphical).tint(THD.pink) }
+            if !allDay { field("时间") { DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden() } }
             field("事项") {
                 TextField("", text: $title)
                     .font(.system(size: 15))
@@ -13129,6 +13123,28 @@ private struct TreehouseNewReminderSheet: View {
                     .background(Color.white)
                     .overlay(Rectangle().stroke(Color(red: 0xAA/255, green: 0xAA/255, blue: 0xAA/255), lineWidth: 1))
             }
+            Divider()
+            field("重复") {
+                Picker("重复", selection: $repeatKind) {
+                    Text("不重复").tag("none")
+                    Text("每天").tag("daily")
+                    Text("每周").tag("weekly")
+                    Text("每月").tag("monthly")
+                    Text("每年").tag("yearly")
+                }.pickerStyle(.segmented)
+            }
+            field("提醒") {
+                Picker("提醒", selection: $alertMin) {
+                    Text("准时").tag(0)
+                    Text("提前1小时").tag(60)
+                    Text("提前1天").tag(1440)
+                }.pickerStyle(.segmented)
+            }
+            field("备注") {
+                TextField("备注（可不填）", text: $note, axis: .vertical)
+                    .lineLimit(2...5).font(THD.serif(15))
+            }
+            Divider()
             HStack(spacing: 12) {
                 Button { save() } label: {
                     Text(saving ? "保存中…" : "保存").font(THD.serif(15))
@@ -13142,6 +13158,7 @@ private struct TreehouseNewReminderSheet: View {
             Spacer(minLength: 0)
         }
         .padding(24)
+        }
         .foregroundColor(THD.ink)
         .background(Color(red: 0xFA/255, green: 0xFA/255, blue: 0xFA/255).ignoresSafeArea())
         .environment(\.colorScheme, .light)
@@ -13165,8 +13182,8 @@ private struct TreehouseNewReminderSheet: View {
         let body: [String: Any] = [
             "title": t,
             "day": String(format: "%04d-%02d-%02d", d.year ?? 0, d.month ?? 0, d.day ?? 0),
-            "time": String(format: "%02d:%02d", hm.hour ?? 9, hm.minute ?? 0), "all_day": false,
-            "repeat": "none", "alert_min": 60, "note": "", "author": "user",
+            "time": allDay ? "" : String(format: "%02d:%02d", hm.hour ?? 9, hm.minute ?? 0), "all_day": allDay,
+            "repeat": repeatKind, "alert_min": alertMin, "note": note, "author": "user",
         ]
         Task {
             let err = await ReminderAPI.add(body)
@@ -13461,6 +13478,7 @@ private struct NativeDreamsView: View {
     @State private var thCache: [String: (body: String, seg: Int?)] = [:]
     @State private var thReading: TreehouseDiaryRead?
     @State private var thShowList = false
+    @State private var thTraces: TreehouseTraceNight?    // 「夜里还有 N 次留痕」点开那张单子
 
     private var palette: DreamPalette { _ = houseAppearance; return DreamPalette(dark: AlcoveAppearance.isDark) }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -13782,6 +13800,42 @@ private struct NativeDreamsView: View {
 // 「夜里还有几次留痕」能展开；摘要和「几段记忆」（这场梦用了几段材料）选中时再拉；右下角「记梦」去掉（#3506）。
 // 中文宋体随包（serif-sc.woff2，GB2312 子集）：网页进程看不到 App 注册的字体。
 
+private struct TreehouseTraceNight: Identifiable {
+    let id = UUID()
+    let title: String
+    let rows: [(time: String, title: String, label: String)]
+}
+
+/// 夜里零碎的留痕：时间｜内容｜哪一种，白底黑字，跟树屋读全文那页一个样子
+private struct TreehouseTraceSheet: View {
+    let night: TreehouseTraceNight
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(night.title).font(.system(size: 10, design: .monospaced)).tracking(2)
+                    .foregroundColor(Color(red: 0x6C/255, green: 0x6C/255, blue: 0x70/255))
+                    .padding(.bottom, 16)
+                ForEach(Array(night.rows.enumerated()), id: \.offset) { _, r in
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text(r.time).font(.system(size: 11, design: .monospaced))
+                            .foregroundColor(Color(red: 0x9A/255, green: 0x9A/255, blue: 0x9E/255))
+                        Text(r.title).font(WindowFont.swiftUI(14)).lineLimit(2)
+                        Spacer(minLength: 8)
+                        Text(r.label).font(.system(size: 10, design: .monospaced))
+                            .foregroundColor(Color(red: 0x9A/255, green: 0x9A/255, blue: 0x9E/255))
+                    }
+                    .padding(.vertical, 8)
+                    .overlay(alignment: .bottom) { Rectangle().fill(Color.black.opacity(0.06)).frame(height: 1) }
+                }
+            }
+            .padding(24)
+        }
+        .foregroundColor(Color(red: 0x14/255, green: 0x14/255, blue: 0x16/255))
+        .background(Color(red: 0xEE/255, green: 0xEE/255, blue: 0xEB/255).ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+    }
+}
+
 private final class TreehouseDreamsBridge: NSObject, WKScriptMessageHandler {
     weak var webView: WKWebView?
     var onMessage: ([String: Any]) -> Void = { _ in }
@@ -13864,6 +13918,7 @@ extension NativeDreamsView {
         }
         .sheet(item: $thReading) { r in TreehouseDiaryReader(read: r) }
         .sheet(isPresented: $thShowList) { thDreamList.presentationDetents([.medium, .large]) }
+        .sheet(item: $thTraces) { n in TreehouseTraceSheet(night: n).presentationDetents([.medium, .large]) }
     }
 
     // ── 数据 ──
@@ -13946,6 +14001,15 @@ extension NativeDreamsView {
         switch m["type"] as? String {
         case "back": dismiss()
         case "menu": thShowList = true
+        case "traces":
+            // 1009 #3509：原来在卡片里就地展开，卡片一变高整页就得重排、月亮跟着重建（闪、卡、月亮忽大忽小），改成弹单子
+            guard let d = thDreams.first(where: { $0.string("dream_id") == id }) else { return }
+            let item = thItem(d)
+            thTraces = TreehouseTraceNight(title: item["night"] as? String ?? "",
+                                           rows: (item["traces"] as? [[String: Any]] ?? []).map {
+                                               (time: $0["time"] as? String ?? "", title: $0["title"] as? String ?? "",
+                                                label: $0["label"] as? String ?? "")
+                                           })
         case "select":
             Task {
                 let r = await thFetch(id)
