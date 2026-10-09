@@ -42,6 +42,9 @@ struct AlcoveTheme {
     var isMessages: Bool = false
     // 0924 她要的 Kakao 家族：挂在信息骨架上，壁纸和气泡是主题包里的图（KakaoTheme.swift）
     var isKakao: Bool = false
+    // 1009 #3501 她要的「树屋」：也挂在信息骨架上，气泡 / 顶栏 / 输入框 / 时间照她的成品 alcove chat page.html 画，
+    // 壁纸是那张字符画树（资源 ChatWallTreehouse）。只有一版，不分白天黑夜（跟 Kakao 一样）
+    var isTreehouse: Bool = false
     // 0902 她要的两个可调色位：思绪/过程线、各种截断线（时间戳截断、做了一场梦、切歌那一行）。
     // 没调过就是 nil，回落到 textDim——别的主题一个像素不变。
     var thought: Color? = nil
@@ -138,6 +141,7 @@ struct AlcoveTheme {
     static let paperDark = midnight.paperCopy(dark: true)
     static let messages = haven.messagesCopy(dark: false)
     static let messagesDark = midnight.messagesCopy(dark: true)
+    static let treehouse = haven.treehouseCopy()
 
     static func named(_ name: String) -> AlcoveTheme {
         switch name {
@@ -147,6 +151,7 @@ struct AlcoveTheme {
         case "imessage": return MessagesPalette.apply(to: .messages, dark: false)
         case "imessage-dark": return MessagesPalette.apply(to: .messagesDark, dark: true)
         case "kakao": return .kakaoTheme()
+        case "treehouse", "treehouse-dark": return .treehouse
         default: return .haven
         }
     }
@@ -161,6 +166,8 @@ struct AlcoveTheme {
         case "imessage": return panelNamed("haven")
         case "imessage-dark": return panelNamed("midnight")
         case "kakao": return AlcoveTheme.kakaoPanel(dark: AlcoveAppearance.isDark)   // 0924 她要的：抽屉/设置页的底色跟主题包壁纸走
+        // 树屋只改聊天页；抽屉 / 设置页借纸页那套，深浅跟全屋按钮走
+        case "treehouse", "treehouse-dark": return AlcoveAppearance.isDark ? paperDark : paper
         case "midnight":
             return midnight.panelCopy(
                 splashBg: [
@@ -284,6 +291,41 @@ struct AlcoveTheme {
         return t
     }
 
+    /// 树屋：颜色全照她的成品 alcove chat page.html —— 冷白颗粒底 #EFEFED、他的泡 #FBFAF7 黑字、
+    /// 她的泡 #2A2826 白字、墨 #141414、电光蓝 #0B1BFF。抽屉那些面板不读这里（panelNamed 走纸页）
+    fileprivate func treehouseCopy() -> AlcoveTheme {
+        let bg = Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
+        let white = Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
+        let dark = Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255)
+        let ink = Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
+        let dim = Color(red: 0x7A/255, green: 0x79/255, blue: 0x75/255)
+        let blue = Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255)
+        let line = ink.opacity(0.14)
+        var t = AlcoveTheme(
+            isDark: false, isPaper: false, usesWallImage: false,
+            wallGradient: [bg, bg],
+            bubbleUser: dark, bubbleAI: white, text: ink, textDim: dim,
+            textLight: dim.opacity(0.8), timestamp: ink,
+            glassTint: white, glassBorder: line,
+            capsuleTint: bg.opacity(0.42), capsuleBorder: ink.opacity(0.55),
+            sendTop: ink, sendBottom: ink,
+            fade: bg, splashBg: [bg, bg], splashBarTop: blue,
+            splashBarBottom: blue.opacity(0.8), splashGlowA: .clear, splashGlowB: .clear,
+            splashPetal: blue.opacity(0.3), splashTitle: ink,
+            fyAccent: blue, fyAccentSoft: blue.opacity(0.14), fyCard: white,
+            fyCardSub: bg, fyBorder: line,
+            fyShadow: Color.black.opacity(0.05),
+            fyFold: line, fyDash: dim.opacity(0.3),
+            panelTextureAsset: "PaperLight"
+        )
+        t.isMessages = true
+        t.isTreehouse = true
+        t.textUser = white
+        t.textAI = ink
+        t.sendButton = ink
+        return t
+    }
+
     private func paperCopy(dark: Bool) -> AlcoveTheme {
         let paper = dark ? Color(red: 24/255, green: 24/255, blue: 25/255)
                          : Color(red: 248/255, green: 248/255, blue: 246/255)
@@ -335,8 +377,15 @@ enum AlcoveAppearance {
         case "paper", "paper-dark": return "paper"
         case "imessage", "imessage-dark": return "imessage"
         case "kakao": return "kakao"
+        case "treehouse", "treehouse-dark": return "treehouse"
         default: return "glass"
         }
+    }
+
+    /// 只管聊天页、自己不分深浅的皮（Kakao、树屋）：别的页面拿它画会恒按白天，得改认全屋按钮
+    static func chatOnly(_ name: String) -> Bool {
+        let f = family(of: name)
+        return f == "kakao" || f == "treehouse"
     }
 
     static func themeName(family: String, dark: Bool) -> String {
@@ -344,6 +393,7 @@ enum AlcoveAppearance {
         case "paper": return dark ? "paper-dark" : "paper"
         case "imessage": return dark ? "imessage-dark" : "imessage"
         case "kakao": return "kakao"   // 主题包自己带颜色，没有夜里那版
+        case "treehouse": return "treehouse"   // 树屋也只有一版
         default: return dark ? "midnight" : "haven"
         }
     }

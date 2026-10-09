@@ -12,6 +12,7 @@
 		2239D73AB32FB5FF31969C0B /* SplashView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F2B572F65DE29D384C89D6A5 /* SplashView.swift */; };
 		2FAD9763203C412B000D30F8 /* config.xml in Resources */ = {isa = PBXBuildFile; fileRef = 2FAD9762203C412B000D30F8 /* config.xml */; };
 		9A11C0DE00084F8CA3D60B11 /* Akabara-Cinderella.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00084F8CA3D60B22 /* Akabara-Cinderella.ttf */; };
+		7EE0C0DE0A1009000000F0B1 /* PinyonScript-Regular.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 7EE0C0DE0A1009000000F0F2 /* PinyonScript-Regular.ttf */; };
 		9A11C0DE00074F8CA3D60B11 /* ShigotoMemogaki.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00074F8CA3D60B22 /* ShigotoMemogaki.ttf */; };
 		9A11C0DE00064F8CA3D60B11 /* Tanugo-R-TTF.ttf in Resources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00064F8CA3D60B22 /* Tanugo-R-TTF.ttf */; };
 		35A0019BCC3823CD268EF0A5 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 881453AC5C0212F4F3132131 /* Theme.swift */; };
@@ -121,6 +122,7 @@
 		141B61BBC3ADE771BDF6329B /* WebViewPage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WebViewPage.swift; sourceTree = "<group>"; };
 		2FAD9762203C412B000D30F8 /* config.xml */ = {isa = PBXFileReference; lastKnownFileType = text.xml; path = config.xml; sourceTree = "<group>"; };
 		9A11C0DE00084F8CA3D60B22 /* Akabara-Cinderella.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Akabara-Cinderella.ttf"; sourceTree = "<group>"; };
+		7EE0C0DE0A1009000000F0F2 /* PinyonScript-Regular.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "PinyonScript-Regular.ttf"; sourceTree = "<group>"; };
 		9A11C0DE00074F8CA3D60B22 /* ShigotoMemogaki.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "ShigotoMemogaki.ttf"; sourceTree = "<group>"; };
 		9A11C0DE00064F8CA3D60B22 /* Tanugo-R-TTF.ttf */ = {isa = PBXFileReference; lastKnownFileType = file; path = "Tanugo-R-TTF.ttf"; sourceTree = "<group>"; };
 		34F66C325070B92D4F9F9758 /* ClawdView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ClawdView.swift; sourceTree = "<group>"; };
@@ -268,6 +270,7 @@
 				504EC3131FED79650016851F /* Info.plist */,
 				2FAD9762203C412B000D30F8 /* config.xml */,
 				9A11C0DE00084F8CA3D60B22 /* Akabara-Cinderella.ttf */,
+				7EE0C0DE0A1009000000F0F2 /* PinyonScript-Regular.ttf */,
 				9A11C0DE00074F8CA3D60B22 /* ShigotoMemogaki.ttf */,
 				9A11C0DE00064F8CA3D60B22 /* Tanugo-R-TTF.ttf */,
 				50B271D01FEDC1A000F3C39B /* public */,
@@ -464,6 +467,7 @@
 				504EC30D1FED79650016851F /* Main.storyboard in Resources */,
 				2FAD9763203C412B000D30F8 /* config.xml in Resources */,
 				9A11C0DE00084F8CA3D60B11 /* Akabara-Cinderella.ttf in Resources */,
+				7EE0C0DE0A1009000000F0B1 /* PinyonScript-Regular.ttf in Resources */,
 				9A11C0DE00074F8CA3D60B11 /* ShigotoMemogaki.ttf in Resources */,
 				9A11C0DE00064F8CA3D60B11 /* Tanugo-R-TTF.ttf in Resources */,
 			);

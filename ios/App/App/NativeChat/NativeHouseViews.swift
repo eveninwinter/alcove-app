@@ -465,7 +465,7 @@ struct NativeHouseDrawer: View {
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     private var theme: AlcoveTheme {
         _ = houseAppearance
-        return AlcoveAppearance.family(of: themeName) == "kakao" ? .panelNamed(themeName) : .named(themeName)
+        return AlcoveAppearance.chatOnly(themeName) ? .panelNamed(themeName) : .named(themeName)
     }
 
     private var screenSafeInsets: UIEdgeInsets {
@@ -1379,6 +1379,12 @@ private struct NativeSettingsView: View {
                             .white,
                             Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
                         ])
+                        // 1009 #3501 她要的第四个：树屋（聊天页、日记页照她的两个成品画；抽屉设置这些借纸页，深浅跟全屋按钮）
+                        familyChoice("树屋", "住在树上", "treehouse", [
+                            Color(red: 0x9F/255, green: 0xD0/255, blue: 0xC2/255),
+                            Color(red: 0xF2/255, green: 0xB8/255, blue: 0xC8/255),
+                            Color(red: 0x2A/255, green: 0x2B/255, blue: 0x33/255)
+                        ])
                     }
                     if themeFamily == "kakao" {
                         KakaoPackPicker(theme: theme)
@@ -1799,7 +1805,7 @@ private struct NativeSettingsView: View {
     private var isPaperFamily: Bool { themeName == "paper" || themeName == "paper-dark" }
     private var isMessagesFamily: Bool { themeName == "imessage" || themeName == "imessage-dark" }
     private var isKakaoFamily: Bool { themeName == "kakao" }
-    private var themeFamily: String { isPaperFamily ? "paper" : (isMessagesFamily ? "imessage" : (isKakaoFamily ? "kakao" : "glass")) }
+    private var themeFamily: String { AlcoveAppearance.family(of: themeName) }
     // 0827 全屋只剩这一个开关：按下去同时写 houseInterfaceAppearance（功能页、
     // 共读室、檐下、信箱、信封卡读它）和 alcoveTheme 的深浅后缀（聊天页、圆桌、
     // 根视图读它）。以前这两个各走各的，她按了一边另一边不动。
@@ -1909,7 +1915,7 @@ private struct BubbleAppearanceSettingsView: View {
                 fontSizeSlider
                 bubbleGapSlider
                 turnGapSlider
-                if chatTheme.isMessages && !chatTheme.isKakao && bubbleGlass { glassFrostSlider }
+                if chatTheme.isMessages && !chatTheme.isKakao && !chatTheme.isTreehouse && bubbleGlass { glassFrostSlider }
             }
         case .colors:
             VStack(spacing: 12) {
@@ -1951,7 +1957,7 @@ private struct BubbleAppearanceSettingsView: View {
                         fontSizeSlider
                         bubbleGapSlider
                         turnGapSlider
-                        if chatTheme.isMessages && !chatTheme.isKakao && bubbleGlass { glassFrostSlider }
+                        if chatTheme.isMessages && !chatTheme.isKakao && !chatTheme.isTreehouse && bubbleGlass { glassFrostSlider }
                     }
                 }
 
@@ -3912,7 +3918,7 @@ struct MusicMiniPlayer: View {
     /// 1002：Kakao 下跟输入框一样借信息主题那套，深浅只认全屋按钮（原来拿包的输入框底＋包的字色，不跟黑白翻）
     private var theme: AlcoveTheme {
         _ = houseAppearance
-        guard AlcoveAppearance.family(of: themeName) == "kakao" else { return .named(themeName) }
+        guard AlcoveAppearance.chatOnly(themeName) else { return .named(themeName) }   // 1009 树屋的输入框同理
         return .named(AlcoveAppearance.isDark ? "imessage-dark" : "imessage")
     }
 
@@ -12016,6 +12022,13 @@ private struct NativeCalendarView: View {
     @State private var showNewReminder = false
     @ObservedObject private var fontStore = KakaoPackStore.shared
     @Namespace private var zoomNS
+    // 1009 #3501 树屋主题下整页换成她的成品 alcove 日记预览（年轮转盘那版），见文件后面 extension NativeCalendarView
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var thRotation: Double = 0          // 年轮转了多少度
+    @State private var thLastAngle: Double?            // 拖动中上一帧手指的角度
+    @State private var thShowPicker = false            // 月份旁边的小箭头 → 日历挑月份和日子
+    @State private var thShowNew = false               // 新增日程
+    @State private var thReading: TreehouseDiaryRead?  // 点日记读全文
 
     /// 阅读页（DiaryReader）还是原来那套梅花
     private var palette: DiaryPalette { _ = houseAppearance; return DiaryPalette(dark: AlcoveAppearance.isDark) }
@@ -12044,8 +12057,16 @@ private struct NativeCalendarView: View {
     }
 
     var body: some View {
+        if AlcoveAppearance.family(of: themeName) == "treehouse" {
+            treehouseBody
+        } else {
+            pixelBody
+        }
+    }
+
+    private var pixelBody: some View {
         let p = pp
-        ZStack(alignment: .bottomTrailing) {
+        return ZStack(alignment: .bottomTrailing) {
             DiaryPixelPaper(pal: p)
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
@@ -12481,6 +12502,687 @@ private struct NativeCalendarView: View {
             let tsTime = ts.count > 16 ? String(ts.dropFirst(11).prefix(5)) : ""
             diaryContents["\(date)_\(tsTime)"] = entry.string("content")
         }
+    }
+}
+
+// MARK: - 1009 #3501 树屋日记：照她的成品「Alcove · 日记预览」一比一
+//
+// 成品是一张 851 × 1848 的画布，「整张等比缩放，不许重排」。这里也一样：所有东西按成品 CSS 的坐标摆在
+// 851 宽的画布上，再整体缩到屏幕里（宽、高谁先顶到用谁）；画布顶上 68 那段空白让给灵动岛，头部从安全区下面开始。
+// 跟成品不一样的只有数据：日记、篇数、日程都是真的（成品里写死的那几篇不进 App）；
+// 月份后面加了个小箭头，点了弹日历挑月份和日子（她 #3504 要的）。
+
+struct TreehouseDiaryRead: Identifiable {
+    let id = UUID()
+    let title: String
+    let body: String
+    let chord: String
+}
+
+private enum THD {
+    static let paper = Color(red: 0xF6/255, green: 0xF6/255, blue: 0xF5/255)
+    static let ink = Color(red: 0x18/255, green: 0x19/255, blue: 0x1B/255)
+    static let blue = Color(red: 0x18/255, green: 0x2E/255, blue: 0xF2/255)
+    static let pink = Color(red: 0xF1/255, green: 0x2B/255, blue: 0x8D/255)
+    static let gray = Color(red: 0x73/255, green: 0x74/255, blue: 0x77/255)   // small / .mono
+    static let dim = Color(red: 0x77/255, green: 0x77/255, blue: 0x77/255)    // .empty / .second small
+    static let six = Color(red: 0x66/255, green: 0x66/255, blue: 0x66/255)    // .excerpt、照片角上的折线
+    static let rule = Color(red: 0x99/255, green: 0x99/255, blue: 0x99/255)
+    static let label = Color(red: 0x62/255, green: 0x63/255, blue: 0x62/255)  // 年轮上的日子
+
+    /// Georgia 打头，中文落到宋体（成品 font-family: Georgia, "Songti SC"）
+    static func serif(_ size: CGFloat) -> Font {
+        let base = UIFont(name: "Georgia", size: size) ?? UIFont.systemFont(ofSize: size)
+        let cjk = WindowFont.ui(size)
+        let desc = base.fontDescriptor.addingAttributes([.cascadeList: [cjk.fontDescriptor]])
+        return Font(UIFont(descriptor: desc, size: size) as CTFont)
+    }
+    static func mono(_ size: CGFloat) -> Font { .system(size: size, design: .monospaced) }
+    static func script(_ size: CGFloat) -> Font { .custom("PinyonScript-Regular", size: size) }
+
+    static let monthEN = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+    static let monthCN = ["一月", "二月", "三月", "四月", "五月", "六月", "七月", "八月", "九月", "十月", "十一月", "十二月"]
+}
+
+/// 年轮纹理：成品里那段 JS 原样搬过来（同一个种子 1309、同一套 mulberry32），画一次存成图，转的时候只转图
+private enum TreehouseRings {
+    private struct Mulberry {
+        var a: UInt32
+        mutating func next() -> Double {
+            a = a &+ 0x6D2B79F5
+            var t = (a ^ (a >> 15)) &* (1 | a)
+            t = (t &+ ((t ^ (t >> 7)) &* (61 | t))) ^ t
+            return Double(t ^ (t >> 14)) / 4294967296
+        }
+    }
+
+    static let image: UIImage = render(px: 900)
+
+    /// 320×320 的 viewBox 画进 px×px 的图
+    private static func render(px: CGFloat) -> UIImage {
+        var rng = Mulberry(a: 1309)
+        let R = { rng.next() }
+        var H: [(a: Double, amp: Double)] = []
+        for k in 1...6 { H.append((a: R() * .pi * 2, amp: k == 1 ? 0.07 : (k == 2 ? 0.05 : 0.04 / Double(k)))) }
+        func shape(_ th: Double) -> Double {
+            var s = 1.0
+            for (k, h) in H.enumerated() { s += h.amp * sin(Double(k + 1) * th + h.a) }
+            return s
+        }
+        let N = 62
+        var rad: [Double] = []
+        var r = 21.0
+        for _ in 0...N { r += 1.15 + R() * 1.05; rad.append(r) }
+        let sc = 131 / rad[N]
+        rad = rad.map { $0 * sc }
+        func P(_ th: Double, _ rr: Double, _ i: Int) -> CGPoint {
+            let f = 1 - 0.8 * Double(i) / Double(N)
+            let s = 1 + (shape(th) - 1) * f + 0.012 * sin(th * 9 + Double(i) * 0.7)
+            let ex = 1 + 0.03 * f, ey = 1 - 0.03 * f
+            return CGPoint(x: 160 + cos(th) * rr * s * ex, y: 160 + sin(th) * rr * s * ey)
+        }
+        let G = Array("#%@&8$*+=:;x")
+        let crackA = 5.55
+        let ink = UIColor(red: 0x34/255, green: 0x36/255, blue: 0x38/255, alpha: 1)
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = false
+        return UIGraphicsImageRenderer(size: CGSize(width: px, height: px), format: fmt).image { ctx in
+            let cg = ctx.cgContext
+            cg.scaleBy(x: px / 320, y: px / 320)
+            let para = NSMutableParagraphStyle()
+            para.alignment = .center
+            for i in 0...N {
+                let rr = rad[i], week = i % 7 == 0, bark = i >= N - 1
+                let circ = rr * 2 * .pi * 1.03
+                if week || bark {
+                    let fs: CGFloat = bark ? 4.6 : 3.9
+                    let step = bark ? 2.4 : 3.0
+                    let n = Int(floor(circ / step))
+                    let font = UIFont.monospacedSystemFont(ofSize: fs, weight: .bold)
+                    for j in 0..<n {
+                        let th = Double(j) / Double(n) * .pi * 2 + Double(i) * 0.02
+                        if abs(th.truncatingRemainder(dividingBy: .pi * 2) - crackA) < 0.035 && i > 8 { continue }
+                        if R() < 0.1 { continue }
+                        let p = P(th, rr, i)
+                        let alpha = bark ? 0.75 + R() * 0.2 : 0.42 + R() * 0.3
+                        let ch = String(G[Int(floor(R() * Double(G.count)))])
+                        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink.withAlphaComponent(alpha), .paragraphStyle: para]
+                        // SVG 的 y 是基线（p.y + 1.4），换成框顶：基线往上一个 ascender
+                        let top = p.y + 1.4 - font.ascender
+                        (ch as NSString).draw(in: CGRect(x: p.x - fs, y: top, width: fs * 2, height: fs * 1.5), withAttributes: attrs)
+                    }
+                } else {
+                    let n = Int(floor(circ / 1.25))
+                    for j in 0..<n {
+                        let th = Double(j) / Double(n) * .pi * 2
+                        if abs(th.truncatingRemainder(dividingBy: .pi * 2) - crackA) < 0.035 && i > 8 { continue }
+                        if R() < 0.4 { continue }
+                        let p = P(th, rr, i)
+                        cg.setFillColor(ink.withAlphaComponent(0.12 + R() * 0.24).cgColor)
+                        cg.fill(CGRect(x: p.x, y: p.y, width: 0.6, height: 0.6))
+                    }
+                }
+            }
+        }
+    }
+}
+
+extension NativeCalendarView {
+    // ── 数据 ──
+    fileprivate var thDays: Int {
+        var c = DateComponents(); c.year = year; c.month = month; c.day = 1
+        guard let d = Calendar.current.date(from: c),
+              let r = Calendar.current.range(of: .day, in: .month, for: d) else { return 31 }
+        return r.count
+    }
+    fileprivate func thKey(_ d: Int) -> String { String(format: "%04d-%02d-%02d", year, month, d) }
+    /// 选中的是这个月第几天（没选、或选的不是这个月 → 1）
+    fileprivate var thDay: Int {
+        guard let s = selectedDate, s.hasPrefix(String(format: "%04d-%02d-", year, month)),
+              let d = Int(s.suffix(2)) else { return 1 }
+        return min(max(1, d), thDays)
+    }
+    fileprivate func thDiary(_ date: String) -> [String: Any]? {
+        (events[date] ?? []).first { $0.string("type") == "diary" }
+    }
+    fileprivate func thContent(_ date: String, _ e: [String: Any]) -> String {
+        diaryContents["\(date)_\(e.string("time"))"] ?? ""
+    }
+    /// 成品：title.replace(/^.*?日\s*[·・]\s*/, '')，大标题再截到第一个逗号
+    fileprivate func thTitle(_ t: String, cut: Bool) -> String {
+        var s = t
+        if let r = s.range(of: #"^.*?日\s*[·・]\s*"#, options: .regularExpression) { s.removeSubrange(r) }
+        if cut, let i = s.firstIndex(where: { $0 == "，" || $0 == "," }) { s = String(s[..<i]) }
+        return s
+    }
+    /// 摘要：正文第一行要是标题就跳过（成品 body.split('\n').slice(1)）
+    fileprivate func thExcerpt(_ body: String, title: String) -> String {
+        var lines = body.components(separatedBy: "\n")
+        if let first = lines.first, !title.isEmpty,
+           first.contains(title) || title.contains(first.trimmingCharacters(in: .whitespaces)) {
+            lines.removeFirst()
+        }
+        return lines.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+    /// 这个月里、选中那天之前最近的一篇
+    fileprivate var thPrevDate: String? {
+        let cur = thKey(thDay)
+        return events.keys.filter { $0 < cur && thDiary($0) != nil }.max()
+    }
+    fileprivate var thCountLine: String {
+        let p = diaryFirst.split(separator: "-")
+        if diaryTotal > 0, p.count == 3, let m = Int(p[1]), let d = Int(p[2]) {
+            return String(format: "%d LEAVES · SINCE %02d.%02d", diaryTotal, m, d)
+        }
+        return "\(max(diaryTotal, events.values.flatMap { $0 }.filter { $0.string("type") == "diary" }.count)) LEAVES"
+    }
+
+    fileprivate func thSelect(_ d: Int, animated: Bool = true) {
+        let day = min(max(1, d), thDays)
+        let key = thKey(day)
+        selectedDate = key
+        let target = -Double(day - 1) * 360 / Double(thDays)
+        if animated {
+            withAnimation(.easeOut(duration: 0.35)) { thRotation = target }
+        } else {
+            thRotation = target
+        }
+        Task { await loadDay(key) }
+    }
+
+    fileprivate func thOpen(_ date: String) {
+        guard let e = thDiary(date) else { return }
+        Task {
+            if thContent(date, e).isEmpty { await loadDay(date) }
+            let body = thContent(date, e)
+            thReading = TreehouseDiaryRead(title: e.string("title"), body: body.isEmpty ? "这条没有正文。" : body,
+                                           chord: e.string("chord"))
+        }
+    }
+
+    // ── 整页 ──
+    var treehouseBody: some View {
+        GeometryReader { geo in
+            let top = max(safeTop, 20), bottom = max(safeBottom, 12)
+            // 画布上要露出来的是 68（头部）到 1804（新增日程的底）
+            let s = min(geo.size.width / 851, (geo.size.height - top - bottom - 8) / 1736)
+            ZStack(alignment: .topLeading) {
+                THD.paper
+                thCanvas
+                    .frame(width: 851, height: 1848, alignment: .topLeading)
+                    .scaleEffect(s, anchor: .topLeading)
+                    .frame(width: 851 * s, height: 1848 * s, alignment: .topLeading)
+                    .offset(x: (geo.size.width - 851 * s) / 2, y: top + 4 - 68 * s)
+            }
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+        }
+        .ignoresSafeArea()
+        .foregroundColor(THD.ink)
+        .task {
+            WindowFont.requestSongti()
+            let now = Calendar.current.dateComponents([.year, .month], from: Date())
+            if selectedDate == nil, year == now.year, month == now.month { selectedDate = todayKey }
+            await loadMonth()
+            thSelect(thDay, animated: false)
+        }
+        .sheet(item: $thReading) { r in TreehouseDiaryReader(read: r) }
+        .sheet(isPresented: $thShowNew) {
+            TreehouseNewReminderSheet(day: thKey(thDay)) { Task { await loadReminders() } }
+                .presentationDetents([.medium, .large])
+        }
+        .sheet(isPresented: $thShowPicker) {
+            TreehouseDatePickSheet(initial: thKey(thDay)) { y, m, d in
+                if y != year || m != month {
+                    year = y; month = m
+                    selectedDate = thKey(d)
+                    Task { await loadMonth(); thSelect(d, animated: false) }
+                } else {
+                    thSelect(d)
+                }
+            }
+            .presentationDetents([.medium])
+        }
+    }
+
+    /// 851 × 1848 的画布，坐标全照成品 CSS
+    @ViewBuilder fileprivate var thCanvas: some View {
+        let day = thDay
+        let key = thKey(day)
+        let diary = thDiary(key)
+        ZStack(alignment: .topLeading) {
+            Color.clear.frame(width: 851, height: 1848)
+
+            Group {
+            // header：‹ ｜ Diary 日记 ｜ ☰（top 68，高 84，竖直居中）
+            Button { dismiss() } label: {
+                Text("‹").font(THD.serif(48)).frame(width: 44, height: 84)
+            }
+            .buttonStyle(.plain)
+            .offset(x: 52, y: 68)
+            HStack(alignment: .firstTextBaseline, spacing: 16) {
+                Text("Diary").font(THD.script(96)).offset(y: -2)
+                Text("日记").font(WindowFont.swiftUI(22))
+                    .tracking(6).foregroundColor(Color(red: 0x8A/255, green: 0x8A/255, blue: 0x88/255))
+                    .offset(y: -4)
+            }
+            .fixedSize()
+            .frame(height: 84)
+            .offset(x: 52 + 44 + 40, y: 68)
+            Button { thShowPicker = true } label: {
+                Text("☰").font(.system(size: 38)).frame(width: 44, height: 84)
+            }
+            .buttonStyle(.plain)
+            .offset(x: 851 - 48 - 44, y: 68)
+
+            // subtitle：163 LEAVES · SINCE 07.07
+            Text(thCountLine).font(THD.mono(21)).tracking(4).foregroundColor(THD.gray)
+                .fixedSize().offset(x: 139, y: 178)
+
+            // 竖排：NOW GROWING ／ 正在生长的
+            TreehouseVerticalLabel(latin: "NOW GROWING", cjk: "　／　正在生长的")
+                .offset(x: 55, y: 244)
+
+            // UPCOMING
+            VStack(alignment: .leading, spacing: 8) {
+                Text("UPCOMING").font(THD.mono(19)).tracking(2).foregroundColor(THD.blue)
+                Text(thUpcomingLine).font(THD.serif(23)).lineLimit(2)
+            }
+            .frame(width: 250, alignment: .leading)
+            .offset(x: 548, y: 234)
+
+            // TODAY · 10.07 + 那天的日程
+            VStack(alignment: .leading, spacing: 0) {
+                Text(String(format: "TODAY · %02d.%02d", month, day))
+                    .font(THD.mono(19)).tracking(1).foregroundColor(THD.blue).lineLimit(1)
+                    .padding(.bottom, 9)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .overlay(alignment: .bottom) { Rectangle().fill(THD.blue).frame(height: 1) }
+                let list = (reminders[key] ?? []).sorted { $0.time < $1.time }
+                if list.isEmpty {
+                    Text("暂无日程").font(THD.serif(20)).foregroundColor(THD.dim).lineSpacing(10).padding(.top, 6)
+                } else {
+                    ForEach(list.prefix(4)) { it in
+                        Button { toggleReminder(it) } label: {
+                            HStack(spacing: 8) {
+                                Image(systemName: it.done ? "checkmark.square.fill" : "square")
+                                    .font(.system(size: 22, weight: .light))
+                                Text("\(it.timeLabel) \(it.title)").font(THD.serif(20)).lineLimit(1)
+                                    .strikethrough(it.done)
+                            }
+                            .padding(.vertical, 6)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .frame(width: 248, alignment: .leading)
+            .offset(x: 547, y: 461)
+            }
+
+            Group {
+            // 拼贴：两张照片 + 角上的折线 + 一蓝一粉两个小方块
+            Rectangle().fill(THD.blue).frame(width: 13, height: 13).offset(x: 104, y: 1080)
+            Rectangle().fill(THD.pink).frame(width: 13, height: 13).offset(x: 797, y: 989)
+            Image("TreehouseDiaryPhoto1").resizable().scaledToFill()
+                .frame(width: 278, height: 677).clipped().offset(x: 117, y: 404)
+            TreehouseCornerMark(top: true, right: true).frame(width: 54, height: 46).offset(x: 367, y: 389)
+            TreehouseCornerMark(top: false, right: false).frame(width: 52, height: 50).offset(x: 85, y: 1055)
+            Image("TreehouseDiaryPhoto2").resizable().scaledToFill()
+                .frame(width: 198, height: 201).clipped().offset(x: 600, y: 1002)
+            TreehouseCornerMark(top: true, right: false).frame(width: 54, height: 46).offset(x: 588, y: 987)
+            }
+
+            Group {
+            // 选中那天的日记
+            Button { thOpen(key) } label: {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text(key).font(THD.mono(17)).tracking(2).foregroundColor(THD.gray)
+                    if let e = diary {
+                        let content = thContent(key, e)
+                        let title = thTitle(e.string("title"), cut: true)
+                        Text(title.isEmpty ? "无题" : title).font(THD.serif(36)).lineSpacing(13).lineLimit(2)
+                            .padding(.vertical, 14)
+                        Text(thExcerpt(content, title: title)).font(THD.serif(22)).foregroundColor(THD.six)
+                            .lineSpacing(12).lineLimit(2).frame(width: 330, alignment: .leading)
+                            .padding(.bottom, 12)
+                        if !content.isEmpty {
+                            Text("—\n\(content.filter { !$0.isWhitespace }.count.formatted()) 字")
+                                .font(THD.serif(22)).tracking(1).lineSpacing(11)
+                        }
+                    } else {
+                        Text("这一天，还没有日记").font(THD.serif(36)).lineSpacing(13).lineLimit(2)
+                            .padding(.vertical, 14)
+                    }
+                }
+                .frame(width: 365, alignment: .leading)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(diary == nil)
+            .offset(x: 427, y: 624)
+
+            // 上一篇
+            if let prev = thPrevDate, let e = thDiary(prev) {
+                Button { thOpen(prev) } label: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(String(prev.suffix(5)).replacingOccurrences(of: "-", with: "."))
+                            .font(THD.mono(17)).tracking(2).foregroundColor(THD.dim)
+                        Text(thTitle(e.string("title"), cut: false)).font(THD.serif(30)).lineLimit(1)
+                            .truncationMode(.tail).padding(.vertical, 13)
+                        Text("原文留在这里。").font(THD.serif(21)).foregroundColor(THD.dim)
+                            .lineSpacing(10).frame(width: 160, alignment: .leading)
+                    }
+                    .frame(width: 367, alignment: .leading)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .offset(x: 427, y: 892)
+            }
+            }
+
+            Group {
+            // 年轮（640×640，左边出画布 134）
+            thWheel(day: day)
+                .frame(width: 640, height: 640)
+                .offset(x: -134, y: 1164)
+
+            // 2026 · 十月 + 小箭头 → 日历
+            Button { thShowPicker = true } label: {
+                HStack(spacing: 8) {
+                    Text("\(String(year)) · \(THD.monthCN[max(0, min(11, month - 1))])")
+                        .font(THD.mono(22)).tracking(3)
+                    Image(systemName: "chevron.down").font(.system(size: 15, weight: .regular))
+                }
+                .fixedSize()
+                .frame(width: 300, alignment: .trailing)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .offset(x: 851 - 64 - 300 + 24, y: 1164 + 126)
+
+            // 蓝线：从转盘上的蓝圆连到右边那栏
+            Rectangle().fill(THD.blue).frame(width: 153, height: 1).offset(x: 497, y: 1484)
+            // 右边那栏：2026 / 10.07 / WED / 有日记
+            VStack(alignment: .leading, spacing: 0) {
+                Text(String(year)).font(THD.mono(22)).tracking(3).foregroundColor(THD.gray)
+                Text(String(format: "%02d.%02d", month, day)).font(THD.serif(53)).lineLimit(1).fixedSize()
+                    .padding(.vertical, 7)
+                Text(thWeekday(day)).font(THD.mono(22)).tracking(3).foregroundColor(THD.gray)
+                Text(diary == nil ? "暂无日记" : "有日记").font(THD.serif(23)).foregroundColor(THD.dim)
+                    .padding(.top, 18)
+            }
+            .padding(.leading, 35)
+            .frame(width: 170, height: 198, alignment: .topLeading)
+            .overlay(alignment: .leading) { Rectangle().fill(THD.rule).frame(width: 1) }
+            .offset(x: 651, y: 1383)
+
+            // 新增日程
+            Button { thShowNew = true } label: {
+                VStack(spacing: 13) {
+                    TreehouseLeafShape()
+                        .stroke(THD.ink, style: StrokeStyle(lineWidth: 1.5 * 46 / 24, lineCap: .round, lineJoin: .round))
+                        .frame(width: 46, height: 46)
+                        .padding(24)
+                        .overlay(Circle().stroke(Color(red: 0x55/255, green: 0x55/255, blue: 0x55/255), lineWidth: 1))
+                    Text("新增日程").font(THD.serif(23))
+                }
+                .fixedSize()
+                .frame(width: 120)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .offset(x: 851 - 51 - 120 + 13, y: 1804 - 94 - 13 - 30)
+            }
+        }
+        .frame(width: 851, height: 1848, alignment: .topLeading)
+    }
+
+    fileprivate var thUpcomingLine: String {
+        guard let it = upcoming.first else { return "暂无日程" }
+        return "\(it.shortDay.replacingOccurrences(of: "/", with: ".")) · \(it.timeLabel)  \(it.title)"
+    }
+
+    fileprivate func thWeekday(_ d: Int) -> String {
+        var c = DateComponents(); c.year = year; c.month = month; c.day = d
+        guard let dt = Calendar.current.date(from: c) else { return "" }
+        return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
+    }
+
+    /// 年轮：viewBox 320 放大一倍画在 640 里。纹理、日子、有日记的小黑点跟着转；中间月份、右边蓝圆不动
+    fileprivate func thWheel(day: Int) -> some View {
+        let n = thDays
+        let k: Double = 2
+        return ZStack {
+            Image(uiImage: TreehouseRings.image).resizable().interpolation(.high)
+                .frame(width: 640, height: 640)
+                .rotationEffect(.degrees(thRotation))
+            ForEach(1...n, id: \.self) { d in
+                let a = (Double(d - 1) * 360 / Double(n) + thRotation) * .pi / 180
+                Text("\(d)").font(THD.serif(10 * k)).foregroundColor(THD.label)
+                    .fixedSize()
+                    .position(x: (160 + 143 * cos(a)) * k, y: (160 + 143 * sin(a)) * k)
+                if thDiary(thKey(d)) != nil {
+                    Circle().fill(Color(red: 0x22/255, green: 0x22/255, blue: 0x22/255))
+                        .frame(width: 3.6 * k, height: 3.6 * k)
+                        .position(x: (160 + 132 * cos(a)) * k, y: (160 + 132 * sin(a)) * k)
+                }
+            }
+            Text("\(month)").font(THD.serif(30 * k)).position(x: 160 * k, y: 152.5 * k)
+            Text(THD.monthEN[max(0, min(11, month - 1))]).font(THD.serif(10 * k)).foregroundColor(THD.dim)
+                .position(x: 160 * k, y: 176.5 * k)
+            Circle().fill(THD.blue).frame(width: 24 * k, height: 24 * k).position(x: 303 * k, y: 160 * k)
+            Text("\(day)").font(THD.serif(12 * k)).foregroundColor(.white).position(x: 303 * k, y: 160 * k)
+        }
+        .frame(width: 640, height: 640)
+        .contentShape(Circle())
+        .gesture(
+            DragGesture(minimumDistance: 0, coordinateSpace: .local)
+                .onChanged { g in
+                    let a = Double(atan2(g.location.y - 320, g.location.x - 320)) * 180 / .pi
+                    if let last = thLastAngle {
+                        var delta = (a - last + 540).truncatingRemainder(dividingBy: 360) - 180
+                        if delta < -180 { delta += 360 }
+                        thRotation += delta
+                    }
+                    thLastAngle = a
+                }
+                .onEnded { _ in
+                    thLastAngle = nil
+                    let stepDeg = 360 / Double(n)
+                    let idx = Int((-thRotation / stepDeg).rounded())
+                    thSelect(((idx % n) + n) % n + 1)
+                }
+        )
+    }
+}
+
+/// 照片角上那段直角折线（成品 .image1:before / :after、.image2:before）
+private struct TreehouseCornerMark: View {
+    let top: Bool
+    let right: Bool
+    var body: some View {
+        Canvas { ctx, size in
+            var p = Path()
+            let y = top ? 0.5 : size.height - 0.5
+            let x = right ? size.width - 0.5 : 0.5
+            p.move(to: CGPoint(x: right ? 0 : size.width, y: y))
+            p.addLine(to: CGPoint(x: x, y: y))
+            p.addLine(to: CGPoint(x: x, y: top ? size.height : 0))
+            ctx.stroke(p, with: .color(THD.six), lineWidth: 1)
+        }
+    }
+}
+
+/// 竖排小字：英文整段侧过来，中文一个字一个字往下排（成品 writing-mode: vertical-rl，等宽 17、字距 5）
+private struct TreehouseVerticalLabel: View {
+    let latin: String
+    let cjk: String
+    var body: some View {
+        let font = UIFont.monospacedSystemFont(ofSize: 17, weight: .regular)
+        let w = (latin as NSString).size(withAttributes: [.font: font]).width + CGFloat(latin.count) * 5
+        let h = font.lineHeight
+        VStack(spacing: 5) {
+            Text(latin).font(THD.mono(17)).tracking(5).foregroundColor(THD.dim)
+                .fixedSize()
+                .frame(width: w, height: h)
+                .rotationEffect(.degrees(90))
+                .frame(width: h, height: w)
+            ForEach(Array(cjk.enumerated()), id: \.offset) { _, ch in
+                Text(String(ch)).font(THD.serif(17)).foregroundColor(THD.dim)
+                    .frame(width: h, height: 17)
+            }
+        }
+    }
+}
+
+/// 点日记读全文：成品里那个白底小窗（标题 22、正文 16 行高 1.9、底下一行等宽小字）
+private struct TreehouseDiaryReader: View {
+    let read: TreehouseDiaryRead
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack {
+                    Spacer()
+                    Button { dismiss() } label: { Text("×").font(.system(size: 22)).frame(width: 44, height: 44) }
+                        .buttonStyle(.plain)
+                }
+                Text(read.title).font(THD.serif(22)).lineSpacing(11).padding(.bottom, 14)
+                Text(read.body).font(THD.serif(16)).lineSpacing(14).textSelection(.enabled)
+                if !read.chord.isEmpty {
+                    Text(read.chord).font(THD.mono(11)).tracking(1.6).foregroundColor(THD.gray).padding(.top, 16)
+                }
+            }
+            .padding(24)
+        }
+        .foregroundColor(THD.ink)
+        .background(Color(red: 0xFA/255, green: 0xFA/255, blue: 0xFA/255).ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+    }
+}
+
+/// 新增日程：成品那个小窗——日期、时间、事项、保存；存进真的日程（/api/reminders/add，跟原来那张卡一样提前 1 小时提醒）
+private struct TreehouseNewReminderSheet: View {
+    let onAdded: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date
+    @State private var time: Date
+    @State private var title = ""
+    @State private var saving = false
+    @State private var error: String?
+
+    init(day: String, onAdded: @escaping () -> Void) {
+        self.onAdded = onAdded
+        let p = day.split(separator: "-").compactMap { Int($0) }
+        var c = DateComponents()
+        if p.count == 3 { c.year = p[0]; c.month = p[1]; c.day = p[2] }
+        _date = State(initialValue: Calendar.current.date(from: c) ?? Date())
+        var t = DateComponents(); t.hour = 9; t.minute = 0
+        _time = State(initialValue: Calendar.current.date(from: t) ?? Date())
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack {
+                Text("新增日程").font(THD.serif(22))
+                Spacer()
+                Button { dismiss() } label: { Text("×").font(.system(size: 22)).frame(width: 44, height: 44) }
+                    .buttonStyle(.plain)
+            }
+            field("日期") { DatePicker("", selection: $date, displayedComponents: .date).labelsHidden() }
+            field("时间") { DatePicker("", selection: $time, displayedComponents: .hourAndMinute).labelsHidden() }
+            field("事项") {
+                TextField("", text: $title)
+                    .font(.system(size: 15))
+                    .padding(10)
+                    .background(Color.white)
+                    .overlay(Rectangle().stroke(Color(red: 0xAA/255, green: 0xAA/255, blue: 0xAA/255), lineWidth: 1))
+            }
+            HStack(spacing: 12) {
+                Button { save() } label: {
+                    Text(saving ? "保存中…" : "保存").font(THD.serif(15))
+                        .padding(.horizontal, 18).frame(minHeight: 44)
+                        .overlay(Rectangle().stroke(Color(red: 0x44/255, green: 0x44/255, blue: 0x44/255), lineWidth: 1))
+                }
+                .buttonStyle(.plain)
+                .disabled(saving || title.trimmingCharacters(in: .whitespaces).isEmpty)
+                if let error { Text(error).font(.system(size: 12)).foregroundColor(THD.dim) }
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(24)
+        .foregroundColor(THD.ink)
+        .background(Color(red: 0xFA/255, green: 0xFA/255, blue: 0xFA/255).ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+    }
+
+    private func field<V: View>(_ label: String, @ViewBuilder _ v: () -> V) -> some View {
+        VStack(alignment: .leading, spacing: 7) {
+            Text(label).font(THD.serif(13))
+            v()
+        }
+    }
+
+    private func save() {
+        let t = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return }
+        let cal = Calendar.current
+        let d = cal.dateComponents([.year, .month, .day], from: date)
+        let hm = cal.dateComponents([.hour, .minute], from: time)
+        saving = true
+        error = nil
+        let body: [String: Any] = [
+            "title": t,
+            "day": String(format: "%04d-%02d-%02d", d.year ?? 0, d.month ?? 0, d.day ?? 0),
+            "time": String(format: "%02d:%02d", hm.hour ?? 9, hm.minute ?? 0), "all_day": false,
+            "repeat": "none", "alert_min": 60, "note": "", "author": "user",
+        ]
+        Task {
+            let err = await ReminderAPI.add(body)
+            saving = false
+            if let err { error = err } else { onAdded(); dismiss() }
+        }
+    }
+}
+
+/// 月份旁边的小箭头：弹一个日历，挑月份和日子
+private struct TreehouseDatePickSheet: View {
+    let onPick: (Int, Int, Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date: Date
+
+    init(initial: String, onPick: @escaping (Int, Int, Int) -> Void) {
+        self.onPick = onPick
+        let p = initial.split(separator: "-").compactMap { Int($0) }
+        var c = DateComponents()
+        if p.count == 3 { c.year = p[0]; c.month = p[1]; c.day = p[2] }
+        _date = State(initialValue: Calendar.current.date(from: c) ?? Date())
+    }
+
+    var body: some View {
+        VStack(spacing: 8) {
+            HStack {
+                Button("取消") { dismiss() }
+                Spacer()
+                Button("好") {
+                    let c = Calendar.current.dateComponents([.year, .month, .day], from: date)
+                    onPick(c.year ?? 2026, c.month ?? 1, c.day ?? 1)
+                    dismiss()
+                }
+                .fontWeight(.semibold)
+            }
+            .font(THD.serif(16))
+            .foregroundColor(THD.ink)
+            DatePicker("", selection: $date, displayedComponents: .date)
+                .datePickerStyle(.graphical)
+                .labelsHidden()
+                .tint(THD.blue)
+        }
+        .padding(20)
+        .background(THD.paper.ignoresSafeArea())
+        .environment(\.colorScheme, .light)
+        .environment(\.locale, Locale(identifier: "zh_CN"))
     }
 }
 

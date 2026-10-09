@@ -19,6 +19,7 @@ struct RootView: View {
     @State private var showChatPlayer = false
     @State private var showChatInsight = false
     @ObservedObject private var listenMusic = MusicModel.shared
+    @ObservedObject private var treehouseHeader = TreehouseHeaderModel.shared   // 1009 树屋顶栏的心率 / 模型名
     @State private var roundtableUnread = 0
     @State private var latestRoundtableID = 0
     @State private var thinkingEnabled = false
@@ -104,7 +105,7 @@ struct RootView: View {
                     openPlayer: { showChatPlayer = true },
                     minimize: { withAnimation(.easeOut(duration: 0.22)) { listenMinimized = true } })
                     .padding(.horizontal, 24)
-                    .padding(.top, theme.isMessages && !theme.isKakao ? 72 : 50)
+                    .padding(.top, theme.isTreehouse ? 86 : (theme.isMessages && !theme.isKakao ? 72 : 50))
                     .frame(maxWidth: .infinity, alignment: .top)
                     .zIndex(6)
                     .transition(.move(edge: .top).combined(with: .opacity))
@@ -357,9 +358,101 @@ struct RootView: View {
         if theme.isMessages { messagesTopBar } else { legacyTopBar }
     }
 
+    @ViewBuilder private var messagesTopBar: some View {
+        if theme.isTreehouse { treehouseTopBar } else { messagesTopBarCore }
+    }
+
+    /// 1009 树屋顶栏，照她成品：‹ ｜头像（36，奶白底）＋名字（宋体、字距拉开）＋模型（斜体灰）｜右边「● 心率」、电话、菜单，
+    /// 都不垫玻璃，字外面一圈雾白的光晕压住壁纸；下面一整根上下文进度线。
+    /// ‹ 开房间（原来左上角那扇门），点头像名字跟原来一样进终端 / 双击拍一拍
+    private var treehouseTopBar: some View {
+        let ink = TreehouseInk.ink
+        return VStack(spacing: 0) {
+            HStack(alignment: .center, spacing: 0) {
+                Button {
+                    NotificationCenter.default.post(name: .alcoveOpenRoomPicker, object: nil)
+                } label: {
+                    Image(systemName: "chevron.left")
+                        .font(.system(size: 19, weight: .light))
+                        .frame(width: 30, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                HStack(alignment: .center, spacing: 10) {
+                    ZStack(alignment: .topTrailing) {
+                        Group {
+                            if let img = avatarImage {
+                                Image(uiImage: img).resizable().scaledToFill()
+                            } else {
+                                Circle().fill(Color(red: 0xF3/255, green: 0xF0/255, blue: 0xEA/255))
+                                    .overlay(Image(systemName: "sparkle").font(.system(size: 13))
+                                        .foregroundColor(TreehouseInk.blue))
+                            }
+                        }
+                        .frame(width: 36, height: 36)
+                        .clipShape(Circle())
+                        .overlay(Circle().stroke(ink.opacity(0.06), lineWidth: 1))
+                        .shadow(color: ink.opacity(0.18), radius: 5, x: 0, y: 4)
+                        if assistantAsleep {
+                            Text("💤").font(.system(size: 11)).offset(x: 5, y: -4)
+                        }
+                    }
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
+                            .font(.system(size: 18, design: .serif))
+                            .tracking(2.5)
+                        Text(treehouseHeader.model.isEmpty ? " " : treehouseHeader.model)
+                            .font(.system(size: 12.5, design: .serif).italic())
+                            .tracking(0.3)
+                            .foregroundColor(TreehouseInk.gray)
+                            .lineLimit(1)
+                    }
+                }
+                .contentShape(Rectangle())
+                .onTapGesture(count: 2) { sendPat() }
+                .onTapGesture { openHeader() }
+                Spacer(minLength: 8)
+                HStack(alignment: .center, spacing: 18) {
+                    if let bpm = treehouseHeader.bpm {
+                        HStack(spacing: 7) {
+                            Circle().fill(ink).frame(width: 7, height: 7)
+                                .background(Circle().fill(ink.opacity(0.08)).frame(width: 13, height: 13))
+                            Text("\(bpm)").font(.system(size: 15, design: .serif))
+                        }
+                    }
+                    Button { activeCall = .outgoing } label: {
+                        Image(systemName: "phone").font(.system(size: 18, weight: .light))
+                            .frame(width: 24, height: 44).contentShape(Rectangle())
+                    }
+                    if listenMusic.nowPlaying != nil {
+                        Button { presentHouse(.music) } label: {
+                            Image(systemName: "music.note").font(.system(size: 17, weight: .light))
+                                .frame(width: 22, height: 44).contentShape(Rectangle())
+                        }
+                        .transition(.opacity.combined(with: .scale(scale: 0.7)))
+                    }
+                    Button { presentHouse(.sidebar) } label: {
+                        Image(systemName: "line.3.horizontal").font(.system(size: 18, weight: .light))
+                            .frame(width: 24, height: 44).contentShape(Rectangle())
+                    }
+                }
+                .buttonStyle(.plain)
+                .animation(.easeInOut(duration: 0.2), value: listenMusic.nowPlaying != nil)
+            }
+            .foregroundColor(ink)
+            .shadow(color: TreehouseInk.fog, radius: 2)
+            .shadow(color: TreehouseInk.fog, radius: 5)
+            .padding(.leading, 8).padding(.trailing, 16)
+            TreehouseContextLine(room: chatRoom)
+                .padding(.horizontal, 16)
+                .padding(.top, 22)
+        }
+        .frame(height: 84, alignment: .top)
+    }
+
     // 0822 她要的 iMessage 同款顶栏：大头像居中（点了照样进终端页），名字在下；
     // 左上角不放东西，右上角还是那三个胶囊。
-    private var messagesTopBar: some View {
+    private var messagesTopBarCore: some View {
         ZStack(alignment: .top) {
             VStack(spacing: 4) {
                 if theme.isKakao {

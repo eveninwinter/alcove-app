@@ -259,6 +259,16 @@ struct ChatView: View {
                 }
             }
         }
+        // 1009 树屋顶栏要他的心率和模型名：顶栏在 RootView 拿不到 store，这里递过去
+        .onReceive(store.$messages) { msgs in
+            if let bpm = msgs.last(where: { $0.role != "user" && $0.heartRate != nil })?.heartRate,
+               TreehouseHeaderModel.shared.bpm != bpm {
+                TreehouseHeaderModel.shared.bpm = bpm
+            }
+        }
+        .onReceive(store.$modelLabel) { label in
+            if TreehouseHeaderModel.shared.model != label { TreehouseHeaderModel.shared.model = label }
+        }
         .onChange(of: themeName) { newThemeName in
             if newThemeName == "kakao" { KakaoPackStore.shared.refresh() }
             wallpaperStore.refresh(
@@ -421,6 +431,9 @@ struct ChatView: View {
                         if theme.isKakao {
                             // 0924 她选的：Kakao 顶栏透明、矮一点贴灵动岛下面，消息滑到顶部像圆桌那样渐隐（edgeFadeMask）
                             bar().frame(height: 44, alignment: .top)
+                        } else if theme.isTreehouse {
+                            // 1009 树屋：头像名字一排 + 底下那根上下文进度线，消息从线下面开始
+                            bar().frame(height: 80, alignment: .top)
                         } else {
                             bar().frame(height: 52, alignment: .top)
                         }
@@ -935,6 +948,8 @@ struct ChatView: View {
             if divided {
                 if theme.isKakao {
                     KakaoDateDivider(date: message.date)
+                } else if theme.isTreehouse {
+                    TreehouseTimeDivider(date: message.date)
                 } else if theme.isMessages {
                     MessagesTimeDivider(date: message.date, color: theme.dividerColor)
                 } else {
@@ -1434,7 +1449,8 @@ struct ChatView: View {
                     }
                 }
                 if let pv = store.pendingVoice { voicePreviewCard(pv) }
-                if theme.isMessages { messagesComposerRow } else { classicComposerBody }
+                if theme.isTreehouse { treehouseComposerRow }
+                else if theme.isMessages { messagesComposerRow } else { classicComposerBody }
             }
             .background {
                 RoundedRectangle(cornerRadius: 28, style: .continuous)
@@ -1562,6 +1578,14 @@ struct ChatView: View {
                 }
             }
         } label: {
+            if composerTheme.isTreehouse {
+                // 1009 树屋：光秃秃一个细加号，不垫玻璃圆（她成品里就是这样）
+                Image(systemName: "plus")
+                    .font(.system(size: 21, weight: .light))
+                    .foregroundColor(TreehouseInk.ink)
+                    .frame(width: 40, height: 40)
+                    .contentShape(Rectangle())
+            } else {
             Image(systemName: "plus")
                 .font(.system(size: 18, weight: .medium))
                 .foregroundColor(composerTheme.textDim)
@@ -1572,6 +1596,7 @@ struct ChatView: View {
                     shadow: Color.black.opacity(composerTheme.isDark ? 0.35 : 0.10),
                     circle: true, enabled: composerTheme.isMessages))
                 .background((composerTheme.isMessages ? Color.clear : composerTheme.glassTint.opacity(composerTheme.isDark ? 0.64 : 0.82)), in: Circle())
+            }
         }
     }
 
@@ -1770,6 +1795,95 @@ struct ChatView: View {
             .onTapGesture { if !recorder.isRecording { inputFocused = true } }
         }
         .padding(.init(top: 6, leading: 12, bottom: 4, trailing: 12))
+    }
+
+    /// 1009 树屋输入栏，照她成品：细加号｜雾白半透明胶囊（墨线描边，占位字斜体「drop a leaf…」，右边一支话筒）｜
+    /// 外面一颗同材质的圆，里面一片叶子＝发送。叶子只管发 / 停；空着的时候按它不录音，录音走胶囊里的话筒。
+    private var treehouseComposerRow: some View {
+        let ink = TreehouseInk.ink
+        let hasPayload = canSend || store.heldCount > 0 || store.pendingVoice != nil
+        return HStack(alignment: .bottom, spacing: 2) {
+            if recorder.isRecording {
+                Button(action: { recorder.cancel() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .light))
+                        .foregroundColor(ink)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                composerPlusMenu
+            }
+            HStack(alignment: .center, spacing: 6) {
+                if recorder.isRecording {
+                    Circle().fill(TreehouseInk.blue).frame(width: 7, height: 7)
+                    Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                        .font(.system(size: 15, design: .monospaced))
+                        .foregroundColor(ink)
+                    Text("录音中… 按叶子停下").font(.system(size: 13)).foregroundColor(ink.opacity(0.55))
+                    Spacer(minLength: 0)
+                } else {
+                    TextField("", text: $draft,
+                              prompt: Text("drop a leaf…").font(.system(size: 16, design: .serif).italic())
+                                .foregroundColor(ink.opacity(0.6)),
+                              axis: .vertical)
+                        .focused($inputFocused)
+                        .lineLimit(1...5)
+                        .font(.system(size: 15))
+                        .foregroundColor(ink)
+                        .tint(ink)
+                        .onChange(of: draft) { value in handleDraftChange(value) }
+                    if !hasPayload && !isGenerating {
+                        Button { recorder.start() } label: {
+                            Image(systemName: "mic")
+                                .font(.system(size: 15, weight: .light))
+                                .foregroundColor(ink.opacity(0.55))
+                                .frame(width: 28, height: 30)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .padding(.vertical, 5)
+            .frame(minHeight: 40)
+            .modifier(TreehouseFogGlass(shape: Capsule(), border: 0.55))
+            .contentShape(Capsule())
+            .onTapGesture { if !recorder.isRecording { inputFocused = true } }
+            .padding(.trailing, 8)
+            Button {
+                if hasPayload || isGenerating || recorder.isRecording { performDynamicComposerAction() }
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    Group {
+                        if isGenerating || recorder.isRecording {
+                            Image(systemName: "stop.fill").font(.system(size: 13))
+                                .foregroundColor(ink)
+                        } else {
+                            TreehouseLeafShape()
+                                .stroke(ink, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                                .frame(width: 19, height: 19)
+                        }
+                    }
+                    .frame(width: 44, height: 44)
+                    .modifier(TreehouseFogGlass(shape: Circle(), border: 0.7))
+                    if store.heldCount > 0 {
+                        Text("\(store.heldCount)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(TreehouseInk.white)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(ink, in: Capsule())
+                            .offset(x: 2, y: -2)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, -2)
+        }
+        .padding(.init(top: 6, leading: 14, bottom: 6, trailing: 18))
     }
 
     private func holdCurrentDraft() {
@@ -4402,6 +4516,12 @@ struct MessageRow: View {
                     KakaoBubbleView(isUser: isUser, first: kakaoFirstBubble) { bubbleContents }
                 } else if theme.isPaper && !isUser {
                     bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
+                } else if theme.isTreehouse {
+                    // 1009 树屋：照她成品——实心，18 圆角、贴边那个角收成 5；他的白泡外面一圈很淡的墨线
+                    bubbleContents
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 9)
+                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI))
                 } else {
                     bubbleContents
                         .padding(.horizontal, 14)
@@ -4947,8 +5067,12 @@ struct MessageRow: View {
         !photoURLs.isEmpty || (msg.isImage && !(msg.attachmentUrl ?? "").isEmpty)
     }
 
-    @ViewBuilder
     private var photoBlockCore: some View {
+        photoBlockInner.modifier(TreehousePhotoFrame(on: theme.isTreehouse))
+    }
+
+    @ViewBuilder
+    private var photoBlockInner: some View {
         if !photoURLs.isEmpty {
             OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
                                          onOpen: onTapImages, nativeMenu: onReactLongPress == nil)
@@ -6668,6 +6792,8 @@ struct ChatLookPreview: View {
                 VStack(alignment: .leading, spacing: CGFloat(bubbleGap)) {
                     if t.isKakao {
                         KakaoDateDivider(date: Date())
+                    } else if t.isTreehouse {
+                        TreehouseTimeDivider(date: Date())
                     } else if t.isMessages {
                         MessagesTimeDivider(date: Date(), color: t.dividerColor)
                     } else {
@@ -6775,6 +6901,150 @@ struct MessagesTimeDivider: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+/// 1009 树屋的时间：打字机字、字距拉开，衬一块半透明的雾白小底（照她成品 stamp()）
+struct TreehouseTimeDivider: View {
+    let date: Date
+    var body: some View {
+        Text(Self.text(date))
+            .font(.system(size: 10.5, design: .monospaced))
+            .tracking(1.5)
+            .foregroundColor(TreehouseInk.ink)
+            .padding(.horizontal, 8).padding(.vertical, 2)
+            .background(TreehouseInk.fog.opacity(0.9), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            .opacity(0.75)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 10)
+    }
+    /// 今天只写几点；别的日子前面加月.日
+    static func text(_ d: Date) -> String {
+        Calendar.current.isDateInToday(d) ? hm.string(from: d) : md.string(from: d) + "  " + hm.string(from: d)
+    }
+    static let hm: DateFormatter = { let f = DateFormatter(); f.dateFormat = "HH:mm"; return f }()
+    static let md: DateFormatter = { let f = DateFormatter(); f.dateFormat = "MM.dd"; return f }()
+}
+
+/// 树屋的几样颜色（她成品 alcove chat page.html 里的 BG / INK / BLUE / WHITE / DARK）
+enum TreehouseInk {
+    static let fog = Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
+    static let ink = Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
+    static let blue = Color(red: 0x0B/255, green: 0x1B/255, blue: 0xFF/255)
+    static let white = Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
+    static let dark = Color(red: 0x2A/255, green: 0x28/255, blue: 0x26/255)
+    static let gray = Color(red: 0x7A/255, green: 0x79/255, blue: 0x75/255)
+}
+
+/// 树屋顶栏要的两样：他最近一次心率（「● 88」）、模型名（名字底下那行斜体）
+final class TreehouseHeaderModel: ObservableObject {
+    static let shared = TreehouseHeaderModel()
+    @Published var bpm: Int?
+    @Published var model = ""
+}
+
+/// 树屋顶栏底下那根线：细灰轨道、黑色实心段＝上下文用了多少、头上一颗电光蓝圆点（她成品 progress line）。
+/// tmux / SDK 读 /api/sdk-shadow/status 里当前通道那份，API 房间读 /api/api-room/context；隔 8 秒问一次
+struct TreehouseContextLine: View {
+    let room: String
+    @State private var ratio: Double = 0
+
+    var body: some View {
+        GeometryReader { geo in
+            let w = geo.size.width
+            let x = max(4, w * ratio)
+            ZStack(alignment: .leading) {
+                Rectangle().fill(TreehouseInk.ink.opacity(0.22)).frame(height: 1)
+                Capsule().fill(TreehouseInk.ink).frame(width: x, height: 3)
+                Circle().fill(TreehouseInk.blue)
+                    .frame(width: 8, height: 8)
+                    .shadow(color: TreehouseInk.blue.opacity(0.55), radius: 3)
+                    .offset(x: x - 4)
+            }
+            .frame(height: 8)
+            .animation(.easeOut(duration: 0.4), value: ratio)
+        }
+        .frame(height: 8)
+        .task(id: room) {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveApiContextChanged)) { _ in
+            Task { await load() }
+        }
+    }
+
+    @MainActor private func load() async {
+        if room == "api" {
+            if let o = try? await AlcoveAPI.getRaw("/api/api-room/context"), o["ok"] as? Bool == true {
+                ratio = ApiContext(o).ratio
+            }
+            return
+        }
+        guard let o = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") else { return }
+        let ch = o["channel"] as? String ?? "cli"
+        let ctx = o[ch == "sdk" ? "sdk_context" : "cli_context"] as? [String: Any] ?? [:]
+        let used = (ctx["used"] as? NSNumber)?.doubleValue ?? 0
+        let window = (ctx["window"] as? NSNumber)?.doubleValue ?? 0
+        if window > 0 { ratio = min(1, max(0, used / window)) }
+    }
+}
+
+struct TreehouseBubbleFill: ViewModifier {
+    let isUser: Bool
+    let fill: Color
+    func body(content: Content) -> some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 18,
+                                           bottomLeadingRadius: isUser ? 18 : 5,
+                                           bottomTrailingRadius: isUser ? 5 : 18,
+                                           topTrailingRadius: 18, style: .continuous)
+        content
+            .background(fill, in: shape)
+            .overlay(shape.stroke(TreehouseInk.ink.opacity(isUser ? 0 : 0.06), lineWidth: 1))
+    }
+}
+
+/// 树屋的图：外面垫一圈白纸边（6），12 圆角，跟她成品里那张图一样
+struct TreehousePhotoFrame: ViewModifier {
+    let on: Bool
+    @ViewBuilder func body(content: Content) -> some View {
+        if on {
+            content
+                .padding(6)
+                .background(TreehouseInk.white, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        } else {
+            content
+        }
+    }
+}
+
+/// 树屋那层雾玻璃：rgba(239,239,237,.42) 再垫一点点模糊，外面一圈墨线（她成品的输入框 / 叶子圆）
+struct TreehouseFogGlass<S: InsettableShape>: ViewModifier {
+    let shape: S
+    let border: Double
+    func body(content: Content) -> some View {
+        content
+            .background { shape.fill(.ultraThinMaterial).opacity(0.55) }
+            .background(TreehouseInk.fog.opacity(0.42), in: shape)
+            .overlay(shape.strokeBorder(TreehouseInk.ink.opacity(border), lineWidth: 1))
+    }
+}
+
+/// 她成品 ICON.leaf：一片叶子 + 一道叶脉，24×24 的画法按框缩放
+struct TreehouseLeafShape: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 24
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
+        var path = Path()
+        path.move(to: p(4.5, 19.5))
+        path.addCurve(to: p(19.5, 4.5), control1: p(4.5, 10), control2: p(10.5, 4.5))
+        path.addCurve(to: p(4.5, 19.5), control1: p(19.5, 13.5), control2: p(14, 19.5))
+        path.closeSubpath()
+        path.move(to: p(4.5, 19.5))
+        path.addLine(to: p(13.5, 10.5))
+        return path
+    }
 }
 
 struct TimeDivider: View {
@@ -7192,6 +7462,9 @@ struct AudioBubble: View {
                 // 0925 她要的：Kakao 下语音条也套包里的气泡图，跟正文一样，字离四边按包里写的来。
                 // 带图案的 01 那张还是只给一串里第一条真说话的气泡（0924 她定的规矩），语音一律用 02
                 KakaoBubbleView(isUser: isUser, first: false) { card(kakao: true) }
+            } else if theme.isTreehouse {
+                card(kakao: false)
+                    .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI))
             } else {
                 // 1001 她抓的「语音的气泡呢」：跟正文气泡同一个开关，信息主题选玻璃就是玻璃
                 card(kakao: false)

@@ -25,7 +25,7 @@ struct GlassPalette {
     static func named(_ themeName: String) -> GlassPalette {
         // 0926 她抓的「黑夜模式下檐下／不忘还是白天」：Kakao 主题包没有夜版，named("kakao") 恒按白天画，
         // 全屋开关拨到黑夜这几页也不跟。Kakao 下改认全屋开关（侧边栏 0925 同一个坑）
-        if AlcoveAppearance.family(of: themeName) == "kakao" { return AlcoveAppearance.isDark ? .dark : .light }
+        if AlcoveAppearance.chatOnly(themeName) { return AlcoveAppearance.isDark ? .dark : .light }   // 1009 树屋同理
         return AlcoveTheme.named(themeName).isDark ? .dark : .light
     }
 
