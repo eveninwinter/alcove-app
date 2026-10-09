@@ -31,11 +31,11 @@ canvas{position:absolute;left:0;top:0;display:block}
 @keyframes grain{0%{transform:translate(0,0)}20%{transform:translate(-6%,3%)}40%{transform:translate(4%,-5%)}
   60%{transform:translate(-3%,6%)}80%{transform:translate(5%,2%)}100%{transform:translate(0,0)}}
 
-header{position:absolute;z-index:7;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 30px);padding:0 24px 0 70px;pointer-events:none}
+header{position:absolute;z-index:7;left:0;right:0;top:calc(env(safe-area-inset-top,0px) + 6px);padding:0 24px 0 70px;pointer-events:none}
 .back,.menu{position:absolute;top:2px;width:34px;height:34px;display:grid;place-items:center;color:var(--ink);pointer-events:auto;background:none;border:0;cursor:pointer}
 .back{left:20px}.menu{right:18px}
 h1{font-family:var(--serif);font-weight:700;font-size:34px;letter-spacing:.32em;line-height:1}
-.stats{margin-top:16px;font-size:9.5px;letter-spacing:.28em;color:var(--gray);white-space:nowrap}
+.stats{margin-top:2px;font-size:9.5px;letter-spacing:.28em;color:var(--gray);white-space:nowrap}
 .gl{text-shadow:2px 0 rgba(255,45,120,.8),-2px 0 rgba(22,56,255,.8)}
 
 .events{position:absolute;z-index:7;right:22px;top:calc(env(safe-area-inset-top,0px) + 108px);width:min(50vw,200px);pointer-events:none}
@@ -377,7 +377,7 @@ function layout() {
   S = clamp(Math.min(W / 390, H / 780), .82, 1.5);
   const hb = $('#hd').getBoundingClientRect();
   cardR = $('#card').getBoundingClientRect(); evR = $('#events').getBoundingClientRect();
-  fieldTop = hb.bottom + 14; fieldBot = cardR.top - 26;
+  fieldTop = hb.bottom + 52;   // 1009 标题上移 24、小字再收 14，画布原地不动 fieldBot = cardR.top - 26;
   R = Math.round(clamp(Math.min(W * .275, (fieldBot - fieldTop) * .187), 66, 187));
   CX = W < 760 ? W / 2 : W * .45;
   CY = Math.round(lerp(fieldTop, fieldBot, .46));
