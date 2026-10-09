@@ -416,8 +416,10 @@ struct RootView: View {
                 HStack(alignment: .center, spacing: 18) {
                     if let bpm = treehouseHeader.bpm {
                         HStack(spacing: 7) {
-                            Circle().fill(ink).frame(width: 7, height: 7)
-                                .background(Circle().fill(ink.opacity(0.08)).frame(width: 13, height: 13))
+                            // 1009 #3522–3523 她：「把小圆点换成爱心 你手画一个」——照她发的那张，一笔斜着来回涂满的心（F 那颗）
+                            TreehouseScribbleHeart()
+                                .stroke(ink, style: StrokeStyle(lineWidth: 0.75, lineCap: .round, lineJoin: .round))
+                                .frame(width: 16, height: 16)
                             Text("\(bpm)").font(.system(size: 15, design: .serif))
                         }
                     }

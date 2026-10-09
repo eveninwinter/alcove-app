@@ -7060,7 +7060,7 @@ final class TreehouseHeaderModel: ObservableObject {
                         if self?.bpm != n { self?.bpm = n }
                     }
                 }
-                try? await Task.sleep(nanoseconds: 10_000_000_000)
+                try? await Task.sleep(nanoseconds: 4_000_000_000)   // #3522 跟「脉」那页一样 4 秒一跳（原来 10 秒）
             }
         }
     }
@@ -7224,6 +7224,37 @@ struct TreehouseFogGlass<S: InsettableShape>: ViewModifier {
             .background { shape.fill(.ultraThinMaterial).opacity(0.55) }
             .background(TreehouseInk.fog.opacity(0.42), in: shape)
             .overlay(shape.strokeBorder(TreehouseInk.ink.opacity(border), lineWidth: 1))
+    }
+}
+
+/// 树屋顶栏心率前面那颗心：她发的涂鸦心那种——一笔往右上斜着来回涂 10 道，拐弯是尖的回笔，两头长短不齐。
+/// 24×24 的画法按框缩放（/root/workroom/mock/treehouse/hearts3.html 里的 F）
+struct TreehouseScribbleHeart: Shape {
+    func path(in rect: CGRect) -> Path {
+        let s = min(rect.width, rect.height) / 24
+        func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
+        var path = Path()
+        path.move(to: p(2.49, 8.43))
+        path.addLine(to: p(5.74, 4.26))
+        path.addQuadCurve(to: p(8.22, 4.02), control: p(7.47, 3.51))
+        path.addLine(to: p(3.01, 10.69))
+        path.addQuadCurve(to: p(3.53, 12.15), control: p(2.78, 12.05))
+        path.addLine(to: p(9.51, 4.50))
+        path.addQuadCurve(to: p(10.25, 6.67), control: p(10.37, 4.95))
+        path.addLine(to: p(5.26, 13.07))
+        path.addQuadCurve(to: p(5.95, 14.79), control: p(5.11, 14.56))
+        path.addLine(to: p(14.69, 3.60))
+        path.addQuadCurve(to: p(16.72, 3.79), control: p(16.19, 3.07))
+        path.addLine(to: p(7.15, 16.04))
+        path.addQuadCurve(to: p(9.21, 15.93), control: p(7.69, 16.61))
+        path.addLine(to: p(18.74, 3.74))
+        path.addQuadCurve(to: p(19.47, 5.44), control: p(19.60, 3.96))
+        path.addLine(to: p(10.43, 17.01))
+        path.addQuadCurve(to: p(11.27, 18.96), control: p(10.36, 18.62))
+        path.addLine(to: p(20.35, 7.33))
+        path.addQuadCurve(to: p(20.42, 10.13), control: p(20.88, 8.10))
+        path.addLine(to: p(12.50, 20.27))
+        return path
     }
 }
 
