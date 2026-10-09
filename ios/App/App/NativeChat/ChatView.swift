@@ -4584,10 +4584,10 @@ struct MessageRow: View {
                     bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
                 } else if theme.isTreehouse {
                     // 1009 树屋：照她成品——实心，18 圆角、贴边那个角收成 5；他的白泡外面一圈很淡的墨线
-                    // 1009 晚 她要的：一串最后那条，时间那一行收进气泡里（右下角），壁纸太杂放外面看不清。
+                    // 1009 晚 她要的：一串最后那条，时间那一行收进气泡里（左下角，与正文左缘对齐），壁纸太杂放外面看不清。
                     // 顺移是白送的：showTime 由列表现算（isGroupTail 看下一条是不是同一个人），
                     // 她删掉最后一条，下一帧新的尾巴自己长出这一行。
-                    VStack(alignment: .trailing, spacing: 3) {
+                    VStack(alignment: .leading, spacing: 3) {
                         bubbleContents
                         if shouldShowMetaRow { metaRow }
                     }
@@ -7072,8 +7072,8 @@ struct TreehouseContextLine: View {
             line
             if !tokenText.isEmpty {
                 Text(tokenText)
-                    .font(.custom("PinyonScript-Regular", size: 15))
-                    .foregroundColor(TreehouseInk.ink.opacity(0.68))
+                    .font(.system(size: 12, weight: .medium, design: .monospaced))
+                    .foregroundColor(TreehouseInk.ink.opacity(0.9))
                     .fixedSize()
                     .animation(.easeOut(duration: 0.4), value: tokenText)
             }

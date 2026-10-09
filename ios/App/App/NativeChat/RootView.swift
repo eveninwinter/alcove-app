@@ -372,12 +372,13 @@ struct RootView: View {
                 Button {
                     NotificationCenter.default.post(name: .alcoveOpenRoomPicker, object: nil)
                 } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 19, weight: .light))
-                        .frame(width: 30, height: 44)
+                    Image(systemName: "door.left.hand.open")
+                        .font(.system(size: 19, weight: .regular))
+                        .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
+                .accessibilityLabel("选择房间")
                 HStack(alignment: .center, spacing: 10) {
                     ZStack(alignment: .topTrailing) {
                         Group {
