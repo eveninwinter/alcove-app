@@ -7109,9 +7109,12 @@ struct TreehouseContextLine: View {
                     .foregroundColor(TreehouseInk.ink.opacity(0.9))
                     .fixedSize()
                     .padding(.horizontal, 8)
-                    .padding(.top, 1)
-                    .padding(.bottom, 2)
+                    // 1009 她：「这个框上移一点 上下间距不对，字不要动就是框往上一丢丢」——
+                    // 字上面多垫 2、下面少垫 2（框相对字往上 2），整颗再往上挪 2 抵掉，字在屏幕上的位置不变
+                    .padding(.top, 3)
+                    .padding(.bottom, 0)
                     .modifier(TreehouseFogGlass(shape: Capsule(), border: 0.3))
+                    .offset(y: -2)
                     .animation(.easeOut(duration: 0.4), value: tokenText)
             }
         }
