@@ -838,6 +838,7 @@ private struct NativeSettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("houseInterfaceAppearance") private var houseAppearance = "dark"
     @AppStorage("assistantName") private var assistantName = "陈璟"
+    @AppStorage("showClawdPet") private var showClawdPet = true   // 1009 聊天页小螃蟹开关
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
@@ -1396,6 +1397,15 @@ private struct NativeSettingsView: View {
                     ChatFontPicker(theme: theme)
                     Divider().opacity(0.25)
                     BubbleAppearanceSettingsView(part: .text)
+                } }
+                // 1009 她：「设置里加一个是否显示这个小螃蟹的选项」——聊天页右下角那只像素小螃蟹，哪个主题都管
+                if page == .appearance { section("小螃蟹") {
+                    Toggle("聊天页显示小螃蟹", isOn: $showClawdPet)
+                        .font(.system(size: 14))
+                        .tint(theme.fyAccent)
+                    Text("关掉以后点它弹出的小终端也跟着收起来；完整的终端照旧点顶栏的名字进")
+                        .font(.system(size: 10.5)).foregroundColor(theme.textLight)
+                        .fixedSize(horizontal: false, vertical: true)
                 } }
                 // 0902 信息主题自己调颜色，只在信息主题下露面
                 // 1009 晚 她：「信息主题不是可以调节一大堆颜色吗，把我们树屋主题也加上那些调节的」——树屋也露出来，

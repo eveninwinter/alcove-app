@@ -96,6 +96,7 @@ struct ChatView: View {
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("imsgShowProcess") private var showProcessDots = true   // 0822 iMessage 主题：过程线圆点开关
+    @AppStorage("showClawdPet") private var showClawdPet = true   // 1009 她：「设置里加一个是否显示这个小螃蟹的选项」
     @AppStorage("chatFontSize") private var chatFontSize = 14
     // 0909 她要的：气泡之间的间距自己调。原来写死 6pt
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
@@ -505,7 +506,7 @@ struct ChatView: View {
                     .transition(.opacity)
                 }
 
-                if !showMiniTerminal && !paragraphSelectionMode {
+                if showClawdPet && !showMiniTerminal && !paragraphSelectionMode {
                     ClawdPet(store: store) {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
                             showMiniTerminal = true
