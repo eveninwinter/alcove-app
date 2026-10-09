@@ -3964,9 +3964,20 @@ struct MessageRow: View {
                             apiUsageLine(usage)
                         }
         }
-        .padding(.leading, theme.isTreehouse ? 0 : (isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset)))
-        .padding(.trailing, theme.isTreehouse ? 0 : (isUser ? timestampTextInset : 0))
-        .padding(.top, theme.isTreehouse ? 0 : rowPartGap)
+        .padding(.leading, theme.isTreehouse ? (isUser ? 0 : treehouseOuterMetaInset) : (isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset)))
+        .padding(.trailing, theme.isTreehouse ? (isUser ? treehouseOuterMetaInset : 0) : (isUser ? timestampTextInset : 0))
+        .padding(.top, theme.isTreehouse ? (showsTextBubble ? 0 : 6) : rowPartGap)
+    }
+
+    /// 1009 她：「如果陈璟最后一条消息是语音、图片或者表情包 那就让时间戳跟气泡里面的左边文字对齐 并且中间也需要留间距
+    /// 我这边也一样 跟最右边文字对齐」——树屋里时间只有落在气泡外面时（语音 / 图 / 表情这些）才缩进：
+    /// 语音条里的字离边 14、图的纸边 6、表情没框贴边；时间在文字泡里面时外层已经垫过 14，这里是 0
+    private var treehouseOuterMetaInset: CGFloat {
+        if showsTextBubble { return 0 }
+        if msg.isSticker { return 0 }
+        if msg.isAudio { return 14 }
+        if hasPhotoBlock { return 6 }
+        return 14
     }
 
     private var shouldShowMetaRow: Bool {
