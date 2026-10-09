@@ -1914,13 +1914,19 @@ struct ChatView: View {
                             Image(systemName: "stop.fill").font(.system(size: 13))
                                 .foregroundColor(composerTheme.sendButtonColor)
                         } else {
-                            TreehouseLeafShape()
-                                .stroke(composerTheme.sendButtonColor, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
-                                .frame(width: 19, height: 19)
+                            // #3527–3529 她：「换成不带边框的蝴蝶」挑②半实心——从她那张素材上直接抠的（亮的地方实、暗的地方透，
+                            // 翅脉和亮边都在），做成 template 图跟发送键颜色走；比效果图里 40 小一丢丢 → 36，外面不再套雾玻璃圆
+                            Image("TreehouseSendButterfly")
+                                .resizable()
+                                .renderingMode(.template)
+                                .interpolation(.high)
+                                .scaledToFit()
+                                .foregroundColor(composerTheme.sendButtonColor)
+                                .frame(width: 36, height: 36)
                         }
                     }
                     .frame(width: 44, height: 44)
-                    .modifier(TreehouseFogGlass(shape: Circle(), border: 0.7))
+                    .contentShape(Rectangle())
                     if store.heldCount > 0 {
                         Text("\(store.heldCount)")
                             .font(.system(size: 9, weight: .bold))
