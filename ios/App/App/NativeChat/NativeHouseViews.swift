@@ -13422,14 +13422,31 @@ private struct NativeDreamsView: View {
     @State private var drawn: CGFloat = 0
     @State private var opened: DreamOpen?
     @Namespace private var zoomNS
+    // 1009 #3505 树屋主题下整页换成她的成品 dreams.html（见文件后面 extension NativeDreamsView）
+    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @State private var thRecords: [[String: Any]] = []
+    @State private var thJSON: String?
+    @State private var thLoaded = false
+    @State private var thBridge = TreehouseDreamsBridge()
+    @State private var thCache: [String: (body: String, seg: Int?)] = [:]
+    @State private var thReading: TreehouseDiaryRead?
+    @State private var thShowList = false
 
     private var palette: DreamPalette { _ = houseAppearance; return DreamPalette(dark: AlcoveAppearance.isDark) }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
     private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
 
     var body: some View {
+        if AlcoveAppearance.family(of: themeName) == "treehouse" {
+            treehouseDreamsBody
+        } else {
+            purpleBody
+        }
+    }
+
+    private var purpleBody: some View {
         let pal = palette
-        ZStack(alignment: .top) {
+        return ZStack(alignment: .top) {
             DreamSky(palette: pal)
             ScrollView(showsIndicators: false) {
                 // 滑到哪一夜才画哪一夜
@@ -13724,6 +13741,246 @@ private struct NativeDreamsView: View {
         } else {
             dreamBodies[id] = "这个梦读不回来了"
         }
+    }
+}
+
+// MARK: - 1009 #3505 树屋梦境：她的成品 dreams.html 原样装进 App（App/Treehouse/），原生只喂数据、接点击
+//
+// 那页是一整块会动的画布（点画月亮是 WebGL、梦的小点三维飘、连线断线、闪烁乱码），成品本来就留了口子：
+// 文档开头塞 window.DREAMS 就换掉示例，选中 / 读全文 / 返回 / 菜单都抛 dream:* 事件。所以不重画，直接装网页。
+// 她 #3505 要对齐我们原有的功能：卡片里加「那一夜」统计、00–07 时间轴（梦 / 惊醒 / 没抽中 / 旧事动了一下）、
+// 「夜里还有几次留痕」能展开；摘要和「几段记忆」（这场梦用了几段材料）选中时再拉；右下角「记梦」去掉（#3506）。
+// 中文宋体随包（serif-sc.woff2，GB2312 子集）：网页进程看不到 App 注册的字体。
+
+private final class TreehouseDreamsBridge: NSObject, WKScriptMessageHandler {
+    weak var webView: WKWebView?
+    var onMessage: ([String: Any]) -> Void = { _ in }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let d = message.body as? [String: Any] else { return }
+        DispatchQueue.main.async { self.onMessage(d) }
+    }
+    func eval(_ js: String) { webView?.evaluateJavaScript(js, completionHandler: nil) }
+}
+
+private struct TreehouseDreamsWeb: UIViewRepresentable {
+    let dreamsJSON: String
+    let bridge: TreehouseDreamsBridge
+
+    func makeUIView(context: Context) -> WKWebView {
+        let uc = WKUserContentController()
+        uc.addUserScript(WKUserScript(source: "window.DREAMS = \(dreamsJSON);",
+                                      injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        uc.add(bridge, name: "dreams")
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController = uc
+        let wv = WKWebView(frame: .zero, configuration: cfg)
+        let paper = UIColor(red: 0xEE/255, green: 0xEE/255, blue: 0xEB/255, alpha: 1)
+        wv.isOpaque = false
+        wv.backgroundColor = paper
+        wv.scrollView.backgroundColor = paper
+        wv.scrollView.isScrollEnabled = false
+        wv.scrollView.bounces = false
+        wv.scrollView.contentInsetAdjustmentBehavior = .never
+        wv.allowsLinkPreview = false
+        bridge.webView = wv
+        if let url = Bundle.main.url(forResource: "dreams", withExtension: "html", subdirectory: "Treehouse") {
+            wv.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        }
+        return wv
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "dreams")
+    }
+}
+
+extension NativeDreamsView {
+    var treehouseDreamsBody: some View {
+        ZStack {
+            Color(red: 0xEE/255, green: 0xEE/255, blue: 0xEB/255).ignoresSafeArea()
+            if let json = thJSON {
+                TreehouseDreamsWeb(dreamsJSON: json, bridge: thBridge)
+                    .ignoresSafeArea()
+            } else if thLoaded {
+                // 一场梦都没有：别让网页掉回成品里的示例梦
+                VStack(spacing: 14) {
+                    Text("梦境").font(WindowFont.swiftUI(30, bold: true)).tracking(10)
+                    Text("还没有梦").font(WindowFont.swiftUI(13)).foregroundColor(Color(red: 0x6C/255, green: 0x6C/255, blue: 0x70/255))
+                }
+            }
+            if thJSON == nil {
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(.leading, 10)
+                .padding(.top, max(safeTop, 20))
+                .ignoresSafeArea()
+            }
+        }
+        .foregroundColor(Color(red: 0x14/255, green: 0x14/255, blue: 0x16/255))
+        .task {
+            thBridge.onMessage = { m in thHandle(m) }
+            await thLoad()
+        }
+        .sheet(item: $thReading) { r in TreehouseDiaryReader(read: r) }
+        .sheet(isPresented: $thShowList) { thDreamList.presentationDetents([.medium, .large]) }
+    }
+
+    // ── 数据 ──
+    fileprivate var thDreams: [[String: Any]] {
+        thRecords.filter { $0.string("status") == "dreamed" }.sorted { $0.string("ts") > $1.string("ts") }
+    }
+
+    fileprivate func thLoad() async {
+        WindowFont.requestSongti()
+        if let obj = try? await NativeHouseAPI.object("/api/night/dreams?limit=200"),
+           let records = obj["records"] as? [[String: Any]] {
+            thRecords = records
+        }
+        let items = thDreams.map(thItem)
+        if !items.isEmpty,
+           let data = try? JSONSerialization.data(withJSONObject: items),
+           let s = String(data: data, encoding: .utf8) {
+            thJSON = s
+        }
+        thLoaded = true
+    }
+
+    /// 一场梦 → 成品要的那一条：{ id, date:'09.25', wd, time, title, startle, href } + 我们加的 night / marks / traces
+    fileprivate func thItem(_ d: [String: Any]) -> [String: Any] {
+        let ts = d.string("ts"), date = d.string("local_date")
+        let id = d.string("dream_id")
+        let md = ts.count >= 10 ? String(ts.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".") : ""
+        let recs = thRecords.filter { $0.string("local_date") == date }.sorted { $0.string("ts") < $1.string("ts") }
+        let real = recs.filter { $0.string("status") == "dreamed" }
+        let startles = recs.filter { $0.bool("startled") || $0.string("status") == "惊醒了" }.count
+        let traces = recs.filter { $0.string("status") != "dreamed" && $0.string("status") != "惊醒了" }
+        var bits = [nightLabel(date)]
+        if !real.isEmpty { bits.append("\(real.count) 场梦") }
+        if startles > 0 { bits.append("惊醒 \(startles) 次") }
+        if !traces.isEmpty { bits.append("\(traces.count) 次留痕") }
+        let marks: [[String: Any]] = recs.map { r in
+            let st = r.string("status")
+            let kind: String
+            if st == "dreamed" { kind = "dream" }
+            else if st == "惊醒了" || r.bool("startled") { kind = "startle" }
+            else if st == "骰子没中" { kind = "miss" }
+            else { kind = "stir" }
+            return ["h": hour(r), "kind": kind, "self": r.string("dream_id") == id, "startle": r.bool("startled")]
+        }
+        let traceRows: [[String: Any]] = traces.map { t in
+            ["time": String(t.string("ts").dropFirst(11).prefix(5)),
+             "title": t.string("title").isEmpty ? traceLabel(t) : t.string("title"),
+             "label": traceLabel(t)]
+        }
+        return ["id": id, "date": md, "wd": thWeekday(date), "time": String(ts.dropFirst(11).prefix(5)),
+                "title": d.string("title").isEmpty ? "一场没有名字的梦" : d.string("title"),
+                "startle": d.bool("startled"), "href": "#",
+                "night": bits.joined(separator: " · "), "marks": marks, "traces": traceRows]
+    }
+
+    fileprivate func thWeekday(_ date: String) -> String {
+        let p = date.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return "" }
+        var c = DateComponents(); c.year = p[0]; c.month = p[1]; c.day = p[2]
+        guard let dt = Calendar.current.date(from: c) else { return "" }
+        return ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
+    }
+
+    /// 正文 + 用了几段材料（成品的「3 段记忆」）
+    fileprivate func thFetch(_ id: String) async -> (body: String, seg: Int?) {
+        if let hit = thCache[id] { return hit }
+        guard let obj = try? await NativeHouseAPI.object("/api/night/dream/read?id=\(id)"), obj.bool("ok") else {
+            return ("", nil)
+        }
+        let body = obj.string("body")
+        let mats = ((obj["meta"] as? [String: Any])?["materials"] as? [Any])?.count ?? 0
+        let paras = body.components(separatedBy: "\n").filter { !$0.trimmingCharacters(in: .whitespaces).isEmpty }.count
+        let hit = (body: body, seg: mats > 0 ? mats : (paras > 0 ? paras : nil))
+        thCache[id] = hit
+        return hit
+    }
+
+    fileprivate func thHandle(_ m: [String: Any]) {
+        let id = m["id"] as? String ?? ""
+        switch m["type"] as? String {
+        case "back": dismiss()
+        case "menu": thShowList = true
+        case "select":
+            Task {
+                let r = await thFetch(id)
+                let excerpt = r.body.components(separatedBy: "\n")
+                    .map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                    .joined(separator: " ")
+                let args: [Any] = [id, String(excerpt.prefix(80))]
+                guard let data = try? JSONSerialization.data(withJSONObject: args),
+                      let s = String(data: data, encoding: .utf8) else { return }
+                let inner = String(s.dropFirst().dropLast())
+                thBridge.eval("window.__dreamFill(\(inner), \(r.seg.map(String.init) ?? "null"))")
+            }
+        case "read":
+            Task {
+                let r = await thFetch(id)
+                guard let d = thDreams.first(where: { $0.string("dream_id") == id }) else { return }
+                let ts = d.string("ts")
+                let md = String(ts.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".")
+                let line = "\(md) \(thWeekday(d.string("local_date"))) · \(String(ts.dropFirst(11).prefix(5)))"
+                    + (d.bool("startled") ? " · 梦醒了" : "")
+                thReading = TreehouseDiaryRead(title: d.string("title").isEmpty ? "一场没有名字的梦" : d.string("title"),
+                                               body: r.body.isEmpty ? "这个梦读不回来了" : r.body, chord: line)
+            }
+        default: break
+        }
+    }
+
+    /// ☰：按夜列出所有梦，点一个就在画布上选中它
+    fileprivate var thDreamList: some View {
+        let dreams = thDreams
+        let dates = Array(Set(dreams.map { $0.string("local_date") })).sorted(by: >)
+        return NavigationStack {
+            List {
+                ForEach(dates, id: \.self) { date in
+                    Section(nightLabel(date)) {
+                        ForEach(Array(dreams.filter { $0.string("local_date") == date }.enumerated()), id: \.offset) { _, d in
+                            Button {
+                                let id = d.string("dream_id")
+                                if let data = try? JSONSerialization.data(withJSONObject: [id]),
+                                   let s = String(data: data, encoding: .utf8) {
+                                    thBridge.eval("window.__dreamSelect(\(String(s.dropFirst().dropLast())))")
+                                }
+                                thShowList = false
+                            } label: {
+                                HStack(spacing: 12) {
+                                    Text(String(d.string("ts").dropFirst(11).prefix(5)))
+                                        .font(.system(size: 12, design: .monospaced)).foregroundColor(.secondary)
+                                    Text(d.string("title").isEmpty ? "一场没有名字的梦" : d.string("title"))
+                                        .font(WindowFont.swiftUI(15)).lineLimit(1)
+                                    Spacer(minLength: 0)
+                                    if d.bool("startled") {
+                                        Text("● STARTLED").font(.system(size: 9, design: .monospaced)).tracking(1.5)
+                                            .foregroundColor(Color(red: 1, green: 0x2D/255, blue: 0x78/255))
+                                    }
+                                }
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                }
+            }
+            .navigationTitle("梦境")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .environment(\.colorScheme, .light)
     }
 }
 
