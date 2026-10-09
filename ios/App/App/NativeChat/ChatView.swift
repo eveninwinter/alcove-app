@@ -3819,6 +3819,7 @@ struct MessageRow: View {
     var textSelectable = false
     var onExitTextSelection: (() -> Void)? = nil
     @State private var reactPressing = false
+    @State private var treehouseMetaHeight: CGFloat = 24
     @State private var showThinking = false
     @State private var showActivity = false   // 0730 过程记录展开
     // 0820 按时间线摆之后，点开的是「这一段」，不是整轮那一坨
@@ -4466,6 +4467,9 @@ struct MessageRow: View {
         if let onReactLongPress, !textSelectable {
             GeometryReader { geo in
                 Color.clear
+                    // 时间行已移入树屋气泡：长按透明层只覆盖正文，不拦底部按钮。
+                    .frame(height: max(0, geo.size.height -
+                        (theme.isTreehouse && shouldShowMetaRow ? treehouseMetaHeight + 12 : 0)))
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .onLongPressGesture(minimumDuration: ReactFeel.hold, maximumDistance: 12, perform: {
@@ -4589,7 +4593,12 @@ struct MessageRow: View {
                     // 她删掉最后一条，下一帧新的尾巴自己长出这一行。
                     VStack(alignment: .leading, spacing: 3) {
                         bubbleContents
-                        if shouldShowMetaRow { metaRow }
+                        if shouldShowMetaRow {
+                            metaRow
+                                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: {
+                                    treehouseMetaHeight = $0
+                                }
+                        }
                     }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
@@ -7141,7 +7150,7 @@ struct TreehouseBubbleFill: ViewModifier {
                                            topTrailingRadius: 18, style: .continuous)
         content
             .background(fill, in: shape)
-            .overlay(shape.stroke(TreehouseInk.ink.opacity(isUser ? 0 : 0.06), lineWidth: 1))
+            .overlay(shape.stroke(TreehouseInk.ink.opacity(isUser ? 0 : 0.06), lineWidth: 1).allowsHitTesting(false))
     }
 }
 
