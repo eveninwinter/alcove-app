@@ -100,6 +100,8 @@ struct ChatView: View {
     // 0909 她要的：气泡之间的间距自己调。原来写死 6pt
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
     @AppStorage("chatTurnGap") private var chatTurnGap = 22.0   // 0929 她要的：他连着两轮之间的空，设置里「轮与轮间距」
+    // 1009 晚 她要的（只给树屋）：他一轮话是拆成好几个气泡，还是并成一整个。她的气泡一概不动。
+    @AppStorage(TreehouseBubbleMode.key) private var treehouseWholeBubble = false
     @AppStorage(KakaoPackStore.showAvatarKey) private var listKakaoShowAvatar = true   // 0924 晚：换人那截空隙要知道他那边气泡是不是挪过
     @AppStorage("wallStamp") private var wallStamp = 0.0
     /// 0902 信息主题调色板：她在设置页改一项，msgPaletteStamp 一变这里就重算
@@ -919,14 +921,62 @@ struct ChatView: View {
 
     // 0924 构建红了「function declares an opaque return type, but has no return statements」：
     // 这个函数体里全是 if / let / Group，本来就该是 ViewBuilder，加了 kakaoHead 那段之后编译器不再替它兜底
+    /// 能不能并：树屋 + 整个模式 + 他说的 + 干干净净一段字（没图、没语音、没表情、不是卡片）
+    private func thPlainText(_ m: ChatMessage) -> Bool {
+        guard theme.isTreehouse, treehouseWholeBubble, m.role == "assistant" else { return false }
+        let t = m.msgType ?? ""
+        guard t.isEmpty || t == "text" else { return false }
+        guard m.stickerId == nil, m.inlineImages.isEmpty, (m.attachmentUrl ?? "").isEmpty,
+              !m.isImage, !m.isAudio, !m.isSticker else { return false }
+        let body = m.displayText
+        guard !body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        // 卡片（记忆 / 旅行 / 位置 / 选择 / 便签…）正文里带方括号标记，各自成泡
+        if body.contains("_CARD]") || body.contains("[INSIDE]") { return false }
+        return true
+    }
+
+    /// 从这条起，同一轮里连着能并的有几条
+    private func thMergeRun(from index: Int) -> Int {
+        let first = store.messages[index]
+        guard thPlainText(first), let turn = first.turnID, !turn.isEmpty else { return 1 }
+        var n = 1
+        while index + n < store.messages.count {
+            let m = store.messages[index + n]
+            guard thPlainText(m), m.turnID == turn else { break }
+            n += 1
+        }
+        return n
+    }
+
+    /// 这条是不是已经被前面那条吃进去了（吃进去就不画）
+    private func thMergedAway(at index: Int) -> Bool {
+        guard index > 0 else { return false }
+        let cur = store.messages[index]
+        guard thPlainText(cur), let turn = cur.turnID, !turn.isEmpty else { return false }
+        let prev = store.messages[index - 1]
+        return thPlainText(prev) && prev.turnID == turn
+    }
+
     @ViewBuilder
-    private func chatMessageRow(at index: Int, message: ChatMessage) -> some View {
-        if !isPhotoGroupContinuation(at: index) {
+    private func chatMessageRow(at index: Int, message rawMessage: ChatMessage) -> some View {
+        if thMergedAway(at: index) {
+            EmptyView()
+        } else if !isPhotoGroupContinuation(at: index) {
+            // 1009 晚「整个」模式：他同一轮里连着的几段字并成一个气泡，时间那行落在并完的尾巴上
+            let mergeRun = thMergeRun(from: index)
+            let message: ChatMessage = {
+                guard mergeRun > 1 else { return rawMessage }
+                var m = rawMessage
+                m.text = store.messages[index..<(index + mergeRun)]
+                    .map(\.displayText)
+                    .joined(separator: "\n\n")
+                return m
+            }()
             let previous = index > 0 ? store.messages[index - 1] : nil
             let photos = message.inlineImages.isEmpty
                 ? chatPhotoGroup(startingAt: index)
                 : message.inlineImages.map(AlcoveAPI.attachmentURL)
-            let groupEnd = index + max(photos.count, 1) - 1
+            let groupEnd = index + max(photos.count, mergeRun, 1) - 1
             let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
             let recall = recallFor(index: index)
             let selectionEnd = message.inlineImages.isEmpty
@@ -6948,6 +6998,14 @@ struct TreehouseTimeDivider: View {
 }
 
 /// 树屋的几样颜色（她成品 alcove chat page.html 里的 BG / INK / BLUE / WHITE / DARK）
+
+/// 1009 晚 她：「在调整颜色那边加一个切换气泡（分段／整个），仅限树屋这个主题」
+/// 「这个气泡仅限你的，我的不包含」——所以只并他的，她的气泡一个都不动。
+enum TreehouseBubbleMode {
+    static let key = "treehouseWholeBubble"
+    static var whole: Bool { UserDefaults.standard.bool(forKey: key) }
+}
+
 enum TreehouseInk {
     static let fog = Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
     static let ink = Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)

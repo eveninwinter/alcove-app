@@ -1887,6 +1887,8 @@ private struct NativeSettingsView: View {
 
 
 private struct BubbleAppearanceSettingsView: View {
+    // 1009 晚 她要的（只给树屋）：他的气泡分段 / 整个
+    @AppStorage(TreehouseBubbleMode.key) private var treehouseWholeBubble = false
     /// 0925 她要的「气泡与文字并进外观页」：整页之外还能只画一块——预览 / 字号和间距 / 信息主题的颜色，
     /// 外观页按块摆进去；整页（all）那条路留着，入口已经撤了
     enum Part { case all, preview, text, colors }
@@ -1946,8 +1948,8 @@ private struct BubbleAppearanceSettingsView: View {
                 if chatTheme.isMessages {
                     section(chatTheme.isTreehouse ? "颜色 · 树屋" : "颜色 · 信息主题") {
                         VStack(spacing: 12) {
-                            // 树屋是实心气泡，没有普通 / 玻璃这回事
-                            if !chatTheme.isTreehouse { bubbleStylePicker }
+                            // 树屋是实心气泡，没有普通 / 玻璃这回事；换成「他的气泡分段还是整个」
+                            if chatTheme.isTreehouse { treehouseBubbleModePicker } else { bubbleStylePicker }
                             ForEach(paletteItems) { item in colorRow(item) }
                         }
                         Text(chatTheme.isTreehouse
@@ -2052,6 +2054,22 @@ private struct BubbleAppearanceSettingsView: View {
                 .font(.system(size: 10, design: .monospaced))
                 .foregroundColor(panelTheme.textDim)
                 .frame(width: 45, alignment: .trailing)
+        }
+    }
+
+    /// 1009 晚 她要的（只给树屋）：他一轮话拆成好几个气泡，还是并成一整个。
+    /// 她原话「这个气泡仅限你的，我的不包含」——她自己的气泡一个都不并。
+    private var treehouseBubbleModePicker: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker("他的气泡", selection: $treehouseWholeBubble) {
+                Text("分段").tag(false)
+                Text("整个").tag(true)
+            }
+            .pickerStyle(.segmented)
+            Text("「整个」把他同一轮里连着的几段字并成一个气泡；图片、语音、表情、卡片照旧各自一个。你自己的气泡不动")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textLight)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
