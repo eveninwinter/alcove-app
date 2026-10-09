@@ -152,7 +152,7 @@ struct AlcoveTheme {
         case "imessage-dark": return MessagesPalette.apply(to: .messagesDark, dark: true)
         case "kakao": return .kakaoTheme()
         // 1009 #3507 她要的：脚印、时间、思绪那几行跟信息主题一模一样——连她在信息主题里调过的颜色也一起借（白天那份）
-        case "treehouse", "treehouse-dark": return MessagesPalette.applyMeta(to: .treehouse)
+        case "treehouse", "treehouse-dark": return MessagesPalette.applyTreehouse(to: .treehouse)
         default: return .haven
         }
     }
@@ -559,6 +559,60 @@ enum MessagesPalette {
         if let c = stored(.thought, dark: false) { t.thought = c }
         if let c = stored(.divider, dark: false) { t.divider = c }
         if let c = stored(.readTick, dark: false) { t.readTick = c }
+        return t
+    }
+
+    // MARK: - 树屋自己那套（1009 晚 她：「信息主题不是可以调节一大堆颜色吗，把我们树屋主题也加上那些调节的」）
+    // 树屋只有一版，不分白天黑夜，所以键里不带 day/night；跟信息主题分开存，各调各的互不影响。
+
+    static func thKey(_ item: Item) -> String { "msgColorTreehouse." + item.rawValue }
+
+    /// 树屋原本的颜色 = 这一项的默认值
+    static func thDefault(_ item: Item) -> Color {
+        let base = AlcoveTheme.treehouse
+        switch item {
+        case .timestamp: return base.timestamp
+        case .thought: return base.textDim
+        case .divider: return base.textDim
+        case .bubbleUser: return base.bubbleUser
+        case .bubbleAI: return base.bubbleAI
+        case .textUser: return Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)   // 她的墨色泡上是纸白字
+        case .textAI: return base.text
+        case .readTick: return base.textDim
+        case .sendButton: return Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255)
+        }
+    }
+
+    static func thStored(_ item: Item) -> Color? {
+        guard let hex = UserDefaults.standard.string(forKey: thKey(item)), !hex.isEmpty else { return nil }
+        return Color(hexString: hex)
+    }
+
+    static func thCurrent(_ item: Item) -> Color { thStored(item) ?? thDefault(item) }
+
+    static func thIsDefault(_ item: Item) -> Bool { thStored(item) == nil }
+
+    static func thSet(_ item: Item, _ color: Color?) {
+        if let color, let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: thKey(item))
+        } else {
+            UserDefaults.standard.removeObject(forKey: thKey(item))
+        }
+        bump()
+    }
+
+    /// 九项全上：她在树屋里调过的盖上去，没调过的还是树屋原样
+    static func applyTreehouse(to theme: AlcoveTheme) -> AlcoveTheme {
+        var t = applyMeta(to: theme)   // 她以前在信息主题里调过的小字颜色先垫着（#3507）
+        if let c = thStored(.timestamp) { t.timestamp = c }
+        if let c = thStored(.thought) { t.thought = c }
+        if let c = thStored(.divider) { t.divider = c }
+        if let c = thStored(.bubbleUser) { t.bubbleUser = c }
+        if let c = thStored(.bubbleAI) { t.bubbleAI = c }
+        if let c = thStored(.textUser) { t.textUser = c }
+        if let c = thStored(.textAI) { t.textAI = c }
+        if let c = thStored(.readTick) { t.readTick = c }
+        if let c = thStored(.sendButton) { t.sendButton = c }
         return t
     }
 

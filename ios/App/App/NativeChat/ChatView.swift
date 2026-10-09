@@ -259,13 +259,10 @@ struct ChatView: View {
                 }
             }
         }
-        // 1009 树屋顶栏要他的心率和模型名：顶栏在 RootView 拿不到 store，这里递过去
-        .onReceive(store.$messages) { msgs in
-            if let bpm = msgs.last(where: { $0.role != "user" && $0.heartRate != nil })?.heartRate,
-               TreehouseHeaderModel.shared.bpm != bpm {
-                TreehouseHeaderModel.shared.bpm = bpm
-            }
-        }
+        // 1009 树屋顶栏要他的模型名：顶栏在 RootView 拿不到 store，这里递过去。
+        // 心率不走这儿了——她 1009 晚要求顶栏那颗跟「脉」面板对齐、一直跳，
+        // 改由 TreehouseHeaderModel 自己每 10 秒问 /api/pulse-now（见 startLivePulse）。
+        .task { TreehouseHeaderModel.shared.startLivePulse() }
         .onReceive(store.$modelLabel) { label in
             if TreehouseHeaderModel.shared.model != label { TreehouseHeaderModel.shared.model = label }
         }
@@ -393,7 +390,7 @@ struct ChatView: View {
                 }
                 // 0924 她抓的：Kakao 的渐隐罩在整个 ScrollView 外面，把顶栏和打字框一起罩淡了。
                 // 改成挂在 safeAreaBar 之前（只罩列表本体），而且只罩顶部那一截，底下不动。
-                .modifier(EdgeFadeMaskModifier(enabled: theme.isKakao, mask: topOnlyFadeMask.ignoresSafeArea()))
+                .modifier(EdgeFadeMaskModifier(enabled: theme.isKakao || theme.isTreehouse, mask: topOnlyFadeMask.ignoresSafeArea()))
                 // 0822 她递的图纸：iMessage 的上下渐进模糊是 iOS 26 系统画的 scroll edge effect，
                 // 自动混下层颜色、日夜自适配，不许用固定色渐变去模拟。
                 // 关键两条：① 栏要用 safeAreaBar 挂（safeAreaInset 不触发底部模糊）；② 列表不翻转（本来就没翻）。
@@ -401,7 +398,7 @@ struct ChatView: View {
                 // 0823 她拍板：顶部放弃渐进模糊，改成纸页主题那种顶部渐隐（edgeFadeMask 顶段同一条曲线，120 高）。
                 // 信息主题底是纯色，所以用主题底色做渐变盖上去和纸页的遮罩观感一致，又不碰滚动区（底部系统效果不动）。
                 .overlay(alignment: .top) {
-                    if theme.isMessages && !theme.isKakao {
+                    if theme.isMessages && !theme.isKakao && !theme.isTreehouse {
                         let bg = theme.wallGradient.first ?? (theme.isDark ? Color.black : Color.white)
                         LinearGradient(stops: [
                             .init(color: bg, location: 0),
@@ -433,7 +430,9 @@ struct ChatView: View {
                             bar().frame(height: 44, alignment: .top)
                         } else if theme.isTreehouse {
                             // 1009 树屋：头像名字一排 + 底下那根上下文进度线，消息从线下面开始
-                            bar().frame(height: 80, alignment: .top)
+                            // 1009 晚 她报「卡片从顶栏后面透出来跟名字糊一起」：顶栏本体（RootView.treehouseTopBar）
+                            // frame 是 84，这里只挂了 80，差的 4 点让顶栏最下沿压在消息上，遮罩也跟着错位。三处对齐到 84。
+                            bar().frame(height: 84, alignment: .top)
                         } else {
                             bar().frame(height: 52, alignment: .top)
                         }
@@ -1298,14 +1297,15 @@ struct ChatView: View {
         }
     }
 
-    /// 0924 Kakao 用：只有顶部那一截渐隐，底下全亮。
+    /// Kakao / 树屋共用：只有顶部那一截渐隐，底下全亮。
     /// 她抓的「圆桌有这么长吗」：圆桌那 120 有一大半藏在顶栏后面，露出来五十来点；
     /// 这里列表从顶栏底下起，整段都露着，所以只给 60。
     private var topOnlyFadeMask: some View {
         // 0924 她抓的「底下被截断」：遮罩默认只铺在安全区里，打字框底下那块不在里面，滑到打字框后面的消息
         // 直接被切掉。遮罩得铺满整屏（ignoresSafeArea），顶栏那段留空白（隐藏），再接 60 的渐隐，底下全亮，
         // 消息照常从半透明的打字框后面滑过去。
-        let chromeTop = Self.topSafeInset + 44
+        // 树屋顶栏含上下文进度线，高 80；Kakao 仍为 44。
+        let chromeTop = Self.topSafeInset + (theme.isTreehouse ? 84 : 44)
         return VStack(spacing: 0) {
             Color.clear.frame(height: chromeTop)
             LinearGradient(
@@ -3798,6 +3798,96 @@ struct MessageRow: View {
     /// 0924 晚她抓的：Kakao 下时间贴在气泡旁边，小按钮又跟着思绪开关藏了，这一行里一个东西都没有，
     /// 却还占着一截高度（空 HStack + 上边距），卡片和下一条中间空一大块。改成里面真有东西才画这一行；
     /// 别的主题里时间本来就在这一行，行为不变。条件跟下面那一行里每个元素的条件一一对上。
+
+    /// 1009 晚 她要的：树屋下这一行搬进气泡里（壁纸太杂，放外面看不清）；别的主题还挂在气泡下面。
+    /// 心率在树屋里去掉——顶栏已经有一颗活的了。
+
+    /// 树屋把这一行搬进了气泡，颜色得跟气泡底走：她的墨色泡用浅字，他的纸白泡用墨字。
+    private var metaTint: Color {
+        guard theme.isTreehouse else { return theme.timestamp }
+        return isUser ? TreehouseInk.white.opacity(0.58) : TreehouseInk.ink.opacity(0.42)
+    }
+
+    @ViewBuilder private var metaRow: some View {
+        HStack(spacing: theme.isKakao ? 16 : (theme.isMessages ? 12 : (theme.isPaper && !isUser ? 14 : 4))) {
+                        if msg.pending {
+                            Image(systemName: "clock")
+                                .font(.system(size: 9))
+                                .foregroundColor(.secondary)
+                        }
+                        if msg.asleepAtSend {
+                            Text("睡着时收到")
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                        if showTime && !theme.isKakao {   // Kakao 的时间贴在气泡旁边（kakaoSideMeta）
+                            Text(Self.hm.string(from: msg.date))
+                                .font(.system(size: 10, design: .serif))
+                                .foregroundColor(metaTint)
+                        }
+                        if theme.isMessages, !theme.isKakao, isUser, !msg.pending {
+                            // 0822 她定的：tg 那种两个勾，发出去就亮，只是个装饰
+                            HStack(spacing: -5) {
+                                Image(systemName: "checkmark")
+                                Image(systemName: "checkmark")
+                            }
+                            .font(.system(size: 9, weight: .semibold))
+                            .foregroundColor(metaTint)
+                        }
+                        // 0907 她抓的：原来要求这条有正文才给按钮，
+                        // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
+                        // 0907 她定的：信息主题下这个按钮也归过程点那个开关管 ——
+                        // 关了就跟思绪、脚印、心率一起藏，截图时那一行干干净净。
+                        // 代价是关着的时候进不去多选，要删东西得先把开关打开。
+                        if showTime, !isUser, !(theme.isMessages && !showProcessDots) {
+                            Button { onBeginParagraphSelection?() } label: {
+                                Image(systemName: "checklist")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(metaTint.opacity(
+                                        paragraphSelectionMode ? 1 : 0.72))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("选择正文段落")
+                        }
+                        // 0924 她要的「重来」（像官方 app 那种重 roll）：只在他最后一轮的尾巴上出现
+                        // 0924 她要的：重来箭头跟过程点一个开关，思绪藏了它也藏
+                        if showTime, !isUser, let onReroll = onReroll, !(theme.isMessages && !showProcessDots) {
+                            Button { onReroll() } label: {
+                                Image(systemName: "arrow.counterclockwise")
+                                    .font(.system(size: 11, weight: .medium))
+                                    .foregroundColor(metaTint.opacity(0.72))
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityLabel("重来")
+                        }
+                        // 0822 她定的：信息主题下心率跟过程线（思绪/脚印/记忆）一个开关，关了一起藏
+                        // 1009 晚 她：「时间戳那一行的心率可以删掉，因为现在顶栏有你的心率」
+                        if showTime, !isUser, !theme.isTreehouse, let bpm = msg.heartRate,
+                           !(theme.isMessages && !showProcessDots) {
+                            Button { showPulse = true } label: {
+                                HStack(spacing: 3) {
+                                    // 0925 她要的：Kakao 下爱心实心、不带颜色（跟旁边清单 / 重来一个色），去掉「bpm」只留数字
+                                    Image(systemName: "heart.fill")
+                                        .font(.system(size: 9, weight: .medium))
+                                        .foregroundColor(theme.isKakao ? metaTint.opacity(0.72)
+                                                         : Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
+                                    Text(theme.isKakao ? "\(bpm)" : "\(bpm) bpm")
+                                        .font(.system(size: 10, design: .serif))
+                                        .foregroundColor(metaTint.opacity(0.72))
+                                }
+                                .contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                        if showTime, !isUser, let usage = msg.apiUsage {
+                            apiUsageLine(usage)
+                        }
+        }
+        .padding(.leading, theme.isTreehouse ? 0 : (isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset)))
+        .padding(.trailing, theme.isTreehouse ? 0 : (isUser ? timestampTextInset : 0))
+        .padding(.top, theme.isTreehouse ? 0 : rowPartGap)
+    }
+
     private var shouldShowMetaRow: Bool {
         guard msg.msgType != "choice_answer" else { return false }
         let dotsOK = !(theme.isMessages && !showProcessDots)
@@ -4107,84 +4197,10 @@ struct MessageRow: View {
                         .padding(.leading, theme.isKakao ? kakaoTextLeading() : 3)
                         .padding(.top, CGFloat(chatBubbleGap))
                 }
-                if shouldShowMetaRow {
-                    // 0822 她要的：信息主题下时间／清单／心率三个之间留呼吸感
-                    // 0925 她要的：Kakao 下这排按钮再开一丢丢（12 → 16）
-                    HStack(spacing: theme.isKakao ? 16 : (theme.isMessages ? 12 : (theme.isPaper && !isUser ? 14 : 4))) {
-                        if msg.pending {
-                            Image(systemName: "clock")
-                                .font(.system(size: 9))
-                                .foregroundColor(.secondary)
-                        }
-                        if msg.asleepAtSend {
-                            Text("睡着时收到")
-                                .font(.system(size: 10))
-                                .foregroundColor(.secondary)
-                        }
-                        if showTime && !theme.isKakao {   // Kakao 的时间贴在气泡旁边（kakaoSideMeta）
-                            Text(Self.hm.string(from: msg.date))
-                                .font(.system(size: 10, design: .serif))
-                                .foregroundColor(theme.timestamp)
-                        }
-                        if theme.isMessages, !theme.isKakao, isUser, !msg.pending {
-                            // 0822 她定的：tg 那种两个勾，发出去就亮，只是个装饰
-                            HStack(spacing: -5) {
-                                Image(systemName: "checkmark")
-                                Image(systemName: "checkmark")
-                            }
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(theme.readTickColor)
-                        }
-                        // 0907 她抓的：原来要求这条有正文才给按钮，
-                        // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
-                        // 0907 她定的：信息主题下这个按钮也归过程点那个开关管 ——
-                        // 关了就跟思绪、脚印、心率一起藏，截图时那一行干干净净。
-                        // 代价是关着的时候进不去多选，要删东西得先把开关打开。
-                        if showTime, !isUser, !(theme.isMessages && !showProcessDots) {
-                            Button { onBeginParagraphSelection?() } label: {
-                                Image(systemName: "checklist")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(theme.timestamp.opacity(
-                                        paragraphSelectionMode ? 1 : 0.72))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("选择正文段落")
-                        }
-                        // 0924 她要的「重来」（像官方 app 那种重 roll）：只在他最后一轮的尾巴上出现
-                        // 0924 她要的：重来箭头跟过程点一个开关，思绪藏了它也藏
-                        if showTime, !isUser, let onReroll = onReroll, !(theme.isMessages && !showProcessDots) {
-                            Button { onReroll() } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(theme.timestamp.opacity(0.72))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("重来")
-                        }
-                        // 0822 她定的：信息主题下心率跟过程线（思绪/脚印/记忆）一个开关，关了一起藏
-                        if showTime, !isUser, let bpm = msg.heartRate, !(theme.isMessages && !showProcessDots) {
-                            Button { showPulse = true } label: {
-                                HStack(spacing: 3) {
-                                    // 0925 她要的：Kakao 下爱心实心、不带颜色（跟旁边清单 / 重来一个色），去掉「bpm」只留数字
-                                    Image(systemName: "heart.fill")
-                                        .font(.system(size: 9, weight: .medium))
-                                        .foregroundColor(theme.isKakao ? theme.timestamp.opacity(0.72)
-                                                         : Color(red: 0.78, green: 0.43, blue: 0.50).opacity(0.82))
-                                    Text(theme.isKakao ? "\(bpm)" : "\(bpm) bpm")
-                                        .font(.system(size: 10, design: .serif))
-                                        .foregroundColor(theme.timestamp.opacity(0.72))
-                                }
-                                .contentShape(Rectangle())
-                            }
-                            .buttonStyle(.plain)
-                        }
-                        if showTime, !isUser, let usage = msg.apiUsage {
-                            apiUsageLine(usage)
-                        }
-                    }
-                    .padding(.leading, isUser ? 0 : (theme.isKakao ? kakaoTextLeading() : timestampTextInset))
-                    .padding(.trailing, isUser ? timestampTextInset : 0)
-                    .padding(.top, rowPartGap)
+                // 1009 晚 她：「时间戳那一行想加到每个人最后一条气泡里面，现在壁纸比较杂不放气泡里看不清」
+                // 树屋下这一行搬进气泡（见 bubbleCore），外面不再画。
+                if shouldShowMetaRow && !(theme.isTreehouse && showsTextBubble) {
+                    metaRow
                 }
             }
             if !isUser {
@@ -4518,7 +4534,13 @@ struct MessageRow: View {
                     bubbleContents.padding(.horizontal, 0).padding(.vertical, 2)
                 } else if theme.isTreehouse {
                     // 1009 树屋：照她成品——实心，18 圆角、贴边那个角收成 5；他的白泡外面一圈很淡的墨线
-                    bubbleContents
+                    // 1009 晚 她要的：一串最后那条，时间那一行收进气泡里（右下角），壁纸太杂放外面看不清。
+                    // 顺移是白送的：showTime 由列表现算（isGroupTail 看下一条是不是同一个人），
+                    // 她删掉最后一条，下一帧新的尾巴自己长出这一行。
+                    VStack(alignment: .trailing, spacing: 3) {
+                        bubbleContents
+                        if shouldShowMetaRow { metaRow }
+                    }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
                         .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI))
@@ -6940,6 +6962,27 @@ final class TreehouseHeaderModel: ObservableObject {
     static let shared = TreehouseHeaderModel()
     @Published var bpm: Int?
     @Published var model = ""
+
+    // 1009 晚 她：「这个心率跟脉那个面板要对齐，要一直更新，现在一直都不动」
+    // 原来 bpm 是从最后一条消息上扒下来的，消息不来就永远停着。改成自己去问活的那份
+    // （/api/pulse-now → pulse_core.compute()，跟「脉」面板同一个源），10 秒一次。
+    private var ticker: Task<Void, Never>?
+
+    func startLivePulse() {
+        guard ticker == nil else { return }
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                if let o = try? await AlcoveAPI.getRaw("/api/pulse-now"),
+                   o["ok"] as? Bool == true,
+                   let n = (o["bpm"] as? NSNumber)?.intValue, n > 0 {
+                    await MainActor.run {
+                        if self?.bpm != n { self?.bpm = n }
+                    }
+                }
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+        }
+    }
 }
 
 /// 树屋顶栏底下那根线：细灰轨道、黑色实心段＝上下文用了多少、头上一颗电光蓝圆点（她成品 progress line）。
@@ -6947,8 +6990,49 @@ final class TreehouseHeaderModel: ObservableObject {
 struct TreehouseContextLine: View {
     let room: String
     @State private var ratio: Double = 0
+    // 1009 晚 她要的：线最右边写「230k/1m」，手写花体
+    @State private var used: Double = 0
+    @State private var window: Double = 0
+
+    /// 230000 → 230k；1000000 → 1m；1200000 → 1.2m
+    private func short(_ n: Double) -> String {
+        if n >= 1_000_000 {
+            let m = n / 1_000_000
+            return m >= 10 || m == m.rounded() ? "\(Int(m.rounded()))m" : String(format: "%.1fm", m)
+        }
+        if n >= 1_000 { return "\(Int((n / 1_000).rounded()))k" }
+        return "\(Int(n))"
+    }
+
+    private var tokenText: String {
+        guard window > 0 else { return "" }
+        return "\(short(used))/\(short(window))"
+    }
 
     var body: some View {
+        HStack(alignment: .center, spacing: 9) {
+            line
+            if !tokenText.isEmpty {
+                Text(tokenText)
+                    .font(.custom("PinyonScript-Regular", size: 15))
+                    .foregroundColor(TreehouseInk.ink.opacity(0.68))
+                    .fixedSize()
+                    .animation(.easeOut(duration: 0.4), value: tokenText)
+            }
+        }
+        .frame(height: 8)
+        .task(id: room) {
+            while !Task.isCancelled {
+                await load()
+                try? await Task.sleep(nanoseconds: 8_000_000_000)
+            }
+        }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveApiContextChanged)) { _ in
+            Task { await load() }
+        }
+    }
+
+    private var line: some View {
         GeometryReader { geo in
             let w = geo.size.width
             let x = max(4, w * ratio)
@@ -6964,30 +7048,28 @@ struct TreehouseContextLine: View {
             .animation(.easeOut(duration: 0.4), value: ratio)
         }
         .frame(height: 8)
-        .task(id: room) {
-            while !Task.isCancelled {
-                await load()
-                try? await Task.sleep(nanoseconds: 8_000_000_000)
-            }
-        }
-        .onReceive(NotificationCenter.default.publisher(for: .alcoveApiContextChanged)) { _ in
-            Task { await load() }
-        }
     }
 
     @MainActor private func load() async {
         if room == "api" {
             if let o = try? await AlcoveAPI.getRaw("/api/api-room/context"), o["ok"] as? Bool == true {
-                ratio = ApiContext(o).ratio
+                let c = ApiContext(o)
+                ratio = c.ratio
+                used = Double(c.used)
+                window = Double(c.limit)
             }
             return
         }
         guard let o = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") else { return }
         let ch = o["channel"] as? String ?? "cli"
         let ctx = o[ch == "sdk" ? "sdk_context" : "cli_context"] as? [String: Any] ?? [:]
-        let used = (ctx["used"] as? NSNumber)?.doubleValue ?? 0
-        let window = (ctx["window"] as? NSNumber)?.doubleValue ?? 0
-        if window > 0 { ratio = min(1, max(0, used / window)) }
+        let u = (ctx["used"] as? NSNumber)?.doubleValue ?? 0
+        let w = (ctx["window"] as? NSNumber)?.doubleValue ?? 0
+        if w > 0 {
+            ratio = min(1, max(0, u / w))
+            used = u
+            window = w
+        }
     }
 }
 

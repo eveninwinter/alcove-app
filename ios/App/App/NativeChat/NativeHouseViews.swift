@@ -1398,9 +1398,13 @@ private struct NativeSettingsView: View {
                     BubbleAppearanceSettingsView(part: .text)
                 } }
                 // 0902 信息主题自己调颜色，只在信息主题下露面
-                if page == .appearance && themeFamily == "imessage" { section("气泡颜色") {
-                    BubbleAppearanceSettingsView(part: .colors)
-                } }
+                // 1009 晚 她：「信息主题不是可以调节一大堆颜色吗，把我们树屋主题也加上那些调节的」——树屋也露出来，
+                // 存的是另一套键（MessagesPalette.th*），两边各调各的
+                if page == .appearance && (themeFamily == "imessage" || themeFamily == "treehouse") {
+                    section("气泡颜色") {
+                        BubbleAppearanceSettingsView(part: .colors)
+                    }
+                }
                 if page == .appearance { section("聊天壁纸") {
                     HStack {
                         PhotosPicker(selection: $wallPhoto, matching: .images) {
@@ -1940,12 +1944,15 @@ private struct BubbleAppearanceSettingsView: View {
 
                 // 0902 她要的：信息主题下自己调颜色。每项预设色块 + 自定义取色器 + 各自的「默认」
                 if chatTheme.isMessages {
-                    section("颜色 · 信息主题") {
+                    section(chatTheme.isTreehouse ? "颜色 · 树屋" : "颜色 · 信息主题") {
                         VStack(spacing: 12) {
-                            bubbleStylePicker
-                ForEach(paletteItems) { item in colorRow(item) }
+                            // 树屋是实心气泡，没有普通 / 玻璃这回事
+                            if !chatTheme.isTreehouse { bubbleStylePicker }
+                            ForEach(paletteItems) { item in colorRow(item) }
                         }
-                        Text("预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
+                        Text(chatTheme.isTreehouse
+                             ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。树屋只有一版，不分白天黑夜，跟信息主题那套分开存，各调各的"
+                             : "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                             .font(.system(size: 10))
                             .foregroundColor(panelTheme.textLight)
                             .fixedSize(horizontal: false, vertical: true)
@@ -1982,9 +1989,12 @@ private struct BubbleAppearanceSettingsView: View {
 
     private func colorRow(_ item: MessagesPalette.Item) -> some View {
         let dark = chatTheme.isDark
+        // 1009 晚：树屋有自己那套键（不分日夜），信息主题照旧按日夜分开存
+        let th = chatTheme.isTreehouse
         let binding = Binding<Color>(
-            get: { MessagesPalette.current(item, dark: dark) },
-            set: { MessagesPalette.set(item, $0, dark: dark) })
+            get: { th ? MessagesPalette.thCurrent(item) : MessagesPalette.current(item, dark: dark) },
+            set: { th ? MessagesPalette.thSet(item, $0) : MessagesPalette.set(item, $0, dark: dark) })
+        let isDefault = th ? MessagesPalette.thIsDefault(item) : MessagesPalette.isDefault(item, dark: dark)
         return HStack(spacing: 8) {
             Text(item.title)
                 .font(.system(size: 12))
@@ -1992,7 +2002,7 @@ private struct BubbleAppearanceSettingsView: View {
             ScrollView(.horizontal, showsIndicators: false) {
                 HStack(spacing: 7) {
                     ForEach(Array(MessagesPalette.presets.enumerated()), id: \.offset) { _, c in
-                        Button { MessagesPalette.set(item, c, dark: dark) } label: {
+                        Button { th ? MessagesPalette.thSet(item, c) : MessagesPalette.set(item, c, dark: dark) } label: {
                             Circle().fill(c)
                                 .frame(width: 22, height: 22)
                                 .overlay(Circle().stroke(panelTheme.fyBorder, lineWidth: 1))
@@ -2004,10 +2014,10 @@ private struct BubbleAppearanceSettingsView: View {
             ColorPicker("", selection: binding, supportsOpacity: true)
                 .labelsHidden()
                 .frame(width: 30)
-            Button("默认") { MessagesPalette.set(item, nil, dark: dark) }
+            Button("默认") { th ? MessagesPalette.thSet(item, nil) : MessagesPalette.set(item, nil, dark: dark) }
                 .font(.system(size: 11, weight: .medium))
-                .foregroundColor(MessagesPalette.isDefault(item, dark: dark) ? panelTheme.textLight : panelTheme.fyAccent)
-                .disabled(MessagesPalette.isDefault(item, dark: dark))
+                .foregroundColor(isDefault ? panelTheme.textLight : panelTheme.fyAccent)
+                .disabled(isDefault)
         }
     }
 
@@ -2057,7 +2067,9 @@ private struct BubbleAppearanceSettingsView: View {
 
     /// 玻璃气泡不带颜色，「我的气泡」「他的气泡」两项藏起来
     private var paletteItems: [MessagesPalette.Item] {
-        MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
+        // 树屋是实心气泡，没有玻璃那回事，九项全给
+        if chatTheme.isTreehouse { return MessagesPalette.Item.allCases }
+        return MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
     }
 
     /// 1001 她要的：只管气泡的玻璃，照系统设置里 Liquid Glass 那条——左边透明、右边色调（更磨砂、字更清楚），不带颜色

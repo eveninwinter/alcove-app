@@ -445,9 +445,25 @@ struct RootView: View {
             .padding(.leading, 8).padding(.trailing, 16)
             TreehouseContextLine(room: chatRoom)
                 .padding(.horizontal, 16)
-                .padding(.top, 22)
+                .padding(.top, 14)   // 1009 晚 她：「进度条往上一丢丢」22 → 14
         }
         .frame(height: 84, alignment: .top)
+        // 1009 晚 她拿 Kakao 真机截图问「kakao 的上面就是完全不透的呀？」——是的，Kakao 顶栏整块实心，
+        // 消息滑上去直接被盖住。树屋原来只有字外面一圈雾白光晕，壁纸一杂气泡就糊在名字上。
+        // 改成同一套：从屏幕最顶（含状态栏）到进度线下沿整块纸白不透，再往下 22 渐隐到 0。
+        .background(alignment: .top) {
+            LinearGradient(
+                stops: [
+                    .init(color: TreehouseInk.fog, location: 0),
+                    .init(color: TreehouseInk.fog, location: 0.82),
+                    .init(color: TreehouseInk.fog.opacity(0), location: 1),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            .frame(height: 106)          // 84 实心 + 22 渐隐
+            .ignoresSafeArea(edges: .top)
+            .allowsHitTesting(false)
+        }
     }
 
     // 0822 她要的 iMessage 同款顶栏：大头像居中（点了照样进终端页），名字在下；

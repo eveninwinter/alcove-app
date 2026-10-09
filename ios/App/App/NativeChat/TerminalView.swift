@@ -631,7 +631,15 @@ struct TerminalView: View {
                 for t in live.tools where !t.name.isEmpty { tail.append("⏺ " + t.name) }
                 let say = live.say.isEmpty ? live.pendingSay : live.say
                 if !say.isEmpty { tail.append("● " + say.replacingOccurrences(of: "\n", with: "\n  ")) }
-                if !tail.isEmpty { text += tail.joined(separator: "\n") + "\n" }
+                // 0920 她抓的：后端画的文字末尾已经带着「✻ 转轮」和状态行，实时流要插在转轮前面，不然被顶到状态行下面
+                if !tail.isEmpty {
+                    let block = tail.joined(separator: "\n") + "\n"
+                    if let spin = text.range(of: "\n✻ ", options: .backwards) {
+                        text.insert(contentsOf: block, at: text.index(after: spin.lowerBound))
+                    } else {
+                        text += block
+                    }
+                }
             }
             output = text
             workState = busy ? .thinking : .resting
