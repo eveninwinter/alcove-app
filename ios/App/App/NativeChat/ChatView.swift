@@ -998,7 +998,7 @@ struct ChatView: View {
                 if theme.isKakao {
                     KakaoDateDivider(date: message.date)
                 } else if theme.isTreehouse {
-                    TreehouseTimeDivider(date: message.date)
+                    TreehouseTimeDivider(date: message.date, color: theme.dividerColor)
                 } else if theme.isMessages {
                     MessagesTimeDivider(date: message.date, color: theme.dividerColor)
                 } else {
@@ -1911,10 +1911,10 @@ struct ChatView: View {
                     Group {
                         if isGenerating || recorder.isRecording {
                             Image(systemName: "stop.fill").font(.system(size: 13))
-                                .foregroundColor(ink)
+                                .foregroundColor(composerTheme.sendButtonColor)
                         } else {
                             TreehouseLeafShape()
-                                .stroke(ink, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
+                                .stroke(composerTheme.sendButtonColor, style: StrokeStyle(lineWidth: 1.4, lineCap: .round, lineJoin: .round))
                                 .frame(width: 19, height: 19)
                         }
                     }
@@ -3856,7 +3856,7 @@ struct MessageRow: View {
     /// 树屋把这一行搬进了气泡，颜色得跟气泡底走：她的墨色泡用浅字，他的纸白泡用墨字。
     private var metaTint: Color {
         guard theme.isTreehouse else { return theme.timestamp }
-        return isUser ? TreehouseInk.white.opacity(0.58) : TreehouseInk.ink.opacity(0.42)
+        return MessagesPalette.thStored(.timestamp) ?? (isUser ? TreehouseInk.white.opacity(0.58) : TreehouseInk.ink.opacity(0.42))
     }
 
     @ViewBuilder private var metaRow: some View {
@@ -3883,7 +3883,7 @@ struct MessageRow: View {
                                 Image(systemName: "checkmark")
                             }
                             .font(.system(size: 9, weight: .semibold))
-                            .foregroundColor(metaTint)
+                            .foregroundColor(theme.isTreehouse ? MessagesPalette.thCurrent(.readTick) : metaTint)
                         }
                         // 0907 她抓的：原来要求这条有正文才给按钮，
                         // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
@@ -4602,7 +4602,7 @@ struct MessageRow: View {
                     }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI))
+                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI, showsCorner: isUser || showTime))
                 } else {
                     bubbleContents
                         .padding(.horizontal, 14)
@@ -4909,6 +4909,14 @@ struct MessageRow: View {
                     .padding(.leading, 10)
                     .overlay(alignment: .leading) {
                         Capsule().fill(theme.thoughtColor.opacity(0.28)).frame(width: 1.5)
+                    }
+                    .padding(theme.isTreehouse ? 10 : 0)
+                    .background {
+                        if theme.isTreehouse {
+                            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                .fill(TreehouseInk.white)
+                                .allowsHitTesting(false)
+                        }
                     }
                     .transition(.opacity)
                 }
@@ -6874,7 +6882,7 @@ struct ChatLookPreview: View {
                     if t.isKakao {
                         KakaoDateDivider(date: Date())
                     } else if t.isTreehouse {
-                        TreehouseTimeDivider(date: Date())
+                        TreehouseTimeDivider(date: Date(), color: t.dividerColor)
                     } else if t.isMessages {
                         MessagesTimeDivider(date: Date(), color: t.dividerColor)
                     } else {
@@ -6987,14 +6995,14 @@ struct MessagesTimeDivider: View {
 /// 1009 树屋的时间：打字机字、字距拉开，衬一块半透明的雾白小底（照她成品 stamp()）
 struct TreehouseTimeDivider: View {
     let date: Date
+    var color: Color = TreehouseInk.ink
     var body: some View {
         Text(Self.text(date))
             .font(.system(size: 10.5, design: .monospaced))
             .tracking(1.5)
-            .foregroundColor(TreehouseInk.ink)
+            .foregroundColor(color)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(TreehouseInk.fog.opacity(0.9), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-            .opacity(0.75)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 10)
     }
@@ -7143,10 +7151,11 @@ struct TreehouseContextLine: View {
 struct TreehouseBubbleFill: ViewModifier {
     let isUser: Bool
     let fill: Color
+    var showsCorner: Bool = true
     func body(content: Content) -> some View {
         let shape = UnevenRoundedRectangle(topLeadingRadius: 18,
-                                           bottomLeadingRadius: isUser ? 18 : 5,
-                                           bottomTrailingRadius: isUser ? 5 : 18,
+                                           bottomLeadingRadius: !isUser && showsCorner ? 5 : 18,
+                                           bottomTrailingRadius: isUser && showsCorner ? 5 : 18,
                                            topTrailingRadius: 18, style: .continuous)
         content
             .background(fill, in: shape)

@@ -603,7 +603,7 @@ enum MessagesPalette {
 
     /// 九项全上：她在树屋里调过的盖上去，没调过的还是树屋原样
     static func applyTreehouse(to theme: AlcoveTheme) -> AlcoveTheme {
-        var t = applyMeta(to: theme)   // 她以前在信息主题里调过的小字颜色先垫着（#3507）
+        var t = theme   // 树屋恢复默认时使用树屋本身，不继承其他主题的自选色。
         if let c = thStored(.timestamp) { t.timestamp = c }
         if let c = thStored(.thought) { t.thought = c }
         if let c = thStored(.divider) { t.divider = c }
