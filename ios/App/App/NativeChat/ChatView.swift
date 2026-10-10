@@ -91,6 +91,7 @@ struct ChatView: View {
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
+    @State private var selectAnchorID: String?   // 1010 晚：进 / 出多选时拉回她长按的那条
     @State private var selectedParagraphIDs: Set<UUID> = []
     // 0906 她要的：图和字分开勾。这份记的是「哪些消息的图被勾了」，存组头那条的号
     @State private var selectedPhotoIDs: Set<UUID> = []
@@ -504,10 +505,20 @@ struct ChatView: View {
                 }
                 // 0927：进多选时底下多留了一截给多选栏；本来在最底的话跟着滚下去，最后一条别被栏盖住
                 .onChange(of: paragraphSelectionMode) { on in
-                    guard on, atBottom else { return }
-                    DispatchQueue.main.async {
-                        withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tail", anchor: .bottom) }
+                    if on, atBottom {
+                        DispatchQueue.main.async {
+                            withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("tail", anchor: .bottom) }
+                        }
+                        return
                     }
+                    // 1010 晚 她：「我多选文字的时候会跳到很久之前的对话」——树屋「整个」模式下他连着的几条并成一个泡，
+                    // 一进多选就拆回一段一段（thPlainText 看 paragraphSelectionMode），上面一大片行高全变，列表跟着跑到老地方；
+                    // 退出多选又并回去，再跑一次。进出都把她长按的那条拉回屏幕中间（多拉两次等懒加载排好）
+                    guard let id = selectAnchorID else { return }
+                    for d in [0, 0.08, 0.25] {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + d) { proxy.scrollTo(id, anchor: .center) }
+                    }
+                    if !on { DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { selectAnchorID = nil } }
                 }
 
                 if paragraphSelectionMode {
@@ -919,6 +930,7 @@ struct ChatView: View {
         case .favorite: store.favoriteMessage(m)
         case .multi:
             // 进多选，先把长按的这一条勾上（图走图的圈、字走字的圈），别的她自己点
+            selectAnchorID = m.id
             paragraphSelectionMode = true
             if t.kind == .image { selectedPhotoIDs.insert(m.uid) } else { selectedParagraphIDs.insert(m.uid) }
             inputFocused = false
@@ -1132,6 +1144,7 @@ struct ChatView: View {
                         }
                     },
                     onBeginParagraphSelection: {
+                        selectAnchorID = message.id
                         paragraphSelectionMode = true
                         // 合并泡展开后由她逐段选，不默认把整轮全部勾上。
                         if mergeRun > 1 {
