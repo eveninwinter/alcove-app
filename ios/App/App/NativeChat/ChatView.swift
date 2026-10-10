@@ -8047,6 +8047,24 @@ enum PhotoLibrarySaver {
             // network fetch leaves the existing image bubble untouched.
         }
     }
+
+    /// 1010 #3569 她：「工作室的图不能保存」——原文件原样进相册（不经 UIImage 重编码），
+    /// 透明底的 PNG 还是透明、GIF 还会动。返回存没存成，给工作室那边弹一句话
+    static func saveOriginal(_ url: URL) async -> Bool {
+        do {
+            let (data, response) = try await URLSession.shared.data(from: url)
+            guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode),
+                  UIImage(data: data) != nil else { return false }
+            let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+            guard status == .authorized || status == .limited else { return false }
+            try await PHPhotoLibrary.shared().performChanges {
+                PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+            }
+            return true
+        } catch {
+            return false
+        }
+    }
 }
 
 struct PhotoPageViewer: View {

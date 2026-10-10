@@ -7164,6 +7164,7 @@ private struct NativeStudioView: View {
         .clipShape(RoundedRectangle(cornerRadius: 12))
         .contentShape(Rectangle())
         .onTapGesture { photoViewer = StudioPhotoTarget(url: url) }
+        .modifier(StudioSaveMenu(url: url))
     }
 
     /// 0925 工作室的过程线，照主聊天 messagesProcessBlock：一颗小圆点 + 大脑图标一排；
@@ -7250,6 +7251,7 @@ private struct NativeStudioView: View {
                         .frame(maxWidth: 220, maxHeight: 300)
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .onTapGesture { photoViewer = StudioPhotoTarget(url: attachmentURL) }
+                        .modifier(StudioSaveMenu(url: attachmentURL))
                     } else {
                         Label(message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"), systemImage: "doc")
                             .font(.system(size: 11, weight: .medium)).padding(9)
@@ -7536,6 +7538,8 @@ private struct StudioLocalPhoto: Identifiable {
 private struct StudioPhotoViewer: View {
     let url: URL
     var onClose: () -> Void
+    @State private var saving = false
+    @State private var note: String?
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
@@ -7546,6 +7550,25 @@ private struct StudioPhotoViewer: View {
             }
             VStack {
                 HStack {
+                    // 1010 #3569 她：「工作室的图不能保存」——大图左上角一个存到相册
+                    Button {
+                        guard !saving else { return }
+                        saving = true
+                        Task { @MainActor in
+                            let ok = await PhotoLibrarySaver.saveOriginal(url)
+                            saving = false
+                            note = ok ? "已存到相册" : "没存成（看看是不是没给相册权限）"
+                            try? await Task.sleep(nanoseconds: 1_800_000_000)
+                            note = nil
+                        }
+                    } label: {
+                        Group {
+                            if saving { ProgressView().tint(.white).scaleEffect(0.8) }
+                            else { Image(systemName: "square.and.arrow.down").font(.system(size: 15, weight: .semibold)) }
+                        }
+                        .foregroundColor(.white).frame(width: 37, height: 37)
+                        .background(.black.opacity(0.35), in: Circle())
+                    }.buttonStyle(.plain)
                     Spacer()
                     Button(action: onClose) {
                         Image(systemName: "xmark").font(.system(size: 15, weight: .semibold))
@@ -7554,9 +7577,28 @@ private struct StudioPhotoViewer: View {
                     }.buttonStyle(.plain)
                 }.padding(.horizontal, 18).padding(.top, 10)
                 Spacer()
+                if let note {
+                    Text(note)
+                        .font(.system(size: 13, weight: .medium)).foregroundColor(.white)
+                        .padding(.horizontal, 14).padding(.vertical, 8)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(.bottom, 40)
+                }
             }
         }
         .onTapGesture(perform: onClose)
+    }
+}
+
+/// 1010 #3569：工作室里的图长按也能直接存（不用先点开大图）
+private struct StudioSaveMenu: ViewModifier {
+    let url: URL
+    func body(content: Content) -> some View {
+        content.contextMenu {
+            Button {
+                Task { _ = await PhotoLibrarySaver.saveOriginal(url) }
+            } label: { Label("存到相册", systemImage: "square.and.arrow.down") }
+        }
     }
 }
 
