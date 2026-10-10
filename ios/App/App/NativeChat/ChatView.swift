@@ -4438,7 +4438,8 @@ struct MessageRow: View {
                         .italic()
                         // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
                         .foregroundColor(theme.thoughtColor.opacity(0.82))
-                        .padding(.leading, theme.isKakao ? kakaoTextLeading() : 3)
+                        // 1011 她：「小脚印也要跟正文对齐不是跟气泡对齐」——树屋跟时间一样让 14（泡里正文的边）
+                        .padding(.leading, theme.isKakao ? kakaoTextLeading() : (theme.isTreehouse ? thStampInset : 3))
                         .padding(.top, CGFloat(chatBubbleGap))
                 }
                 // 1009 晚 她：「时间戳那一行想加到每个人最后一条气泡里面，现在壁纸比较杂不放气泡里看不清」
