@@ -403,8 +403,9 @@ struct RootView: View {
                             .font(.system(size: 18, design: .serif))
                             .tracking(2.5)
                         Text(treehouseHeader.model.isEmpty ? " " : treehouseHeader.model)
-                            .font(.system(size: 12.5, design: .serif).italic())
-                            .tracking(0.3)
+                            // 1010 #3563 她：模型名换 Cormorant 斜体，12.5 → 15
+                            .font(.custom("CormorantGaramondItalic-MediumItalic", size: 15))
+                            .tracking(0.2)
                             .foregroundColor(TreehouseInk.gray)
                             .lineLimit(1)
                     }

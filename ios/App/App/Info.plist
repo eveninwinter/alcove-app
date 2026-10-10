@@ -16,6 +16,8 @@
 		<string>Fonts/chaoyong.ttf</string>
 		<string>Fonts/neozhisong.ttf</string>
 		<string>PinyonScript-Regular.ttf</string>
+		<string>CormorantGaramond-Medium.ttf</string>
+		<string>CormorantGaramond-MediumItalic.ttf</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Alcove</string>

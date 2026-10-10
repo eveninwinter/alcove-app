@@ -3942,7 +3942,9 @@ struct MessageRow: View {
                         }
                         if showTime && !theme.isKakao {   // Kakao 的时间贴在气泡旁边（kakaoSideMeta）
                             Text(Self.hm.string(from: msg.date))
-                                .font(.system(size: 10, design: .serif))
+                                // 1010 #3562–3563 她：树屋的时间戳换 Cormorant（老式数字），字天生小，10 → 12.5 才跟原来一样大
+                                .font(theme.isTreehouse ? .custom("CormorantGaramond-Medium", size: 12.5)
+                                                        : .system(size: 10, design: .serif))
                                 .foregroundColor(metaTint)
                         }
                         if theme.isMessages, !theme.isKakao, isUser, !msg.pending {
@@ -7078,8 +7080,9 @@ struct TreehouseTimeDivider: View {
     var color: Color = TreehouseInk.ink
     var body: some View {
         Text(Self.text(date))
-            .font(.system(size: 10.5, design: .monospaced))
-            .tracking(1.5)
+            // 1010 #3563 她：打字机字换 Cormorant（跟气泡里的时间、顶栏模型名一套），10.5 → 13
+            .font(.custom("CormorantGaramond-Medium", size: 13))
+            .tracking(1.2)
             .foregroundColor(color)
             .padding(.horizontal, 8).padding(.vertical, 2)
             .background(TreehouseInk.fog.opacity(0.9), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
