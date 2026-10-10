@@ -169,8 +169,9 @@ struct AlcoveTheme {
         case "imessage": return panelNamed("haven")
         case "imessage-dark": return panelNamed("midnight")
         case "kakao": return AlcoveTheme.kakaoPanel(dark: AlcoveAppearance.isDark)   // 0924 她要的：抽屉/设置页的底色跟主题包壁纸走
-        // 树屋只改聊天页；抽屉 / 设置页借纸页那套，深浅跟全屋按钮走
-        case "treehouse", "treehouse-dark": return AlcoveAppearance.isDark ? paperDark : paper
+        // 树屋只改聊天页（日记、梦境另有自己的样子）；别的页面、抽屉、设置页跟信息主题一样借玻璃系
+        // （白天 haven、黑夜 midnight），深浅跟全屋按钮走。1010 #3570 她：「现在是跟着纸页走的」——原来借的是纸页
+        case "treehouse", "treehouse-dark": return panelNamed(AlcoveAppearance.isDark ? "midnight" : "haven")
         case "midnight":
             return midnight.panelCopy(
                 splashBg: [
