@@ -1095,6 +1095,7 @@ struct ChatView: View {
             }()
             // 1010 #3571–3575 树屋：一轮的第一条（跟 Kakao 露头像同一个认法）上面挂时间
             // 1011 她：「让时间戳不要显示在卡片上 和思绪并列」——一轮打头是卡片的，时间挂到这一轮第一条不是卡片的上面（多半就是带思绪那条）
+            let thProc = thProcRoute(index)
             let thRoundStamp: Date? = (theme.isTreehouse
                                        && (message.role == "user" || message.role == "assistant")
                                        && thStampHere(index)) ? message.date : nil
@@ -1138,6 +1139,9 @@ struct ChatView: View {
                     onFavorite: { store.favoriteMessage(message) },
                     wholeTurnText: wholeTurnText(for: message),
                     roundStamp: thRoundStamp,
+                    procSource: thProc.source,
+                    procRecall: thProc.recall,
+                    procHidden: thProc.hidden,
                     paragraphSelectionMode: paragraphSelectionMode && splittable,
                     paragraphSelected: selectedParagraphIDs.contains(message.uid),
                     photoSelected: selectedPhotoIDs.contains(message.uid),
@@ -1349,6 +1353,41 @@ struct ChatView: View {
         let b = m.displayText
         return b.contains("_CARD]") || b.contains("[INSIDE]")
             || m.choiceCard != nil || m.journeyCard != nil || m.morningPaperDate != nil
+    }
+
+    /// 这条自己有没有思绪那一排要画的东西（手写思绪 / 动作 / 原生思考 / 召回）
+    private func thHasProc(_ i: Int) -> Bool {
+        let m = store.messages[i]
+        if m.segments.contains(where: { $0.kind == "tool" || (($0.kind == "think" || $0.kind == "thinking") && !$0.content.isEmpty) }) {
+            return true
+        }
+        if let t = m.thinking?.trimmingCharacters(in: .whitespacesAndNewlines), !t.isEmpty { return true }
+        if m.activity.contains(where: { $0.kind == "tool" }) { return true }
+        if let n = m.nativeThinking?.trimmingCharacters(in: .whitespacesAndNewlines), !n.isEmpty { return true }
+        return recallFor(index: i) != nil
+    }
+
+    /// 1011 #3647 树屋：思绪一排跟时间绑定。这一串里挂时间的（s）和第一条带思绪的（p）不是同一条时，
+    /// s 借 p 的来画，p 自己不画；别的主题、她那边、本来就在一起的都不动
+    private func thProcRoute(_ index: Int) -> (source: ChatMessage?, recall: RecallItem?, hidden: Bool) {
+        guard theme.isTreehouse else { return (nil, nil, false) }
+        let msgs = store.messages
+        guard msgs.indices.contains(index), msgs[index].role == "assistant" else { return (nil, nil, false) }
+        var head = index
+        while head > 0, thSameGroup(msgs[head - 1], msgs[head]) { head -= 1 }
+        var stamp: Int?, proc: Int?
+        var j = head
+        while j < msgs.count, j == head || thSameGroup(msgs[j - 1], msgs[j]) {
+            if stamp == nil, !thIsCard(msgs[j]) { stamp = j }
+            if proc == nil, thHasProc(j) { proc = j }
+            j += 1
+        }
+        let s = stamp ?? head
+        // 挂时间那条自己就有思绪：用它自己的，不借
+        guard let p = proc, s != p, !thHasProc(s) else { return (nil, nil, false) }
+        if index == s { return (msgs[p], recallFor(index: p), false) }
+        if index == p { return (nil, nil, true) }
+        return (nil, nil, false)
     }
 
     /// 树屋这一串的时间挂不挂在第 index 条上：这一串里第一条不是卡片的；整串都是卡片就挂第一条
@@ -3927,6 +3966,11 @@ struct MessageRow: View {
     /// 1010 #3571–3575 她：树屋的时间挪到每一轮第一条上面（不再挂最后一个泡里），他的靠左、她的靠右，
     /// 都跟气泡里的字对齐；他那边思绪那一排（圆点 + 大脑）直接跟在时间后面。这一行只在一轮的第一条给日期
     var roundStamp: Date? = nil
+    /// 1011 #3647 她：「直接让思绪一行跟时间戳绑定 时间戳在哪他们在哪 仅树屋主题」——
+    /// 挂时间的这条借这一串里真带思绪那条（procSource）的思绪 / 动作 / 原生思考 / 召回来画；那条自己不画（procHidden）
+    var procSource: ChatMessage? = nil
+    var procRecall: RecallItem? = nil
+    var procHidden = false
     var paragraphSelectionMode = false
     var paragraphSelected = false
     // 0906 她要的：带图又带字的消息，多选时图一个圈、字一个圈，勾哪个收哪个
@@ -4091,8 +4135,11 @@ struct MessageRow: View {
     private var trailItems: [ActivityItem] {
         if !hoistedActivity.isEmpty { return hoistedActivity }
         if suppressOwnActivity { return [] }
-        return msg.activity
+        return pm.activity
     }
+    /// 思绪那一排看哪条消息：平时就是自己，树屋借来的时候是 procSource
+    private var pm: ChatMessage { procSource ?? msg }
+    private var pRecall: RecallItem? { procSource != nil ? procRecall : recall }
     /// 0820 她定的：跑命令那栏只放命令，思绪归思绪栏，两边彻底分开
     private var trailTools: [ActivityItem] { trailItems.filter { $0.kind == "tool" } }
     private var trailToolCount: Int { trailTools.count }
@@ -4142,7 +4189,7 @@ struct MessageRow: View {
         var out: [TurnBlock] = []
         var buf: [ActivityItem] = []
         var n = 0
-        for it in msg.segments {
+        for it in pm.segments {
             if it.kind == "think" || it.kind == "thinking" {
                 if !buf.isEmpty { out.append(.tools(buf, n)); n += 1; buf = [] }
                 if !it.content.isEmpty { out.append(.think(it.content, n)); n += 1 }
@@ -4198,9 +4245,11 @@ struct MessageRow: View {
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
-                    messagesProcessBlock
-                        // 1001 Kakao：看得见的圆点对齐气泡边框（块里自带 4 的左距、圆点在按钮框里还往里 7.5，都扣掉）
-                        .padding(.leading, theme.isKakao ? kakaoTextLeading() - 4 - Self.kakaoDotInset : 0)
+                    if !procHidden {
+                        messagesProcessBlock
+                            // 1001 Kakao：看得见的圆点对齐气泡边框（块里自带 4 的左距、圆点在按钮框里还往里 7.5，都扣掉）
+                            .padding(.leading, theme.isKakao ? kakaoTextLeading() - 4 - Self.kakaoDotInset : 0)
+                    }
                 } else if !isUser && !turnBlocks.isEmpty {
                     ForEach(turnBlocks) { blk in
                         switch blk {
@@ -4498,7 +4547,7 @@ struct MessageRow: View {
         if let hoisted = hoistedThought?.trimmingCharacters(in: .whitespacesAndNewlines),
            !hoisted.isEmpty { return hoisted }
         if suppressOwnThought { return nil }
-        if let handwritten = msg.thinking?.trimmingCharacters(in: .whitespacesAndNewlines),
+        if let handwritten = pm.thinking?.trimmingCharacters(in: .whitespacesAndNewlines),
            !handwritten.isEmpty { return handwritten }
         return nil
     }
@@ -5076,7 +5125,7 @@ struct MessageRow: View {
             .padding(.leading, 4)
             .padding(.bottom, rowPartGap)
         } else if showProcessDots,
-                  recall != nil || !(msg.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                  pRecall != nil || !(pm.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             // 0924 她报的「他的气泡间距跟我的不一样」：这一支原来不管有没有东西都画一个空 HStack
             // 再垫 rowPartGap，他每条消息头上都多出 7 的空白。现在没角标、没原生思考就整块不画。
             Group {
@@ -5417,13 +5466,13 @@ struct MessageRow: View {
 
     /// 召回了几条（召回面板里那几张卡）
     private var thRecallCount: Int {
-        guard let recall else { return 0 }
+        guard let recall = pRecall else { return 0 }
         let n = recall.lmcCards.count
         return n > 0 ? n : recall.cards.count
     }
 
     private var thHasMind: Bool {
-        !(msg.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        !(pm.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
     private func thWord(_ text: String) -> some View {
@@ -5451,7 +5500,7 @@ struct MessageRow: View {
                 }))
             }
             if thHasMind { out.append(("mind", { thMindOpen = true })) }
-            if recall != nil { out.append(("memory \(max(1, thRecallCount))", { showRecall = true })) }
+            if pRecall != nil { out.append(("memory \(max(1, thRecallCount))", { showRecall = true })) }
             return out
         }()
         HStack(spacing: 0) {
@@ -5475,10 +5524,10 @@ struct MessageRow: View {
             }
         }
         .sheet(isPresented: $showRecall) {
-            if let recall { RecallPop(item: recall).modifier(HouseColorScheme()) }
+            if let recall = pRecall { RecallPop(item: recall).modifier(HouseColorScheme()) }
         }
         .sheet(isPresented: $thMindOpen) {
-            let text = msg.nativeThinking ?? ""
+            let text = pm.nativeThinking ?? ""
             if #available(iOS 18.0, *) {
                 NativeThinkingSheet(text: text, iosOnly: false)
                     .presentationDetents([.medium, .large])
