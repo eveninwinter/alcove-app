@@ -5352,14 +5352,10 @@ struct MessageRow: View {
         return f
     }()
 
-    /// 跟气泡里正文的边对齐要让开多少：文字泡 14（泡的内边距），图 6，表情 0，语音 14
-    private var thStampInset: CGFloat {
-        if showsTextBubble { return 14 }
-        if msg.isSticker { return 0 }
-        if msg.isAudio { return 14 }
-        if hasPhotoBlock { return 0 }   // 1010 #3587 纸边去掉了，贴图的边
-        return 14
-    }
+    /// 时间要让开多少：一律 14（文字泡的内边距）。
+    /// 1010 晚 她：「所有时间戳都是对齐的 不管在什么上面 我这表情也一样」——原来表情 / 图贴着图边（0），
+    /// 跟文字泡上面的时间差一截；气泡、表情、图在同一侧本来就贴着同一条边，统一让 14，时间就站在同一条竖线上
+    private var thStampInset: CGFloat { 14 }
 
     /// 1010 #3575 她：「时间戳太小了稍微大一点点」——气泡里那行是 12.5，这行 14；压在壁纸上，垫一圈跟底色一样的淡光晕
     @ViewBuilder private var thRoundStampText: some View {

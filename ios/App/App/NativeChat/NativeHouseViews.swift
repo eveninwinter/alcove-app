@@ -13975,6 +13975,8 @@ private struct TreehouseTearWeb: UIViewRepresentable {
     let diaryJSON: String
     let todayKey: String
     let night: Bool
+    let safeTop: CGFloat
+    let safeBottom: CGFloat
     let bridge: TreehouseDreamsBridge
 
     static func paper(_ night: Bool) -> UIColor {
@@ -13984,7 +13986,7 @@ private struct TreehouseTearWeb: UIViewRepresentable {
 
     func makeUIView(context: Context) -> WKWebView {
         let uc = WKUserContentController()
-        uc.addUserScript(WKUserScript(source: "window.DIARY = \(diaryJSON); window.TODAY_KEY = '\(todayKey)'; window.NIGHT = \(night);",
+        uc.addUserScript(WKUserScript(source: "window.DIARY = \(diaryJSON); window.TODAY_KEY = '\(todayKey)'; window.NIGHT = \(night); window.SAFE_TOP = \(safeTop); window.SAFE_BOTTOM = \(safeBottom);",
                                       injectionTime: .atDocumentStart, forMainFrameOnly: true))
         uc.add(bridge, name: "diary")
         let cfg = WKWebViewConfiguration()
@@ -14023,8 +14025,11 @@ extension NativeCalendarView {
         return ZStack {
             paper.ignoresSafeArea()
             if let json = thTearJSON {
-                // 网页是按 390 宽排死的，顶上那排（返回 / Diary / 菜单）离顶 35，不让开安全区会钻到灵动岛底下
-                TreehouseTearWeb(diaryJSON: json, todayKey: thTearToday, night: thTearNight, bridge: thTearBridge)
+                // 1010 晚 她真机：网页从屏幕最顶上画，Diary 钻到灵动岛底下——外面这层让安全区没生效。
+                // 改成网页铺满全屏、自己按安全区往下排（env() 量一份，这里再塞一份兜底，网页取大的）
+                TreehouseTearWeb(diaryJSON: json, todayKey: thTearToday, night: thTearNight,
+                                 safeTop: safeTop, safeBottom: safeBottom, bridge: thTearBridge)
+                    .ignoresSafeArea()
             } else if thTearLoaded {
                 // 一篇都没拉到：别让网页掉回成品里的示例日记
                 VStack(spacing: 14) {

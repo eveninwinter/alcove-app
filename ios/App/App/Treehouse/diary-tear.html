@@ -18,7 +18,7 @@
   #sea { pointer-events: none; }
   .ui { position: absolute; pointer-events: none; color: #141414; white-space: nowrap; }
   .icon { position: absolute; width: 36px; height: 36px; padding: 0; border: 0; background: none; cursor: pointer; display: flex; align-items: center; justify-content: center; }
-  .title { left: 0; right: 0; top: 41px; text-align: center; font-family: 'Pinyon Script', cursive; font-size: 21px; line-height: 24px; }
+  .title { left: 0; right: 0; top: 44px; text-align: center; font-family: 'Pinyon Script', cursive; font-size: 25px; line-height: 28px; }
   .date { left: 22px; top: 360px; font-family: 'Noto Serif SC', 'Serif SC Local', 'Noto Serif CJK SC', 'Songti SC', serif; font-weight: 300; font-size: 33px; line-height: 1; letter-spacing: -.01em; }
   .day { left: 24px; top: 407px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 7.5px; letter-spacing: .04em; color: #6E6E6E; }
   .page { left: 75px; top: 406px; font-family: 'Noto Serif SC', 'Serif SC Local', 'Noto Serif CJK SC', 'Songti SC', serif; font-weight: 300; font-size: 7px; color: #6E6E6E; }
@@ -30,24 +30,24 @@
   .page .dots { margin-left: 5px; letter-spacing: 2px; }
 
   /* 月历：从日期下面展开 */
-  .cal { position: absolute; left: 22px; top: 424px; width: 168px; padding: 9px 8px 8px; background: #FBFBF9; border: .5px solid rgba(20,20,20,.12);
+  .cal { position: absolute; left: 22px; top: 424px; width: 244px; padding: 13px 12px 12px; background: #FBFBF9; border: .5px solid rgba(20,20,20,.12);
     font-family: 'Noto Serif SC', 'Serif SC Local', 'Noto Serif CJK SC', 'Songti SC', serif; color: #141414; transform-origin: top left;
     animation: calIn .22s ease both; z-index: 5; }
   .cal[hidden] { display: none; }
   @keyframes calIn { from { opacity: 0; transform: translateY(-4px); } }
-  .cal-head { display: flex; align-items: center; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 7.5px; letter-spacing: .14em; }
-  .cal-nav { width: 22px; height: 18px; border: 0; background: none; padding: 0; cursor: pointer; font-size: 12px; color: #141414; }
+  .cal-head { display: flex; align-items: center; justify-content: space-between; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 11px; letter-spacing: .14em; }
+  .cal-nav { width: 34px; height: 28px; border: 0; background: none; padding: 0; cursor: pointer; font-size: 17px; color: #141414; }
   .cal-nav:disabled { opacity: .2; cursor: default; }
   .cal-week, .cal-grid { display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); text-align: center; }
-  .cal-week { margin: 6px 0 2px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 6px; color: #9A9A9A; }
-  .cal-day { position: relative; height: 21px; border: 0; background: none; padding: 0; cursor: pointer; font-family: inherit; font-size: 8px; color: #141414; }
-  .cal-day span { display: inline-flex; width: 15px; height: 15px; align-items: center; justify-content: center; border-radius: 50%; }
+  .cal-week { margin: 9px 0 3px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 8.5px; color: #9A9A9A; }
+  .cal-day { position: relative; height: 31px; border: 0; background: none; padding: 0; cursor: pointer; font-family: inherit; font-size: 11.5px; color: #141414; }
+  .cal-day span { display: inline-flex; width: 22px; height: 22px; align-items: center; justify-content: center; border-radius: 50%; }
   .cal-day.empty { color: #A8A8A8; }
   .cal-day:disabled { color: #D6D6D6; cursor: default; }
   .cal-day.sel span { background: #141414; color: #F6F6F4; }
   .cal-day.today span { box-shadow: inset 0 0 0 .5px #141414; }
-  .cal-day i { position: absolute; left: 50%; bottom: 1px; transform: translateX(-50%); display: flex; gap: 1.5px; }
-  .cal-day i b { width: 2px; height: 2px; border-radius: 50%; background: #141414; }
+  .cal-day i { position: absolute; left: 50%; bottom: 1.5px; transform: translateX(-50%); display: flex; gap: 2px; }
+  .cal-day i b { width: 3px; height: 3px; border-radius: 50%; background: #141414; }
 
   /* 便签：长按泪弹出 */
   .note { position: absolute; left: 116px; top: 343px; width: 258px; height: 400px; background: #FCFCFA; border: .5px solid rgba(20,20,20,.1);
@@ -151,11 +151,11 @@
 <div class="frame" id="frame">
   <canvas id="sea" aria-hidden="true"></canvas>
   <canvas id="c" role="img" aria-label="一张侧脸的黑白照片，眼泪由文字组成，顺着鼻侧流下，滴进下方由日记文字组成的字海。按住眼泪可以挡住它，划过会把字顺着手的方向带走，划过字海会让字像隔着水一样荡开波纹。"></canvas>
-  <button class="icon" id="backBtn" style="left:9px;top:35px" aria-label="返回">
+  <button class="icon" id="backBtn" style="left:9px;top:40px" aria-label="返回">
     <svg width="12" height="18" viewBox="0 0 12 18" fill="none" stroke="#141414" stroke-width="1.1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M9.5 2 L2.5 9 L9.5 16"/></svg>
   </button>
   <div class="ui title">Diary</div>
-  <button class="icon" id="menuBtn" style="left:338px;top:35px" aria-label="菜单">
+  <button class="icon" id="menuBtn" style="left:338px;top:40px" aria-label="菜单">
     <svg width="22" height="12" viewBox="0 0 22 12" fill="none" stroke="#141414" stroke-width="1" stroke-linecap="round" aria-hidden="true"><path d="M1 1.5 H21 M1 6 H21 M1 10.5 H21"/></svg>
   </button>
   <button class="ui date" id="dateBtn" aria-haspopup="true" aria-expanded="false" aria-label="选择日期">10.10</button>
@@ -382,6 +382,9 @@
     out.push(q[q.length - 2]);
     return out;
   }
+  // 1010 晚：标题放大往下，照片连同泪的路线、眼眶那圈一起往下挪 DY，别跟标题撞
+  const DY = 12;
+  G.PY += DY; G.pts.forEach(p => { p[1] += DY; }); G.lid.forEach(p => { p[1] += DY; });
   const PL = catmull(G.pts, 40);
   const path = (() => {
     const cum = [0];
@@ -403,7 +406,7 @@
   const TIP = { x: path.X[path.n - 1], y: path.Y[path.n - 1] };
   // 鼻梁以上（从眼眶到碰到鼻子之前）这一段，手指碰不动
   let S_FREE = 0;
-  for (let i = 0; i < path.n; i++) if (path.Y[i] >= 440) { S_FREE = i / 2; break; }
+  for (let i = 0; i < path.n; i++) if (path.Y[i] >= 440 + DY) { S_FREE = i / 2; break; }
 
   /* ---------- 眼眶下沿的小半圈：微微颤动、慢慢换字，手指碰不动 ---------- */
   const lid = [];
@@ -595,9 +598,18 @@
 
   initGL();
   let lastScale = 1;
+  const safeProbe = document.createElement('div');
+  safeProbe.style.cssText = 'position:fixed;left:0;top:0;width:0;padding-top:env(safe-area-inset-top);padding-bottom:env(safe-area-inset-bottom);visibility:hidden;pointer-events:none';
+  document.body.appendChild(safeProbe);
   function fit() {
-    const s = Math.min(innerWidth / 390, innerHeight / 640);
-    const fh = innerHeight / s;
+    // 1010 晚 她：「安全区不够 标题被遮住了一点」——整页排在状态栏 / 灵动岛下面、底部横条上面
+    const cs = getComputedStyle(safeProbe);
+    const st = Math.max(parseFloat(cs.paddingTop) || 0, +window.SAFE_TOP || 0);
+    const sb = Math.max(parseFloat(cs.paddingBottom) || 0, +window.SAFE_BOTTOM || 0);
+    const avail = innerHeight - st - sb;
+    const s = Math.min(innerWidth / 390, avail / 640);
+    const fh = avail / s;
+    frame.style.top = (st + avail / 2) + 'px';
     frame.style.height = fh + 'px';
     if (window.__placeNote) window.__placeNote(fh);
     canvas.style.height = fh + 'px';
@@ -805,7 +817,11 @@
     }
     calGrid.innerHTML = h;
   }
-  function openCal() { const t = parseKey(curKey); viewY = t.y; viewM = t.m; renderCal(); cal.hidden = false; dateBtn.setAttribute('aria-expanded', 'true'); }
+  function openCal() {
+    const t = parseKey(curKey); viewY = t.y; viewM = t.m; renderCal(); cal.hidden = false; dateBtn.setAttribute('aria-expanded', 'true');
+    // 放大以后矮屏上会掉出页面底：放不下就往上提
+    cal.style.top = Math.min(424, frame.offsetHeight - cal.offsetHeight - 12) + 'px';
+  }
   function closeCal() { if (!cal.hidden) { cal.hidden = true; dateBtn.setAttribute('aria-expanded', 'false'); } }
   dateBtn.addEventListener('click', () => { if (noteOpen || todoOpen) return; cal.hidden ? openCal() : closeCal(); });
   document.getElementById('calPrev').addEventListener('click', () => { viewM--; if (viewM < 0) { viewM = 11; viewY--; } renderCal(); });
