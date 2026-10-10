@@ -45,8 +45,9 @@ final class ChatWallpaperStore: ObservableObject {
 
     func refresh(themeName: String, theme: AlcoveTheme, wallStamp: Double) {
         let fileName = Self.fileName(for: themeName)
-        // 1010 #3566：树屋壁纸模糊度（设置里的滑杆）。糊在图上，不糊在视图上——玻璃气泡借的是同一张图，得一起糊
-        let thBlur = theme.isTreehouse ? TreehouseWallBlur.value : 0
+        // 1010 #3566：壁纸模糊度（设置里的滑杆）。糊在图上，不糊在视图上——玻璃气泡借的是同一张图，得一起糊
+        // 1010 #3584 她：「模糊壁纸程度调节我希望所有主题都可以」——每一族主题各存各的值
+        let thBlur = TreehouseWallBlur.value(for: themeName)
         let key = "\(themeName)|\(wallStamp)|\(fileName)|\(KakaoPackStore.shared.selectedID)|\(KakaoPackStore.shared.stamp)|\(thBlur)"
         guard key != loadedKey else { return }
         loadedKey = key
@@ -72,7 +73,8 @@ final class ChatWallpaperStore: ObservableObject {
         } else if theme.isKakao {
             // 0924 Kakao：壁纸是主题包里那张图；图还没下到就先铺包里的底色 / Kakao 原版的蓝灰
             if let wall = KakaoPackStore.shared.wallImage {
-                descriptor = ChatWallpaperDescriptor(source: .image(wall))
+                if thBlur > 0 { applyBlurred(wall, points: thBlur, key: key) }
+                else { descriptor = ChatWallpaperDescriptor(source: .image(wall)) }
             } else {
                 let c = KakaoPackStore.shared.wallColor ?? Color(red: 0xB2/255, green: 0xC7/255, blue: 0xD9/255)
                 descriptor = ChatWallpaperDescriptor(source: .gradient([c, c]))
@@ -86,7 +88,8 @@ final class ChatWallpaperStore: ObservableObject {
                 descriptor = ChatWallpaperDescriptor(source: .asset(name))
             }
         } else if theme.usesWallImage {
-            descriptor = ChatWallpaperDescriptor(source: .asset("ChatWall"))
+            if thBlur > 0, let image = UIImage(named: "ChatWall") { applyBlurred(image, points: thBlur, key: key) }
+            else { descriptor = ChatWallpaperDescriptor(source: .asset("ChatWall")) }
         } else {
             descriptor = ChatWallpaperDescriptor(
                 source: .gradient(theme.wallGradient)
@@ -110,9 +113,20 @@ extension ChatWallpaperStore {
 
 /// 1010 #3564–3566 她：树屋壁纸能调模糊度；蝴蝶和 UNDER THE GINKGO 跟着一起糊（她看完两版预览定的）。
 /// 值是「屏幕上大约糊几个点」，0 = 不糊；预览图 /root/workroom/mock/wall-blur/。
-enum TreehouseWallBlur {
-    static let key = "treehouseWallBlur"
-    static var value: Double { max(0, min(12, UserDefaults.standard.double(forKey: key))) }
+enum TreehouseWallBlur {   // 名字是树屋时候起的；1010 #3584 起所有主题都用
+    static let legacyKey = "treehouseWallBlur"    // 树屋那一格的老位置（迁移用）
+    static let stampKey = "wallBlurStamp"         // 任何一族的值一变就换这个，聊天页 / 预览盯它重糊
+    static func key(for themeName: String) -> String { "wallBlur." + AlcoveAppearance.family(of: themeName) }
+    static func value(for themeName: String) -> Double {
+        let d = UserDefaults.standard, k = key(for: themeName)
+        let raw = (d.object(forKey: k) == nil && AlcoveAppearance.family(of: themeName) == "treehouse")
+            ? d.double(forKey: legacyKey) : d.double(forKey: k)
+        return max(0, min(12, raw))
+    }
+    static func set(_ v: Double, for themeName: String) {
+        UserDefaults.standard.set(v, forKey: key(for: themeName))
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: stampKey)
+    }
     private static let context = CIContext(options: nil)
 
     static func blurred(_ image: UIImage, points: Double) -> UIImage {
