@@ -459,18 +459,14 @@ struct RootView: View {
         // 1009 晚 她拿 Kakao 真机截图问「kakao 的上面就是完全不透的呀？」——是的，Kakao 顶栏整块实心，
         // 消息滑上去直接被盖住。树屋原来只有字外面一圈雾白光晕，壁纸一杂气泡就糊在名字上。
         // 改成同一套：从屏幕最顶（含状态栏）到进度线下沿整块纸白不透，再往下 22 渐隐到 0。
+        // 1010 她：「我换壁纸之后 顶栏颜色对不上为什么」——原来这块铺的是写死的 TreehouseInk.fog（原壁纸的灰白），
+        // 换了壁纸就成了一条色带。改成把聊天页那张壁纸（同一个 ChatWallpaperStore，含她换的图、模糊）原样再铺一层，
+        // 跟下面严丝合缝；照旧不透明盖住滑上来的气泡，下沿照旧渐隐。
         .background(alignment: .top) {
-            LinearGradient(
-                stops: [
-                    .init(color: TreehouseInk.fog, location: 0),
-                    .init(color: TreehouseInk.fog, location: 0.82),
-                    .init(color: TreehouseInk.fog.opacity(0), location: 1),
-                ],
-                startPoint: .top, endPoint: .bottom
-            )
-            .frame(height: 106)          // 84 实心 + 22 渐隐
-            .ignoresSafeArea(edges: .top)
-            .allowsHitTesting(false)
+            TreehouseTopWall()
+                .frame(height: 106)          // 84 实心 + 22 渐隐
+                .ignoresSafeArea(edges: .top)
+                .allowsHitTesting(false)
         }
     }
 
@@ -870,6 +866,31 @@ private struct InteractiveTopBarGlassModifier: ViewModifier {
                 .background(.ultraThinMaterial, in: shape)
                 .background(fallbackTint, in: shape)
                 .overlay(shape.stroke(fallbackBorder, lineWidth: 1))
+        }
+    }
+}
+
+/// 1010：树屋顶栏底下那块＝当前聊天壁纸的最上面一截（跟聊天页同一份 ChatWallpaperStore：她换的图、模糊都在里面），
+/// 按整屏大小画再裁出顶上这段，跟聊天页那张对齐；下沿 22 渐隐（跟原来的实心雾白同一个形状）
+struct TreehouseTopWall: View {
+    @ObservedObject private var wall = ChatWallpaperStore.shared
+    var body: some View {
+        GeometryReader { proxy in
+            let screen = UIScreen.main.bounds.size
+            ChatWallpaperRenderer(descriptor: wall.descriptor)
+                .frame(width: screen.width, height: screen.height)
+                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                .clipped()
+                .mask(
+                    LinearGradient(
+                        stops: [
+                            .init(color: .black, location: 0),
+                            .init(color: .black, location: 0.82),
+                            .init(color: .black.opacity(0), location: 1),
+                        ],
+                        startPoint: .top, endPoint: .bottom
+                    )
+                )
         }
     }
 }
