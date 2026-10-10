@@ -7172,6 +7172,7 @@ struct ChatLookPreview: View {
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
+    @AppStorage("chatTurnGap") private var turnGap = 22.0
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3
@@ -7190,9 +7191,13 @@ struct ChatLookPreview: View {
 
     var body: some View {
         let t = theme
+        // 1011 她：「陈璟两个气泡 我一个 这样能看气泡间距 也能看轮次间距了」
+        // 他两泡之间＝气泡间距；他和她之间＝跟聊天页同一个算法（ChatView 里的 roleGap）
         let ai = sample("assistant", "这里慢慢调，我陪你看", minutesAgo: 3,
                         extra: ["thinking": "她在挑颜色，我等着看她挑到哪一格", "heart_rate": 78])
+        let ai2 = sample("assistant", "上面那条拖气泡间距，下面那条拖我们俩之间", minutesAgo: 3)
         let me = sample("user", "\(assistantName)，气泡再透一点", minutesAgo: 1)
+        let roleGap: CGFloat = t.isKakao ? 12 + 2 : max(0, CGFloat(turnGap) - (t.isTreehouse ? 0 : 12))
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 ChatWallpaperRenderer(descriptor: wallpaper.descriptor)
@@ -7207,17 +7212,22 @@ struct ChatLookPreview: View {
                         TimeDivider(date: Date(), color: t.dividerColor)
                     }
                     if let ai {
-                        MessageRow(msg: ai, sticker: nil, theme: t, fontSize: fontSize,
+                        MessageRow(msg: ai, sticker: nil, theme: t, fontSize: fontSize, showTime: false,
                                    photoNamespace: ns, onTapImages: { _, _ in },
                                    roundStamp: t.isTreehouse ? ai.date : nil,   // 1010 树屋时间在一轮第一条上面
                                    kakaoHead: true, kakaoFirstBubble: true)
+                    }
+                    if let ai2 {
+                        MessageRow(msg: ai2, sticker: nil, theme: t, fontSize: fontSize,
+                                   photoNamespace: ns, onTapImages: { _, _ in },
+                                   kakaoHead: false, kakaoFirstBubble: false)
                     }
                     if let me {
                         MessageRow(msg: me, sticker: nil, theme: t, fontSize: fontSize,
                                    photoNamespace: ns, onTapImages: { _, _ in },
                                    roundStamp: t.isTreehouse ? me.date : nil,
                                    kakaoHead: true, kakaoFirstBubble: true, kakaoUnread: true)
-                            .padding(.top, 8)
+                            .padding(.top, roleGap)
                     }
                 }
                 .padding(.horizontal, 12)
