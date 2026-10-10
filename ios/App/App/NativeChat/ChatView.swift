@@ -4020,7 +4020,7 @@ struct MessageRow: View {
         if showsTextBubble { return 0 }
         if msg.isSticker { return 0 }
         if msg.isAudio { return 14 }
-        if hasPhotoBlock { return 6 }
+        if hasPhotoBlock { return 0 }   // 1010 #3587 纸边去掉了，贴图的边
         return 14
     }
 
@@ -5272,7 +5272,9 @@ struct MessageRow: View {
     }
 
     private var photoBlockCore: some View {
-        photoBlockInner.modifier(TreehousePhotoFrame(on: theme.isTreehouse))
+        // 1010 #3587 她：「树屋主题发图怎么会外面有一圈气泡一样的东西」「去掉 跟信息主题一致」——
+        // 树屋那圈 6 的白纸边（TreehousePhotoFrame）不再套，图跟信息主题一样：圆角＋一根细描边
+        photoBlockInner
     }
 
     @ViewBuilder
@@ -5355,7 +5357,7 @@ struct MessageRow: View {
         if showsTextBubble { return 14 }
         if msg.isSticker { return 0 }
         if msg.isAudio { return 14 }
-        if hasPhotoBlock { return 6 }
+        if hasPhotoBlock { return 0 }   // 1010 #3587 纸边去掉了，贴图的边
         return 14
     }
 
