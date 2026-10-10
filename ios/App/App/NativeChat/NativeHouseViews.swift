@@ -1925,7 +1925,9 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
     @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
-    @AppStorage("msgGlassFrost") private var glassFrost = 0.3   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
+    @AppStorage("msgGlassFrost") private var glassFrost = 0.3
+    @AppStorage("msgGlassKind") private var glassKind = "clear"   // 1011：透玻璃 / 雾玻璃
+    @AppStorage("msgGlassFog") private var glassFog = 0.5   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
     @AppStorage(MessagesPalette.glassKey) private var bubbleGlass = true   // 1001：信息主题普通 / 玻璃气泡，两套颜色各存各的
     @AppStorage(MessagesPalette.thGlassKey) private var thGlass = false     // 1009 #3519：树屋自己的普通 / 玻璃
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
@@ -1947,7 +1949,7 @@ private struct BubbleAppearanceSettingsView: View {
                 fontSizeSlider
                 bubbleGapSlider
                 turnGapSlider
-                if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassFrostSlider }
+                if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassKindControls }
             }
         case .colors:
             VStack(spacing: 12) {
@@ -1994,7 +1996,7 @@ private struct BubbleAppearanceSettingsView: View {
                         fontSizeSlider
                         bubbleGapSlider
                         turnGapSlider
-                        if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassFrostSlider }
+                        if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassKindControls }
                     }
                 }
 
@@ -2128,6 +2130,33 @@ private struct BubbleAppearanceSettingsView: View {
             return MessagesPalette.Item.allCases.filter { $0 != .timestamp && !(thGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
         }
         return MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
+    }
+
+    /// 1011 她：玻璃气泡里再分透玻璃 / 雾玻璃；透玻璃下面还是「透明 ↔ 色调」，雾玻璃下面是「雾」的浓淡
+    @ViewBuilder private var glassKindControls: some View {
+        Picker("玻璃", selection: Binding(get: { glassKind },
+                                          set: { glassKind = $0; MessagesPalette.bump() })) {
+            Text("透玻璃").tag("clear")
+            Text("雾玻璃").tag("fog")
+        }
+        .pickerStyle(.segmented)
+        if glassKind == "fog" { glassFogSlider } else { glassFrostSlider }
+    }
+
+    private var glassFogSlider: some View {
+        HStack(spacing: 9) {
+            Text("雾玻璃")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+            Text("淡")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textDim)
+            Slider(value: $glassFog, in: 0...1)
+                .tint(panelTheme.fyAccent)
+            Text("浓")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textDim)
+        }
     }
 
     /// 1001 她要的：只管气泡的玻璃，照系统设置里 Liquid Glass 那条——左边透明、右边色调（更磨砂、字更清楚），不带颜色

@@ -7532,6 +7532,8 @@ struct TreehouseBubbleFill: ViewModifier {
     var glass: Bool = false
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("msgGlassFrost") private var frost = 0.3
+    @AppStorage("msgGlassKind") private var kind = "clear"
+    @AppStorage("msgGlassFog") private var fog = 0.5
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -7540,7 +7542,9 @@ struct TreehouseBubbleFill: ViewModifier {
                                            bottomLeadingRadius: !isUser && showsCorner ? 5 : 18,
                                            bottomTrailingRadius: isUser && showsCorner ? 5 : 18,
                                            topTrailingRadius: 18, style: .continuous)
-        if glass {
+        if glass && kind == "fog" {
+            content.modifier(FogGlassBubble(shape: shape, fog: fog, night: TreehouseInk.night))
+        } else if glass {
             if #available(iOS 26.0, *) {
                 content
                     .background((TreehouseInk.night ? Color.black : Color.white).opacity(frost * 0.6), in: shape)
@@ -7557,6 +7561,23 @@ struct TreehouseBubbleFill: ViewModifier {
         content
             .background(fill, in: shape)
             .overlay(shape.stroke(TreehouseInk.ink.opacity(isUser ? 0 : 0.06), lineWidth: 1).allowsHitTesting(false))
+    }
+}
+
+/// 1011 她：「玻璃气泡能不能也做一个切换 现在的透玻璃和雾玻璃？雾玻璃也能调节程度」——
+/// 雾玻璃＝把气泡后面的壁纸磨糊（系统毛玻璃），fog 越大毛玻璃越实、上面那层白（夜里黑）越浓。透玻璃还是原来的液态玻璃
+struct FogGlassBubble<S: Shape>: ViewModifier {
+    let shape: S
+    let fog: Double
+    let night: Bool
+    func body(content: Content) -> some View {
+        content
+            .background((night ? Color.black : Color.white).opacity(0.05 + fog * 0.3), in: shape)
+            .background {
+                shape.fill(.regularMaterial)
+                    .opacity(0.25 + fog * 0.75)
+                    .environment(\.colorScheme, night ? .dark : .light)
+            }
     }
 }
 
@@ -8749,6 +8770,8 @@ private struct MessagesBubbleFill: ViewModifier {
     let fill: Color
     let glass: Bool
     @AppStorage("msgGlassFrost") private var frost = 0.3
+    @AppStorage("msgGlassKind") private var kind = "clear"   // 1011 她：玻璃气泡分透玻璃 / 雾玻璃
+    @AppStorage("msgGlassFog") private var fog = 0.5
     @Environment(\.colorScheme) private var scheme
 
     @ViewBuilder
@@ -8756,6 +8779,8 @@ private struct MessagesBubbleFill: ViewModifier {
         let shape = RoundedRectangle(cornerRadius: 18, style: .continuous)
         if !glass {
             content.background(fill, in: shape)
+        } else if kind == "fog" {
+            content.modifier(FogGlassBubble(shape: shape, fog: fog, night: scheme == .dark))
         } else if #available(iOS 26.0, *) {
             content
                 .background((scheme == .dark ? Color.black : Color.white).opacity(frost * 0.6), in: shape)
