@@ -400,8 +400,10 @@ struct RootView: View {
                         }
                     }
                     VStack(alignment: .leading, spacing: 1) {
-                        Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                            .font(.custom("PinyonScript-Regular", size: 24))
+                        // 1011 她：「聊天页顶栏就是换中文字体就变的巨大」——Pinyon 没有中文，汉字退回系统字还按 24 画；
+                        // 英文照旧手写，汉字单独缩到跟手写体看着一样高
+                        scriptNameText(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟",
+                                       font: "PinyonScript-Regular", size: 24, cjkSize: 15)
                             .tracking(0)
                             .lineLimit(1)
                         Text(treehouseHeader.model.isEmpty ? " " : treehouseHeader.model)
@@ -943,4 +945,30 @@ enum TreehouseTopTint {
         cache[key] = c
         return c
     }
+}
+
+/// 1011：手写体名字。手写字体（Pinyon / Snell Roundhand）没有中文，汉字会退回系统字还按手写体的字号画，
+/// 手写体字形本来就小，一混排汉字就巨大。英文、数字走手写体；汉字（含全角标点）单独用系统字、按 cjkSize 画
+func scriptNameText(_ s: String, font: String, size: CGFloat, cjkSize: CGFloat) -> Text {
+    func isCJK(_ c: Character) -> Bool {
+        c.unicodeScalars.contains { v in
+            (0x2E80...0x9FFF).contains(v.value) || (0xF900...0xFAFF).contains(v.value) || (0xFF00...0xFFEF).contains(v.value)
+        }
+    }
+    var out = Text("")
+    var run = ""
+    var runCJK: Bool?
+    func flush() {
+        guard !run.isEmpty, let cjk = runCJK else { return }
+        out = out + Text(run).font(cjk ? .system(size: cjkSize) : .custom(font, size: size))
+        run = ""
+    }
+    for c in s {
+        let cjk = isCJK(c)
+        if runCJK != nil, runCJK != cjk { flush() }
+        runCJK = cjk
+        run.append(c)
+    }
+    flush()
+    return out
 }

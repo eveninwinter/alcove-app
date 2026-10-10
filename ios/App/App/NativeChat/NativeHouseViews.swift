@@ -496,13 +496,13 @@ struct NativeHouseDrawer: View {
                     HStack(spacing: 7) {
                         // 0917 她要的：听歌、搜索从聊天页右上角搬到这里，排在 Alcove 右边、不往下堆；
                         // Alcove 从居中让到靠左，挤一点点。
+                        // 1011 她：「我截图的空位 居中」——Alcove 放在左边到按钮之间那块空地的正中间
                         Text("Alcove")
                             .font(.custom("Snell Roundhand", size: 34))
                             .italic()
                             .lineLimit(1)
                             .minimumScaleFactor(0.8)
-                            .padding(.leading, 5)
-                        Spacer(minLength: 4)
+                            .frame(maxWidth: .infinity, alignment: .center)
                         drawerIconButton("music.note", label: "听歌") { select(.music) }
                         drawerIconButton("magnifyingglass", label: "搜索") { select(.search) }
                         Button { select(.workbench) } label: {
@@ -626,7 +626,8 @@ struct NativeHouseDrawer: View {
 
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 6) {
-                    Text(assistantName).font(.system(size: 15, weight: .semibold))
+                    // 1011 她：英文换成跟 Alcove 同样的手写体，中文别突然变大
+                    scriptNameText(assistantName, font: "Snell Roundhand", size: 22, cjkSize: 15)
                     Circle().fill(Color.green).frame(width: 7, height: 7)
                 }
                 Text("\(model.days) days")
