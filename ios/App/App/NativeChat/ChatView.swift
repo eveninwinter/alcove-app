@@ -896,6 +896,7 @@ struct ChatView: View {
             ReactionOverlay(target: t, theme: theme,
                             canCopyTurn: t.msg.role == "assistant",
                             canEdit: editAction(for: t.msg) != nil,
+                            canReroll: rerollAction(for: t.msg) != nil,
                             onPick: { store.react(t.msg, emoji: $0) },
                             onAction: { handleReactAction($0, t) },
                             onDismiss: { reactTarget = nil })
@@ -921,6 +922,9 @@ struct ChatView: View {
             paragraphSelectionMode = true
             if t.kind == .image { selectedPhotoIDs.insert(m.uid) } else { selectedParagraphIDs.insert(m.uid) }
             inputFocused = false
+        case .reroll:
+            // 跟原来气泡上那个箭头一样：先弹「重来这一轮？」问一句
+            rerollAction(for: m)?()
         }
     }
 
@@ -1074,6 +1078,9 @@ struct ChatView: View {
                 if Self.kakaoGroupBreakers.contains(prev.msgType ?? "") { return true }
                 return divided || isGroupTail(cur: prev, next: message)
             }()
+            // 1010 #3571–3575 树屋：一轮的第一条（跟 Kakao 露头像同一个认法）上面挂时间
+            let thRoundStamp: Date? = (theme.isTreehouse && kakaoHead
+                                       && (message.role == "user" || message.role == "assistant")) ? message.date : nil
             Group {
             if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" {
                 // 0827 拍一拍：居中一行小字。她拍我常规、我拍她加粗，黑底白底各一套灰
@@ -1113,6 +1120,7 @@ struct ChatView: View {
                     onDelete: { store.deleteMessage(message) },
                     onFavorite: { store.favoriteMessage(message) },
                     wholeTurnText: wholeTurnText(for: message),
+                    roundStamp: thRoundStamp,
                     paragraphSelectionMode: paragraphSelectionMode && splittable,
                     paragraphSelected: selectedParagraphIDs.contains(message.uid),
                     photoSelected: selectedPhotoIDs.contains(message.uid),
@@ -3871,6 +3879,9 @@ struct MessageRow: View {
     var onDelete: (() -> Void)? = nil
     var onFavorite: (() -> Void)? = nil
     var wholeTurnText: String = ""
+    /// 1010 #3571–3575 她：树屋的时间挪到每一轮第一条上面（不再挂最后一个泡里），他的靠左、她的靠右，
+    /// 都跟气泡里的字对齐；他那边思绪那一排（圆点 + 大脑）直接跟在时间后面。这一行只在一轮的第一条给日期
+    var roundStamp: Date? = nil
     var paragraphSelectionMode = false
     var paragraphSelected = false
     // 0906 她要的：带图又带字的消息，多选时图一个圈、字一个圈，勾哪个收哪个
@@ -3955,7 +3966,8 @@ struct MessageRow: View {
                                 .font(.system(size: 10))
                                 .foregroundColor(.secondary)
                         }
-                        if showTime && !theme.isKakao {   // Kakao 的时间贴在气泡旁边（kakaoSideMeta）
+                        // 1010 #3575 树屋的时间搬到一轮第一条上面了（roundStamp），气泡里这行不再写时间
+                        if showTime && !theme.isKakao && !theme.isTreehouse {   // Kakao 的时间贴在气泡旁边（kakaoSideMeta）
                             Text(Self.hm.string(from: msg.date))
                                 // 1010 #3562–3563 她：树屋的时间戳换 Cormorant（老式数字），字天生小，10 → 12.5 才跟原来一样大
                                 .font(theme.isTreehouse ? .custom("CormorantGaramond-Medium", size: 12.5)
@@ -3971,32 +3983,7 @@ struct MessageRow: View {
                             .font(.system(size: 9, weight: .semibold))
                             .foregroundColor(theme.isTreehouse ? MessagesPalette.thCurrent(.readTick, dark: theme.isDark) : metaTint)
                         }
-                        // 0907 她抓的：原来要求这条有正文才给按钮，
-                        // 删到只剩一张表情时多选入口整个没了，那条再也选不中。
-                        // 0907 她定的：信息主题下这个按钮也归过程点那个开关管 ——
-                        // 关了就跟思绪、脚印、心率一起藏，截图时那一行干干净净。
-                        // 代价是关着的时候进不去多选，要删东西得先把开关打开。
-                        if showTime, !isUser, !(theme.isMessages && !showProcessDots) {
-                            Button { onBeginParagraphSelection?() } label: {
-                                Image(systemName: "checklist")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(metaTint.opacity(
-                                        paragraphSelectionMode ? 1 : 0.72))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("选择正文段落")
-                        }
-                        // 0924 她要的「重来」（像官方 app 那种重 roll）：只在他最后一轮的尾巴上出现
-                        // 0924 她要的：重来箭头跟过程点一个开关，思绪藏了它也藏
-                        if showTime, !isUser, let onReroll = onReroll, !(theme.isMessages && !showProcessDots) {
-                            Button { onReroll() } label: {
-                                Image(systemName: "arrow.counterclockwise")
-                                    .font(.system(size: 11, weight: .medium))
-                                    .foregroundColor(metaTint.opacity(0.72))
-                            }
-                            .buttonStyle(.plain)
-                            .accessibilityLabel("重来")
-                        }
+                        // 1010 #3573–3575 她：多选、重来都进了长按气泡的菜单，气泡上那颗多选图标和重来箭头拿掉（所有主题）
                         // 0822 她定的：信息主题下心率跟过程线（思绪/脚印/记忆）一个开关，关了一起藏
                         // 1009 晚 她：「时间戳那一行的心率可以删掉，因为现在顶栏有你的心率」
                         if showTime, !isUser, !theme.isTreehouse, let bpm = msg.heartRate,
@@ -4040,9 +4027,17 @@ struct MessageRow: View {
         guard msg.msgType != "choice_answer" else { return false }
         let dotsOK = !(theme.isMessages && !showProcessDots)
         // 非 Kakao：跟原来一样（pending / 睡着 / 有时间就画）；Kakao：只有他那排小按钮真露出来才画
-        return msg.pending
-            || msg.asleepAtSend
-            || (showTime && (!theme.isKakao || (!isUser && dotsOK)))
+        // 1010 #3575：多选 / 重来按钮都搬进长按菜单了——这一行里真有东西才画，不然泡底下白空一截
+        if msg.pending || msg.asleepAtSend { return true }
+        guard showTime else { return false }
+        if theme.isTreehouse {
+            // 树屋的时间在一轮第一条上面了：这一行只剩她的两个勾、API 房间他的用量
+            return isUser || msg.apiUsage != nil
+        }
+        if theme.isKakao {
+            return !isUser && dotsOK && (msg.heartRate != nil || msg.apiUsage != nil)
+        }
+        return true
     }
 
     /// 这条消息头上要挂的轨迹：轮首拿整轮的，其他消息不挂。
@@ -4148,6 +4143,12 @@ struct MessageRow: View {
             }
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
+                // 1010 #3575 她那边：时间在一轮第一条上面，靠右、跟她气泡里最右边的字对齐
+                if theme.isTreehouse && isUser && roundStamp != nil {
+                    thRoundStampText
+                        .padding(.trailing, thStampInset)
+                        .padding(.bottom, rowPartGap)
+                }
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
                 if theme.isMessages && !isUser {
@@ -4976,6 +4977,8 @@ struct MessageRow: View {
         if hasProcess && showProcessDots {
             VStack(alignment: .leading, spacing: 6) {
               HStack(spacing: 14) {
+                // 1010 #3575 她：「陈璟每条回复会带思绪这一行 直接贴在时间戳后面跟着」——树屋一轮第一条：时间在前、圆点大脑跟着
+                thRoundStampText.padding(.leading, max(0, thStampInset - 4))
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) { processOpen.toggle() }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
@@ -5028,10 +5031,16 @@ struct MessageRow: View {
             // 0924 她报的「他的气泡间距跟我的不一样」：这一支原来不管有没有东西都画一个空 HStack
             // 再垫 rowPartGap，他每条消息头上都多出 7 的空白。现在没角标、没原生思考就整块不画。
             HStack(spacing: 14) {
+                thRoundStampText.padding(.leading, thStampInset)
                 if recall != nil { recallBadge }
                 nativeThinkingButton
             }
             .padding(.bottom, rowPartGap)
+        } else if theme.isTreehouse && roundStamp != nil {
+            // 没有思绪的那一轮（或者过程点关着）：时间自己一行
+            thRoundStampText
+                .padding(.leading, thStampInset)
+                .padding(.bottom, rowPartGap)
         }
     }
 
@@ -5324,6 +5333,35 @@ struct MessageRow: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+
+    /// 1010 树屋每轮第一条上面那行时间：「10.10 · 11:23」
+    static let thRoundFmt: DateFormatter = {
+        let f = DateFormatter()
+        f.dateFormat = "MM.dd · HH:mm"
+        return f
+    }()
+
+    /// 跟气泡里正文的边对齐要让开多少：文字泡 14（泡的内边距），图 6，表情 0，语音 14
+    private var thStampInset: CGFloat {
+        if showsTextBubble { return 14 }
+        if msg.isSticker { return 0 }
+        if msg.isAudio { return 14 }
+        if hasPhotoBlock { return 6 }
+        return 14
+    }
+
+    /// 1010 #3575 她：「时间戳太小了稍微大一点点」——气泡里那行是 12.5，这行 14；压在壁纸上，垫一圈跟底色一样的淡光晕
+    @ViewBuilder private var thRoundStampText: some View {
+        if theme.isTreehouse, let d = roundStamp {
+            Text(Self.thRoundFmt.string(from: d))
+                .font(.custom("CormorantGaramond-Medium", size: 14))
+                .tracking(0.4)
+                .foregroundColor(TreehouseInk.ink.opacity(0.78))
+                .shadow(color: TreehouseInk.fog.opacity(0.9), radius: 2)
+                .shadow(color: TreehouseInk.fog.opacity(0.7), radius: 5)
+                .fixedSize()
+        }
+    }
 }
 
 private struct ChoiceQuestionMessageCard: View {
@@ -6989,11 +7027,13 @@ struct ChatLookPreview: View {
                     if let ai {
                         MessageRow(msg: ai, sticker: nil, theme: t, fontSize: fontSize,
                                    photoNamespace: ns, onTapImages: { _, _ in },
+                                   roundStamp: t.isTreehouse ? ai.date : nil,   // 1010 树屋时间在一轮第一条上面
                                    kakaoHead: true, kakaoFirstBubble: true)
                     }
                     if let me {
                         MessageRow(msg: me, sticker: nil, theme: t, fontSize: fontSize,
                                    photoNamespace: ns, onTapImages: { _, _ in },
+                                   roundStamp: t.isTreehouse ? me.date : nil,
                                    kakaoHead: true, kakaoFirstBubble: true, kakaoUnread: true)
                             .padding(.top, 8)
                     }
@@ -9164,12 +9204,14 @@ private struct ReactPressStyle: ButtonStyle {
 /// 长按之后整屏这一层：毛玻璃（被按的气泡那块挖空、它自己在列表里弹起来）＋ 一排 emoji ＋ 菜单；
 /// 点 ⌄ 那一排顺着变形成大面板（搜索 ＋ 分类 ＋ 全部 emoji）
 struct ReactionOverlay: View {
-    enum Action { case copy, ask, copyTurn, edit, select, save, favorite, multi }
+    enum Action { case copy, ask, copyTurn, edit, select, save, favorite, multi, reroll }
 
     let target: ReactTarget
     let theme: AlcoveTheme
     let canCopyTurn: Bool
     let canEdit: Bool
+    /// 1010 #3575 她：「重roll加进长按菜单」——只有他最新那一轮给
+    var canReroll: Bool = false
     let onPick: (String) -> Void
     let onAction: (Action) -> Void
     let onDismiss: () -> Void
@@ -9199,7 +9241,10 @@ struct ReactionOverlay: View {
     private var menuItems: [(Action, String, String)] {
         switch target.kind {
         // 1010 #3573 她：「多选直接加进长按气泡弹出的选项里去」——字、图都给，她的气泡也能从这儿进
-        case .image: return [(.save, "保存到相册", "square.and.arrow.down"), (.multi, "多选", "checklist")]
+        case .image:
+            var img: [(Action, String, String)] = [(.save, "保存到相册", "square.and.arrow.down"), (.multi, "多选", "checklist")]
+            if canReroll { img.append((.reroll, "重来", "arrow.counterclockwise")) }
+            return img
         case .voice: return [(.favorite, "收藏", "heart")]
         case .text: break
         }
@@ -9208,6 +9253,7 @@ struct ReactionOverlay: View {
         if canEdit { out.append((.edit, "编辑", "pencil")) }
         out.append((.select, "选择文字", "character.cursor.ibeam"))
         out.append((.multi, "多选", "checklist"))
+        if canReroll { out.append((.reroll, "重来", "arrow.counterclockwise")) }
         return out
     }
 
