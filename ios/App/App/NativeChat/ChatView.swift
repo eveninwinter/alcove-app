@@ -109,6 +109,7 @@ struct ChatView: View {
     @AppStorage(TreehouseBubbleMode.key) private var treehouseWholeBubble = false
     @AppStorage(KakaoPackStore.showAvatarKey) private var listKakaoShowAvatar = true   // 0924 晚：换人那截空隙要知道他那边气泡是不是挪过
     @AppStorage("wallStamp") private var wallStamp = 0.0
+    @AppStorage(TreehouseWallBlur.key) private var thWallBlur = 0.0   // 1010 #3566 树屋壁纸模糊
     /// 0902 信息主题调色板：她在设置页改一项，msgPaletteStamp 一变这里就重算
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
@@ -287,6 +288,9 @@ struct ChatView: View {
                 theme: theme,
                 wallStamp: newStamp
             )
+        }
+        .onChange(of: thWallBlur) { _ in
+            wallpaperStore.refresh(themeName: themeName, theme: theme, wallStamp: wallStamp)
         }
         .onReceive(KakaoPackStore.shared.$stamp) { _ in
             guard theme.isKakao else { return }
@@ -6941,6 +6945,7 @@ struct ChatLookPreview: View {
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3
     @AppStorage("assistantName") private var assistantName = "陈璟"
+    @AppStorage(TreehouseWallBlur.key) private var thWallBlur = 0.0
     @Namespace private var ns
 
     private var theme: AlcoveTheme { _ = paletteStamp; return .named(themeName) }
@@ -6994,6 +6999,7 @@ struct ChatLookPreview: View {
         .onAppear { refresh() }
         .onChange(of: themeName) { _ in refresh() }
         .onChange(of: wallStamp) { _ in refresh() }
+        .onChange(of: thWallBlur) { _ in refresh() }   // 1010 #3566：拖模糊滑杆，预览跟着糊
         .onReceive(packs.$stamp) { _ in refresh() }
     }
 

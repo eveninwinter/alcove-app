@@ -1913,6 +1913,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
     @AppStorage(MessagesPalette.glassKey) private var bubbleGlass = true   // 1001：信息主题普通 / 玻璃气泡，两套颜色各存各的
     @AppStorage(MessagesPalette.thGlassKey) private var thGlass = false     // 1009 #3519：树屋自己的普通 / 玻璃
+    @AppStorage(TreehouseWallBlur.key) private var thWallBlur = 0.0          // 1010 #3566：树屋壁纸模糊
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
@@ -1936,7 +1937,7 @@ private struct BubbleAppearanceSettingsView: View {
             }
         case .colors:
             VStack(spacing: 12) {
-                if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
+                if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker; treehouseWallBlurSlider } else { bubbleStylePicker }
                 ForEach(paletteItems) { item in colorRow(item) }
             }
             Text(chatTheme.isTreehouse
@@ -1962,7 +1963,7 @@ private struct BubbleAppearanceSettingsView: View {
                     section(chatTheme.isTreehouse ? "颜色 · 树屋" : "颜色 · 信息主题") {
                         VStack(spacing: 12) {
                             // 树屋：普通 / 玻璃（#3519）＋「他的气泡分段还是整个」
-                            if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
+                            if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker; treehouseWallBlurSlider } else { bubbleStylePicker }
                             ForEach(paletteItems) { item in colorRow(item) }
                         }
                         Text(chatTheme.isTreehouse
@@ -2083,6 +2084,24 @@ private struct BubbleAppearanceSettingsView: View {
                 .font(.system(size: 10))
                 .foregroundColor(panelTheme.textLight)
                 .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 1010 #3564–3566 她：树屋壁纸能调模糊度，蝴蝶跟着一起糊。0 = 原样；白天黑夜共用一个值；
+    /// 拖的时候聊天页和上面的预览一起变（ChatWallpaperStore 按这个值重糊一张图）
+    private var treehouseWallBlurSlider: some View {
+        HStack(spacing: 9) {
+            Text("壁纸模糊")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+            Text("清楚")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textDim)
+            Slider(value: $thWallBlur, in: 0...12, step: 1)
+                .tint(panelTheme.fyAccent)
+            Text("朦胧")
+                .font(.system(size: 10))
+                .foregroundColor(panelTheme.textDim)
         }
     }
 

@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreImage
 
 struct ChatWallpaperDescriptor {
     enum Source {
@@ -44,7 +45,9 @@ final class ChatWallpaperStore: ObservableObject {
 
     func refresh(themeName: String, theme: AlcoveTheme, wallStamp: Double) {
         let fileName = Self.fileName(for: themeName)
-        let key = "\(themeName)|\(wallStamp)|\(fileName)|\(KakaoPackStore.shared.selectedID)|\(KakaoPackStore.shared.stamp)"
+        // 1010 #3566：树屋壁纸模糊度（设置里的滑杆）。糊在图上，不糊在视图上——玻璃气泡借的是同一张图，得一起糊
+        let thBlur = theme.isTreehouse ? TreehouseWallBlur.value : 0
+        let key = "\(themeName)|\(wallStamp)|\(fileName)|\(KakaoPackStore.shared.selectedID)|\(KakaoPackStore.shared.stamp)|\(thBlur)"
         guard key != loadedKey else { return }
         loadedKey = key
 
@@ -54,6 +57,10 @@ final class ChatWallpaperStore: ObservableObject {
         )[0].appendingPathComponent(fileName)
 
         if let image = UIImage(contentsOfFile: url.path) {
+            if thBlur > 0 {
+                applyBlurred(image, points: thBlur, key: key)
+                return
+            }
             image.prepareForDisplay { [weak self] prepared in
                 Task { @MainActor in
                     guard self?.loadedKey == key else { return }
@@ -72,7 +79,12 @@ final class ChatWallpaperStore: ObservableObject {
             }
         } else if theme.isTreehouse {
             // 1009 树屋：她成品里那层字符画树 + 蓝蝴蝶 + 颗粒，原样渲成一张图；设置里换壁纸照样能盖掉
-            descriptor = ChatWallpaperDescriptor(source: .asset(theme.isDark ? "ChatWallTreehouseNight" : "ChatWallTreehouse"))
+            let name = theme.isDark ? "ChatWallTreehouseNight" : "ChatWallTreehouse"
+            if thBlur > 0, let image = UIImage(named: name) {
+                applyBlurred(image, points: thBlur, key: key)
+            } else {
+                descriptor = ChatWallpaperDescriptor(source: .asset(name))
+            }
         } else if theme.usesWallImage {
             descriptor = ChatWallpaperDescriptor(source: .asset("ChatWall"))
         } else {
@@ -80,6 +92,41 @@ final class ChatWallpaperStore: ObservableObject {
                 source: .gradient(theme.wallGradient)
             )
         }
+    }
+}
+
+extension ChatWallpaperStore {
+    /// 糊图放后台算，算完还是这把钥匙才换上（滑杆拖得快时，旧的那几张算完就扔）
+    fileprivate func applyBlurred(_ image: UIImage, points: Double, key: String) {
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let out = TreehouseWallBlur.blurred(image, points: points)
+            await MainActor.run {
+                guard let self, self.loadedKey == key else { return }
+                self.descriptor = ChatWallpaperDescriptor(source: .image(out))
+            }
+        }
+    }
+}
+
+/// 1010 #3564–3566 她：树屋壁纸能调模糊度；蝴蝶和 UNDER THE GINKGO 跟着一起糊（她看完两版预览定的）。
+/// 值是「屏幕上大约糊几个点」，0 = 不糊；预览图 /root/workroom/mock/wall-blur/。
+enum TreehouseWallBlur {
+    static let key = "treehouseWallBlur"
+    static var value: Double { max(0, min(12, UserDefaults.standard.double(forKey: key))) }
+    private static let context = CIContext(options: nil)
+
+    static func blurred(_ image: UIImage, points: Double) -> UIImage {
+        guard points > 0.05, let cg = image.cgImage else { return image }
+        // 壁纸铺满屏宽（约 390 点），按图的像素宽折算成像素半径
+        let radius = points * Double(cg.width) / 390.0
+        let input = CIImage(cgImage: cg)
+        guard let filter = CIFilter(name: "CIGaussianBlur") else { return image }
+        // 先往外无限延伸边缘再糊、糊完裁回原尺寸：不然四周会糊出一圈发白 / 发黑的边
+        filter.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+        filter.setValue(radius, forKey: kCIInputRadiusKey)
+        guard let out = filter.outputImage?.cropped(to: input.extent),
+              let cgOut = context.createCGImage(out, from: input.extent) else { return image }
+        return UIImage(cgImage: cgOut, scale: image.scale, orientation: image.imageOrientation)
     }
 }
 
