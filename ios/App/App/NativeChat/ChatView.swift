@@ -4433,11 +4433,11 @@ struct MessageRow: View {
                 // 0823 她报的：信息主题里这行整个不见。原来这儿写死了不给信息主题，
                 // 跟过程点那个开关没关系，她把思绪打开也照样没有。改成跟着开关走。
                 if !isUser && !msg.trace.isEmpty && (!theme.isMessages || showProcessDots) {
-                    Text(msg.trace.joined(separator: "  "))
-                        .font(.system(size: 11.5, design: .serif))
-                        .italic()
-                        // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
-                        .foregroundColor(theme.thoughtColor.opacity(0.82))
+                    // 1011 她：「不是斜体 你看一下思绪斜体怎么做的 再改」——系统 .italic() 对汉字不斜；
+                    // 照思绪（processThought）走 ObliqueText：思绪那款宋体、字形真倾斜
+                    // 0904 她抓的：0903 只改了 toolRow，这行独立脚印漏了，颜色也跟思绪走
+                    ObliqueText(text: msg.trace.joined(separator: "  "), size: 11.5,
+                                color: UIColor(theme.thoughtColor.opacity(0.82)))
                         // 1011 她：「小脚印也要跟正文对齐不是跟气泡对齐」——树屋跟时间一样让 14（泡里正文的边）
                         .padding(.leading, theme.isKakao ? kakaoTextLeading() : (theme.isTreehouse ? thStampInset : 3))
                         .padding(.top, CGFloat(chatBubbleGap))
