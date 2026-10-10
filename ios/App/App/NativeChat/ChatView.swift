@@ -1091,8 +1091,10 @@ struct ChatView: View {
                 return divided || isGroupTail(cur: prev, next: message)
             }()
             // 1010 #3571–3575 树屋：一轮的第一条（跟 Kakao 露头像同一个认法）上面挂时间
-            let thRoundStamp: Date? = (theme.isTreehouse && kakaoHead
-                                       && (message.role == "user" || message.role == "assistant")) ? message.date : nil
+            // 1011 她：「让时间戳不要显示在卡片上 和思绪并列」——一轮打头是卡片的，时间挂到这一轮第一条不是卡片的上面（多半就是带思绪那条）
+            let thRoundStamp: Date? = (theme.isTreehouse
+                                       && (message.role == "user" || message.role == "assistant")
+                                       && thStampHere(index)) ? message.date : nil
             Group {
             if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" {
                 // 0827 拍一拍：居中一行小字。她拍我常规、我拍她加粗，黑底白底各一套灰
@@ -1332,6 +1334,33 @@ struct ChatView: View {
 
     /// 这几种行后面那条算新一串的开头（分隔线、拍一拍、报错行）
     static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error"]
+
+    /// 跟 kakaoHead 同一个认法：b 是不是接着 a 那一串
+    private func thSameGroup(_ a: ChatMessage, _ b: ChatMessage) -> Bool {
+        !(Self.kakaoGroupBreakers.contains(a.msgType ?? "") || needsDivider(prev: a, cur: b, gap: 900)
+          || isGroupTail(cur: a, next: b))
+    }
+
+    /// 卡片：檐下 / 信 / 记忆 / 旅行 / 位置 / 便签（正文带方括号标记）、选择题、旅行卡、晨报
+    private func thIsCard(_ m: ChatMessage) -> Bool {
+        let b = m.displayText
+        return b.contains("_CARD]") || b.contains("[INSIDE]")
+            || m.choiceCard != nil || m.journeyCard != nil || m.morningPaperDate != nil
+    }
+
+    /// 树屋这一串的时间挂不挂在第 index 条上：这一串里第一条不是卡片的；整串都是卡片就挂第一条
+    private func thStampHere(_ index: Int) -> Bool {
+        let msgs = store.messages
+        guard msgs.indices.contains(index) else { return false }
+        var head = index
+        while head > 0, thSameGroup(msgs[head - 1], msgs[head]) { head -= 1 }
+        var j = head
+        while j < msgs.count, j == head || thSameGroup(msgs[j - 1], msgs[j]) {
+            if !thIsCard(msgs[j]) { return j == index }
+            j += 1
+        }
+        return head == index
+    }
 
     /// 跟消息行里那一长串 if / else 对齐：这些卡片、贴纸、语音、音乐都不画九宫格气泡
     static func kakaoDrawsBubble(_ m: ChatMessage) -> Bool {
