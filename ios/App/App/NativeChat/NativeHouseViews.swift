@@ -12143,6 +12143,8 @@ private struct NativeCalendarView: View {
     // 1010 #3613 树屋日记换成她的「泪」那页（diary-tear.html），见文件后面 treehouseTearBody
     @State private var thTearJSON: String?
     @State private var thTearLoaded = false
+    @State private var thTearReady = false             // 网页画好第一帧了（之前原生的返回键先顶着）
+    @State private var thTearFresh: String?            // 后台拉到的新日记，网页好了再塞
     @State private var thTearBridge = TreehouseDreamsBridge()
     // #3629 泪那页自己的日夜：右下角 let it fall 点一下切，不跟全屋白天 / 黑夜按钮走
     @AppStorage("treehouseDiaryNight") private var thTearNight = false
@@ -14037,7 +14039,7 @@ extension NativeCalendarView {
                     Text("还没有日记").font(WindowFont.swiftUI(13)).foregroundColor(Color(red: 0x6E/255, green: 0x6E/255, blue: 0x6E/255))
                 }
             }
-            if thTearJSON == nil {
+            if thTearJSON == nil || !thTearReady {
                 VStack {
                     HStack {
                         Button { dismiss() } label: {
@@ -14070,8 +14072,26 @@ extension NativeCalendarView {
         return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
     }
 
+    /// 1010 #3634 她：「进日记页面会卡一下 先白屏」——原来每次进门先把全部日记拉完才开网页。
+    /// 改成上回拉到的存一份在手机缓存里，进门直接拿它画，后台再拉新的，有变化原地塞进网页
+    fileprivate static var thTearCacheURL: URL? {
+        FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first?.appendingPathComponent("diary-tear.json")
+    }
+
+    fileprivate func thTearPushFresh() {
+        guard thTearReady, let f = thTearFresh else { return }
+        thTearFresh = nil
+        guard f != thTearJSON else { return }
+        thTearBridge.eval("window.__diaryUpdate && window.__diaryUpdate(\(f))")
+        thTearJSON = f
+    }
+
     fileprivate func thTearLoad() async {
         WindowFont.requestSongti()
+        if thTearJSON == nil, let url = Self.thTearCacheURL,
+           let cached = try? String(contentsOf: url, encoding: .utf8), !cached.isEmpty {
+            thTearJSON = cached
+        }
         let list = (try? await NativeHouseAPI.array("/api/diary/entries")) ?? []
         var days: [String: [[String: Any]]] = [:]
         for e in list.sorted(by: { $0.string("ts") < $1.string("ts") }) {
@@ -14085,7 +14105,13 @@ extension NativeCalendarView {
         if !days.isEmpty,
            let data = try? JSONSerialization.data(withJSONObject: days),
            let s = String(data: data, encoding: .utf8) {
-            thTearJSON = s
+            if let url = Self.thTearCacheURL { try? s.write(to: url, atomically: true, encoding: .utf8) }
+            if thTearJSON == nil {
+                thTearJSON = s
+            } else if s != thTearJSON {
+                thTearFresh = s
+                thTearPushFresh()
+            }
         }
         thTearLoaded = true
     }
@@ -14121,6 +14147,9 @@ extension NativeCalendarView {
         case "back": dismiss()
         case "haptic": UIImpactFeedbackGenerator(style: .light).impactOccurred()
         case "night": thTearNight = m["on"] as? Bool ?? false
+        case "ready":
+            thTearReady = true
+            thTearPushFresh()
         // #3616 右上菜单＝待办：今日提醒（我加的 / 陈璟加的）＋添加；长按编辑 / 删掉。接口跟像素版日记页同一套 /api/reminders/*
         case "todo": Task { await thTodoPush() }
         case "todoDone":
