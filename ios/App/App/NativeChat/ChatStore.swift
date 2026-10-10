@@ -15,6 +15,9 @@ final class ChatStore: ObservableObject {
     @Published var stickers: [Sticker] = []
     @Published var stickerUploading = false
     @Published var stickerUploadError = ""
+    // 1010 #3557：近 60 天用过的表情，按最后一次用的时间倒序（她的我的都算）＋各用过几次
+    @Published var stickerRecentIDs: [String] = []
+    @Published var stickerUseCount: [String: Int] = [:]
     @Published var loading = true
     @Published var loadingOlder = false
     @Published var hasOlder = true
@@ -243,6 +246,15 @@ final class ChatStore: ObservableObject {
                     messages[idx] = confirmed
                 }
             } catch { connectionError = true }
+        }
+    }
+
+    /// 1010 #3557：打开表情面板时拉一次「谁最近用过、用过几次」，拉不到就照旧按库里的顺序
+    func loadStickerUsage() {
+        Task { @MainActor in
+            guard let rows = try? await AlcoveAPI.stickerUsage() else { return }
+            stickerRecentIDs = rows.map { $0.id }
+            stickerUseCount = Dictionary(rows.map { ($0.id, $0.count) }, uniquingKeysWith: { a, _ in a })
         }
     }
 

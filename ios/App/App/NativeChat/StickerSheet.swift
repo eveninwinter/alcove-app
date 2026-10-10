@@ -2,20 +2,33 @@ import SwiftUI
 import PhotosUI
 import UniformTypeIdentifiers
 
-// PWA 表情面板同款：Stickers 标题、陈霁/陈璟 两个 tab、右上传钮、原比例网格
+// PWA 表情面板同款：Stickers 标题、右上传钮、原比例网格。
+// 1010 #3557 她：「表情库不分我和他 统一成一个库 不管他存还是我存 或者他用我用 都是一个库」——
+// 原来的 陈霁 / 陈璟 两个 tab 拿掉，一个库；顶上加一行「最近用过」，下面整库按用得多少排
 struct StickerSheet: View {
     @ObservedObject var store: ChatStore
     var onPick: (Sticker) -> Void
 
-    @State private var tab = "user" // 她的表情她先看到
     @State private var uploadItem: PhotosPickerItem?
     @State private var draft: StickerDraft?
     @State private var editing: Sticker?      // 长按格子 → 补描述
     @State private var errorMessage = ""
-    @AppStorage("assistantName") private var assistantName = "陈璟"
 
+    /// 整库：近 60 天用得多的在前，没用过的保持库里原来的顺序
     private var shown: [Sticker] {
-        store.stickers.filter { $0.owner == tab }
+        let use = store.stickerUseCount
+        return store.stickers.enumerated()
+            .sorted { a, b in
+                let ua = use[a.element.id] ?? 0, ub = use[b.element.id] ?? 0
+                return ua != ub ? ua > ub : a.offset < b.offset
+            }
+            .map(\.element)
+    }
+
+    /// 最近用过的 12 张（她发的、他发的都算），最近的在最左
+    private var recent: [Sticker] {
+        let byID = Dictionary(store.stickers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
+        return store.stickerRecentIDs.compactMap { byID[$0] }.prefix(12).map { $0 }
     }
 
     var body: some View {
@@ -25,15 +38,6 @@ struct StickerSheet: View {
                 .padding(.top, 18)
 
             HStack {
-                HStack(spacing: 4) {
-                    tabButton("陈霁", key: "user")
-                    // 0818 修：库里存的 owner 是 ai，这里以前写 assistant，
-                    // 于是「陈璟」那一栏永远是空的——她的表情包只剩半截就有这一条。
-                    tabButton(assistantName, key: "ai")
-                }
-                .padding(4)
-                .background(Color(.systemGray6), in: Capsule())
-
                 Spacer()
 
                 PhotosPicker(selection: $uploadItem, matching: .images,
@@ -50,6 +54,35 @@ struct StickerSheet: View {
             }
 
             ScrollView {
+                if !recent.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("最近用过")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 10) {
+                                ForEach(recent) { stk in
+                                    Button { onPick(stk) } label: {
+                                        CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                                            img.resizable().scaledToFit()
+                                        } placeholder: {
+                                            Color(.systemGray6)
+                                        }
+                                        .frame(width: 64, height: 64)
+                                        .background(Color(.systemGray6).opacity(0.5))
+                                        .clipShape(RoundedRectangle(cornerRadius: 10))
+                                    }
+                                    .buttonStyle(.plain)
+                                }
+                            }
+                        }
+                        Text("全部")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.secondary)
+                            .padding(.top, 6)
+                    }
+                    .padding(.bottom, 4)
+                }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
                           spacing: 12) {
                     ForEach(shown) { stk in
@@ -83,6 +116,7 @@ struct StickerSheet: View {
             }
         }
         .padding(.horizontal, 18)
+        .onAppear { store.loadStickerUsage() }
         .sheet(item: $draft) { item in
             StickerDescribeSheet(preview: .local(item.image), mime: item.mime,
                                  initialName: "", initialDescription: "", initialTags: []) { name, description, tags in
@@ -109,7 +143,8 @@ struct StickerSheet: View {
                                       userInfo: [NSLocalizedDescriptionKey: "这张图片没有读取成功，请重新选择"])
                     }
                     let mime = StickerDraft.sniff(raw)
-                    draft = StickerDraft(data: raw, mime: mime, owner: tab)
+                    // 1010 起一个库，owner 这列已经不分谁能用了；她在面板里传的照旧记 user
+                    draft = StickerDraft(data: raw, mime: mime, owner: "user")
                 } catch {
                     errorMessage = error.localizedDescription
                 }
@@ -131,18 +166,6 @@ struct StickerSheet: View {
         }
     }
 
-    private func tabButton(_ label: String, key: String) -> some View {
-        Button { tab = key } label: {
-            Text(label)
-                .font(.system(size: 15, weight: tab == key ? .semibold : .regular))
-                .foregroundColor(tab == key ? .primary : .secondary)
-                .padding(.horizontal, 22)
-                .padding(.vertical, 8)
-                .background(tab == key ? AnyShapeStyle(Color.white) : AnyShapeStyle(Color.clear),
-                            in: Capsule())
-                .shadow(color: tab == key ? .black.opacity(0.08) : .clear, radius: 3, y: 1)
-        }
-    }
 }
 
 // 上传前先描述一遍：名称、画面、情绪标签。

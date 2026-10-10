@@ -368,6 +368,17 @@ enum AlcoveAPI {
         return raw.compactMap(Sticker.init(json:))
     }
 
+    /// 1010 #3557：每张表情近 60 天发过几次（她的我的都算），后端按最后一次用的时间倒序给。
+    /// 走 /api/work/ 只是因为前门放行这个前缀，跟工作室无关
+    static func stickerUsage() async throws -> [(id: String, count: Int)] {
+        let obj = try await getJSON("/api/work/sticker-usage")
+        let raw = obj["usage"] as? [[String: Any]] ?? []
+        return raw.compactMap { row in
+            guard let id = row["id"] as? String else { return nil }
+            return (id: id, count: (row["count"] as? NSNumber)?.intValue ?? 0)
+        }
+    }
+
     static func recalls(limit: Int = 200) async throws -> [RecallItem] {
         let obj = try await getJSON("/api/recall/list?limit=\(limit)")
         let raw = obj["items"] as? [[String: Any]] ?? []
