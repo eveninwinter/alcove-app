@@ -3930,6 +3930,7 @@ struct MessageRow: View {
     @AppStorage(KakaoPackStore.showAvatarKey) private var kakaoShowAvatar = true   // 0924 她要的：Kakao 下他的消息带不带头像
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
+    @State private var thMindOpen = false   // 1010 树屋那排字里的 mind（原生思考）
     @State private var showPulse = false
 
     private var isUser: Bool { msg.role == "user" }
@@ -4976,9 +4977,11 @@ struct MessageRow: View {
     @ViewBuilder private var messagesProcessBlock: some View {
         if hasProcess && showProcessDots {
             VStack(alignment: .leading, spacing: 6) {
+              if theme.isTreehouse {
+                // 1010 #3575–3583 她：树屋这一排换成字——时间｜trace · mind · memory 2（斜体），竖线跟思绪开关一起藏
+                thProcessLine(trace: true).padding(.leading, max(0, thStampInset - 4))
+              } else {
               HStack(spacing: 14) {
-                // 1010 #3575 她：「陈璟每条回复会带思绪这一行 直接贴在时间戳后面跟着」——树屋一轮第一条：时间在前、圆点大脑跟着
-                thRoundStampText.padding(.leading, max(0, thStampInset - 4))
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) { processOpen.toggle() }
                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
@@ -4992,6 +4995,7 @@ struct MessageRow: View {
                 .buttonStyle(.plain)
                 if recall != nil { recallBadge }
                 nativeThinkingButton
+              }
               }
                 if processOpen {
                     VStack(alignment: .leading, spacing: 8) {
@@ -5030,10 +5034,15 @@ struct MessageRow: View {
                   recall != nil || !(msg.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             // 0924 她报的「他的气泡间距跟我的不一样」：这一支原来不管有没有东西都画一个空 HStack
             // 再垫 rowPartGap，他每条消息头上都多出 7 的空白。现在没角标、没原生思考就整块不画。
-            HStack(spacing: 14) {
-                thRoundStampText.padding(.leading, thStampInset)
-                if recall != nil { recallBadge }
-                nativeThinkingButton
+            Group {
+                if theme.isTreehouse {
+                    thProcessLine(trace: false).padding(.leading, thStampInset)
+                } else {
+                    HStack(spacing: 14) {
+                        if recall != nil { recallBadge }
+                        nativeThinkingButton
+                    }
+                }
             }
             .padding(.bottom, rowPartGap)
         } else if theme.isTreehouse && roundStamp != nil {
@@ -5360,6 +5369,81 @@ struct MessageRow: View {
                 .shadow(color: TreehouseInk.fog.opacity(0.9), radius: 2)
                 .shadow(color: TreehouseInk.fog.opacity(0.7), radius: 5)
                 .fixedSize()
+        }
+    }
+
+    /// 召回了几条（召回面板里那几张卡）
+    private var thRecallCount: Int {
+        guard let recall else { return 0 }
+        let n = recall.lmcCards.count
+        return n > 0 ? n : recall.cards.count
+    }
+
+    private var thHasMind: Bool {
+        !(msg.nativeThinking ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    private func thWord(_ text: String) -> some View {
+        Text(text)
+            .font(.custom("CormorantGaramondItalic-MediumItalic", size: 14))
+            .tracking(0.4)
+            .foregroundColor(TreehouseInk.ink.opacity(0.78))
+            .shadow(color: TreehouseInk.fog.opacity(0.9), radius: 2)
+            .shadow(color: TreehouseInk.fog.opacity(0.7), radius: 5)
+            .fixedSize()
+    }
+
+    /// 1010 #3577–3583 她：圆点 / 大脑 / 星星「好割裂」→ 换成跟时间同一种字的英文：
+    /// 「10.10 · 11:23 ｜ trace · mind · memory 2」——顺序手写、原生、召回；三个词斜体（她挑的下面那版），
+    /// 跟时间中间空一截加一根细竖线。trace = 展开他这一轮手写的思绪和干过的事（原来的圆点），
+    /// mind = 原生思考（原来的大脑），memory N = 召回了几条（原来的星星）。整排只在思绪开关开着时画（外面已经判过），
+    /// 关了就只剩时间、竖线一起没。
+    @ViewBuilder private func thProcessLine(trace: Bool) -> some View {
+        let words: [(String, () -> Void)] = {
+            var out: [(String, () -> Void)] = []
+            if trace {
+                out.append(("trace", {
+                    withAnimation(.easeInOut(duration: 0.18)) { processOpen.toggle() }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { onContentChange?() }
+                }))
+            }
+            if thHasMind { out.append(("mind", { thMindOpen = true })) }
+            if recall != nil { out.append(("memory \(max(1, thRecallCount))", { showRecall = true })) }
+            return out
+        }()
+        HStack(spacing: 0) {
+            if roundStamp != nil {
+                thRoundStampText
+                if !words.isEmpty {
+                    Rectangle()
+                        .fill(TreehouseInk.ink.opacity(0.4))
+                        .frame(width: 0.8, height: 11)
+                        .padding(.horizontal, 14)
+                }
+            }
+            ForEach(Array(words.enumerated()), id: \.offset) { pair in
+                if pair.offset > 0 { thWord(" · ") }
+                Button(action: pair.element.1) {
+                    thWord(pair.element.0)
+                        .opacity(pair.element.0 == "trace" && processOpen ? 1 : 0.92)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .sheet(isPresented: $showRecall) {
+            if let recall { RecallPop(item: recall).modifier(HouseColorScheme()) }
+        }
+        .sheet(isPresented: $thMindOpen) {
+            let text = msg.nativeThinking ?? ""
+            if #available(iOS 18.0, *) {
+                NativeThinkingSheet(text: text, iosOnly: false)
+                    .presentationDetents([.medium, .large])
+                    .presentationDragIndicator(.visible)
+                    .presentationCornerRadius(32)
+            } else {
+                ScrollView { Text(text).padding().textSelection(.enabled) }
+            }
         }
     }
 }
