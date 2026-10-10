@@ -7515,75 +7515,48 @@ struct TreehouseScribbleHeart: Shape {
     }
 }
 
-/// 树屋顶栏门（开房间）：照她 1010 发的那张顶栏图（别人画的）原样描下来，框 11.33×22，线宽 1
-struct TreehouseDoorIcon: Shape {
-    static let size = CGSize(width: 11.33, height: 22)
+/// 树屋顶栏电话：圆顶座机（1010 她从四个里挑的 4）——上面拱形听筒两头往下折，下面梯形底座，中间一个拨号点。跟音符同一种细线，框 16×13
+struct TreehousePhoneIcon: Shape {
+    static let size = CGSize(width: 16, height: 13)
     func path(in rect: CGRect) -> Path {
         let s = rect.width / Self.size.width
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
         var path = Path()
-        path.move(to: p(10.83, 19.03))
-        path.addLine(to: p(10.83, 1))
-        path.addLine(to: p(10.33, 0.5))
-        path.addLine(to: p(1, 3.37))
-        path.addLine(to: p(0.5, 3.93))
-        path.addLine(to: p(0.5, 18.17))
-        path.addLine(to: p(0.83, 18.77))
-        path.addLine(to: p(4.97, 21.43))
-        path.addLine(to: p(5.4, 21.17))
-        path.addLine(to: p(5.4, 7.7))
-        path.addLine(to: p(5.17, 7.17))
-        path.addLine(to: p(1, 4))
+        path.move(to: p(1, 6.5))
+        path.addCurve(to: p(8, 0.8), control1: p(1, 2.8), control2: p(4.2, 0.8))
+        path.addCurve(to: p(15, 6.5), control1: p(11.8, 0.8), control2: p(15, 2.8))
+        path.move(to: p(1, 6.5))
+        path.addLine(to: p(4.4, 6.5))
+        path.addLine(to: p(4.4, 4.6))
+        path.move(to: p(15, 6.5))
+        path.addLine(to: p(11.6, 6.5))
+        path.addLine(to: p(11.6, 4.6))
+        path.move(to: p(3, 8.6))
+        path.addLine(to: p(13, 8.6))
+        path.addLine(to: p(13.8, 12.4))
+        path.addLine(to: p(2.2, 12.4))
+        path.closeSubpath()
+        path.addEllipse(in: CGRect(origin: p(7.5, 10), size: CGSize(width: 1 * s, height: 1 * s)))
         return path
     }
 }
 
-/// 树屋顶栏电话：照她 1010 发的那张顶栏图（别人画的）原样描下来，框 14.67×15.33，线宽 1
-struct TreehousePhoneIcon: Shape {
-    static let size = CGSize(width: 14.67, height: 15.33)
+/// 树屋顶栏心率前面那道心电线（1010 她挑的 2，替掉涂鸦心）：一小跳、一大跳，两头拉平。框 18×13
+struct TreehousePulseIcon: Shape {
+    static let size = CGSize(width: 18, height: 13)
     func path(in rect: CGRect) -> Path {
         let s = rect.width / Self.size.width
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
         var path = Path()
-        path.move(to: p(2.67, 0.27))
-        path.addCurve(to: p(3.77, 0.83), control1: p(3.03, 0.29), control2: p(3.48, 0.6))
-        path.addCurve(to: p(4.4, 1.67), control1: p(4.06, 1.07), control2: p(4.2, 1.36))
-        path.addCurve(to: p(4.97, 2.67), control1: p(4.6, 1.97), control2: p(4.79, 2.33))
-        path.addCurve(to: p(5.43, 3.67), control1: p(5.14, 3), control2: p(5.37, 3.37))
-        path.addCurve(to: p(5.37, 4.43), control1: p(5.5, 3.96), control2: p(5.45, 4.19))
-        path.addCurve(to: p(4.93, 5.1), control1: p(5.28, 4.67), control2: p(5.06, 4.87))
-        path.addCurve(to: p(4.6, 5.83), control1: p(4.81, 5.33), control2: p(4.62, 5.57))
-        path.addCurve(to: p(4.8, 6.7), control1: p(4.58, 6.1), control2: p(4.68, 6.42))
-        path.addCurve(to: p(5.33, 7.5), control1: p(4.92, 6.98), control2: p(5.08, 7.17))
-        path.addCurve(to: p(6.33, 8.67), control1: p(5.59, 7.83), control2: p(6, 8.32))
-        path.addCurve(to: p(7.33, 9.6), control1: p(6.67, 9.02), control2: p(7, 9.34))
-        path.addCurve(to: p(8.33, 10.23), control1: p(7.67, 9.86), control2: p(8.01, 10.1))
-        path.addCurve(to: p(9.27, 10.4), control1: p(8.66, 10.37), control2: p(8.96, 10.44))
-        path.addCurve(to: p(10.17, 10), control1: p(9.57, 10.36), control2: p(9.85, 10.11))
-        path.addCurve(to: p(11.17, 9.77), control1: p(10.48, 9.89), control2: p(10.83, 9.77))
-        path.addCurve(to: p(12.17, 9.97), control1: p(11.5, 9.76), control2: p(11.83, 9.81))
-        path.addCurve(to: p(13.17, 10.7), control1: p(12.5, 10.12), control2: p(12.88, 10.42))
-        path.addCurve(to: p(13.87, 11.63), control1: p(13.45, 10.98), control2: p(13.69, 11.31))
-        path.addCurve(to: p(14.2, 12.67), control1: p(14.04, 11.96), control2: p(14.18, 12.33))
-        path.addCurve(to: p(13.97, 13.63), control1: p(14.22, 13), control2: p(14.14, 13.36))
-        path.addCurve(to: p(13.17, 14.33), control1: p(13.79, 13.91), control2: p(13.52, 14.14))
-        path.addCurve(to: p(11.83, 14.77), control1: p(12.81, 14.52), control2: p(12.33, 14.67))
-        path.addCurve(to: p(10.17, 14.93), control1: p(11.33, 14.87), control2: p(10.72, 14.94))
-        path.addCurve(to: p(8.5, 14.7), control1: p(9.61, 14.92), control2: p(9, 14.85))
-        path.addCurve(to: p(7.17, 14.03), control1: p(8, 14.55), control2: p(7.58, 14.31))
-        path.addCurve(to: p(6, 13.03), control1: p(6.75, 13.76), control2: p(6.37, 13.39))
-        path.addCurve(to: p(4.97, 11.9), control1: p(5.63, 12.68), control2: p(5.31, 12.29))
-        path.addCurve(to: p(3.97, 10.7), control1: p(4.63, 11.51), control2: p(4.29, 11.12))
-        path.addCurve(to: p(3, 9.37), control1: p(3.64, 10.28), control2: p(3.3, 9.82))
-        path.addCurve(to: p(2.17, 8), control1: p(2.7, 8.92), control2: p(2.43, 8.46))
-        path.addCurve(to: p(1.43, 6.63), control1: p(1.91, 7.54), control2: p(1.64, 7.09))
-        path.addCurve(to: p(0.9, 5.27), control1: p(1.22, 6.18), control2: p(1.04, 5.73))
-        path.addCurve(to: p(0.6, 3.83), control1: p(0.76, 4.8), control2: p(0.64, 4.29))
-        path.addCurve(to: p(0.63, 2.5), control1: p(0.56, 3.37), control2: p(0.57, 2.89))
-        path.addCurve(to: p(0.97, 1.47), control1: p(0.69, 2.11), control2: p(0.81, 1.77))
-        path.addCurve(to: p(1.6, 0.67), control1: p(1.13, 1.16), control2: p(1.32, 0.87))
-        path.addCurve(to: p(2.67, 0.27), control1: p(1.88, 0.47), control2: p(2.31, 0.24))
-        path.closeSubpath()
+        path.move(to: p(0.5, 7.2))
+        path.addLine(to: p(4.4, 7.2))
+        path.addLine(to: p(5.8, 5))
+        path.addLine(to: p(7.2, 7.2))
+        path.addLine(to: p(8.3, 7.2))
+        path.addLine(to: p(10, 1))
+        path.addLine(to: p(11.9, 12))
+        path.addLine(to: p(13.4, 7.2))
+        path.addLine(to: p(17.5, 7.2))
         return path
     }
 }
@@ -7621,17 +7594,19 @@ struct TreehouseNoteIcon: Shape {
     }
 }
 
-/// 树屋顶栏菜单：照她 1010 发的那张顶栏图（别人画的）原样描下来，框 18×6.33，线宽 1
+/// 树屋顶栏菜单：三道线、最下面那道短一截（1010 她圈的那版）。框 18×10
 struct TreehouseMenuIcon: Shape {
-    static let size = CGSize(width: 18, height: 6.33)
+    static let size = CGSize(width: 18, height: 10)
     func path(in rect: CGRect) -> Path {
         let s = rect.width / Self.size.width
         func p(_ x: CGFloat, _ y: CGFloat) -> CGPoint { CGPoint(x: rect.minX + x * s, y: rect.minY + y * s) }
         var path = Path()
-        path.move(to: p(0.77, 0.47))
-        path.addLine(to: p(17.4, 0.47))
-        path.move(to: p(2.53, 6.03))
-        path.addLine(to: p(15.8, 6.03))
+        path.move(to: p(0.5, 0.5))
+        path.addLine(to: p(17.5, 0.5))
+        path.move(to: p(0.5, 5))
+        path.addLine(to: p(17.5, 5))
+        path.move(to: p(0.5, 9.5))
+        path.addLine(to: p(11.5, 9.5))
         return path
     }
 }

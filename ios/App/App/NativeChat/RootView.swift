@@ -372,8 +372,8 @@ struct RootView: View {
                 Button {
                     NotificationCenter.default.post(name: .alcoveOpenRoomPicker, object: nil)
                 } label: {
-                    // 1010 #3588 她：顶栏图标照她给的那张图抄（门 / 电话 / 音符 / 菜单），不要手画、不要系统图标
-                    treehouseIcon(TreehouseDoorIcon(), TreehouseDoorIcon.size)
+                    // 1010 #3588–3601 她：门就用 ༒ 这个字本身（手机自己的字体画），跟头像差不多高
+                    Text("༒").font(.system(size: 15))
                         .offset(x: -2)   // 她图里门的中心离屏幕左边 28，44 宽的框居中是 30
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
@@ -421,11 +421,13 @@ struct RootView: View {
                 HStack(alignment: .center, spacing: 5) {
                     if let bpm = treehouseHeader.bpm {
                         HStack(spacing: 7) {
-                            // 1009 #3522–3523 她：「把小圆点换成爱心 你手画一个」——照她发的那张，一笔斜着来回涂满的心（F 那颗）
-                            TreehouseScribbleHeart()
-                                .stroke(ink, style: StrokeStyle(lineWidth: 0.75, lineCap: .round, lineJoin: .round))
-                                .frame(width: 16, height: 16)
-                            Text("\(bpm)").font(.system(size: 15, design: .serif))
+                            // 1010 #3593 她挑 2：涂鸦心换成一道心电线，跟别的图标同一种细线
+                            treehouseIcon(TreehousePulseIcon(), TreehousePulseIcon.size)
+                            // 1010 #3596–3601 她：数字用时间戳那个字体（Cormorant 默认的老式数字，3/4/5/7/9 往下伸、6/8 往上冒，不换样式）。
+                            // 对齐按 0/1/2 那种矮数字的高度：x 高那一截（基线上 0.193em）的正中对上图标正中，
+                            // 字框正中在基线上 (0.924 − 0.287)/2 = 0.3185em，差 0.1255em，往上提这么多；心率换成几都是同一个规矩
+                            Text("\(bpm)").font(.custom("CormorantGaramond-Medium", size: 18))
+                                .offset(y: -0.1255 * 18)
                                 .lineLimit(1)
                                 .fixedSize(horizontal: true, vertical: false)
                         }
@@ -445,7 +447,7 @@ struct RootView: View {
                         .transition(.opacity.combined(with: .scale(scale: 0.7)))
                     }
                     Button { presentHouse(.sidebar) } label: {
-                        treehouseIcon(TreehouseMenuIcon(), TreehouseMenuIcon.size, lineWidth: 0.85)
+                        treehouseIcon(TreehouseMenuIcon(), TreehouseMenuIcon.size)
                             .frame(width: TreehouseMenuIcon.size.width + 12, height: 44).contentShape(Rectangle())
                     }
                 }
