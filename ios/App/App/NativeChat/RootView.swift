@@ -471,7 +471,7 @@ struct RootView: View {
         // 跟下面严丝合缝；照旧不透明盖住滑上来的气泡，下沿照旧渐隐。
         .background(alignment: .top) {
             TreehouseTopWall()
-                .frame(height: 106)          // 84 实心 + 22 渐隐
+                .frame(height: 150)          // 84 实心 + 66 渐隐（1010 她：原来 22 太短，像硬切）
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
@@ -884,26 +884,81 @@ private struct InteractiveTopBarGlassModifier: ViewModifier {
 }
 
 /// 1010：树屋顶栏底下那块＝当前聊天壁纸的最上面一截（跟聊天页同一份 ChatWallpaperStore：她换的图、模糊都在里面），
-/// 按整屏大小画再裁出顶上这段，跟聊天页那张对齐；下沿 22 渐隐（跟原来的实心雾白同一个形状）
+/// 按整屏大小画再裁出顶上这段，跟聊天页那张对齐。
+/// 1010 晚 她拿旧版新版截图比：「新版能不能做到那张图渐变不硬切」——她换的照片顶上是一截纯黑、再往下照片直接起来，
+/// 顶栏这块原样照搬就把那条硬边也搬上来了，原来下沿又只有 22 渐隐。改成：渐隐拉到 66；
+/// 再取壁纸顶上那一截的平均色，从屏幕顶实心往下慢慢淡掉，盖住照片自己的硬边（颜色从壁纸里取，换壁纸不会再出色带）。
 struct TreehouseTopWall: View {
     @ObservedObject private var wall = ChatWallpaperStore.shared
     var body: some View {
         GeometryReader { proxy in
             let screen = UIScreen.main.bounds.size
-            ChatWallpaperRenderer(descriptor: wall.descriptor)
-                .frame(width: screen.width, height: screen.height)
-                .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-                .clipped()
-                .mask(
+            let top = TreehouseTopTint.color(for: wall.descriptor, screen: screen, depth: proxy.size.height)
+            ZStack(alignment: .top) {
+                ChatWallpaperRenderer(descriptor: wall.descriptor)
+                    .frame(width: screen.width, height: screen.height)
+                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
+                    .clipped()
+                if let top {
                     LinearGradient(
                         stops: [
-                            .init(color: .black, location: 0),
-                            .init(color: .black, location: 0.82),
-                            .init(color: .black.opacity(0), location: 1),
+                            .init(color: top, location: 0),
+                            .init(color: top, location: 0.25),
+                            .init(color: top.opacity(0.75), location: 0.45),
+                            .init(color: top.opacity(0.35), location: 0.62),
+                            .init(color: top.opacity(0), location: 0.8),
                         ],
                         startPoint: .top, endPoint: .bottom
                     )
+                }
+            }
+            .mask(
+                LinearGradient(
+                    stops: [
+                        .init(color: .black, location: 0),
+                        .init(color: .black, location: 0.56),            // 84 / 150：顶栏本体实心，盖住滑上来的气泡
+                        .init(color: .black.opacity(0.55), location: 0.76),
+                        .init(color: .black.opacity(0.18), location: 0.9),
+                        .init(color: .black.opacity(0), location: 1),
+                    ],
+                    startPoint: .top, endPoint: .bottom
                 )
+            )
         }
+    }
+}
+
+/// 壁纸最顶上那一截（屏幕上 0…depth 那段，按 scaledToFill 对齐）的平均色；一张图只算一次
+enum TreehouseTopTint {
+    private static var cache: [ObjectIdentifier: Color] = [:]
+
+    static func color(for d: ChatWallpaperDescriptor, screen: CGSize, depth: CGFloat) -> Color? {
+        switch d.source {
+        case .image(let image): return average(image, screen: screen, depth: depth)
+        case .asset(let name): return UIImage(named: name).flatMap { average($0, screen: screen, depth: depth) }
+        case .gradient(let colors): return colors.first
+        case .layeredPanel(_, _, let gradient, _): return gradient.first
+        }
+    }
+
+    private static func average(_ image: UIImage, screen: CGSize, depth: CGFloat) -> Color? {
+        let key = ObjectIdentifier(image)
+        if let c = cache[key] { return c }
+        guard let cg = image.cgImage, screen.width > 0, screen.height > 0 else { return nil }
+        let iw = CGFloat(cg.width), ih = CGFloat(cg.height)
+        let k = max(screen.width / iw, screen.height / ih)              // scaledToFill 的放大倍数
+        let x0 = (iw * k - screen.width) / 2 / k, y0 = (ih * k - screen.height) / 2 / k
+        // 只取最顶上 40% 那段（硬边多半在更下面，取到它会把颜色带偏）
+        let rect = CGRect(x: x0, y: y0, width: screen.width / k, height: max(1, depth * 0.4 / k)).integral
+        guard let crop = cg.cropping(to: rect) else { return nil }
+        var px = [UInt8](repeating: 0, count: 4)
+        guard let ctx = CGContext(data: &px, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return nil }
+        ctx.interpolationQuality = .medium
+        ctx.draw(crop, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+        let c = Color(red: Double(px[0]) / 255, green: Double(px[1]) / 255, blue: Double(px[2]) / 255)
+        cache[key] = c
+        return c
     }
 }

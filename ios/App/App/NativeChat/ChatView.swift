@@ -3975,7 +3975,7 @@ struct MessageRow: View {
                                                         : .system(size: 10, design: .serif))
                                 .foregroundColor(metaTint)
                         }
-                        if theme.isMessages, !theme.isKakao, isUser, !msg.pending {
+                        if theme.isMessages, !theme.isKakao, !theme.isTreehouse, isUser, !msg.pending {
                             // 0822 她定的：tg 那种两个勾，发出去就亮，只是个装饰
                             HStack(spacing: -5) {
                                 Image(systemName: "checkmark")
@@ -4032,8 +4032,8 @@ struct MessageRow: View {
         if msg.pending || msg.asleepAtSend { return true }
         guard showTime else { return false }
         if theme.isTreehouse {
-            // 树屋的时间在一轮第一条上面了：这一行只剩她的两个勾、API 房间他的用量
-            return isUser || msg.apiUsage != nil
+            // 树屋的时间在一轮第一条上面了：这一行只剩 API 房间他的用量（1010 她：树屋下她的气泡不要已读勾）
+            return msg.apiUsage != nil
         }
         if theme.isKakao {
             return !isUser && dotsOK && (msg.heartRate != nil || msg.apiUsage != nil)
