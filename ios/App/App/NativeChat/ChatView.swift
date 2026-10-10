@@ -391,7 +391,10 @@ struct ChatView: View {
                 // 的 onAppear/onDisappear，懒加载列表里它经常不吭声，followLiveOutput 一开始就是 false。
                 // 改成看滚动几何：离最底 120pt 以内算在底部。人翻上去就不跟；翻回底部自动再跟。
                 .onScrollGeometryChange(for: Bool.self) { g in
-                    g.contentOffset.y + g.containerSize.height >= g.contentSize.height - 120
+                    // 1011 她：「我觉得是你把范围弄得太小了 人家识别不到我在最底下」——对。顶栏挂在 safeAreaBar 里，
+                    // 滚到真底时 offset + 可视高 还差一截顶部内边距；树屋顶栏高（84 + 状态栏 ≈ 143）一下就超过 120，
+                    // 手指滑到最底永远判不成「在底部」，点键盘不顶（点「回到最新」是程序直接设 true，所以那条路能顶）。把顶部内边距补回来
+                    g.contentOffset.y + g.containerSize.height + g.contentInsets.top >= g.contentSize.height - 120
                 } action: { _, near in
                     // 1009 #3532 她报的「树屋他发新消息不会自动顶上去、打开键盘也是」：他一条长消息落下来，
                     // 内容一下长高好几百，这里先把 atBottom 判成 false，等 messages.count 那条去滚时一看「不在底部」就不滚了，
@@ -415,7 +418,7 @@ struct ChatView: View {
                 }
                 // 0924：药丸的门槛单独算——离最底超过一整屏才算「翻远了」
                 .onScrollGeometryChange(for: Bool.self) { g in
-                    let distance = g.contentSize.height - (g.contentOffset.y + g.containerSize.height)
+                    let distance = g.contentSize.height - (g.contentOffset.y + g.containerSize.height + g.contentInsets.top)
                     return distance > g.containerSize.height * tailPillRevealScreens
                 } action: { _, far in
                     if far != farFromTail { farFromTail = far }
@@ -591,12 +594,6 @@ struct ChatView: View {
                 guard shouldFollowTail else { return }
                 // 0922 任务#2572：原来 0/0.12/0.3 秒连滚三次，整张表跟着重排三回；只留键盘快到位的那一次
                 scrollToTail(proxy, delays: [0.12], animated: true)
-            }
-            // 1011 她：「我每次在最新消息那里 打字键盘起来的时候为什么最后一条消息不会被顶起来」——
-            // 上面那几次都在键盘升到一半时滚，键盘停稳后底下又被它盖住一截。键盘完全到位这一刻再贴一次底
-            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
-                guard AlcoveNotify.shared.chatVisible, shouldFollowTail else { return }
-                scrollToTail(proxy, delays: [0, 0.12], animated: true)
             }
             .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
             // 0924「重来」没成时说一声为什么（他正忙、回退菜单对不上号、SDK 通道……）
