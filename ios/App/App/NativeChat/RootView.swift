@@ -883,46 +883,28 @@ private struct InteractiveTopBarGlassModifier: ViewModifier {
     }
 }
 
-/// 1010：树屋顶栏底下那块＝当前聊天壁纸的最上面一截（跟聊天页同一份 ChatWallpaperStore：她换的图、模糊都在里面），
-/// 按整屏大小画再裁出顶上这段，跟聊天页那张对齐。
-/// 1010 晚 她拿旧版新版截图比：「新版能不能做到那张图渐变不硬切」——她换的照片顶上是一截纯黑、再往下照片直接起来，
-/// 顶栏这块原样照搬就把那条硬边也搬上来了，原来下沿又只有 22 渐隐。改成：渐隐拉到 66；
-/// 再取壁纸顶上那一截的平均色，从屏幕顶实心往下慢慢淡掉，盖住照片自己的硬边（颜色从壁纸里取，换壁纸不会再出色带）。
+/// 1010：树屋顶栏底下那块。白天黑夜、换壁纸都跟着壁纸顶上的颜色走（原来写死的雾白换壁纸会出色带）
 struct TreehouseTopWall: View {
     @ObservedObject private var wall = ChatWallpaperStore.shared
     var body: some View {
+        // 1010 晚 她：「还是硬切到底怎么回事」——原来这块是把壁纸顶上那截再贴一层，指望跟下面的壁纸对齐；
+        // 她手机上两层没对上（上面贴到照片黑的那截、下面露出来已经是亮的），交界就是一条硬边，拉长渐隐也救不了。
+        // 改成不贴图：取壁纸顶上那截的平均色，整块从屏幕顶往下慢慢变透明，纯颜色没有边可切
         GeometryReader { proxy in
-            let screen = UIScreen.main.bounds.size
-            let top = TreehouseTopTint.color(for: wall.descriptor, screen: screen, depth: proxy.size.height)
-            ZStack(alignment: .top) {
-                ChatWallpaperRenderer(descriptor: wall.descriptor)
-                    .frame(width: screen.width, height: screen.height)
-                    .frame(width: proxy.size.width, height: proxy.size.height, alignment: .top)
-                    .clipped()
-                if let top {
-                    LinearGradient(
-                        stops: [
-                            .init(color: top, location: 0),
-                            .init(color: top, location: 0.25),
-                            .init(color: top.opacity(0.75), location: 0.45),
-                            .init(color: top.opacity(0.35), location: 0.62),
-                            .init(color: top.opacity(0), location: 0.8),
-                        ],
-                        startPoint: .top, endPoint: .bottom
-                    )
-                }
-            }
-            .mask(
-                LinearGradient(
-                    stops: [
-                        .init(color: .black, location: 0),
-                        .init(color: .black, location: 0.56),            // 84 / 150：顶栏本体实心，盖住滑上来的气泡
-                        .init(color: .black.opacity(0.55), location: 0.76),
-                        .init(color: .black.opacity(0.18), location: 0.9),
-                        .init(color: .black.opacity(0), location: 1),
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
+            let c = TreehouseTopTint.color(for: wall.descriptor, screen: UIScreen.main.bounds.size, depth: proxy.size.height)
+                ?? TreehouseInk.fog
+            // 下面最后 66 点慢慢淡掉，上面（状态栏 + 顶栏的字和进度线）实心，盖住滑上来的气泡
+            let h = max(proxy.size.height, 1), solid = max(0, (h - 66) / h)
+            LinearGradient(
+                stops: [
+                    .init(color: c, location: 0),
+                    .init(color: c, location: solid),
+                    .init(color: c.opacity(0.75), location: solid + (1 - solid) * 0.25),
+                    .init(color: c.opacity(0.42), location: solid + (1 - solid) * 0.5),
+                    .init(color: c.opacity(0.16), location: solid + (1 - solid) * 0.75),
+                    .init(color: c.opacity(0), location: 1),
+                ],
+                startPoint: .top, endPoint: .bottom
             )
         }
     }
