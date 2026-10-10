@@ -745,6 +745,7 @@ final class ChatStore: ObservableObject {
             // 只有退出重进才补得回来。她自己那条下一轮轮询会再回来，appendNew 按 ts + role 认出来，不会多一条。
             if let lt = r.lastTs, !lt.isEmpty { lastTs = lt }
             if !r.reactionUpdates.isEmpty { applyReactionUpdates(r.reactionUpdates) }
+            if !r.removed.isEmpty { applyRemoved(r.removed) }
             // 0927 任务#2986 她报的「主聊天滑动一卡一卡」：@Published 只要赋值就通知整页重算，值没变也算。
             // 这里每次轮询（闲 8 秒 / 忙 2.5 秒 / API 流式 1 秒）原来都照写一遍，整张聊天表（几百条）跟着重算一回。
             // 下面一律「真变了才写」。
@@ -825,6 +826,19 @@ final class ChatStore: ObservableObject {
     }
 
     /// 1001 贴表情：轮询带回来的变化挂到对应那条上；值没变就不写（免得整页重算）
+    /// 1010 #3555 她：「前端聊天页也要清空消息啊 我这边还有显示」——后台删掉的（她在终端回退、重来、编辑），
+    /// 轮询带下来 {ts, role}，这边照着拿掉；后台连着十分钟都会带，所以只在真有对上的时候才动列表（别每轮重算整页）
+    private func applyRemoved(_ gone: [[String: Any]]) {
+        var keys = Set<String>()
+        for g in gone {
+            guard let ts = g["ts"] as? String, let role = g["role"] as? String else { continue }
+            keys.insert(role + "\u{1f}" + ts)
+            if role == "assistant" { deletedMessageTs.insert(ts) }
+        }
+        guard messages.contains(where: { keys.contains($0.role + "\u{1f}" + $0.ts) }) else { return }
+        messages.removeAll { keys.contains($0.role + "\u{1f}" + $0.ts) }
+    }
+
     private func applyReactionUpdates(_ ups: [[String: Any]]) {
         for u in ups {
             guard let ts = u["ts"] as? String, let role = u["role"] as? String,

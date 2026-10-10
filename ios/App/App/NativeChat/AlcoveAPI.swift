@@ -33,6 +33,8 @@ enum AlcoveAPI {
         var apiPartial: [String: Any]? = nil
         // 1001 贴表情：上次轮询之后谁给哪条贴了什么（老消息上新贴的也在这）
         var reactionUpdates: [[String: Any]] = []
+        // 1010 #3555：后台刚删掉的（重来 / 编辑 / 她在终端回退），每条 {ts, role}
+        var removed: [[String: Any]] = []
     }
 
     // 0730 实时预览：他一说完一段就先给她看，不等整轮工具跑完。
@@ -266,7 +268,8 @@ enum AlcoveAPI {
             callState: call["state"] as? String ?? "idle",
             callId: call["call_id"] as? String ?? "",
             apiPartial: status["api_partial"] as? [String: Any],
-            reactionUpdates: chat["reaction_updates"] as? [[String: Any]] ?? [])
+            reactionUpdates: chat["reaction_updates"] as? [[String: Any]] ?? [],
+            removed: chat["removed"] as? [[String: Any]] ?? [])
     }
 
     /// 1001 她给一条消息贴 emoji（再贴就换掉她上次贴的）
