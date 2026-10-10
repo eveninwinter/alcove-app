@@ -12144,6 +12144,8 @@ private struct NativeCalendarView: View {
     @State private var thTearJSON: String?
     @State private var thTearLoaded = false
     @State private var thTearBridge = TreehouseDreamsBridge()
+    // #3629 泪那页自己的日夜：右下角 let it fall 点一下切，不跟全屋白天 / 黑夜按钮走
+    @AppStorage("treehouseDiaryNight") private var thTearNight = false
 
     /// 阅读页（DiaryReader）还是原来那套梅花
     private var palette: DiaryPalette { _ = houseAppearance; return DiaryPalette(dark: AlcoveAppearance.isDark) }
@@ -13972,17 +13974,23 @@ private struct TreehouseDreamsWeb: UIViewRepresentable {
 private struct TreehouseTearWeb: UIViewRepresentable {
     let diaryJSON: String
     let todayKey: String
+    let night: Bool
     let bridge: TreehouseDreamsBridge
+
+    static func paper(_ night: Bool) -> UIColor {
+        night ? UIColor(red: 0x24/255, green: 0x24/255, blue: 0x28/255, alpha: 1)
+              : UIColor(red: 0xF6/255, green: 0xF6/255, blue: 0xF4/255, alpha: 1)
+    }
 
     func makeUIView(context: Context) -> WKWebView {
         let uc = WKUserContentController()
-        uc.addUserScript(WKUserScript(source: "window.DIARY = \(diaryJSON); window.TODAY_KEY = '\(todayKey)';",
+        uc.addUserScript(WKUserScript(source: "window.DIARY = \(diaryJSON); window.TODAY_KEY = '\(todayKey)'; window.NIGHT = \(night);",
                                       injectionTime: .atDocumentStart, forMainFrameOnly: true))
         uc.add(bridge, name: "diary")
         let cfg = WKWebViewConfiguration()
         cfg.userContentController = uc
         let wv = WKWebView(frame: .zero, configuration: cfg)
-        let paper = UIColor(red: 0xF6/255, green: 0xF6/255, blue: 0xF4/255, alpha: 1)
+        let paper = Self.paper(night)
         wv.isOpaque = false
         wv.backgroundColor = paper
         wv.scrollView.backgroundColor = paper
@@ -13997,7 +14005,12 @@ private struct TreehouseTearWeb: UIViewRepresentable {
         return wv
     }
 
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    // 网页里切了日夜是原地换色，不重新加载；这里只把网页后面那层底色跟上
+    func updateUIView(_ uiView: WKWebView, context: Context) {
+        let paper = Self.paper(night)
+        uiView.backgroundColor = paper
+        uiView.scrollView.backgroundColor = paper
+    }
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "diary")
@@ -14006,12 +14019,12 @@ private struct TreehouseTearWeb: UIViewRepresentable {
 
 extension NativeCalendarView {
     var treehouseTearBody: some View {
-        let paper = Color(red: 0xF6/255, green: 0xF6/255, blue: 0xF4/255)
+        let paper = Color(uiColor: TreehouseTearWeb.paper(thTearNight))
         return ZStack {
             paper.ignoresSafeArea()
             if let json = thTearJSON {
                 // 网页是按 390 宽排死的，顶上那排（返回 / Diary / 菜单）离顶 35，不让开安全区会钻到灵动岛底下
-                TreehouseTearWeb(diaryJSON: json, todayKey: thTearToday, bridge: thTearBridge)
+                TreehouseTearWeb(diaryJSON: json, todayKey: thTearToday, night: thTearNight, bridge: thTearBridge)
             } else if thTearLoaded {
                 // 一篇都没拉到：别让网页掉回成品里的示例日记
                 VStack(spacing: 14) {
@@ -14036,7 +14049,8 @@ extension NativeCalendarView {
                 .ignoresSafeArea()
             }
         }
-        .foregroundColor(Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255))
+        .foregroundColor(thTearNight ? Color(red: 0xCF/255, green: 0xCF/255, blue: 0xD1/255)
+                                     : Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255))
         .task {
             thTearBridge.onMessage = { m in thTearHandle(m) }
             await thTearLoad()
@@ -14101,6 +14115,7 @@ extension NativeCalendarView {
         switch m["type"] as? String {
         case "back": dismiss()
         case "haptic": UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        case "night": thTearNight = m["on"] as? Bool ?? false
         // #3616 右上菜单＝待办：今日提醒（我加的 / 陈璟加的）＋添加；长按编辑 / 删掉。接口跟像素版日记页同一套 /api/reminders/*
         case "todo": Task { await thTodoPush() }
         case "todoDone":
