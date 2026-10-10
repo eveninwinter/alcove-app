@@ -592,6 +592,12 @@ struct ChatView: View {
                 // 0922 任务#2572：原来 0/0.12/0.3 秒连滚三次，整张表跟着重排三回；只留键盘快到位的那一次
                 scrollToTail(proxy, delays: [0.12], animated: true)
             }
+            // 1011 她：「我每次在最新消息那里 打字键盘起来的时候为什么最后一条消息不会被顶起来」——
+            // 上面那几次都在键盘升到一半时滚，键盘停稳后底下又被它盖住一截。键盘完全到位这一刻再贴一次底
+            .onReceive(NotificationCenter.default.publisher(for: UIResponder.keyboardDidShowNotification)) { _ in
+                guard AlcoveNotify.shared.chatVisible, shouldFollowTail else { return }
+                scrollToTail(proxy, delays: [0, 0.12], animated: true)
+            }
             .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
             // 0924「重来」没成时说一声为什么（他正忙、回退菜单对不上号、SDK 通道……）
             // 0928 她要的确认弹窗：点重来先问是否，别再误触
