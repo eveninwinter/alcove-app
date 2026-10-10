@@ -1130,6 +1130,9 @@ private struct NativeSettingsView: View {
                     Divider().opacity(0.25)
                     settingRow("TA 的名字", "聊天页顶栏显示") {
                         TextField("陈璟", text: $assistantName).multilineTextAlignment(.trailing).frame(width: 105)
+                            // 1010 她：「拍一拍为什么名字和我改的顶栏名字不一致」——改名原来只存手机里，
+                            // 后台拍一拍那句要等她改后缀或者拍他一下才跟着改，这期间他拍她用的还是旧名字。改名就一起存过去
+                            .onChange(of: assistantName) { _ in schedulePatSave() }
                     }
                     Divider().opacity(0.25)
                     settingRow("我的头像", "点击更换") {
