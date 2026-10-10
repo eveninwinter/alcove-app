@@ -704,13 +704,10 @@
     c.rot = -(flowDeg * .8) * Math.PI / 180 + c.jit;
   }
   const FALL_G = 95, FALL_MAX = 125;             // 离开脸后：从流速接上，缓缓加速，速度上限不高
-  function toFall(c, vx, vy, spin, steady = false) {
-    free.push({ g: c.g, x: steady ? TIP.x : c.x, y: c.y, vx, vy, rot: c.rot, spin, size: c.size, size0: c.size, alpha: Math.max(c.alpha, .8),
-                land: landY(), sink: -1, y0: c.y, steady });
+  function toFall(c, vx, vy, spin) {
+    free.push({ g: c.g, x: c.x, y: c.y, vx, vy, rot: c.rot, spin, size: c.size, size0: c.size, alpha: Math.max(c.alpha, .8),
+                land: landY(), sink: -1, y0: c.y });
   }
-  // 1010 #3634 她圈着泪尖下面那段：「让变成一条字从这里开始」——每一行流到尖上都滴下来，
-  // 匀速往下、不飘不转，前后两个字差不多隔一个字高，连成一条线一直进字海
-  const LINE_V = speedAt(1) * 1.25;
 
   /* ---------- 手指 ---------- */
   const RB = 24;                                  // 按住时挡泪的半径
@@ -1122,11 +1119,10 @@
       c.s += ds;
       if (c.s >= path.total) {
         look(c, 0);
-        if (c.g && c.vis > .5) {
+        if (c.g && c.vis > .5 && (draining || c.row % 4 === 0)) {
           const v = speedAt(1), i = path.n - 1;
           c.size *= 1.15; c.alpha = Math.max(c.alpha, .9);
-          if (draining) toFall(c, path.TX[i] * v + R(-3, 3), path.TY[i] * v, R(-.5, .5));
-          else toFall(c, 0, LINE_V, 0, true);
+          toFall(c, path.TX[i] * v + R(-3, 3), path.TY[i] * v, R(-.5, .5));
         } else if (c.g && c.alpha > .02) {
           merging.push({ g: c.g, x0: c.x, y0: c.y, size0: c.size, rot: c.rot, a0: c.alpha, t0: T });
         }
@@ -1140,7 +1136,7 @@
     for (let n = free.length - 1; n >= 0; n--) {
       const f = free[n];
       if (f.sink >= 0) { if (T - f.sink > .45) free.splice(n, 1); continue; }
-      if (!f.steady) f.vy = Math.min(f.vy + FALL_G * dt, FALL_MAX);
+      f.vy = Math.min(f.vy + FALL_G * dt, FALL_MAX);
       f.vx *= Math.exp(-dt * 1.1);
       if (holding) {
         const dx = f.x - finger.x, dy = f.y - finger.y, d = Math.hypot(dx, dy);
