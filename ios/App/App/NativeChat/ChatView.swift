@@ -916,6 +916,11 @@ struct ChatView: View {
             let urls = t.urls
             Task { for u in urls { await PhotoLibrarySaver.save(u) } }
         case .favorite: store.favoriteMessage(m)
+        case .multi:
+            // 进多选，先把长按的这一条勾上（图走图的圈、字走字的圈），别的她自己点
+            paragraphSelectionMode = true
+            if t.kind == .image { selectedPhotoIDs.insert(m.uid) } else { selectedParagraphIDs.insert(m.uid) }
+            inputFocused = false
         }
     }
 
@@ -9159,7 +9164,7 @@ private struct ReactPressStyle: ButtonStyle {
 /// 长按之后整屏这一层：毛玻璃（被按的气泡那块挖空、它自己在列表里弹起来）＋ 一排 emoji ＋ 菜单；
 /// 点 ⌄ 那一排顺着变形成大面板（搜索 ＋ 分类 ＋ 全部 emoji）
 struct ReactionOverlay: View {
-    enum Action { case copy, ask, copyTurn, edit, select, save, favorite }
+    enum Action { case copy, ask, copyTurn, edit, select, save, favorite, multi }
 
     let target: ReactTarget
     let theme: AlcoveTheme
@@ -9193,7 +9198,8 @@ struct ReactionOverlay: View {
 
     private var menuItems: [(Action, String, String)] {
         switch target.kind {
-        case .image: return [(.save, "保存到相册", "square.and.arrow.down")]
+        // 1010 #3573 她：「多选直接加进长按气泡弹出的选项里去」——字、图都给，她的气泡也能从这儿进
+        case .image: return [(.save, "保存到相册", "square.and.arrow.down"), (.multi, "多选", "checklist")]
         case .voice: return [(.favorite, "收藏", "heart")]
         case .text: break
         }
@@ -9201,6 +9207,7 @@ struct ReactionOverlay: View {
         if canCopyTurn { out.append((.copyTurn, "复制整轮", "doc.on.clipboard")) }
         if canEdit { out.append((.edit, "编辑", "pencil")) }
         out.append((.select, "选择文字", "character.cursor.ibeam"))
+        out.append((.multi, "多选", "checklist"))
         return out
     }
 
