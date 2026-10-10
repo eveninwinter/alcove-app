@@ -1083,7 +1083,10 @@ struct ChatView: View {
                 if theme.isKakao {
                     return 12 + 2 + ((message.role == "assistant" && listKakaoShowAvatar) ? 6 : 0)
                 }
-                return 2   // 非 Kakao 一串末尾那 12 还在行底，只补上下各垫的那 2
+                // 1011 她：「我和陈璟之间的间距 属于轮与轮之间的间距 不是气泡间距」——原来写死 2（靠上一串末尾那 12 撑着），
+                // 树屋把末尾 12 拿掉以后她和他几乎贴着、设置里调哪个都不动。换人这一截改归「轮与轮间距」管：
+                // 总空白 = 轮与轮间距（非树屋上一行底下还留着那 12，扣掉）
+                return max(0, CGFloat(chatTurnGap) - (theme.isTreehouse ? 0 : 12))
             }()
             // 0924 Kakao：一串消息的第一条露头像、名字、带尾巴的 01 图；后面几条用 02 图、头像位留空
             let kakaoHead: Bool = {
