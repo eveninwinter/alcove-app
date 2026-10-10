@@ -14097,11 +14097,61 @@ extension NativeCalendarView {
     }
 
     fileprivate func thTearHandle(_ m: [String: Any]) {
+        let rid = m["rid"] as? String ?? ""
         switch m["type"] as? String {
         case "back": dismiss()
         case "haptic": UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        default: break   // 右上菜单：她还没说放什么
+        // #3616 右上菜单＝待办：今日提醒（我加的 / 陈璟加的）＋添加；长按编辑 / 删掉。接口跟像素版日记页同一套 /api/reminders/*
+        case "todo": Task { await thTodoPush() }
+        case "todoDone":
+            Task {
+                _ = try? await NativeHouseAPI.object("/api/reminders/done", method: "POST",
+                                                      body: ["id": rid, "day": m["day"] as? String ?? "", "done": m["done"] as? Bool ?? false])
+                await thTodoPush()
+            }
+        case "todoDelete":
+            Task {
+                _ = try? await NativeHouseAPI.object("/api/reminders/delete", method: "POST", body: ["id": rid])
+                await thTodoPush()
+            }
+        case "todoAdd", "todoEdit":
+            let body = m["body"] as? [String: Any] ?? [:]
+            let path = (m["type"] as? String) == "todoEdit" ? "/api/reminders/update" : "/api/reminders/add"
+            Task {
+                var err: String?
+                if let obj = try? await NativeHouseAPI.objectIncludingHTTPError(path, method: "POST", body: body) {
+                    if obj["ok"] as? Bool != true { err = obj["error"] as? String ?? "没存上" }
+                } else {
+                    err = "连不上小屋"
+                }
+                var arg = "null"
+                if let e = err, let data = try? JSONSerialization.data(withJSONObject: [e]),
+                   let str = String(data: data, encoding: .utf8) {
+                    arg = String(str.dropFirst().dropLast())
+                }
+                thTearBridge.eval("window.__todoAdded && window.__todoAdded(\(arg))")
+                if err == nil { await thTodoPush() }
+            }
+        default: break
         }
+    }
+
+    /// 今天（北京）的提醒＋接下来几件，塞回网页 window.__todo
+    fileprivate func thTodoPush() async {
+        let today = thTearToday
+        let p = today.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return }
+        let items = await ReminderAPI.month(year: p[0], month: p[1]).filter { $0.day == today }
+            .sorted { $0.time < $1.time }
+        let next = await ReminderAPI.upcoming(8)
+        func pack(_ it: ReminderItem) -> [String: Any] {
+            ["rid": it.rid, "day": it.day, "time": it.time, "title": it.title, "note": it.note,
+             "rep": it.repeatLabel, "repeat": it.repeatKind, "alert": it.alertMin, "him": it.isHim, "done": it.done]
+        }
+        let d: [String: Any] = ["today": today, "items": items.map(pack), "next": next.map(pack)]
+        guard let data = try? JSONSerialization.data(withJSONObject: d),
+              let json = String(data: data, encoding: .utf8) else { return }
+        thTearBridge.eval("window.__todo && window.__todo(\(json))")
     }
 }
 

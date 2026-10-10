@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover, user-scalable=no">
 <title>Diary</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -75,6 +75,42 @@
   .np-title { margin: 7px 0 0; font-weight: 400; font-size: 16px; line-height: 1.45; letter-spacing: .02em; color: #141414; }
   .np-rule { width: 22px; height: .5px; margin: 11px 0 12px; background: #141414; }
   .np-body p { margin: 0 0 .9em; font-size: 10.5px; line-height: 2; letter-spacing: .03em; text-align: justify; }
+  /* 待办：右上菜单弹出，跟便签一个样子；左右两页：今日提醒 / 添加提醒 */
+  .todo { top: 76px; }
+  .td-sec { display: flex; align-items: center; gap: 6px; margin: 14px 0 2px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 7px; letter-spacing: .14em; color: #6E6E6E; }
+  .td-sec::after { content: ''; flex: 1; height: .5px; background: rgba(20,20,20,.14); }
+  .td-row { position: relative; display: flex; align-items: flex-start; gap: 8px; padding: 7px 0; border-bottom: .5px solid rgba(20,20,20,.07); }
+  .td-box { flex: none; width: 11px; height: 11px; margin-top: 3px; padding: 0; border: .7px solid #141414; background: none; display: flex; align-items: center; justify-content: center; cursor: pointer; }
+  .td-row.done .td-box { background: #141414; }
+  .td-time { flex: none; width: 30px; padding-top: 4px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 7.5px; color: #6E6E6E; }
+  .td-main { flex: 1; min-width: 0; }
+  .td-title { font-size: 10.5px; line-height: 1.7; letter-spacing: .03em; color: #141414; word-break: break-all; }
+  .td-row.done .td-title { color: #9A9A9A; text-decoration: line-through; text-decoration-thickness: .5px; }
+  .td-note { font-size: 8px; line-height: 1.6; color: #8A8A8A; word-break: break-all; }
+  .td-rep { flex: none; padding-top: 4px; font-size: 7px; color: #8A8A8A; }
+  .td-ask { position: absolute; inset: 0; display: flex; align-items: center; justify-content: flex-end; gap: 12px; background: rgba(252,252,250,.97); font-size: 8.5px; color: #6E6E6E; }
+  .td-ask button { padding: 4px 2px; border: 0; background: none; font-family: inherit; font-size: 9.5px; color: #141414; cursor: pointer; }
+  .td-ask .del { text-decoration: underline; text-underline-offset: 3px; text-decoration-thickness: .5px; }
+  .td-empty { padding: 7px 0; font-size: 8.5px; color: #9A9A9A; }
+  .td-next { display: flex; gap: 8px; padding: 4px 0; font-size: 8.5px; color: #6E6E6E; }
+  .td-next b { flex: none; width: 58px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 7px; padding-top: 1px; }
+  .td-next span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .td-next i { flex: none; font-style: normal; font-size: 7px; color: #9A9A9A; }
+  .td-hint { margin-top: 14px; font-size: 7.5px; line-height: 1.7; color: #8A8A8A; }
+  .td-hint.err { color: #141414; }
+  .tf { display: flex; align-items: center; gap: 8px; min-height: 30px; padding: 4px 0; border-bottom: .5px solid rgba(20,20,20,.1); }
+  .tf > span { flex: none; width: 30px; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 7px; letter-spacing: .12em; color: #6E6E6E; }
+  .tf input { flex: 1; min-width: 0; margin: 0; padding: 0; border: 0; border-radius: 0; background: none; outline: none; -webkit-appearance: none; appearance: none;
+    font-family: inherit; font-size: 10.5px; color: #141414; -webkit-user-select: text; user-select: text; }
+  .tf input::placeholder { color: #B0B0B0; }
+  .tf input[type=date], .tf input[type=time] { flex: none; font-family: 'IBM Plex Mono', monospace; font-weight: 300; font-size: 9px; text-align: left; }
+  .pills { display: flex; flex-wrap: wrap; gap: 4px; }
+  .pill { padding: 2px 6px; border: .5px solid rgba(20,20,20,.25); background: none; font-family: inherit; font-size: 8px; color: #141414; cursor: pointer; }
+  .pill.on { background: #141414; border-color: #141414; color: #FCFCFA; }
+  .td-add { width: 100%; height: 30px; margin-top: 16px; border: .7px solid #141414; background: none; font-family: inherit; font-size: 10.5px; letter-spacing: .3em; color: #141414; cursor: pointer; }
+  .td-cancel { display: block; margin: 8px auto 0; padding: 4px 8px; border: 0; background: none; font-family: inherit; font-size: 8.5px; color: #8A8A8A; cursor: pointer; }
+  .td-cancel[hidden] { display: none; }
+  .td-add:disabled { opacity: .35; cursor: default; }
   .sr-only { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
 </style>
 </head>
@@ -115,6 +151,39 @@
     </div>
     <div class="note-pages" id="notePages"></div>
   </section>
+  <section class="note todo" id="todo" role="dialog" aria-label="待办" hidden>
+    <i class="br br-tr" aria-hidden="true"></i><i class="br br-bl" aria-hidden="true"></i><i class="sq" aria-hidden="true"></i>
+    <div class="note-top">
+      <span class="note-date" id="todoDate">10.10 · SAT</span>
+      <span class="note-count" id="todoCount"></span>
+      <button class="note-x" id="todoX" aria-label="关闭">
+        <svg width="10" height="10" viewBox="0 0 10 10" fill="none" stroke="#141414" stroke-width="1" stroke-linecap="round" aria-hidden="true"><path d="M1.5 1.5 L8.5 8.5 M8.5 1.5 L1.5 8.5"/></svg>
+      </button>
+    </div>
+    <div class="note-pages" id="todoPages">
+      <article class="np" aria-label="今日提醒">
+        <div class="np-meta" id="tdMeta">今日</div>
+        <h2 class="np-title">今日提醒</h2>
+        <div class="np-rule"></div>
+        <div id="tdList"></div>
+      </article>
+      <article class="np" aria-label="添加提醒">
+        <div class="np-meta" id="tfMeta">新的一条 · 标成「我加的」</div>
+        <h2 class="np-title" id="tfHead">添加提醒</h2>
+        <div class="np-rule"></div>
+        <label class="tf"><span>事项</span><input type="text" id="tfTitle" placeholder="要提醒什么…" maxlength="80" autocomplete="off"></label>
+        <div class="tf"><span>日期</span><input type="date" id="tfDay"></div>
+        <div class="tf"><span>全天</span><div class="pills"><button type="button" class="pill" id="tfAll">全天</button></div></div>
+        <div class="tf" id="tfTimeRow"><span>时间</span><input type="time" id="tfTime" value="09:30"></div>
+        <div class="tf"><span>重复</span><div class="pills" id="tfRep"></div></div>
+        <div class="tf"><span>提醒</span><div class="pills" id="tfAlert"></div></div>
+        <label class="tf"><span>备注</span><input type="text" id="tfNote" placeholder="可不填" maxlength="200" autocomplete="off"></label>
+        <button type="button" class="td-add" id="tfAdd" disabled>添加</button>
+        <button type="button" class="td-cancel" id="tfCancel" hidden>不改了</button>
+        <div class="td-hint" id="tfHint">到点后台告诉陈璟</div>
+      </article>
+    </div>
+  </section>
   <div class="ui fall">let it fall…</div>
   <p class="sr-only" id="todayText"></p>
 </div>
@@ -130,7 +199,7 @@
   // App 里：原生在文档开头塞 window.DIARY（真日记）和 window.TODAY_KEY；返回 / 菜单 / 长按震一下走 diary 通道
   const post = m => { try { window.webkit.messageHandlers.diary.postMessage(m); } catch (e) {} };
   document.getElementById('backBtn').addEventListener('click', () => post({ type: 'back' }));
-  document.getElementById('menuBtn').addEventListener('click', () => post({ type: 'menu' }));
+  document.getElementById('menuBtn').addEventListener('click', () => { if (window.__openTodo) window.__openTodo(); });
 
   /* ---------- 日记数据：接 AI 写的日记时，替换 DIARY 就行 ----------
      DIARY['2026-10-10'] = [{ time: '08:12', title: '风很大', text: '……' }, …]   title 可以没有 */
@@ -596,7 +665,7 @@
     const [x, y] = toDesign(e);
     closeCal();
     cancelPress();
-    if (noteOpen) return;
+    if (noteOpen || todoOpen) return;
     if (stream.length && nearTear(x, y) < 22) {
       pressAt = [x, y];
       pressTimer = setTimeout(() => { pressTimer = 0; finger.on = false; finger.hist = []; openNote(); }, 520);
@@ -606,7 +675,7 @@
   });
   canvas.addEventListener('pointermove', e => {
     const [x, y] = toDesign(e), now = performance.now();
-    if (noteOpen) return;
+    if (noteOpen || todoOpen) return;
     if (pressAt && Math.hypot(x - pressAt[0], y - pressAt[1]) > 12) cancelPress();
     if (e.pointerType === 'mouse' && !finger.on) Object.assign(finger, { on: true, x, y, vx: 0, vy: 0, hist: [] });
     if (!finger.on) return;
@@ -681,7 +750,7 @@
   }
   function openCal() { const t = parseKey(curKey); viewY = t.y; viewM = t.m; renderCal(); cal.hidden = false; dateBtn.setAttribute('aria-expanded', 'true'); }
   function closeCal() { if (!cal.hidden) { cal.hidden = true; dateBtn.setAttribute('aria-expanded', 'false'); } }
-  dateBtn.addEventListener('click', () => { if (noteOpen) return; cal.hidden ? openCal() : closeCal(); });
+  dateBtn.addEventListener('click', () => { if (noteOpen || todoOpen) return; cal.hidden ? openCal() : closeCal(); });
   document.getElementById('calPrev').addEventListener('click', () => { viewM--; if (viewM < 0) { viewM = 11; viewY--; } renderCal(); });
   document.getElementById('calNext').addEventListener('click', () => { viewM++; if (viewM > 11) { viewM = 0; viewY++; } renderCal(); });
   calGrid.addEventListener('click', e => { const b = e.target.closest('.cal-day'); if (!b || b.disabled) return; closeCal(); selectDay(b.dataset.k); });
@@ -728,6 +797,153 @@
     note.style.height = Math.max(240, Math.min(400, fh - 343 - 74)) + 'px';
   }
   window.__placeNote = placeNote;
+
+  /* ---------- 待办：右上菜单 → 今日提醒 / 添加提醒；数据和增删改都交给原生（App 里 thTodo*） ---------- */
+  const $ = id => document.getElementById(id);
+  const todo = $('todo'), todoPages = $('todoPages'), tdList = $('tdList');
+  let todoOpen = false, todoData = null, askRid = null, askTimer = 0, askAt = null;
+  const CHECK = '<svg width="7" height="6" viewBox="0 0 7 6" fill="none" stroke="#FCFCFA" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M1 3 L2.8 4.8 L6 1.2"/></svg>';
+  function setTodoDots(i) {
+    $('todoCount').innerHTML = `${i + 1} / 2` + [0, 1].map(j => `<span class="d${j === i ? ' on' : ''}"></span>`).join('');
+  }
+  function todoRow(x) {
+    return `<div class="td-row${x.done ? ' done' : ''}" data-rid="${esc(x.rid)}" data-day="${esc(x.day)}">
+      <button class="td-box" aria-label="${x.done ? '标成没做' : '标成做完了'}">${x.done ? CHECK : ''}</button>
+      <span class="td-time">${esc(x.time || '全天')}</span>
+      <div class="td-main"><div class="td-title">${esc(x.title)}</div>${x.note ? `<div class="td-note">${esc(x.note)}</div>` : ''}</div>
+      ${x.rep ? `<span class="td-rep">${esc(x.rep)}</span>` : ''}
+      ${askRid === x.rid ? `<div class="td-ask"><button class="edit">编辑</button><button class="del">${x.rep ? '删掉（整串）' : '删掉'}</button><button class="keep">算了</button></div>` : ''}
+    </div>`;
+  }
+  function renderTodo() {
+    const today = (todoData && todoData.today) || TODAY_KEY, list = todoData ? todoData.items : null;
+    $('todoDate').textContent = `${mmdd(today)} · ${WD[parseKey(today).wd].slice(0, 3)}`;
+    $('tdMeta').textContent = list ? `${mmdd(today)} · ${list.length} 件 · ${list.filter(x => x.done).length} 件做完` : '…';
+    if (!list) { tdList.innerHTML = '<div class="td-empty">正在拿…</div>'; return; }
+    const sec = (label, xs) => `<div class="td-sec">${label} · ${xs.length}</div>` + (xs.length ? xs.map(todoRow).join('') : '<div class="td-empty">今天没有</div>');
+    let h = sec('我加的', list.filter(x => !x.him)) + sec('陈璟加的', list.filter(x => x.him));
+    const next = (todoData.next || []).filter(x => x.day > today).slice(0, 3);
+    if (next.length) h += '<div class="td-sec">接下来</div>' + next.map(x =>
+      `<div class="td-next"><b>${mmdd(x.day)} ${esc(x.time || '全天')}</b><span>${esc(x.title)}</span><i>${x.him ? '陈璟' : '我'}</i></div>`).join('');
+    h += '<div class="td-hint">点方框打勾 · 长按一条编辑或删掉 · 往左滑添加</div>';
+    tdList.innerHTML = h;
+  }
+  function openTodo() {
+    closeCal(); closeNote();
+    todo.hidden = false; todo.classList.remove('out'); todoOpen = true;
+    finger.on = false; finger.hist = [];
+    askRid = null;
+    todoPages.scrollLeft = 0; setTodoDots(0);
+    if (!tfDay.value) { tfDay.value = TODAY_KEY; tfDay.min = TODAY_KEY; }
+    renderTodo();
+    post({ type: 'todo' });
+  }
+  function closeTodo() {
+    if (!todoOpen) return;
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    todoOpen = false; todo.classList.add('out');
+    if (editing) endEdit();
+    setTimeout(() => { if (!todoOpen) todo.hidden = true; }, 220);
+  }
+  window.__openTodo = openTodo;
+  window.__todo = d => { todoData = d; if (askRid && !d.items.some(x => x.rid === askRid)) askRid = null; renderTodo(); };
+  $('todoX').addEventListener('click', closeTodo);
+  todoPages.addEventListener('scroll', () => setTodoDots(Math.round(todoPages.scrollLeft / Math.max(1, todoPages.clientWidth))), { passive: true });
+  const findItem = row => todoData && todoData.items.find(x => x.rid === row.dataset.rid && x.day === row.dataset.day);
+  tdList.addEventListener('click', e => {
+    const row = e.target.closest('.td-row'); if (!row) return;
+    const x = findItem(row); if (!x) return;
+    if (e.target.closest('.edit')) {
+      askRid = null; renderTodo(); startEdit(x);
+    } else if (e.target.closest('.del')) {
+      askRid = null; todoData.items = todoData.items.filter(y => y.rid !== x.rid); renderTodo();
+      post({ type: 'todoDelete', rid: x.rid });
+    } else if (e.target.closest('.keep')) {
+      askRid = null; renderTodo();
+    } else if (e.target.closest('.td-box') && !askRid) {
+      x.done = !x.done; renderTodo();
+      post({ type: 'todoDone', rid: x.rid, day: x.day, done: x.done });
+    }
+  });
+  const cancelAsk = () => { clearTimeout(askTimer); askTimer = 0; askAt = null; };
+  tdList.addEventListener('pointerdown', e => {
+    cancelAsk();
+    const row = e.target.closest('.td-row');
+    if (!row || e.target.closest('.td-box') || e.target.closest('.td-ask')) return;
+    askAt = [e.clientX, e.clientY];
+    askTimer = setTimeout(() => { askTimer = 0; askRid = row.dataset.rid; renderTodo(); post({ type: 'haptic' }); }, 520);
+  });
+  tdList.addEventListener('pointermove', e => { if (askAt && Math.hypot(e.clientX - askAt[0], e.clientY - askAt[1]) > 10) cancelAsk(); });
+  tdList.addEventListener('pointerup', cancelAsk);
+  tdList.addEventListener('pointercancel', cancelAsk);
+
+  // 添加：跟原来新建提醒那张卡一样的几样——事项、日期、全天、时间、重复、提前多久、备注
+  const tfTitle = $('tfTitle'), tfDay = $('tfDay'), tfTime = $('tfTime'), tfNote = $('tfNote'), tfAdd = $('tfAdd'), tfHint = $('tfHint'), tfAll = $('tfAll');
+  const REPS = [['none', '不重复'], ['daily', '每天'], ['weekly', '每周'], ['monthly', '每月'], ['yearly', '每年']];
+  const ALERTS = [[0, '准时'], [60, '提前1小时'], [1440, '提前1天']];
+  let tfRep = 'none', tfAlert = 60, tfAllDay = false, tfSaving = false, editing = null;
+  const repPills = () => pills($('tfRep'), REPS, tfRep, v => { tfRep = v; });
+  const alertPills = () => pills($('tfAlert'), ALERTS, tfAlert, v => { tfAlert = v; });
+  const setAllDay = on => { tfAllDay = on; tfAll.classList.toggle('on', on); $('tfTimeRow').style.display = on ? 'none' : ''; };
+  // 编辑：第二页换成「编辑提醒」带入原来的内容；后端只能整串改，重复的没动日期就不送 day（免得把起始那天挪走）
+  function startEdit(x) {
+    editing = x;
+    tfTitle.value = x.title; tfNote.value = x.note || '';
+    tfDay.min = ''; tfDay.value = x.day;
+    setAllDay(!x.time); if (x.time) tfTime.value = x.time;
+    tfRep = x.repeat || 'none'; tfAlert = x.alert || 0;
+    if (!ALERTS.some(([v]) => v === tfAlert)) ALERTS.push([tfAlert, `提前${tfAlert}分钟`]);
+    repPills(); alertPills();
+    $('tfHead').textContent = '编辑提醒';
+    $('tfMeta').textContent = x.rep ? `${x.him ? '陈璟' : '我'}加的 · ${x.rep}重复，改的是整串` : `${x.him ? '陈璟' : '我'}加的`;
+    tfAdd.textContent = '保存'; $('tfCancel').hidden = false;
+    tfHint.classList.remove('err'); tfHint.textContent = '到点后台告诉陈璟';
+    tfCheck();
+    todoPages.scrollTo({ left: todoPages.clientWidth, behavior: 'smooth' });
+  }
+  function endEdit() {
+    editing = null;
+    tfTitle.value = ''; tfNote.value = '';
+    tfDay.value = TODAY_KEY; tfDay.min = TODAY_KEY;
+    setAllDay(false); tfTime.value = '09:30';
+    tfRep = 'none'; tfAlert = 60; repPills(); alertPills();
+    $('tfHead').textContent = '添加提醒'; $('tfMeta').textContent = '新的一条 · 标成「我加的」';
+    tfAdd.textContent = '添加'; $('tfCancel').hidden = true;
+    tfHint.classList.remove('err'); tfHint.textContent = '到点后台告诉陈璟';
+    tfCheck();
+  }
+  function pills(el, opts, cur, set) {
+    el.innerHTML = opts.map(([v, t]) => `<button type="button" class="pill${v === cur ? ' on' : ''}" data-v="${v}">${t}</button>`).join('');
+    el.onclick = e => { const b = e.target.closest('.pill'); if (!b) return; const o = opts.find(([v]) => String(v) === b.dataset.v); set(o[0]); pills(el, opts, o[0], set); };
+  }
+  repPills(); alertPills();
+  tfAll.addEventListener('click', () => setAllDay(!tfAllDay));
+  $('tfCancel').addEventListener('click', () => { endEdit(); todoPages.scrollTo({ left: 0, behavior: 'smooth' }); });
+  const tfCheck = () => { tfAdd.disabled = tfSaving || !tfTitle.value.trim() || !tfDay.value; };
+  tfTitle.addEventListener('input', tfCheck); tfDay.addEventListener('change', tfCheck);
+  tfAdd.addEventListener('click', () => {
+    if (tfAdd.disabled) return;
+    tfSaving = true; tfCheck(); tfAdd.textContent = '…';
+    tfHint.classList.remove('err'); tfHint.textContent = '到点后台告诉陈璟';
+    const body = { title: tfTitle.value.trim(), day: tfDay.value, time: tfAllDay ? '' : (tfTime.value || '09:30'), all_day: tfAllDay,
+                   repeat: tfRep, alert_min: tfAlert, note: tfNote.value.trim() };
+    if (editing) {
+      body.id = editing.rid;
+      if (editing.repeat && editing.repeat !== 'none' && tfDay.value === editing.day) delete body.day;
+      post({ type: 'todoEdit', body });
+    } else {
+      body.author = 'user';
+      post({ type: 'todoAdd', body });
+    }
+  });
+  window.__todoAdded = err => {
+    tfSaving = false; tfAdd.textContent = editing ? '保存' : '添加';
+    if (err) { tfHint.classList.add('err'); tfHint.textContent = err; tfCheck(); return; }
+    if (editing) endEdit();
+    tfTitle.value = ''; tfNote.value = ''; tfCheck();
+    if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+    todoPages.scrollTo({ left: 0, behavior: 'smooth' });
+  };
   placeNote(H / 2);
   setDay(curKey);
 
