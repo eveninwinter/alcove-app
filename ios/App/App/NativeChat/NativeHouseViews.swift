@@ -12140,6 +12140,10 @@ private struct NativeCalendarView: View {
     @State private var thShowPicker = false            // 月份旁边的小箭头 → 日历挑月份和日子
     @State private var thShowNew = false               // 新增日程
     @State private var thReading: TreehouseDiaryRead?  // 点日记读全文
+    // 1010 #3613 树屋日记换成她的「泪」那页（diary-tear.html），见文件后面 treehouseTearBody
+    @State private var thTearJSON: String?
+    @State private var thTearLoaded = false
+    @State private var thTearBridge = TreehouseDreamsBridge()
 
     /// 阅读页（DiaryReader）还是原来那套梅花
     private var palette: DiaryPalette { _ = houseAppearance; return DiaryPalette(dark: AlcoveAppearance.isDark) }
@@ -12169,7 +12173,7 @@ private struct NativeCalendarView: View {
 
     var body: some View {
         if AlcoveAppearance.family(of: themeName) == "treehouse" {
-            treehouseBody
+            treehouseTearBody
         } else {
             pixelBody
         }
@@ -13956,6 +13960,148 @@ private struct TreehouseDreamsWeb: UIViewRepresentable {
 
     static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "dreams")
+    }
+}
+
+// MARK: - 1010 #3613 树屋日记换成她的「泪」：diary-tear.html 原样装进 App（App/Treehouse/），原生只喂日记
+//
+// 照片上的泪是选中那天的日记按顺序流，底下字海是全部日记的字打乱；长按泪出全文、点日期出月历都在网页里。
+// 原生在文档开头塞 window.DIARY = { 'YYYY-MM-DD': [{ time, title, text }] } 和 window.TODAY_KEY（北京时间），
+// 返回 / 菜单 / 长按震一下走 diary 通道。日程提醒不在这页了（她还没想好放哪），年轮那版 treehouseBody 和提醒的代码都留着。
+
+private struct TreehouseTearWeb: UIViewRepresentable {
+    let diaryJSON: String
+    let todayKey: String
+    let bridge: TreehouseDreamsBridge
+
+    func makeUIView(context: Context) -> WKWebView {
+        let uc = WKUserContentController()
+        uc.addUserScript(WKUserScript(source: "window.DIARY = \(diaryJSON); window.TODAY_KEY = '\(todayKey)';",
+                                      injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        uc.add(bridge, name: "diary")
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController = uc
+        let wv = WKWebView(frame: .zero, configuration: cfg)
+        let paper = UIColor(red: 0xF6/255, green: 0xF6/255, blue: 0xF4/255, alpha: 1)
+        wv.isOpaque = false
+        wv.backgroundColor = paper
+        wv.scrollView.backgroundColor = paper
+        wv.scrollView.isScrollEnabled = false
+        wv.scrollView.bounces = false
+        wv.scrollView.contentInsetAdjustmentBehavior = .never
+        wv.allowsLinkPreview = false
+        bridge.webView = wv
+        if let url = Bundle.main.url(forResource: "diary-tear", withExtension: "html", subdirectory: "Treehouse") {
+            wv.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
+        }
+        return wv
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "diary")
+    }
+}
+
+extension NativeCalendarView {
+    var treehouseTearBody: some View {
+        let paper = Color(red: 0xF6/255, green: 0xF6/255, blue: 0xF4/255)
+        return ZStack {
+            paper.ignoresSafeArea()
+            if let json = thTearJSON {
+                // 网页是按 390 宽排死的，顶上那排（返回 / Diary / 菜单）离顶 35，不让开安全区会钻到灵动岛底下
+                TreehouseTearWeb(diaryJSON: json, todayKey: thTearToday, bridge: thTearBridge)
+            } else if thTearLoaded {
+                // 一篇都没拉到：别让网页掉回成品里的示例日记
+                VStack(spacing: 14) {
+                    Text("Diary").font(.system(size: 30, design: .serif)).italic()
+                    Text("还没有日记").font(WindowFont.swiftUI(13)).foregroundColor(Color(red: 0x6E/255, green: 0x6E/255, blue: 0x6E/255))
+                }
+            }
+            if thTearJSON == nil {
+                VStack {
+                    HStack {
+                        Button { dismiss() } label: {
+                            Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        Spacer()
+                    }
+                    Spacer()
+                }
+                .padding(.leading, 10)
+                .padding(.top, max(safeTop, 20))
+                .ignoresSafeArea()
+            }
+        }
+        .foregroundColor(Color(red: 0x14/255, green: 0x14/255, blue: 0x14/255))
+        .task {
+            thTearBridge.onMessage = { m in thTearHandle(m) }
+            await thTearLoad()
+        }
+    }
+
+    /// 北京时间的今天（这台机器和手机的钟都可能不在北京）
+    fileprivate var thTearToday: String {
+        var cal = Calendar(identifier: .gregorian)
+        cal.timeZone = TimeZone(identifier: "Asia/Shanghai") ?? .current
+        let c = cal.dateComponents([.year, .month, .day], from: Date())
+        return String(format: "%04d-%02d-%02d", c.year ?? 0, c.month ?? 0, c.day ?? 0)
+    }
+
+    fileprivate func thTearLoad() async {
+        WindowFont.requestSongti()
+        let list = (try? await NativeHouseAPI.array("/api/diary/entries")) ?? []
+        var days: [String: [[String: Any]]] = [:]
+        for e in list.sorted(by: { $0.string("ts") < $1.string("ts") }) {
+            let ts = e.string("ts")
+            guard ts.count >= 10 else { continue }
+            let (title, text) = thTearClean(e)
+            guard !text.isEmpty else { continue }
+            let time = ts.count >= 16 ? String(ts.dropFirst(11).prefix(5)) : ""
+            days[String(ts.prefix(10)), default: []].append(["time": time, "title": title, "text": text])
+        }
+        if !days.isEmpty,
+           let data = try? JSONSerialization.data(withJSONObject: days),
+           let s = String(data: data, encoding: .utf8) {
+            thTearJSON = s
+        }
+        thTearLoaded = true
+    }
+
+    /// 一篇日记 → 标题＋正文。他写的第一行多半是「10月10日 · 标题」那种抬头：抬头去掉，「·」后面那截当标题
+    /// （没有就让网页取第一句）；正文里的 ** / # / --- 这些记号擦掉，连着的空行并成一行
+    fileprivate func thTearClean(_ e: [String: Any]) -> (String, String) {
+        var lines = e.string("content").replacingOccurrences(of: "\r", with: "").components(separatedBy: "\n")
+        var title = ""
+        if let first = lines.first, first.range(of: #"^\s*\d{1,2}月\d{1,2}日"#, options: .regularExpression) != nil {
+            var rest = first
+            if let r = rest.range(of: #"^.*?日\s*[·・]?\s*"#, options: .regularExpression) { rest.removeSubrange(r) }
+            rest = rest.replacingOccurrences(of: #"\d{1,2}[:：]\d{2}"#, with: "", options: .regularExpression)
+                .trimmingCharacters(in: CharacterSet(charactersIn: "·・-—,，。:：").union(.whitespaces))
+            if rest.count >= 2 { title = rest }
+            lines.removeFirst()
+        }
+        let named = thTitle(e.string("title"), cut: false).trimmingCharacters(in: .whitespaces)
+        if !named.isEmpty { title = named }
+        let body = lines
+            .map { $0.replacingOccurrences(of: "**", with: "")
+                    .replacingOccurrences(of: #"^\s*#+\s*"#, with: "", options: .regularExpression) }
+            .filter { $0.trimmingCharacters(in: .whitespaces).range(of: #"^[-—*_]{3,}$"#, options: .regularExpression) == nil }
+            .joined(separator: "\n")
+            .replacingOccurrences(of: #"\n{2,}"#, with: "\n", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (title, body)
+    }
+
+    fileprivate func thTearHandle(_ m: [String: Any]) {
+        switch m["type"] as? String {
+        case "back": dismiss()
+        case "haptic": UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        default: break   // 右上菜单：她还没说放什么
+        }
     }
 }
 
