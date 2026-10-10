@@ -792,6 +792,8 @@ struct ObliqueText: UIViewRepresentable {
     let color: UIColor
     var lineSpacing: CGFloat = 0
     var slant: CGFloat = 0.22
+    /// 1011：只要倾斜、不换字体的时候传（小脚印照旧用系统衬线）；不传就是思绪那款宋体
+    var font: UIFont? = nil
 
     func makeUIView(context: Context) -> UILabel {
         let l = UILabel()
@@ -804,7 +806,9 @@ struct ObliqueText: UIViewRepresentable {
 
     func updateUIView(_ l: UILabel, context: Context) {
         var font = UIFont.systemFont(ofSize: size)
-        if let n = ThoughtFont.registeredName, let f = UIFont(name: n, size: size) {
+        if let given = self.font {
+            font = given
+        } else if let n = ThoughtFont.registeredName, let f = UIFont(name: n, size: size) {
             font = f
         } else {
             KakaoPackStore.shared.ensureFont(id: KakaoPackStore.thoughtFontID)   // 没这款字就去下，下完重画
