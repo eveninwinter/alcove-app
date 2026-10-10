@@ -400,8 +400,9 @@ struct RootView: View {
                     }
                     VStack(alignment: .leading, spacing: 1) {
                         Text(UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟")
-                            .font(.system(size: 18, design: .serif))
-                            .tracking(2.5)
+                            .font(.custom("PinyonScript-Regular", size: 24))
+                            .tracking(0)
+                            .lineLimit(1)
                         Text(treehouseHeader.model.isEmpty ? " " : treehouseHeader.model)
                             // 1010 #3563 她：模型名换 Cormorant 斜体，12.5 → 15
                             .font(.custom("CormorantGaramondItalic-MediumItalic", size: 15))

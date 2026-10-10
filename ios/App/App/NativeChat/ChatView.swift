@@ -953,7 +953,8 @@ struct ChatView: View {
     // 这个函数体里全是 if / let / Group，本来就该是 ViewBuilder，加了 kakaoHead 那段之后编译器不再替它兜底
     /// 能不能并：树屋 + 整个模式 + 他说的 + 干干净净一段字（没图、没语音、没表情、不是卡片）
     private func thPlainText(_ m: ChatMessage) -> Bool {
-        guard theme.isTreehouse, treehouseWholeBubble, m.role == "assistant" else { return false }
+        // 多选时恢复原消息段，合并仅用于普通浏览，不改变删除粒度。
+        guard theme.isTreehouse, treehouseWholeBubble, !paragraphSelectionMode, m.role == "assistant" else { return false }
         let t = m.msgType ?? ""
         guard t.isEmpty || t == "text" else { return false }
         guard m.stickerId == nil, m.inlineImages.isEmpty, (m.attachmentUrl ?? "").isEmpty,
@@ -1119,7 +1120,12 @@ struct ChatView: View {
                     },
                     onBeginParagraphSelection: {
                         paragraphSelectionMode = true
-                        selectedParagraphIDs.formUnion(rowSelectionIDs)
+                        // 合并泡展开后由她逐段选，不默认把整轮全部勾上。
+                        if mergeRun > 1 {
+                            selectedParagraphIDs.removeAll()
+                        } else {
+                            selectedParagraphIDs.formUnion(rowSelectionIDs)
+                        }
                         inputFocused = false
                     },
                     onToggleParagraphSelection: {
@@ -7157,6 +7163,30 @@ final class TreehouseHeaderModel: ObservableObject {
 
 /// 树屋顶栏底下那根线：细灰轨道、黑色实心段＝上下文用了多少、头上一颗电光蓝圆点（她成品 progress line）。
 /// tmux / SDK 读 /api/sdk-shadow/status 里当前通道那份，API 房间读 /api/api-room/context；隔 8 秒问一次
+/// 已用段逐渐变厚，末端用短曲线收回底线；无圆点或光晕。
+private struct TreehouseProgressStroke: Shape {
+    func path(in rect: CGRect) -> Path {
+        let w = rect.width, mid = rect.midY
+        let thin = min(0.25, rect.height / 2)
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: mid - thin))
+        p.addCurve(to: CGPoint(x: w * 0.82, y: rect.minY),
+                   control1: CGPoint(x: w * 0.3, y: mid - thin),
+                   control2: CGPoint(x: w * 0.64, y: rect.minY))
+        p.addCurve(to: CGPoint(x: w, y: mid),
+                   control1: CGPoint(x: w * 0.92, y: rect.minY),
+                   control2: CGPoint(x: w * 0.95, y: mid))
+        p.addCurve(to: CGPoint(x: w * 0.82, y: rect.maxY),
+                   control1: CGPoint(x: w * 0.95, y: mid),
+                   control2: CGPoint(x: w * 0.92, y: rect.maxY))
+        p.addCurve(to: CGPoint(x: 0, y: mid + thin),
+                   control1: CGPoint(x: w * 0.64, y: rect.maxY),
+                   control2: CGPoint(x: w * 0.3, y: mid + thin))
+        p.closeSubpath()
+        return p
+    }
+}
+
 struct TreehouseContextLine: View {
     let room: String
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""   // #3518 白天 / 黑夜一翻就重画
@@ -7215,14 +7245,18 @@ struct TreehouseContextLine: View {
     private var line: some View {
         GeometryReader { geo in
             let w = geo.size.width
-            let x = max(4, w * ratio)
+            let x = w * min(1, max(0, ratio))
             ZStack(alignment: .leading) {
-                Rectangle().fill(TreehouseInk.ink.opacity(0.22)).frame(height: 1)
-                Capsule().fill(TreehouseInk.ink).frame(width: x, height: 3)
-                Circle().fill(TreehouseInk.blue)
-                    .frame(width: 8, height: 8)
-                    .shadow(color: TreehouseInk.blue.opacity(0.55), radius: 3)
-                    .offset(x: x - 4)
+                Rectangle().fill(TreehouseInk.ink.opacity(0.18)).frame(height: 0.6)
+                TreehouseProgressStroke()
+                    .fill(LinearGradient(stops: [
+                        .init(color: TreehouseInk.ink.opacity(0.28), location: 0),
+                        .init(color: TreehouseInk.ink.opacity(0.62), location: 0.45),
+                        .init(color: TreehouseInk.ink.opacity(0.95), location: 0.82),
+                        .init(color: TreehouseInk.ink.opacity(0.65), location: 0.93),
+                        .init(color: TreehouseInk.ink.opacity(0), location: 1),
+                    ], startPoint: .leading, endPoint: .trailing))
+                    .frame(width: x, height: 3)
             }
             .frame(height: 8)
             .animation(.easeOut(duration: 0.4), value: ratio)
