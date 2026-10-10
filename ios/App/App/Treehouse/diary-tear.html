@@ -615,8 +615,10 @@
   function fit() {
     // 1010 晚 她：「安全区不够 标题被遮住了一点」——整页排在状态栏 / 灵动岛下面、底部横条上面
     const cs = getComputedStyle(safeProbe);
-    const st = Math.max(parseFloat(cs.paddingTop) || 0, +window.SAFE_TOP || 0);
-    const sb = Math.max(parseFloat(cs.paddingBottom) || 0, +window.SAFE_BOTTOM || 0);
+    // 1010 晚 她：「安全区空了多少」——她的稿子顶上本来就留了 40 多的空、底下留了 20 多，
+    // 上一版又整条让开状态栏 / 底部横条，等于让了两遍。只让不够的那点：顶上 −40、底下 −20
+    const st = Math.max(0, Math.max(parseFloat(cs.paddingTop) || 0, +window.SAFE_TOP || 0) - 40);
+    const sb = Math.max(0, Math.max(parseFloat(cs.paddingBottom) || 0, +window.SAFE_BOTTOM || 0) - 20);
     // 1010 晚 她：待办里点输入框，键盘一弹整页缩成一小块、收了键盘也回不去。
     // 页面高度只认「最高的那次」：键盘弹出来窗口变矮不重排，只有宽度变了（转屏）才重新量
     if (!fitBase.h || Math.abs(innerWidth - fitBase.w) > 1) { fitBase.w = innerWidth; fitBase.h = innerHeight; }
@@ -1154,7 +1156,7 @@
       f.size = f.size0 * (1 - .22 * clamp((f.y - f.y0) / 220, 0, 1));
       if (f.vy > 0 && f.y >= f.land) {
         const z = clamp((f.land - SEA_TOP) / SEA_SPAN, 0, 1);
-        f.sink = T; f.y = f.land; addRipple(f.x, f.land, clamp(f.size / 16, .55, 1) * (.75 + .5 * z) * (f.steady ? .5 : 1));   // 连成线以后每个字都砸，水花减半
+        f.sink = T; f.y = f.land; addRipple(f.x, f.land, clamp(f.size / 16, .55, 1) * (.75 + .5 * z));
       } else if (f.x < -60 || f.x > W + 60 || f.y > H + 40) free.splice(n, 1);
     }
 
