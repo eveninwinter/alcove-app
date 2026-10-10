@@ -372,8 +372,9 @@ struct RootView: View {
                 Button {
                     NotificationCenter.default.post(name: .alcoveOpenRoomPicker, object: nil)
                 } label: {
-                    Image(systemName: "door.left.hand.open")
-                        .font(.system(size: 19, weight: .regular))
+                    // 1010 #3588 她：顶栏图标照她给的那张图抄（门 / 电话 / 音符 / 菜单），不要手画、不要系统图标
+                    treehouseIcon(TreehouseDoorIcon(), TreehouseDoorIcon.size)
+                        .offset(x: -2)   // 她图里门的中心离屏幕左边 28，44 宽的框居中是 30
                         .frame(width: 44, height: 44)
                         .contentShape(Rectangle())
                 }
@@ -415,7 +416,9 @@ struct RootView: View {
                 .onTapGesture(count: 2) { sendPat() }
                 .onTapGesture { openHeader() }
                 Spacer(minLength: 8)
-                HStack(alignment: .center, spacing: 18) {
+                // 1010 她那张图：心率数字、电话、音符、菜单之间净空 16–18，菜单离屏幕右边 17。
+                // 电话 / 音符 / 菜单的框左右各多 6 给手指点，所以间距 18 → 5（心率数字跟电话之间补回去）
+                HStack(alignment: .center, spacing: 5) {
                     if let bpm = treehouseHeader.bpm {
                         HStack(spacing: 7) {
                             // 1009 #3522–3523 她：「把小圆点换成爱心 你手画一个」——照她发的那张，一笔斜着来回涂满的心（F 那颗）
@@ -428,21 +431,22 @@ struct RootView: View {
                         }
                         .fixedSize(horizontal: true, vertical: false)
                         .layoutPriority(1)
+                        .padding(.trailing, 5)
                     }
                     Button { activeCall = .outgoing } label: {
-                        Image(systemName: "phone").font(.system(size: 18, weight: .light))
-                            .frame(width: 24, height: 44).contentShape(Rectangle())
+                        treehouseIcon(TreehousePhoneIcon(), TreehousePhoneIcon.size)
+                            .frame(width: TreehousePhoneIcon.size.width + 12, height: 44).contentShape(Rectangle())
                     }
                     if listenMusic.nowPlaying != nil {
                         Button { presentHouse(.music) } label: {
-                            Image(systemName: "music.note").font(.system(size: 17, weight: .light))
-                                .frame(width: 22, height: 44).contentShape(Rectangle())
+                            treehouseIcon(TreehouseNoteIcon(), TreehouseNoteIcon.size)
+                                .frame(width: TreehouseNoteIcon.size.width + 12, height: 44).contentShape(Rectangle())
                         }
                         .transition(.opacity.combined(with: .scale(scale: 0.7)))
                     }
                     Button { presentHouse(.sidebar) } label: {
-                        Image(systemName: "line.3.horizontal").font(.system(size: 18, weight: .light))
-                            .frame(width: 24, height: 44).contentShape(Rectangle())
+                        treehouseIcon(TreehouseMenuIcon(), TreehouseMenuIcon.size, lineWidth: 0.85)
+                            .frame(width: TreehouseMenuIcon.size.width + 12, height: 44).contentShape(Rectangle())
                     }
                 }
                 .buttonStyle(.plain)
@@ -451,7 +455,7 @@ struct RootView: View {
             .foregroundColor(ink)
             .shadow(color: TreehouseInk.fog, radius: 2)
             .shadow(color: TreehouseInk.fog, radius: 5)
-            .padding(.leading, 8).padding(.trailing, 16)
+            .padding(.leading, 8).padding(.trailing, 11)   // 菜单框右边多的 6 算进去，线离屏幕右边 17
             TreehouseContextLine(room: chatRoom)
                 .padding(.horizontal, 16)
                 .padding(.top, 14)   // 1009 晚 她：「进度条往上一丢丢」22 → 14
@@ -469,6 +473,12 @@ struct RootView: View {
                 .ignoresSafeArea(edges: .top)
                 .allowsHitTesting(false)
         }
+    }
+
+    /// 树屋顶栏照她图描的线图标：按图里的原尺寸画，颜色跟顶栏墨色走
+    private func treehouseIcon<S: Shape>(_ shape: S, _ size: CGSize, lineWidth: CGFloat = 1) -> some View {
+        shape.stroke(style: StrokeStyle(lineWidth: lineWidth, lineCap: .round, lineJoin: .round))
+            .frame(width: size.width, height: size.height)
     }
 
     // 0822 她要的 iMessage 同款顶栏：大头像居中（点了照样进终端页），名字在下；
