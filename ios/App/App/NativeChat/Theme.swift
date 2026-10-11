@@ -141,6 +141,7 @@ struct AlcoveTheme {
     static let paperDark = midnight.paperCopy(dark: true)
     static let messages = haven.messagesCopy(dark: false)
     static let messagesDark = midnight.messagesCopy(dark: true)
+    // 1011 她改名：设置里显示 Sanctus · 圣哉。代码、存的键、图和文件夹都还叫 treehouse（她定的「只改名字」）
     static let treehouse = haven.treehouseCopy()
     static let treehouseNight = haven.treehouseCopy(dark: true)
 

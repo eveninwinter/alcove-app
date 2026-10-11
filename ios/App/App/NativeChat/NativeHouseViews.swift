@@ -1386,7 +1386,8 @@ private struct NativeSettingsView: View {
                             Color(red: 0x3A/255, green: 0x1D/255, blue: 0x1D/255)
                         ])
                         // 1009 #3501 她要的第四个：树屋（聊天页、日记页照她的两个成品画；抽屉设置这些借纸页，深浅跟全屋按钮）
-                        familyChoice("树屋", "住在树上", "treehouse", [
+                        // 1011 #3661–3666 她改名 Sanctus · 圣哉（只改显示名，代码里还叫 treehouse）
+                        familyChoice("Sanctus", "圣哉", "treehouse", [
                             Color(red: 0x9F/255, green: 0xD0/255, blue: 0xC2/255),
                             Color(red: 0xF2/255, green: 0xB8/255, blue: 0xC8/255),
                             Color(red: 0x2A/255, green: 0x2B/255, blue: 0x33/255)
@@ -1957,7 +1958,7 @@ private struct BubbleAppearanceSettingsView: View {
                 ForEach(paletteItems) { item in colorRow(item) }
             }
             Text(chatTheme.isTreehouse
-                 ? "树屋的气泡与颜色跟信息主题分开存；白天、黑夜各一套，跟全屋的日夜开关走；每项的默认只恢复该项。"
+                 ? "Sanctus 的气泡与颜色跟信息主题分开存；白天、黑夜各一套，跟全屋的日夜开关走；每项的默认只恢复该项。"
                  : "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                 .font(.system(size: 10))
                 .foregroundColor(panelTheme.textLight)
@@ -1976,14 +1977,14 @@ private struct BubbleAppearanceSettingsView: View {
 
                 // 0902 她要的：信息主题下自己调颜色。每项预设色块 + 自定义取色器 + 各自的「默认」
                 if chatTheme.isMessages {
-                    section(chatTheme.isTreehouse ? "颜色 · 树屋" : "颜色 · 信息主题") {
+                    section(chatTheme.isTreehouse ? "颜色 · Sanctus" : "颜色 · 信息主题") {
                         VStack(spacing: 12) {
                             // 树屋：普通 / 玻璃（#3519）＋「他的气泡分段还是整个」
                             if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                             ForEach(paletteItems) { item in colorRow(item) }
                         }
                         Text(chatTheme.isTreehouse
-                             ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。树屋跟信息主题那套分开存，各调各的；白天、黑夜各一套，跟全屋的日夜开关走。现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套"
+                             ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。Sanctus 跟信息主题那套分开存，各调各的；白天、黑夜各一套，跟全屋的日夜开关走。现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套"
                              : "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。夜里、白天各存一套，跟全屋的日夜开关走；普通、玻璃也各一套。现在调的是\(bubbleGlass ? "玻璃" : "普通")·\(chatTheme.isDark ? "夜里" : "白天")这套")
                             .font(.system(size: 10))
                             .foregroundColor(panelTheme.textLight)
