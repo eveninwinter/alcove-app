@@ -1015,15 +1015,26 @@ struct ChatView: View {
     /// 1011 她：「我是多选删除了一条气泡之后才这样的」——删掉带思绪的那条只清正文、留个空壳挂思绪；
     /// 树屋下这壳的思绪借给挂时间那条去画了（procHidden），壳自己一点不画，却还在列表里占一行、多吃一份气泡间距。
     /// 这种壳直接不进列表（跟「整个」模式被并走的那几条一样）
+    private func thIsShell(_ m: ChatMessage) -> Bool {
+        theme.isTreehouse && m.role == "assistant" && !m.pending && !m.isSticker && !m.isImage && !m.isAudio
+            && m.inlineImages.isEmpty && (m.attachmentUrl ?? "").isEmpty
+            && ((m.msgType ?? "").isEmpty || m.msgType == "text")
+            && m.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func thEmptyShell(at index: Int) -> Bool {
-        guard theme.isTreehouse else { return false }
-        let m = store.messages[index]
-        guard m.role == "assistant", !m.pending, !m.isSticker, !m.isImage, !m.isAudio,
-              m.inlineImages.isEmpty, (m.attachmentUrl ?? "").isEmpty,
-              (m.msgType ?? "").isEmpty || m.msgType == "text",
-              m.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        guard thIsShell(store.messages[index]) else { return false }
         if thStampHere(index) { return false }   // 挂时间的那条：时间 / 思绪那一排还在它身上
         return thProcRoute(index).hidden || !showProcessDots
+    }
+
+    /// 1011 她：「思绪和气泡之间的间距也是有大有小 … 大的那个我删了一个气泡」——删的是一轮第一条，
+    /// 时间 / 思绪那一排挂在壳上拿不掉；壳只剩这一排（底下自带 rowPartGap），列表又给它和下一条之间加一份气泡间距。
+    /// 把这份收回去：思绪到下一个泡的距离跟没删时（同一行里思绪＋rowPartGap＋泡）一样
+    private func thShellBottomTrim(at index: Int) -> CGFloat {
+        let m = store.messages[index]
+        guard thIsShell(m), m.trace.isEmpty, !thEmptyShell(at: index) else { return 0 }
+        return -CGFloat(chatBubbleGap)
     }
 
     @ViewBuilder
@@ -1232,6 +1243,7 @@ struct ChatView: View {
             }
             }
             .padding(.top, (newSoloTurn ? CGFloat(chatTurnGap) : 0) + roleGap)
+            .padding(.bottom, thShellBottomTrim(at: index))
             .id(message.id)
         }
     }
