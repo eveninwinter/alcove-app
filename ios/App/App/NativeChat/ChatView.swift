@@ -1412,10 +1412,24 @@ struct ChatView: View {
             j += 1
         }
         let s = stamp ?? head
+        // 1011 她：「这个memory怎么又跑到卡片上面去了？？时间戳这一行 是永远绑死的」——一轮打头是卡片、卡片上挂着召回，
+        // 挂时间那条自己又有思绪，原来就「不借」，卡片自己顶着一行 memory。改成：有不是卡片的挂时间那条时，
+        // 卡片一律不画自己那一行，召回并进时间那一行（挂时间那条自己没召回才并）
+        var cardRecall: RecallItem?
+        if stamp != nil {
+            for k in head..<j where k != s && thIsCard(msgs[k]) {
+                if let r = recallFor(index: k) { cardRecall = r; break }
+            }
+        }
         // 挂时间那条自己就有思绪：用它自己的，不借
-        guard let p = proc, s != p, !thHasProc(s) else { return (nil, nil, false) }
-        if index == s { return (msgs[p], recallFor(index: p), false) }
-        if index == p { return (nil, nil, true) }
+        let borrowed: Int? = { if let p = proc, p != s, !thHasProc(s) { return p }; return nil }()
+        if index == s {
+            if let p = borrowed { return (msgs[p], recallFor(index: p) ?? cardRecall, false) }
+            if recallFor(index: s) == nil, let r = cardRecall { return (nil, r, false) }
+            return (nil, nil, false)
+        }
+        if index == borrowed { return (nil, nil, true) }
+        if stamp != nil, thIsCard(msgs[index]) { return (nil, nil, true) }
         return (nil, nil, false)
     }
 
@@ -4169,7 +4183,7 @@ struct MessageRow: View {
     }
     /// 思绪那一排看哪条消息：平时就是自己，树屋借来的时候是 procSource
     private var pm: ChatMessage { procSource ?? msg }
-    private var pRecall: RecallItem? { procSource != nil ? procRecall : recall }
+    private var pRecall: RecallItem? { procSource != nil ? procRecall : (procRecall ?? recall) }   // 1011：没借思绪也能只借卡片上的召回
     /// 0820 她定的：跑命令那栏只放命令，思绪归思绪栏，两边彻底分开
     private var trailTools: [ActivityItem] { trailItems.filter { $0.kind == "tool" } }
     private var trailToolCount: Int { trailTools.count }
