@@ -1,0 +1,86 @@
+[
+  { "id": "kai-stroke", "name": "楷体 · 按笔顺", "type": "stroke" },
+  {
+    "id": "hershey-print",
+    "name": "英文单线印刷体",
+    "type": "hershey",
+    "face": "futural"
+  },
+  {
+    "id": "hershey-script",
+    "name": "英文单线花体",
+    "type": "hershey",
+    "face": "scripts"
+  },
+  {
+    "id": "linshiai",
+    "name": "淋湿爱",
+    "type": "centerline",
+    "file": "linshiai-1.ttf"
+  },
+  { "id": "yuhe", "name": "愈合", "type": "centerline", "file": "yuhe.ttf" },
+  {
+    "id": "huoxuai",
+    "name": "或许爱",
+    "type": "centerline",
+    "file": "huoxuai.ttf"
+  },
+  {
+    "id": "jianxue",
+    "name": "煎雪",
+    "type": "centerline",
+    "file": "jianxue.ttf"
+  },
+  {
+    "id": "chaoyong",
+    "name": "潮涌",
+    "type": "centerline",
+    "file": "chaoyong.ttf"
+  },
+  {
+    "id": "neozhisong",
+    "name": "霞鹜新致宋",
+    "type": "centerline",
+    "file": "neozhisong.ttf"
+  },
+  {
+    "id": "silkscreen",
+    "name": "Silkscreen",
+    "type": "centerline",
+    "file": "silkscreen.ttf"
+  },
+  {
+    "id": "pinyon",
+    "name": "Pinyon Script",
+    "type": "centerline",
+    "file": "PinyonScript-Regular.ttf",
+    "bundled": true
+  },
+  {
+    "id": "jbmono",
+    "name": "JetBrains Mono",
+    "type": "centerline",
+    "file": "jbmono.ttf"
+  },
+  {
+    "id": "tanugo",
+    "name": "Tanugo",
+    "type": "centerline",
+    "file": "Tanugo-R-TTF.ttf",
+    "bundled": true
+  },
+  {
+    "id": "akabara",
+    "name": "Akabara Cinderella",
+    "type": "centerline",
+    "file": "Akabara-Cinderella.ttf",
+    "bundled": true
+  },
+  {
+    "id": "cormorant",
+    "name": "Cormorant Garamond",
+    "type": "centerline",
+    "file": "CormorantGaramond-Medium.ttf",
+    "bundled": true
+  }
+]

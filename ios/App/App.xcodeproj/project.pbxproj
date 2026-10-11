@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		E10110000000000000000001 /* EmbroideryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E10110000000000000000002 /* EmbroideryView.swift */; };
+		E10110000000000000000003 /* Embroidery in Resources */ = {isa = PBXBuildFile; fileRef = E10110000000000000000004 /* Embroidery */; };
 		C0DE09080000000000000001 /* MistSplash in Resources */ = {isa = PBXBuildFile; fileRef = C0DE09080000000000000002 /* MistSplash */; };
 		7EE0C0DE0A1009000000F1B1 /* Treehouse in Resources */ = {isa = PBXBuildFile; fileRef = 7EE0C0DE0A1009000000F1F2 /* Treehouse */; };
 		C0DE09240000000000000001 /* Fonts in Resources */ = {isa = PBXBuildFile; fileRef = C0DE09240000000000000002 /* Fonts */; };
@@ -115,6 +117,8 @@
 /* End PBXCopyFilesBuildPhase section */
 
 /* Begin PBXFileReference section */
+		E10110000000000000000002 /* EmbroideryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EmbroideryView.swift; sourceTree = "<group>"; };
+		E10110000000000000000004 /* Embroidery */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Embroidery; sourceTree = "<group>"; };
 		C0DE09080000000000000002 /* MistSplash */ = {isa = PBXFileReference; lastKnownFileType = folder; path = MistSplash; sourceTree = "<group>"; };
 		7EE0C0DE0A1009000000F1F2 /* Treehouse */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Treehouse; sourceTree = "<group>"; };
 		C0DE09240000000000000002 /* Fonts */ = {isa = PBXFileReference; lastKnownFileType = folder; path = Fonts; sourceTree = "<group>"; };
@@ -268,6 +272,7 @@
 				AE8315E30A2147A4EBA22461 /* NativeChat */,
 				C0DE09080000000000000002 /* MistSplash */,
 				7EE0C0DE0A1009000000F1F2 /* Treehouse */,
+				E10110000000000000000004 /* Embroidery */,
 				C0DE09240000000000000002 /* Fonts */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -343,6 +348,7 @@
 				0D0101790978C3955D31EB1E /* RootView.swift */,
 				91B5E3F41A0D4C2B9E8F7021 /* NativeHouseAPI.swift */,
 				A2C6F4052B1E4D3C8F907132 /* NativeHouseViews.swift */,
+				E10110000000000000000002 /* EmbroideryView.swift */,
 				9F2000000000000000000001 /* SurfCollectionView.swift */,
 				34F66C325070B92D4F9F9758 /* ClawdView.swift */,
 				3B38F2E6CDFDA317AA6E2457 /* TerminalView.swift */,
@@ -467,6 +473,7 @@
 				504EC3121FED79650016851F /* LaunchScreen.storyboard in Resources */,
 				C0DE09080000000000000001 /* MistSplash in Resources */,
 				7EE0C0DE0A1009000000F1B1 /* Treehouse in Resources */,
+				E10110000000000000000003 /* Embroidery in Resources */,
 				C0DE09240000000000000001 /* Fonts in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
@@ -574,6 +581,7 @@
 				C3390367B9C7EF2C5CEC1265 /* RootView.swift in Sources */,
 				71A4D2E30F9C4B1A8D7E6F20 /* NativeHouseAPI.swift in Sources */,
 				82B5E3F41A0D4C2B9E8F7031 /* NativeHouseViews.swift in Sources */,
+				E10110000000000000000001 /* EmbroideryView.swift in Sources */,
 				9F1000000000000000000001 /* SurfCollectionView.swift in Sources */,
 				3F92AD591DAA424958B5F1C3 /* ClawdView.swift in Sources */,
 				39671499582C96157471DA5D /* TerminalView.swift in Sources */,

@@ -64,6 +64,7 @@ struct ChatView: View {
     @State private var olderPagingArmed = false
     @State private var showCamera = false
     @State private var showDocPicker = false
+    @State private var showEmbroidery = false
     @State private var showLocationPicker = false   // 1008 加号里的「位置」
     @State private var showPhotoPicker = false
     @Namespace private var photoTransition
@@ -156,6 +157,9 @@ struct ChatView: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
+        }
+        .overlay {
+            if showEmbroidery { EmbroideryView(isPresented: $showEmbroidery) }
         }
         .sheet(isPresented: $showStickers) { stickerSheet.modifier(HouseColorScheme()) }
         .sheet(isPresented: $showEffectPanel) {
@@ -1808,6 +1812,9 @@ struct ChatView: View {
 
     private var composerPlusMenu: some View {
         Menu {
+            Button { inputFocused = false; showEmbroidery = true } label: {
+                Label("刺绣", systemImage: "pencil.and.outline")
+            }
             Button { showStickers = true } label: {
                 Label("表情", systemImage: "face.smiling")
             }

@@ -36,6 +36,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case factory
     case crosstalk, radio, coread, cowatch, liao, daddyDay, qipai
     case search, favorites, forge, roundtable, surf, letterbox
+    case embroidery
     case window         // 0923 世界之窗：每天九幅开放图库的图配中文讲解
 
     var id: String { rawValue }
@@ -84,6 +85,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .roundtable: return "圆桌"
         case .surf: return "冲浪收藏"
         case .letterbox: return "信箱"
+        case .embroidery: return "刺绣"
         case .window: return "世界之窗"
         }
     }
@@ -91,7 +93,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     /// 自己铺满、自己做头的页面。她0819：不要透壁纸，要全屏
     var ownsFullScreen: Bool {
         switch self {
-        case .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
+        case .embroidery, .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
              .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window,
              .calendar, .dreams,
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
@@ -142,6 +144,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .roundtable: return "person.3.sequence"
         case .surf: return "safari"
         case .letterbox: return "envelope.badge"
+        case .embroidery: return "pencil.and.outline"
         case .window: return "books.vertical"
         default: return "sparkles"
         }
@@ -250,6 +253,8 @@ struct NativeHouseSheet: View {
                     NativeAlbumView()
                 case .letterbox:
                     NativeLetterboxView()
+                case .embroidery:
+                    EmbroideryRoom()
                 case .window:
                     NativeWindowView()
                 case .usage:
