@@ -5354,10 +5354,11 @@ struct MessageRow: View {
     private var stickerBody: some View {
         Group {
             if let stk = sticker {
+                // 1011 她：「不管我怎么删除 间距永远都是保持同一个间距 不要这个大那个小」——原来硬塞进 110×110 的方框，
+                // 扁的表情上下各空一截，表情下面永远比气泡之间多一块。框改成跟着表情本身的大小走（最长边还是 110）
                 CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
-                    img.resizable().scaledToFit()
-                } placeholder: { Color(.tertiarySystemFill) }
-                .frame(width: 110, height: 110)
+                    img.resizable().scaledToFit().frame(maxWidth: 110, maxHeight: 110)
+                } placeholder: { Color(.tertiarySystemFill).frame(width: 110, height: 110) }
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
                 Text(msg.text.isEmpty ? "[表情]" : msg.text)
@@ -9465,8 +9466,12 @@ struct ReactionChips: View {
 /// 长按那一下要知道它在屏幕上的位置：背后垫一个不吃点按的 UIView，触发时现量（滚动中也准）
 final class ReactFrameProbe {
     weak var view: UIView?
+    /// 1011 她截图：长按表情包，表情条、菜单、浮起来那份全挤在左上角——UIView 那份量出来是 0（没挂上窗口）。
+    /// 改成先认 SwiftUI 自己量的全局框（跟正文气泡那条路同一个量法），量不到才退回 UIView
+    var rect: CGRect = .zero
     var globalFrame: CGRect {
-        guard let v = view else { return .zero }
+        if rect.width > 0, rect.height > 0 { return rect }
+        guard let v = view, v.window != nil else { return .zero }
         return v.convert(v.bounds, to: nil)
     }
 }
@@ -9498,6 +9503,7 @@ struct ReactPressable: ViewModifier {
             .opacity(lifted ? 0 : 1)
             // 垫在缩放外面：量到的是没缩的那个框，整屏那层另画的一份按它摆
             .background(ReactFrameProbeView(probe: probe))
+            .onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { probe.rect = $0 }
             .onLongPressGesture(minimumDuration: ReactFeel.hold, maximumDistance: 12, perform: {
                 UIImpactFeedbackGenerator(style: .medium).impactOccurred()
                 pressing = false
