@@ -1012,9 +1012,23 @@ struct ChatView: View {
         return thPlainText(prev) && prev.turnID == turn
     }
 
+    /// 1011 她：「我是多选删除了一条气泡之后才这样的」——删掉带思绪的那条只清正文、留个空壳挂思绪；
+    /// 树屋下这壳的思绪借给挂时间那条去画了（procHidden），壳自己一点不画，却还在列表里占一行、多吃一份气泡间距。
+    /// 这种壳直接不进列表（跟「整个」模式被并走的那几条一样）
+    private func thEmptyShell(at index: Int) -> Bool {
+        guard theme.isTreehouse else { return false }
+        let m = store.messages[index]
+        guard m.role == "assistant", !m.pending, !m.isSticker, !m.isImage, !m.isAudio,
+              m.inlineImages.isEmpty, (m.attachmentUrl ?? "").isEmpty,
+              (m.msgType ?? "").isEmpty || m.msgType == "text",
+              m.displayText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return false }
+        if thStampHere(index) { return false }   // 挂时间的那条：时间 / 思绪那一排还在它身上
+        return thProcRoute(index).hidden || !showProcessDots
+    }
+
     @ViewBuilder
     private func chatMessageRow(at index: Int, message rawMessage: ChatMessage) -> some View {
-        if thMergedAway(at: index) {
+        if thMergedAway(at: index) || thEmptyShell(at: index) {
             EmptyView()
         } else if !isPhotoGroupContinuation(at: index) {
             // 1009 晚「整个」模式：他同一轮里连着的几段字并成一个气泡，时间那行落在并完的尾巴上
@@ -5354,11 +5368,10 @@ struct MessageRow: View {
     private var stickerBody: some View {
         Group {
             if let stk = sticker {
-                // 1011 她：「不管我怎么删除 间距永远都是保持同一个间距 不要这个大那个小」——原来硬塞进 110×110 的方框，
-                // 扁的表情上下各空一截，表情下面永远比气泡之间多一块。框改成跟着表情本身的大小走（最长边还是 110）
                 CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
-                    img.resizable().scaledToFit().frame(maxWidth: 110, maxHeight: 110)
-                } placeholder: { Color(.tertiarySystemFill).frame(width: 110, height: 110) }
+                    img.resizable().scaledToFit()
+                } placeholder: { Color(.tertiarySystemFill) }
+                .frame(width: 110, height: 110)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
                 Text(msg.text.isEmpty ? "[表情]" : msg.text)
