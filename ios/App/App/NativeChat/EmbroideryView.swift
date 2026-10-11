@@ -10,11 +10,12 @@ struct EmbroideryView: View {
     @State private var full = false
     @State private var photo: PhotosPickerItem?
     @State private var pickingPhoto = false
-    @StateObject private var session = EmbroiderySession()
+    @StateObject private var session: EmbroiderySession
 
-    init(isPresented: Binding<Bool>, startFull: Bool = false) {
+    init(isPresented: Binding<Bool>, startFull: Bool = false, workID: String? = nil, replay: Bool = false) {
         _isPresented = isPresented
         _full = State(initialValue: startFull)
+        _session = StateObject(wrappedValue: EmbroiderySession(workID: workID, replay: replay))
     }
 
     private var insets: UIEdgeInsets {
@@ -73,6 +74,11 @@ struct EmbroideryView: View {
 final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandler {
     weak var web: WKWebView?
     var appearancePayload: [String: Any] = [:]
+    let initialWorkID: String?
+    let initialReplay: Bool
+    init(workID: String? = nil, replay: Bool = false) {
+        initialWorkID = workID; initialReplay = replay; super.init()
+    }
     var onClose: () -> Void = {}
     var onToggle: () -> Void = {}
     var onPick: () -> Void = {}
@@ -95,18 +101,64 @@ final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandle
             emit("saved", [:]); return true
         } catch { self.error("草稿保存失败：\(error.localizedDescription)"); return false }
     }
+    private func request(_ action: String, body: [String: Any]?, completion: @escaping (Result<[String: Any], Error>) -> Void) {
+        let allowed = action.range(of: "^(quilt|works|trash|restore|finish|send|work/emb_[A-Za-z0-9_-]+)$", options: .regularExpression) != nil
+        guard allowed else { completion(.failure(URLError(.badURL))); return }
+        Task {
+            do {
+                var request = URLRequest(url: AlcoveAPI.fullURL("/api/pulse-range/embroidery/" + action))
+                request.timeoutInterval = 60
+                if let body {
+                    request.httpMethod = "POST"
+                    request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+                    request.httpBody = try JSONSerialization.data(withJSONObject: body)
+                }
+                let (data, response) = try await AlcoveAPI.session.data(for: request)
+                guard let value = try JSONSerialization.jsonObject(with: data) as? [String: Any] else { throw URLError(.cannotParseResponse) }
+                guard let http = response as? HTTPURLResponse, (200..<300).contains(http.statusCode), value["ok"] as? Bool == true else {
+                    throw NSError(domain: "Embroidery", code: 2, userInfo: [NSLocalizedDescriptionKey: value["error"] as? String ?? "请求失败，作品仍然保留"])
+                }
+                await MainActor.run { completion(.success(value)) }
+            } catch { await MainActor.run { completion(.failure(error)) } }
+        }
+    }
     func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard message.frameInfo.isMainFrame,
               let body = message.body as? [String: Any], let kind = body["kind"] as? String else { return }
         switch kind {
         case "ready":
             emit("appearance", appearancePayload)
-            if FileManager.default.fileExists(atPath: draft.path) {
+            if let id = initialWorkID {
+                request("work/" + id, body: nil) { result in
+                    switch result {
+                    case .success(let value):
+                        var payload = value
+                        payload["replay"] = self.initialReplay
+                        self.emit("finished", payload)
+                    case .failure(let failure): self.error(failure.localizedDescription)
+                    }
+                }
+            } else if FileManager.default.fileExists(atPath: draft.path) {
                 do { let d = try Data(contentsOf: draft); emit("load", try JSONSerialization.jsonObject(with: d)) }
                 catch { self.error("原草稿读取失败，未覆盖：\(error.localizedDescription)") }
             }
         case "save": _ = save(body["document"])
-        case "close": if save(body["document"]) { onClose() }
+        case "close":
+            if body["document"] is NSNull || body["document"] == nil { onClose() }
+            else if save(body["document"]) { onClose() }
+        case "request":
+            guard let token = body["token"] as? String, let action = body["action"] as? String else { return }
+            request(action, body: body["body"] as? [String: Any]) { result in
+                switch result {
+                case .success(let value):
+                    if action == "finish" {
+                        // The server now owns the immutable version. Do not reopen it as an editable draft.
+                        try? FileManager.default.removeItem(at: self.draft)
+                    }
+                    self.emit("response", ["token": token, "result": value])
+                case .failure(let failure): self.emit("response", ["token": token, "error": failure.localizedDescription])
+                }
+            }
         case "toggleFull": onToggle()
         case "pickImage": onPick()
         case "exportPNG":
@@ -183,7 +235,7 @@ private final class EmbroideryAssets: NSObject, WKURLSchemeHandler {
         let parts = path.split(separator: "/").map(String.init)
         guard !parts.contains(".."), !parts.isEmpty else { fail(task); return }
         let name = parts.last!
-        let mime: String
+        var mime: String
         switch (name as NSString).pathExtension.lowercased() {
         case "html": mime = "text/html"
         case "js": mime = "application/javascript"
@@ -192,6 +244,7 @@ private final class EmbroideryAssets: NSObject, WKURLSchemeHandler {
         case "ttf": mime = "font/ttf"
         default: mime = "text/plain"
         }
+        if parts.first == "workpng" { mime = "image/png" }
         var remote: URL?
         if parts.first == "font", parts.count == 2 {
             if let local = Bundle.main.url(forResource: (name as NSString).deletingPathExtension, withExtension: "ttf"),
@@ -202,9 +255,12 @@ private final class EmbroideryAssets: NSObject, WKURLSchemeHandler {
             let allowed = ["linshiai-1.ttf", "yuhe.ttf", "huoxuai.ttf", "jianxue.ttf", "chaoyong.ttf", "neozhisong.ttf", "silkscreen.ttf", "jbmono.ttf"]
             guard allowed.contains(name) else { fail(task); return }
             remote = AlcoveAPI.fullURL("/api/kakao/fonts/" + name)
+        } else if parts.first == "workpng", parts.count == 2,
+                  name.range(of: "^emb_[A-Za-z0-9_-]+$", options: .regularExpression) != nil {
+            remote = AlcoveAPI.fullURL("/api/pulse-range/embroidery/png/" + name)
         } else if parts.first == "data", parts.count >= 2 {
             remote = AlcoveAPI.fullURL("/api/pulse-range/embroidery" + path)
-        } else if parts.count == 1, ["embroidery.html", "geometry.js", "glyphs.js", "render.js", "editor.js", "opentype.min.js", "fonts.json"].contains(name),
+        } else if parts.count == 1, ["embroidery.html", "geometry.js", "glyphs.js", "render.js", "editor.js", "finish.js", "opentype.min.js", "fonts.json"].contains(name),
                   let local = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "Embroidery"),
                   let data = try? Data(contentsOf: local) { finish(task, data, mime); return }
         guard let remote else { fail(task); return }
@@ -241,5 +297,45 @@ struct EmbroideryRoom: View {
     var body: some View {
         EmbroideryView(isPresented: $shown, startFull: true)
             .onChange(of: shown) { value in if !value { dismiss() } }
+    }
+}
+
+struct EmbroideryCard: Decodable {
+    let id: String
+    let author: String
+    let date: String
+    let image: String
+    let title: String?
+}
+
+struct EmbroideryMessageCard: View {
+    let card: EmbroideryCard
+    @State private var opened = false
+    @State private var replay = false
+    @AppStorage(AlcoveAppearance.key) private var appearance = "light"
+    var body: some View {
+        let _ = appearance
+        VStack(alignment: .leading, spacing: 6) {
+            Button { replay = false; opened = true } label: {
+                AsyncImage(url: AlcoveAPI.attachmentURL(card.image)) { phase in
+                    if let image = phase.image { image.resizable().scaledToFit() }
+                    else if phase.error != nil { Text("图片暂未载入，点开查看").font(.caption).frame(height: 100) }
+                    else { ProgressView().frame(height: 100) }
+                }
+                .frame(maxWidth: 280)
+            }.buttonStyle(.plain)
+            HStack(spacing: 12) {
+                Text((card.author == "jing" ? "陈璟" : "陈霁") + " · " + String(card.date.prefix(10)))
+                    .font(.system(size: 11, design: .serif))
+                Button { replay = true; opened = true } label: {
+                    Label("看它绣出来", systemImage: "play").font(.system(size: 11))
+                        .frame(minHeight: 44)
+                }.buttonStyle(.plain)
+            }
+        }
+        .foregroundColor(AlcoveAppearance.isDark ? Color.white.opacity(0.8) : Color.black.opacity(0.75))
+        .fullScreenCover(isPresented: $opened) {
+            EmbroideryView(isPresented: $opened, startFull: true, workID: card.id, replay: replay)
+        }
     }
 }

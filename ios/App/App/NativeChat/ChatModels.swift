@@ -88,8 +88,13 @@ struct ChatMessage: Identifiable, Equatable {
     var hasActivity: Bool { activity.contains { $0.kind == "tool" } }
 
     var isSticker: Bool { msgType == "sticker" && stickerId != nil }
+    var embroideryCard: EmbroideryCard? {
+        guard let raw = Self.taggedBody(text, tag: "EMBROIDERY_CARD"), let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(EmbroideryCard.self, from: data)
+    }
     var musicCard: MusicSong? { MusicSong.card(from: text) }
     var isImage: Bool {
+        if embroideryCard != nil { return false }
         guard let t = attachmentType, let u = attachmentUrl, !u.isEmpty else { return false }
         return t == "image"
     }
@@ -100,6 +105,7 @@ struct ChatMessage: Identifiable, Equatable {
             .contains((u as NSString).pathExtension.lowercased())
     }
     var isDocument: Bool {
+        if embroideryCard != nil { return false }
         guard let u = attachmentUrl, !u.isEmpty else { return false }
         return !isImage && !isAudio
     }

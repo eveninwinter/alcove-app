@@ -1406,6 +1406,7 @@ struct ChatView: View {
         guard theme.isTreehouse else { return (nil, nil, false) }
         let msgs = store.messages
         guard msgs.indices.contains(index), msgs[index].role == "assistant" else { return (nil, nil, false) }
+        if msgs[index].embroideryCard != nil { return (nil, nil, true) }
         var head = index
         while head > 0, thSameGroup(msgs[head - 1], msgs[head]) { head -= 1 }
         var stamp: Int?, proc: Int?
@@ -1441,6 +1442,7 @@ struct ChatView: View {
     private func thStampHere(_ index: Int) -> Bool {
         let msgs = store.messages
         guard msgs.indices.contains(index) else { return false }
+        if msgs[index].embroideryCard != nil { return false }
         var head = index
         while head > 0, thSameGroup(msgs[head - 1], msgs[head]) { head -= 1 }
         var j = head
@@ -1463,6 +1465,7 @@ struct ChatView: View {
             || m.ticketCard != nil || m.choiceCard != nil || m.letterCard != nil || m.journeyCard != nil
             || m.callSummary != nil || m.musicCard != nil { return false }
         if m.reminderCard != nil { return false }   // 1002 单独一行，上面那串够长了，别再让编译器算超时
+        if m.embroideryCard != nil { return false }
         if m.locationCard != nil { return false }   // 1008 位置卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
@@ -4288,7 +4291,7 @@ struct MessageRow: View {
             VStack(alignment: isUser ? .trailing : .leading,
                    spacing: 0) {
                 // 1010 #3575 她那边：时间在一轮第一条上面，靠右、跟她气泡里最右边的字对齐
-                if theme.isTreehouse && isUser && roundStamp != nil {
+                if theme.isTreehouse && isUser && roundStamp != nil && msg.embroideryCard == nil {
                     thRoundStampText
                         .padding(.trailing, thStampInset)
                         .padding(.bottom, rowPartGap)
@@ -4358,6 +4361,8 @@ struct MessageRow: View {
                 } else if let rem = msg.reminderCard {
                     ReminderMessageCard(card: rem)      // 1002 日程提醒到点
                         .frame(maxWidth: .infinity)
+                } else if let embroidery = msg.embroideryCard {
+                    EmbroideryMessageCard(card: embroidery)
                 } else if let loc = msg.locationCard {
                     LocationMessageCard(card: loc, isUser: isUser)   // 1008 位置卡：iMessage 那样的圆角地图卡，跟着说话的人那一边
                 } else if let buy = msg.buyCard {
@@ -4654,7 +4659,7 @@ struct MessageRow: View {
 
     /// 有正文气泡的，小片挂在正文气泡下；没有的（纯图、语音）挂在图 / 语音条下
     private var showsTextBubble: Bool {
-        msg.musicCard == nil && !msg.displayText.isEmpty && !msg.isSticker && !msg.isBareLink && !msg.isAudio
+        msg.embroideryCard == nil && msg.musicCard == nil && !msg.displayText.isEmpty && !msg.isSticker && !msg.isBareLink && !msg.isAudio
     }
 
     /// 表情包长按菜单的「保存到相册」存的就是这张表情

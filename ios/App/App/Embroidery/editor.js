@@ -1,6 +1,7 @@
 /* One document and one web view survive half/full screen changes. */
 "use strict";
 var EMB_FONTS = [];
+var readOnly = false;
 const G = EmbGeometry,
   R = EmbRender,
   $ = (id) => document.getElementById(id),
@@ -72,6 +73,7 @@ function base(type, extra = {}) {
   };
 }
 function change(fn, animate = false) {
+  if(readOnly){notice("这是定版，先另存新版本再修改");return;}
   history.change(fn);
   schedule(animate);
 }
@@ -80,6 +82,7 @@ function add(layer, animate = true) {
   selected = layer.id;
 }
 function flushSave() {
+  if(readOnly)return;
   clearTimeout(saveTimer);
   const d = G.clone(history.doc);
   if (!bridge("save", { document: d })) {
@@ -250,6 +253,7 @@ function hit(p) {
   return null;
 }
 canvas.addEventListener("pointerdown", (e) => {
+  if(readOnly) return;
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, [e.clientX, e.clientY]);
   if (pointers.size === 2) {
@@ -426,6 +430,7 @@ function property(fn) {
   change((d) => fn(d.layers.find((l) => l.id === selected)));
 }
 function openTool(id) {
+  if(readOnly && id){notice("这是定版，先另存新版本再修改");return;}
   tool = id;
   mode = id === "draw" ? "draw" : "select";
   guide = [];
@@ -932,11 +937,13 @@ for (const [id, name] of [
   b.dataset.tool = id;
 }
 $("undo").onclick = () => {
+  if (readOnly) return;
   history.undo();
   selected = null;
   schedule();
 };
 $("redo").onclick = () => {
+  if (readOnly) return;
   history.redo();
   selected = null;
   schedule();
@@ -945,7 +952,7 @@ $("layers").onclick = () => openTool("layers");
 $("full").onclick = () => bridge("toggleFull");
 $("close").onclick = () => {
   save();
-  bridge("close", { document: history.doc });
+  bridge("close", { document: readOnly ? null : history.doc });
 };
 $("keyboardHide").onclick = () => document.activeElement?.blur();
 $("keyboardFont").onclick = () => {
@@ -987,6 +994,7 @@ $("done").onclick = () => {
   fit();
 };
 window.__emb = (kind, p) => {
+  if(window.EmbFinish?.receive(kind,p)) return;
   if (kind === "appearance") {
     window.NIGHT = !!p.night;
     document.body.classList.toggle("night", window.NIGHT);
