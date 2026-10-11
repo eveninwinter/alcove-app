@@ -459,7 +459,8 @@ enum AlcoveAppearance {
 //（以前只存一套，她夜里调的白天还顶着）。老键 msgColor.<item> 第一次读到就搬进夜里那套。
 enum MessagesPalette {
     enum Item: String, CaseIterable, Identifiable {
-        case timestamp, thought, divider, bubbleUser, bubbleAI, textUser, textAI, readTick, sendButton
+        // 1011 #3661 她：「这个主题思绪不是有边框吗 边框的颜色也加进调色盘吧」——thoughtBox 只给树屋（展开的思绪那个框的底色）
+        case timestamp, thought, divider, bubbleUser, bubbleAI, textUser, textAI, readTick, sendButton, thoughtBox
         var id: String { rawValue }
         var title: String {
             switch self {
@@ -472,6 +473,7 @@ enum MessagesPalette {
             case .textAI: return "他的正文"
             case .readTick: return "已读勾"
             case .sendButton: return "发送键"
+            case .thoughtBox: return "思绪框"
             }
         }
         /// 旧键（0902 只有一套的时候）
@@ -531,6 +533,7 @@ enum MessagesPalette {
         case .textUser: return glass ? base.text : .white
         case .textAI: return base.text
         case .readTick, .sendButton: return Color(uiColor: .systemBlue)
+        case .thoughtBox: return base.bubbleAI   // 信息主题不显示这一项
         }
     }
 
@@ -590,6 +593,8 @@ enum MessagesPalette {
         case .textAI: return base.text
         case .readTick: return base.textDim
         case .sendButton: return base.sendButton ?? base.text
+        // 原来写死的 TreehouseInk.white：白天 #FBFAF7、黑夜 #2A2B31
+        case .thoughtBox: return dark ? Color(red: 0x2A/255, green: 0x2B/255, blue: 0x31/255) : Color(red: 0xFB/255, green: 0xFA/255, blue: 0xF7/255)
         }
     }
 

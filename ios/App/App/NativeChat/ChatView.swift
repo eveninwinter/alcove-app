@@ -4033,6 +4033,7 @@ struct MessageRow: View {
     // 0924 她报的「气泡间距有的贴在一起」：一条消息里图 / 语音 / 正文 / 链接卡之间原来是 0，
     // 脚印那行又是另一个数。现在一律用设置里那个「气泡间距」，跟列表里气泡和气泡之间同一个数。
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0   // 1011 #3661 思绪框颜色在调色盘里一改就重画
     @AppStorage(KakaoPackStore.showAvatarKey) private var kakaoShowAvatar = true   // 0924 她要的：Kakao 下他的消息带不带头像
     @State private var openedToolDetail: ActivityItem? = nil
     @State private var showRecall = false
@@ -5135,7 +5136,7 @@ struct MessageRow: View {
                     .background {
                         if theme.isTreehouse {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
-                                .fill(TreehouseInk.white)
+                                .fill({ _ = paletteStamp; return MessagesPalette.thCurrent(.thoughtBox) }())   // 1011 #3661 进调色盘，没调过还是原来的纸白 / 炭灰
                                 .allowsHitTesting(false)
                         }
                     }

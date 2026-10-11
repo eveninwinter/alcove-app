@@ -2129,7 +2129,7 @@ private struct BubbleAppearanceSettingsView: View {
         if chatTheme.isTreehouse {
             return MessagesPalette.Item.allCases.filter { $0 != .timestamp && !(thGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
         }
-        return MessagesPalette.Item.allCases.filter { !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
+        return MessagesPalette.Item.allCases.filter { $0 != .thoughtBox && !(bubbleGlass && ($0 == .bubbleUser || $0 == .bubbleAI)) }
     }
 
     /// 1011 她：玻璃气泡里再分透玻璃 / 雾玻璃；透玻璃下面还是「透明 ↔ 色调」，雾玻璃下面是「雾」的浓淡
