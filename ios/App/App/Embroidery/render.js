@@ -588,6 +588,22 @@
       default: return [];
     }
   }
+  // 1012 渐变预设（不用黄 / 棕）
+  const GRADIENTS = [
+    ["粉紫蓝", ["#E89AB0", "#6E4C8E", "#3B5BA9"]],
+    ["晚霞", ["#C8333F", "#D23C77", "#6E4C8E"]],
+    ["莓红到粉", ["#B8325A", "#E89AB0"]],
+    ["紫到湖蓝", ["#6E4C8E", "#2AA3B8"]],
+    ["薄荷到靛蓝", ["#5BB89A", "#2F4C9B"]],
+    ["墨绿到青", ["#2F5E4E", "#2AA3B8"]],
+    ["浅色渐变（深色布用）", ["#F0B8C8", "#D9C3EF", "#BFE0D3"]],
+  ];
+  function gradientColor(stops, t) {
+    const rgb = stops.map((h) => h.match(/[0-9a-f]{2}/gi).map((v) => parseInt(v, 16)));
+    if (rgb.length === 1) return stops[0];
+    const x = Math.min(1, Math.max(0, t)) * (rgb.length - 1), i = Math.min(rgb.length - 2, Math.floor(x)), f = x - i;
+    return "#" + rgb[i].map((v, k) => Math.round(v + (rgb[i + 1][k] - v) * f).toString(16).padStart(2, "0")).join("");
+  }
   function randomPool(fabric, clothColor) {
     const base = clothColor || fabrics[fabric]?.color || fabrics.linen.color;
     const candidates = [
@@ -680,13 +696,17 @@
                 ),
             );
           }
+          // 1012 渐变：按第几个字在整段里的位置，从第一个颜色慢慢过渡到最后一个
+          const nChars = charIndices.length ? Math.max(...charIndices) + 1 : 1;
           for (const s of ss)
             part.ops.push({
               kind: "stitch",
               layer: l,
               stitch: s,
               color:
-                l.type === "text" && l.colorMode === "random-character"
+                l.type === "text" && l.colorMode === "gradient"
+                  ? gradientColor(l.gradient || GRADIENTS[0][1], nChars > 1 ? charIndices[s.pathIndex] / (nChars - 1) : 0)
+                  : l.type === "text" && l.colorMode === "random-character"
                   ? randomPool(doc.fabric, doc.cloth_color)[
                       Math.floor(
                         G.random(l.id + ":char:" + charIndices[s.pathIndex])() *
@@ -788,6 +808,8 @@
     fabrics,
     along,
     presetBorder,
+    GRADIENTS,
+    gradientColor,
     contrast,
     randomPool,
   };

@@ -829,6 +829,15 @@ function openTool(id) {
     vr.append(el("span", "上下"));
     for (const [key, name] of [["top", "靠上"], ["middle", "居中"], ["bottom", "靠下"]])
       button(name, () => verticalAlign(key), vr);
+    // 1012 渐变一排：点哪组用哪组
+    let gr = row();
+    gr.append(el("span", "渐变"));
+    for (const [name, stops] of R.GRADIENTS) {
+      let g = button(name, () => setGradient(stops), gr);
+      g.style.backgroundImage = "linear-gradient(90deg," + stops.join(",") + ")";
+      g.style.color = stops[0] === "#F0B8C8" ? "#333" : "#fff";
+      if (l.colorMode === "gradient" && JSON.stringify(l.gradient) === JSON.stringify(stops)) g.style.fontWeight = "700";
+    }
     notice("楷体按笔顺；其他字体沿中线绣");
   }
   if (id === "draw") {
@@ -1171,6 +1180,27 @@ button(
   },
   $("palette"),
 );
+// 1012 渐变：每点一下换一组渐变，按钮上画着这组颜色
+let gradientIndex = -1;
+let gradButton = button(
+  "渐变",
+  () => {
+    gradientIndex = (gradientIndex + 1) % R.GRADIENTS.length;
+    setGradient(R.GRADIENTS[gradientIndex][1]);
+  },
+  $("palette"),
+);
+gradButton.style.backgroundImage = "linear-gradient(90deg," + R.GRADIENTS[0][1].join(",") + ")";
+gradButton.style.color = "#fff";
+function setGradient(stops) {
+  textRandomColor = false;
+  property((l) => {
+    if (l.type === "text") { l.colorMode = "gradient"; l.gradient = stops; }
+  });
+  gradButton.style.backgroundImage = "linear-gradient(90deg," + stops.join(",") + ")";
+  document.querySelectorAll(".spool").forEach((b) => b.classList.remove("active"));
+  draw();
+}
 for (const c of colors) {
   let b = button("", () => setColor(c), $("palette"));
   b.className = "spool";
