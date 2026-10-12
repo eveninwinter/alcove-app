@@ -275,6 +275,55 @@
         opacity: 0.12;
         mix-blend-mode: overlay;
       }
+      /* Compact controls never squeeze their labels into vertical columns. */
+      button { white-space: nowrap; flex-shrink: 0; }
+      header { padding: calc(var(--safe-top, 0px) + 6px) 12px 6px; flex-shrink: 0; }
+      header .title { font-size: 26px; min-width: 0; }
+      header small { margin-top: 3px; font-size: 10px; }
+      #stage { min-height: 150px; }
+      #palette { gap: 8px; padding: 4px 12px; min-height: 48px; box-sizing: border-box; }
+      #palette > * { flex-shrink: 0; }
+      #palette button:not(.spool) { font-size: 12px; padding: 4px 10px; min-height: 36px; }
+      #palette input[type=color] { width: 36px; height: 36px; }
+      #tools { padding: 3px 8px; }
+      #tools button { font-size: 14px; padding: 6px 10px; }
+      #drawer { max-height: min(28vh, 190px); min-height: 0; flex-shrink: 1; }
+      #drawer textarea { height: 54px; min-height: 54px; box-sizing: border-box; font-size: 16px; }
+      #drawer .row { gap: 8px; }
+      #drawer .row label { display: flex; align-items: center; gap: 8px; width: 100%; }
+      #drawer input[type=range] { flex: 1; min-width: 80px; }
+      #drawer details { border-top: 1px solid var(--line); margin-top: 8px; }
+      #drawer summary { padding: 10px 0; font-size: 13px; cursor: pointer; }
+      #notice:empty { display: none; }
+      @media (max-height: 570px) {
+        #drawer { max-height: 112px; }
+        header .title { font-size: 24px; }
+        #stage { min-height: 140px; }
+      }
+      /* Quiet workbench: flat actions, spool swatches, one contextual drawer. */
+      body { font-family: -apple-system, BlinkMacSystemFont, "Songti SC", serif; }
+      header { gap: 6px; border-bottom: 1px solid var(--line); }
+      header button:not(#done) { border: 0; padding: 6px; font-size: 20px; }
+      header .title { font-size: 29px; }
+      #done { border-radius: 8px; min-height: 36px; padding: 5px 13px; font-size: 13px; letter-spacing: 1px; }
+      header small { font-family: inherit; letter-spacing: 2px; font-size: 9px; }
+      #quick { left: 12px; bottom: 7px; gap: 2px; padding: 0 3px; background: var(--bg); border: 1px solid var(--line); border-radius: 9px; }
+      #quick button { border: 0; background: transparent; border-radius: 6px; width: 40px; height: 40px; }
+      #palette { gap: 9px; padding: 3px 12px; background: var(--bg); }
+      #palette [hidden] { display: none; }
+      #threadMode { border: 0; background: transparent; border-radius: 0; padding: 0 3px; width: 96px; height: 44px; font-size: 12px; }
+      #palette .spool { width: 25px; min-width: 25px; height: 32px; min-height: 32px; border-radius: 5px; border: 3px solid var(--bg); outline: 1px solid var(--line); box-shadow: none; }
+      #palette .spool.active { outline: 1px solid var(--fg); }
+      #palette input[type=color] { width: 30px; border: 0; padding: 0; background: transparent; }
+      #drawer { background: var(--bg); padding-left: 16px; padding-right: 16px; }
+      #drawer button { border-radius: 6px; font-size: 13px; min-height: 38px; padding: 6px 10px; }
+      #drawer select { border-radius: 5px; font-size: 14px; max-width: 100%; }
+      #drawer textarea { border: 0; border-bottom: 1px solid var(--line); border-radius: 0; background: transparent; padding: 8px 0; }
+      #drawer summary { letter-spacing: 1px; color: var(--dim); }
+      #tools { gap: 2px; padding: 2px 10px; scrollbar-width: none; }
+      #tools button { color: var(--dim); border-radius: 0; font-size: 13px; letter-spacing: 1px; min-height: 46px; }
+      #tools button.active { color: var(--fg); border-bottom: 2px solid var(--fg); }
+      #tools::-webkit-scrollbar, #palette::-webkit-scrollbar { display: none; }
     </style>
   </head>
   <body>

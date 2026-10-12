@@ -141,9 +141,12 @@ function fit() {
   canvas.width = Math.max(1, Math.round(rect.width * dpr));
   canvas.height = Math.max(1, Math.round(rect.height * dpr));
   let s = history.doc.shape;
-  view.scale =
-    Math.min((rect.width - 48) / s.w, (rect.height - 70) / s.h) * view.zoom;
-  view.scale = Math.max(0.05, view.scale);
+  // Establish the cloth scale once from width, never from the remaining height.
+  // Sheets, keyboard and full-screen expansion change the viewport, not the cloth.
+  if (!view.baseScale && rect.width > 48) {
+    view.baseScale = (rect.width - 48) / s.w;
+  }
+  view.scale = Math.max(0.05, (view.baseScale || 0.4) * view.zoom);
   view.x = (rect.width - s.w * view.scale) / 2 + view.panX;
   view.y = (rect.height - s.h * view.scale) / 2 + view.panY;
   draw();
@@ -852,6 +855,10 @@ function openTool(id) {
       g.style.color = stops[0] === "#F0B8C8" ? "#333" : "#fff";
       if (l.colorMode === "gradient" && JSON.stringify(l.gradient) === JSON.stringify(stops)) g.style.fontWeight = "700";
     }
+    const advanced = el("details");
+    advanced.append(el("summary", "字体、字号与间距"), r);
+    $("drawer").append(advanced);
+    advanced.addEventListener("toggle", fit);
     notice("楷体按笔顺；其他字体沿中线绣");
   }
   if (id === "draw") {
@@ -1205,6 +1212,17 @@ button(
   $("palette"),
 );
 // 1012 渐变：每点一下换一组渐变，按钮上画着这组颜色
+const mixedButton = $("palette").firstElementChild;
+mixedButton.hidden = true;
+const threadMode = el("select", "", { ariaLabel: "线色方式", id: "threadMode" });
+threadMode.append(el("option", "逐字混色", { value: "random" }), el("option", "单色", { value: "solid" }));
+for(const [i,entry] of R.GRADIENTS.entries()) threadMode.append(el("option", "渐变 · " + entry[0], { value: "gradient:"+i }));
+threadMode.onchange = () => {
+  if(threadMode.value === "random") mixedButton.click();
+  else if(threadMode.value === "solid") setColor(color);
+  else { gradientIndex=+threadMode.value.split(":")[1]; setGradient(R.GRADIENTS[gradientIndex][1]); }
+};
+$("palette").prepend(threadMode);
 let gradientIndex = -1;
 let gradButton = button(
   "渐变",
@@ -1216,6 +1234,7 @@ let gradButton = button(
 );
 gradButton.style.backgroundImage = "linear-gradient(90deg," + R.GRADIENTS[0][1].join(",") + ")";
 gradButton.style.color = "#fff";
+gradButton.hidden = true;
 function setGradient(stops) {
   textRandomColor = false;
   property((l) => {
@@ -1248,6 +1267,7 @@ button(
   $("palette"),
 );
 function setColor(c) {
+  threadMode.value = "solid";
   textRandomColor = false;
   color = c;
   property((l) => {

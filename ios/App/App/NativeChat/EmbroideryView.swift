@@ -312,7 +312,11 @@ private final class EmbroideryAssets: NSObject, WKURLSchemeHandler {
     }
     private func finish(_ task: WKURLSchemeTask, _ data: Data, _ mime: String) {
         guard let url = task.request.url else { fail(task); return }
-        task.didReceive(URLResponse(url: url, mimeType: mime, expectedContentLength: data.count, textEncodingName: mime.hasPrefix("text/") ? "utf-8" : nil))
+        // fetch checks response.ok; a generic URLResponse has no HTTP success status.
+        guard let response = HTTPURLResponse(url: url, statusCode: 200, httpVersion: "HTTP/1.1",
+            headerFields: ["Content-Type": mime + (mime.hasPrefix("text/") || mime.contains("json") || mime.contains("javascript") ? "; charset=utf-8" : ""),
+                           "Content-Length": String(data.count), "Access-Control-Allow-Origin": "*"]) else { fail(task); return }
+        task.didReceive(response)
         task.didReceive(data); task.didFinish()
     }
     private func fail(_ task: WKURLSchemeTask) { task.didFailWithError(NSError(domain: "EmbroideryAssets", code: 404)) }
