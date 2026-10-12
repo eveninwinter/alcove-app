@@ -121,6 +121,8 @@
       size = layer.size || 100,
       lines = String(layer.text).split("\n"),
       out = [],
+      charIndices = [],
+      charIndex = 0,
       warnings = [],
       max = 0;
     for (let row = 0; row < lines.length; row++) {
@@ -128,7 +130,7 @@
         width = 0;
       for (const c of lines[row]) {
         let g = await glyph(c, conf);
-        items.push({ g, x: width });
+        items.push({ g, x: width, index: charIndex++ });
         width += (g.advance + 0.06) * size;
         if (g.warning) warnings.push(g.warning);
       }
@@ -139,16 +141,19 @@
           : layer.align === "right"
             ? -width
             : 0;
-      for (const { g, x } of items)
-        for (const p of g.paths)
+      for (const { g, x, index } of items)
+        for (const p of g.paths) {
+          charIndices.push(index);
           out.push(
             p.map(([px, py]) => [
               px * size + x + shift,
               py * size + row * size * (layer.lineGap || 1.35),
             ]),
           );
+        }
     }
     return {
+      charIndices,
       paths: out,
       w: max,
       h: lines.length * size * (layer.lineGap || 1.35),

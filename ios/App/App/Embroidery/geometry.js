@@ -117,7 +117,7 @@
   function stitches(paths, seed, step = 12, width = 5) {
     let rnd = random(seed),
       out = [];
-    for (const path of paths) {
+    for (const [pathIndex, path] of paths.entries()) {
       let p = resample(path, step);
       for (let i = 1; i < p.length; i++) {
         let a = p[i - 1],
@@ -125,6 +125,7 @@
           jx = (rnd() - 0.5) * 1.2,
           jy = (rnd() - 0.5) * 1.2;
         out.push({
+          pathIndex,
           a: [
             a[0] + (b[0] - a[0]) * 0.12 + jx,
             a[1] + (b[1] - a[1]) * 0.12 + jy,

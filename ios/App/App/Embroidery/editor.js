@@ -2,6 +2,7 @@
 "use strict";
 var EMB_FONTS = [];
 var readOnly = false;
+var textRandomColor = true;
 const G = EmbGeometry,
   R = EmbRender,
   $ = (id) => document.getElementById(id),
@@ -539,6 +540,7 @@ function openTool(id) {
     if (l?.type !== "text") {
       l = base("text", {
         text: "",
+        colorMode: textRandomColor ? "random-character" : "solid",
         font: "kai-stroke",
         size: 100,
         align: "left",
@@ -894,6 +896,11 @@ const colors = [
   "#232326",
   "#ECE6DA",
 ];
+button("逐字混色", () => {
+  textRandomColor = true;
+  property(l => { if(l.type === "text") l.colorMode = "random-character"; });
+  document.querySelectorAll(".spool").forEach(b => b.classList.remove("active"));
+}, $("palette"));
 for (const c of colors) {
   let b = button("", () => setColor(c), $("palette"));
   b.className = "spool";
@@ -917,8 +924,9 @@ button(
   $("palette"),
 );
 function setColor(c) {
+  textRandomColor = false;
   color = c;
-  property((l) => (l.color = c));
+  property((l) => { l.color = c; if(l.type === "text") l.colorMode = "solid"; });
   document
     .querySelectorAll(".spool")
     .forEach((b) => b.classList.toggle("active", b.title === c));

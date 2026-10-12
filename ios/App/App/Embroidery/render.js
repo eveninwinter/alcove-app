@@ -260,10 +260,11 @@
         part = compiled.get(key);
       if (!part) {
         part = { ops: [], warnings: [], bounds: [-30, -30, 60, 60] };
-        let paths = [];
+        let paths = [], charIndices = [];
         if (l.type === "text") {
           let t = await EmbGlyphs.textPaths(l);
           paths = t.paths;
+          charIndices = t.charIndices;
           part.warnings = t.warnings;
         } else if (l.type === "draw") paths = [l.points];
         else if (l.type === "border" || l.type === "motif") {
@@ -322,7 +323,9 @@
               kind: "stitch",
               layer: l,
               stitch: s,
-              color: l.color || "#B8325A",
+              color: l.type === "text" && l.colorMode === "random-character"
+                ? ["#B8325A", "#6E4C8E", "#2F4C9B", "#2F5E4E", "#232326", "#ECE6DA"][Math.floor(G.random(l.id + ":char:" + charIndices[s.pathIndex])() * 6)]
+                : l.color || "#B8325A",
             });
         }
         compiled.set(key, part);
