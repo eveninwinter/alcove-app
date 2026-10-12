@@ -74,7 +74,10 @@ function base(type, extra = {}) {
   };
 }
 function change(fn, animate = false) {
-  if(readOnly){notice("这是定版，先另存新版本再修改");return;}
+  if (readOnly) {
+    notice("这是定版，先另存新版本再修改");
+    return;
+  }
   history.change(fn);
   schedule(animate);
 }
@@ -83,17 +86,26 @@ function add(layer, animate = true) {
   selected = layer.id;
 }
 function flushSave() {
-  if(readOnly)return;
+  if (readOnly) return;
   clearTimeout(saveTimer);
   const d = G.clone(history.doc);
   if (!bridge("save", { document: d })) {
-    try { localStorage.setItem("embroidery.draft", JSON.stringify(d)); $("status").textContent = "草稿已存"; }
-    catch(e) { notice("草稿保存失败，请勿退出"); }
+    try {
+      localStorage.setItem("embroidery.draft", JSON.stringify(d));
+      $("status").textContent = "草稿已存";
+    } catch (e) {
+      notice("草稿保存失败，请勿退出");
+    }
   }
 }
-function save() { clearTimeout(saveTimer); saveTimer = setTimeout(flushSave, 400); }
+function save() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(flushSave, 400);
+}
 window.addEventListener("pagehide", flushSave);
-document.addEventListener("visibilitychange", () => { if (document.hidden) flushSave(); });
+document.addEventListener("visibilitychange", () => {
+  if (document.hidden) flushSave();
+});
 function schedule(animate = false) {
   save();
   clearTimeout(compileTimer);
@@ -142,6 +154,11 @@ function draw() {
   ctx.clearRect(0, 0, rect.width, rect.height);
   ctx.translate(view.x, view.y);
   ctx.scale(view.scale, view.scale);
+  if (exportBg(history.doc) !== "transparent") {
+    // 跟导出同一个框：布四周各 50
+    ctx.fillStyle = exportBg(history.doc);
+    ctx.fillRect(-50, -50, history.doc.shape.w + 100, history.doc.shape.h + 100);
+  }
   let last = R.render(ctx, history.doc, scene, progress, animationLayer);
   let l = current();
   if (l && !l.hidden && scene.bounds[l.id] && mode === "select") {
@@ -254,7 +271,7 @@ function hit(p) {
   return null;
 }
 canvas.addEventListener("pointerdown", (e) => {
-  if(readOnly) return;
+  if (readOnly) return;
   canvas.setPointerCapture(e.pointerId);
   pointers.set(e.pointerId, [e.clientX, e.clientY]);
   if (pointers.size === 2) {
@@ -410,6 +427,33 @@ function row() {
   $("drawer").append(n);
   return n;
 }
+// 1012 她：「保存之后的背景颜色也要可以换，现在全是黑的不好看」——导出的图原来是透明底，相册里显示成黑的。
+// 背景跟着作品存（export_bg），默认米白；编辑时布外面那一圈就画成这个色，所见即所得
+const BG_CHOICES = [
+  ["白", "#FFFFFF"],
+  ["米白", "#F4F1EC"],
+  ["雾粉", "#F3E6EA"],
+  ["雾蓝", "#E6ECF2"],
+  ["炭灰", "#2A2B31"],
+  ["透明", "transparent"],
+];
+function exportBg(doc) {
+  return doc.export_bg || "#F4F1EC";
+}
+function bgRow(pick) {
+  let r = row();
+  r.append(el("span", "背景"));
+  for (const [name, color] of BG_CHOICES) {
+    let b = button(name, () => pick(color), r);
+    b.style.borderBottom =
+      "5px " + (color === "transparent" ? "dashed #999" : "solid " + color);
+    if (exportBg(history.doc) === color) b.style.fontWeight = "700";
+  }
+  let custom = el("input", "", { type: "color", value: "#F4F1EC" });
+  custom.oninput = () => pick(custom.value);
+  r.append(custom);
+  return r;
+}
 function select(options, value, fn, container) {
   let n = el("select");
   for (const [v, t] of options)
@@ -431,7 +475,10 @@ function property(fn) {
   change((d) => fn(d.layers.find((l) => l.id === selected)));
 }
 function openTool(id) {
-  if(readOnly && id){notice("这是定版，先另存新版本再修改");return;}
+  if (readOnly && id) {
+    notice("这是定版，先另存新版本再修改");
+    return;
+  }
   tool = id;
   mode = id === "draw" ? "draw" : "select";
   guide = [];
@@ -453,9 +500,48 @@ function openTool(id) {
       );
       b.style.borderBottom = "5px solid " + f.color;
     }
+    bgRow((color) =>
+      change((d) => {
+        d.export_bg = color;
+      }),
+    );
   }
   if (id === "shape") {
     let dimensions = row();
+    for (const [name, w, h] of [
+      ["横版", 800, 460],
+      ["竖版", 520, 700],
+      ["方形", 650, 650],
+    ])
+      button(
+        name,
+        () => {
+          change((d) => {
+            let sx = w / d.shape.w,
+              sy = h / d.shape.h;
+            d.shape.w = w;
+            d.shape.h = h;
+            if (d.shape.points)
+              d.shape.points = d.shape.points.map(([x, y]) => [x * sx, y * sy]);
+            for (const l of d.layers) {
+              if (l.mode === "loop") continue;
+              l.x = (l.x || 0) * sx;
+              l.y = (l.y || 0) * sy;
+              if (l.anchor) {
+                l.x = l.anchor[0]
+                  ? w - 24 - ((l.w || 100) * l.scale) / 2
+                  : 24 + ((l.w || 100) * l.scale) / 2;
+                l.y = l.anchor[1]
+                  ? h - 24 - ((l.h || 100) * l.scale) / 2
+                  : 24 + ((l.h || 100) * l.scale) / 2;
+              }
+            }
+          });
+          openTool("shape");
+          fit();
+        },
+        dimensions,
+      );
     for (const [axis, label] of [
       ["w", "布宽"],
       ["h", "布高"],
@@ -469,6 +555,12 @@ function openTool(id) {
           change((d) => {
             const old = d.shape[axis];
             d.shape[axis] = v;
+            for (const l of d.layers.filter(
+              (l) => !l.anchor && l.mode !== "loop",
+            )) {
+              const k = axis === "w" ? "x" : "y";
+              l[k] = ((l[k] || 0) * v) / old;
+            }
             if (d.shape.points)
               d.shape.points = d.shape.points.map((p) =>
                 axis === "w"
@@ -585,7 +677,23 @@ function openTool(id) {
       (v) => property((l) => (l.font = v)),
       r,
     );
-    range("字号", 24, 160, l.size, (v) => property((l) => (l.size = v)), r);
+    range("字号", 12, 160, l.size, (v) => property((l) => (l.size = v)), r);
+    range(
+      "行距",
+      1,
+      2,
+      l.lineGap || 1.35,
+      (v) => property((l) => (l.lineGap = v)),
+      r,
+    ).step = 0.05;
+    range(
+      "字距",
+      0,
+      40,
+      l.letterSpacing || 0,
+      (v) => property((l) => (l.letterSpacing = v)),
+      r,
+    );
     select(
       [
         ["left", "左对齐"],
@@ -711,6 +819,14 @@ function openTool(id) {
     if (l.type === "text") button("改字", () => openTool("text"), r);
     if (l.type === "image") button("图片样式", () => openTool("image"), r);
     if (l.type === "motif" || l.type === "border") {
+      range(
+        "线粗",
+        1,
+        10,
+        l.width || 3,
+        (v) => property((l) => (l.width = v)),
+        r,
+      ).step = 0.5;
       button("补齐四角", corners, r);
       button(
         "绕一圈",
@@ -896,11 +1012,19 @@ const colors = [
   "#232326",
   "#ECE6DA",
 ];
-button("逐字混色", () => {
-  textRandomColor = true;
-  property(l => { if(l.type === "text") l.colorMode = "random-character"; });
-  document.querySelectorAll(".spool").forEach(b => b.classList.remove("active"));
-}, $("palette"));
+button(
+  "逐字混色",
+  () => {
+    textRandomColor = true;
+    property((l) => {
+      if (l.type === "text") l.colorMode = "random-character";
+    });
+    document
+      .querySelectorAll(".spool")
+      .forEach((b) => b.classList.remove("active"));
+  },
+  $("palette"),
+);
 for (const c of colors) {
   let b = button("", () => setColor(c), $("palette"));
   b.className = "spool";
@@ -926,7 +1050,10 @@ button(
 function setColor(c) {
   textRandomColor = false;
   color = c;
-  property((l) => { l.color = c; if(l.type === "text") l.colorMode = "solid"; });
+  property((l) => {
+    l.color = c;
+    if (l.type === "text") l.colorMode = "solid";
+  });
   document
     .querySelectorAll(".spool")
     .forEach((b) => b.classList.toggle("active", b.title === c));
@@ -969,11 +1096,15 @@ $("keyboardFont").onclick = () => {
 async function exportPNG() {
   const s = history.doc.shape,
     c = document.createElement("canvas");
-  c.width = (s.w + 40) * 2;
-  c.height = (s.h + 40) * 2;
+  c.width = (s.w + 100) * 2;
+  c.height = (s.h + 100) * 2;
   let x = c.getContext("2d");
   x.scale(2, 2);
-  x.translate(20, 20);
+  if (exportBg(history.doc) !== "transparent") {
+    x.fillStyle = exportBg(history.doc);
+    x.fillRect(0, 0, s.w + 100, s.h + 100);
+  }
+  x.translate(50, 50);
   let sc = await R.compile(history.doc);
   R.render(x, history.doc, sc, 1);
   return c.toDataURL("image/png");
@@ -1002,7 +1133,7 @@ $("done").onclick = () => {
   fit();
 };
 window.__emb = (kind, p) => {
-  if(window.EmbFinish?.receive(kind,p)) return;
+  if (window.EmbFinish?.receive(kind, p)) return;
   if (kind === "appearance") {
     window.NIGHT = !!p.night;
     document.body.classList.toggle("night", window.NIGHT);

@@ -131,7 +131,7 @@
       for (const c of lines[row]) {
         let g = await glyph(c, conf);
         items.push({ g, x: width, index: charIndex++ });
-        width += (g.advance + 0.06) * size;
+        width += (g.advance + 0.06) * size + (layer.letterSpacing || 0);
         if (g.warning) warnings.push(g.warning);
       }
       max = Math.max(max, width);
