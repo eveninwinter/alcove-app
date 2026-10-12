@@ -102,7 +102,7 @@ final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandle
         } catch { self.error("草稿保存失败：\(error.localizedDescription)"); return false }
     }
     private func request(_ action: String, body: [String: Any]?, completion: @escaping (Result<[String: Any], Error>) -> Void) {
-        let allowed = action.range(of: "^(quilt|works|trash|restore|finish|send|search|work/emb_[A-Za-z0-9_-]+)$", options: .regularExpression) != nil   // 1012 search：搜素材
+        let allowed = action.range(of: "^(quilt|works|trash|restore|finish|send|search|doodle|work/emb_[A-Za-z0-9_-]+)$", options: .regularExpression) != nil   // 1012 search：搜素材
         guard allowed else { completion(.failure(URLError(.badURL))); return }
         Task {
             do {

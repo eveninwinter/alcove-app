@@ -511,6 +511,20 @@ function autoHeight() {
   fit();
   return true;
 }
+const DOODLE_ONE = ["星星", "六角星", "月亮", "云", "花", "瓶花", "叶子", "爱心", "蝴蝶结", "太阳", "水坑", "雨滴"];
+const DOODLE_SCENE = ["下雨", "夜空", "星星", "花", "叶子", "爱心", "云", "月亮"];
+async function addDoodle(subject, mode) {
+  try {
+    const r = await api("doodle", { subject, mode, w: history.doc.shape.w, h: history.doc.shape.h });
+    const l = r.layer;
+    l.id = uid();
+    l.color = textRandomColor ? "#3B5BA9" : color;
+    add(l);
+    openTool("object");
+  } catch (e) {
+    report(e);
+  }
+}
 let lastSearch = "", lastResults = null;
 async function runSearch(text, box) {
   text = (text || "").trim();
@@ -887,6 +901,16 @@ function openTool(id) {
       }
     });
   }
+  if (id === "doodle") {
+    // 1012 涂鸦：单线手画风（单线、手抖、留缺口、少而空），后端同一套代码画；点一个放布中间，再拖 / 缩放 / 转 / 换色
+    let r = row();
+    r.append(el("span", "画一个"));
+    for (const name of DOODLE_ONE) button(name, () => addDoodle(name, "one"), r);
+    let r2 = row();
+    r2.append(el("span", "画满一块"));
+    for (const name of DOODLE_SCENE) button(name, () => addDoodle(name, "scene"), r2);
+    notice("点一个放到布中间，再拖、缩放、转、换颜色；每次画出来都不太一样");
+  }
   if (id === "border") {
     // 1012 一键花边：点一下整圈花边就上去；再点别的就换，「不要花边」拿掉；下面挑花边颜色
     const cur = history.doc.layers.find((l) => String(l.asset).startsWith("preset:"));
@@ -1242,6 +1266,7 @@ for (const [id, name] of [
   ["draw", "画线"],
   ["image", "图片"],
   ["border", "花边"],
+  ["doodle", "涂鸦"],
   ["assets", "素材"],
   ["object", "选中项"],
 ]) {
