@@ -642,7 +642,7 @@
           paths = t.paths;
           charIndices = t.charIndices;
           part.warnings = t.warnings;
-        } else if (l.type === "draw") paths = [l.points];
+        } else if (l.type === "draw") paths = l.paths || [l.points];   // 1012 涂鸦一层可以好几笔
         else if (l.type === "border" && String(l.asset).startsWith("preset:")) {
           paths = presetBorder(l.asset.slice(7), doc.shape);
         } else if (l.type === "border" || l.type === "motif") {
