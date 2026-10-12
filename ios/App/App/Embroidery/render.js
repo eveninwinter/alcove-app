@@ -66,7 +66,7 @@
       denim = fab === "denim";
     const cxy = poly0.reduce((a, p) => [a[0] + p[0] / poly0.length, a[1] + p[1] / poly0.length], [0, 0]);
     const ph = [r() * 6.28, r() * 6.28, r() * 6.28];
-    let base = G.resample(poly0, 2);
+    let base = G.resample(poly0, 2);   // 下面会再轻轻扭一下（warp）
     const outward = (i, pts) => {
       const p = pts[i], q = pts[(i + 1) % pts.length], o = pts[(i - 1 + pts.length) % pts.length];
       let tx = q[0] - o[0], ty = q[1] - o[1], tl = Math.hypot(tx, ty) || 1;
@@ -75,6 +75,16 @@
       if (nx * (p[0] - cxy[0]) + ny * (p[1] - cxy[1]) < 0) { nx = -nx; ny = -ny; }
       return [nx, ny, tx, ty];
     };
+    // 1012 真布不会是正正的几何形：四个角各自轻轻偏一点，整块布带一点歪（最多 3，别让绕边花边出界）
+    const cw = [0, 1, 2, 3].map(() => [(r() - 0.5) * 6, (r() - 0.5) * 6]);
+    const warp = (x, y) => {
+      const u = Math.min(1, Math.max(0, x / w)), v = Math.min(1, Math.max(0, y / h));
+      return [
+        x + (cw[0][0] * (1 - u) * (1 - v) + cw[1][0] * u * (1 - v) + cw[2][0] * (1 - u) * v + cw[3][0] * u * v),
+        y + (cw[0][1] * (1 - u) * (1 - v) + cw[1][1] * u * (1 - v) + cw[2][1] * (1 - u) * v + cw[3][1] * u * v),
+      ];
+    };
+    base = base.map(([x, y]) => warp(x, y));
     let along = 0;
     const poly = base.map((p, i) => {
       if (i) along += Math.hypot(p[0] - base[i - 1][0], p[1] - base[i - 1][1]);
@@ -107,7 +117,7 @@
     // 1012 她：「画布不像刺绣底」——原来是一排排等距细线，像横格纸。改成真的织物：
     // 经线、纬线一根一根画，每根粗细不匀（隔一段鼓出一个纱结）、有深有浅、微微歪；再铺几块大的明暗斑、一两道浅折痕
     const loose = { linen: 2.0, cotton: 1.6, denim: 1.6, silk: 1.3, felt: 0, plaid: 1.8 }[fab] ?? 1.9;
-    const slub = fab === "linen" ? 0.09 : fab === "cotton" ? 0.04 : 0.02;
+    const slub = fab === "linen" ? 0.12 : fab === "cotton" ? 0.05 : 0.03;
     const yarn = (horizontal) => {
       const span = horizontal ? h : w, run = horizontal ? w : h;
       for (let p = r() * loose; p < span; p += loose * (0.8 + r() * 0.45)) {
@@ -117,8 +127,8 @@
           const seg = 12 + r() * 46, fat = r() < slub ? 1.5 + r() * 0.8 : 1;
           ctx.lineWidth = loose * (0.28 + r() * 0.3) * fat;
           ctx.strokeStyle = tone > 0
-            ? `rgba(255,255,255,${(0.05 + r() * 0.09) * (fat > 1 ? 1.4 : 1)})`
-            : `rgba(70,50,45,${0.015 + r() * 0.03})`;
+            ? `rgba(255,255,255,${(0.03 + r() * 0.06) * (fat > 1 ? 2.2 : 1)})`
+            : `rgba(70,50,45,${(0.01 + r() * 0.02) * (fat > 1 ? 2.5 : 1)})`;
           ctx.beginPath();
           if (horizontal) { ctx.moveTo(q, p + wob); ctx.lineTo(q + seg, p + wob + (r() - 0.5) * 0.5); }
           else if (denim) { ctx.moveTo(p + wob - q * 0.35, q); ctx.lineTo(p + wob - (q + seg) * 0.35, q + seg); }   // 牛仔斜纹
@@ -128,7 +138,57 @@
         }
       }
     };
-    if (!felt) { yarn(false); yarn(true); }
+    // 1012 她给看真布料：真布是一上一下交织的纱，每个交叉点有亮面暗面，才看得出「织」的颗粒。
+    // 先画一小块织纹贴片（平纹 / 牛仔斜纹），每粒纱一个小椭圆、左上亮右下暗、粗细深浅各不同，再平铺满布
+    if (!felt) {
+      const pitch = { linen: 3.4, cotton: 2.3, denim: 2.5, silk: 1.7, plaid: 2.6 }[fab] ?? 2.8;
+      const n = Math.round(72 / pitch), S = n * pitch, k = 4;
+      const tile = document.createElement("canvas");
+      tile.width = tile.height = Math.round(S * k);
+      const t = tile.getContext("2d");
+      t.scale(k, k);
+      const rowFat = Array.from({ length: n }, () => 0.75 + r() * 0.5), colFat = Array.from({ length: n }, () => 0.75 + r() * 0.5);
+      const strong = denim ? 1.25 : fab === "linen" ? 1.15 : silk ? 0.55 : 0.9;
+      for (let j = 0; j < n; j++)
+        for (let i = 0; i < n; i++) {
+          const over = denim ? ((i + j) % 4) < 2 : (i + j) % 2 === 0;   // 牛仔是二上二下的斜纹
+          const cx = (i + 0.5) * pitch, cy = (j + 0.5) * pitch;
+          const fat = over ? rowFat[j] : colFat[i];
+          const rx = (over ? 0.62 : 0.36) * pitch * (over ? 1 : fat), ry = (over ? 0.36 : 0.62) * pitch * (over ? fat : 1);
+          const g = t.createRadialGradient(cx - rx * 0.35, cy - ry * 0.35, 0, cx, cy, Math.max(rx, ry) * 1.1);
+          const lit = (0.22 + r() * 0.14) * strong, dark = (0.15 + r() * 0.12) * strong;
+          g.addColorStop(0, `rgba(255,255,255,${lit})`);
+          g.addColorStop(0.55, "rgba(255,255,255,0)");
+          g.addColorStop(1, `rgba(40,28,24,${dark})`);
+          t.fillStyle = g;
+          t.beginPath();
+          t.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
+          t.fill();
+        }
+      const pat = ctx.createPattern(tile, "repeat");
+      if (pat.setTransform) pat.setTransform(new DOMMatrix().scale(1 / k));
+      ctx.fillStyle = pat;
+      ctx.fillRect(-10, -10, w + 20, h + 20);
+      yarn(false); yarn(true);
+    }
+    // 颜色不匀：生麻里的一粒粒深色杂点；蓝染（牛仔）深一块浅一块
+    if (fab === "linen" || fab === "cotton") {
+      for (let i = 0; i < (fab === "linen" ? 260 : 90); i++) {
+        ctx.fillStyle = `rgba(${95 + r() * 30},${65 + r() * 20},${45 + r() * 15},${0.18 + r() * 0.3})`;
+        const len = 0.6 + r() * (r() < 0.2 ? 5 : 1.4);
+        ctx.fillRect(r() * w, r() * h, len, 0.7 + r() * 0.5);
+      }
+    }
+    if (denim) {
+      for (let i = 0; i < 40; i++) {
+        const gx = r() * w, gy = r() * h, rad = 30 + r() * 120, light = r() < 0.45;
+        const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
+        g.addColorStop(0, light ? "rgba(170,190,215,.10)" : "rgba(10,20,40,.12)");
+        g.addColorStop(1, "rgba(0,0,0,0)");
+        ctx.fillStyle = g;
+        ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
+      }
+    }
     // 大的明暗斑：布面不会是一个平的颜色
     for (let i = 0; i < 26; i++) {
       const gx = r() * w, gy = r() * h, rad = 40 + r() * 140, light = r() < 0.5;
@@ -164,6 +224,19 @@
         ctx.bezierCurveTo(w * 0.3, j * 120 - 70, w * 0.7, j * 120 + 65, w, j * 120 - 40);
         ctx.stroke();
       }
+    }
+    // 有光：一整块布左上亮、右下暗；靠近布边一圈稍暗，看得出布有厚度
+    const lg = ctx.createLinearGradient(0, 0, w, h);
+    lg.addColorStop(0, "rgba(255,255,255,.10)");
+    lg.addColorStop(0.5, "rgba(255,255,255,0)");
+    lg.addColorStop(1, "rgba(30,20,20,.09)");
+    ctx.fillStyle = lg;
+    ctx.fillRect(-10, -10, w + 20, h + 20);
+    for (let j = 6; j >= 1; j--) {
+      ctx.lineWidth = j * 3;
+      ctx.strokeStyle = "rgba(40,28,28,.022)";
+      polygon(ctx, poly);
+      ctx.stroke();
     }
     // 布边往里 2–5px 是脱了纬线的那一圈：浅一点、稀一点
     if (!felt) {
