@@ -26,7 +26,7 @@
     ctx.closePath();
   }
   const fabrics = {
-    linen: { name: "麻布", color: "#EFE9DE" },
+    linen: { name: "麻布", color: "#F1EFEC" },   // 1012 她嫌脏：米黄换冷白
     cotton: { name: "棉布", color: "#F1EFF0" },
     denim: { name: "牛仔", color: "#465D79" },
     silk: { name: "丝绸", color: "#E0D4DD" },
@@ -128,7 +128,7 @@
           ctx.lineWidth = loose * (0.28 + r() * 0.3) * fat;
           ctx.strokeStyle = tone > 0
             ? `rgba(255,255,255,${(0.03 + r() * 0.06) * (fat > 1 ? 2.2 : 1)})`
-            : `rgba(70,50,45,${(0.01 + r() * 0.02) * (fat > 1 ? 2.5 : 1)})`;
+            : `rgba(100,102,115,${(0.008 + r() * 0.014) * (fat > 1 ? 2 : 1)})`;
           ctx.beginPath();
           if (horizontal) { ctx.moveTo(q, p + wob); ctx.lineTo(q + seg, p + wob + (r() - 0.5) * 0.5); }
           else if (denim) { ctx.moveTo(p + wob - q * 0.35, q); ctx.lineTo(p + wob - (q + seg) * 0.35, q + seg); }   // 牛仔斜纹
@@ -156,10 +156,10 @@
           const fat = over ? rowFat[j] : colFat[i];
           const rx = (over ? 0.62 : 0.36) * pitch * (over ? 1 : fat), ry = (over ? 0.36 : 0.62) * pitch * (over ? fat : 1);
           const g = t.createRadialGradient(cx - rx * 0.35, cy - ry * 0.35, 0, cx, cy, Math.max(rx, ry) * 1.1);
-          const lit = (0.22 + r() * 0.14) * strong, dark = (0.15 + r() * 0.12) * strong;
+          const lit = (0.20 + r() * 0.12) * strong, dark = (0.05 + r() * 0.04) * strong;
           g.addColorStop(0, `rgba(255,255,255,${lit})`);
           g.addColorStop(0.55, "rgba(255,255,255,0)");
-          g.addColorStop(1, `rgba(40,28,24,${dark})`);
+          g.addColorStop(1, `rgba(96,98,110,${dark})`);   // 暗面用冷灰，不用棕
           t.fillStyle = g;
           t.beginPath();
           t.ellipse(cx, cy, rx, ry, 0, 0, Math.PI * 2);
@@ -172,11 +172,11 @@
       yarn(false); yarn(true);
     }
     // 颜色不匀：生麻里的一粒粒深色杂点；蓝染（牛仔）深一块浅一块
-    if (fab === "linen" || fab === "cotton") {
-      for (let i = 0; i < (fab === "linen" ? 260 : 90); i++) {
-        ctx.fillStyle = `rgba(${95 + r() * 30},${65 + r() * 20},${45 + r() * 15},${0.18 + r() * 0.3})`;
-        const len = 0.6 + r() * (r() < 0.2 ? 5 : 1.4);
-        ctx.fillRect(r() * w, r() * h, len, 0.7 + r() * 0.5);
+    // 1012：原来这里撒棕色杂点模仿生麻，她说「显得很脏」——去掉，只留极少几粒很淡的冷灰纱结
+    if (fab === "linen") {
+      for (let i = 0; i < 40; i++) {
+        ctx.fillStyle = `rgba(120,122,135,${0.06 + r() * 0.08})`;
+        ctx.fillRect(r() * w, r() * h, 1 + r() * 3, 0.6);
       }
     }
     if (denim) {
@@ -191,15 +191,15 @@
     }
     // 大的明暗斑：布面不会是一个平的颜色
     for (let i = 0; i < 26; i++) {
-      const gx = r() * w, gy = r() * h, rad = 40 + r() * 140, light = r() < 0.5;
+      const gx = r() * w, gy = r() * h, rad = 40 + r() * 140, light = r() < 0.85;
       const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
-      g.addColorStop(0, light ? "rgba(255,255,255,.10)" : "rgba(60,40,40,.045)");
+      g.addColorStop(0, light ? "rgba(255,255,255,.06)" : "rgba(110,112,125,.012)");
       g.addColorStop(1, "rgba(0,0,0,0)");
       ctx.fillStyle = g;
       ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
     }
     for (let i = 0; i < (felt ? 9000 : 2600); i++) {
-      ctx.fillStyle = r() > 0.5 ? "rgba(255,255,255,.16)" : "rgba(20,20,30,.06)";
+      ctx.fillStyle = r() > 0.35 ? "rgba(255,255,255,.16)" : "rgba(90,92,105,.035)";
       ctx.fillRect(r() * w, r() * h, felt ? 1.5 : 0.9, felt ? 1.5 : 0.9);
     }
     // 一两道浅折痕（毛毡不折）：一条亮边贴一条暗边，叠几层假装柔和
@@ -210,7 +210,7 @@
           ctx.lineWidth = j * 3.2;
           ctx.strokeStyle = `rgba(255,255,255,${denim ? 0.01 : 0.035})`;   // 深色布上亮痕要淡，不然像一道白光
           ctx.beginPath(); ctx.moveTo(-10, y0); ctx.quadraticCurveTo(w / 2, (y0 + y1) / 2 + bend, w + 10, y1); ctx.stroke();
-          ctx.strokeStyle = `rgba(50,35,35,${0.016})`;
+          ctx.strokeStyle = `rgba(90,92,105,${0.012})`;
           ctx.beginPath(); ctx.moveTo(-10, y0 + j * 2 + 3); ctx.quadraticCurveTo(w / 2, (y0 + y1) / 2 + bend + j * 2 + 3, w + 10, y1 + j * 2 + 3); ctx.stroke();
         }
       }
@@ -229,12 +229,12 @@
     const lg = ctx.createLinearGradient(0, 0, w, h);
     lg.addColorStop(0, "rgba(255,255,255,.10)");
     lg.addColorStop(0.5, "rgba(255,255,255,0)");
-    lg.addColorStop(1, "rgba(30,20,20,.09)");
+    lg.addColorStop(1, "rgba(80,82,95,.035)");
     ctx.fillStyle = lg;
     ctx.fillRect(-10, -10, w + 20, h + 20);
     for (let j = 6; j >= 1; j--) {
       ctx.lineWidth = j * 3;
-      ctx.strokeStyle = "rgba(40,28,28,.022)";
+      ctx.strokeStyle = "rgba(90,92,105,.006)";   // 布边只一点点厚度，别压出一圈脏边
       polygon(ctx, poly);
       ctx.stroke();
     }
@@ -249,7 +249,7 @@
     // 纤维颜色：布色往白里提一点（脱出来的线比布面亮），牛仔布的纬线是白的
     const hex = f.color.replace("#", ""),
       rgb = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16)),
-      lift = denim ? [222, 228, 238] : rgb.map((v) => Math.round(v + (255 - v) * 0.6));
+      lift = denim ? [222, 228, 238] : rgb.map((v) => Math.round(v + (255 - v) * 0.7));
     const fiber = (a) => `rgba(${lift[0]},${lift[1]},${lift[2]},${a})`;
     const shade = (a) => `rgba(${Math.round(rgb[0] * 0.6)},${Math.round(rgb[1] * 0.6)},${Math.round(rgb[2] * 0.6)},${a})`;
     ctx.save();
