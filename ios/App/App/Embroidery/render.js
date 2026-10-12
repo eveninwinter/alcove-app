@@ -179,39 +179,35 @@
         ctx.fillRect(r() * w, r() * h, 1 + r() * 3, 0.6);
       }
     }
-    if (denim) {
-      for (let i = 0; i < 40; i++) {
-        const gx = r() * w, gy = r() * h, rad = 30 + r() * 120, light = r() < 0.45;
-        const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
-        g.addColorStop(0, light ? "rgba(170,190,215,.10)" : "rgba(10,20,40,.12)");
-        g.addColorStop(1, "rgba(0,0,0,0)");
-        ctx.fillStyle = g;
-        ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
-      }
-    }
-    // 大的明暗斑：布面不会是一个平的颜色
-    for (let i = 0; i < 26; i++) {
-      const gx = r() * w, gy = r() * h, rad = 40 + r() * 140, light = r() < 0.85;
-      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
-      g.addColorStop(0, light ? "rgba(255,255,255,.06)" : "rgba(110,112,125,.012)");
-      g.addColorStop(1, "rgba(0,0,0,0)");
-      ctx.fillStyle = g;
-      ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
-    }
+    // 1012 她：「不要出现一坨一坨的光斑」——大明暗斑整段拿掉
     for (let i = 0; i < (felt ? 9000 : 2600); i++) {
       ctx.fillStyle = r() > 0.35 ? "rgba(255,255,255,.16)" : "rgba(90,92,105,.035)";
       ctx.fillRect(r() * w, r() * h, felt ? 1.5 : 0.9, felt ? 1.5 : 0.9);
     }
-    // 一两道浅折痕（毛毡不折）：一条亮边贴一条暗边，叠几层假装柔和
+    // 1012 她：「你的折痕很突兀」——原来是一条横贯整块布、亮暗两边都很硬的线。
+    // 改成一两道短的、很宽很淡的软褶：只占布宽的三到六成，两头渐隐，亮面和暗面都压到几乎看不出
     if (!felt) {
       for (let k = 0; k < (r() < 0.5 ? 1 : 2); k++) {
-        const y0 = h * (0.25 + r() * 0.5), y1 = y0 + (r() - 0.5) * h * 0.35, bend = (r() - 0.5) * h * 0.2;
-        for (let j = 5; j >= 1; j--) {
-          ctx.lineWidth = j * 3.2;
-          ctx.strokeStyle = `rgba(255,255,255,${denim ? 0.01 : 0.035})`;   // 深色布上亮痕要淡，不然像一道白光
-          ctx.beginPath(); ctx.moveTo(-10, y0); ctx.quadraticCurveTo(w / 2, (y0 + y1) / 2 + bend, w + 10, y1); ctx.stroke();
-          ctx.strokeStyle = `rgba(90,92,105,${0.012})`;
-          ctx.beginPath(); ctx.moveTo(-10, y0 + j * 2 + 3); ctx.quadraticCurveTo(w / 2, (y0 + y1) / 2 + bend + j * 2 + 3, w + 10, y1 + j * 2 + 3); ctx.stroke();
+        const len = w * (0.3 + r() * 0.3), x0 = r() * (w - len), y0 = h * (0.2 + r() * 0.6);
+        const ang = (r() - 0.5) * 0.5, x1 = x0 + len * Math.cos(ang), y1 = y0 + len * Math.sin(ang), bend = (r() - 0.5) * 30;
+        const along = (rgba) => {
+          const g = ctx.createLinearGradient(x0, y0, x1, y1);
+          g.addColorStop(0, "rgba(0,0,0,0)");
+          g.addColorStop(0.5, rgba);
+          g.addColorStop(1, "rgba(0,0,0,0)");
+          return g;
+        };
+        const path = (dy) => {
+          ctx.beginPath();
+          ctx.moveTo(x0, y0 + dy);
+          ctx.quadraticCurveTo((x0 + x1) / 2, (y0 + y1) / 2 + bend + dy, x1, y1 + dy);
+        };
+        for (let j = 8; j >= 1; j--) {
+          ctx.lineWidth = j * 4;
+          ctx.strokeStyle = along(`rgba(255,255,255,${denim ? 0.004 : 0.012})`);
+          path(0); ctx.stroke();
+          ctx.strokeStyle = along(`rgba(90,92,105,${0.005})`);
+          path(j * 2.5 + 4); ctx.stroke();
         }
       }
     }
