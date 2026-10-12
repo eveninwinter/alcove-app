@@ -351,6 +351,9 @@ struct NativeWindowView: View {
     // 1008 她要的第三栏「审美积累」：Are.na 图板里每天挑九张（后端 aesthetic.py）
     @State private var aestheticMode = false
     @StateObject private var aesthetic = AestheticStore()
+    // 1012 第二期第四栏「待读」：文字的东西＋他自己留的搜索词（后端 reading.py）
+    @State private var readingMode = false
+    @StateObject private var reading = ReadingStore()
     @State private var tab = 0
     @State private var commented: [WindowCard] = []
     /// 读过的记在手机本地就够了（不上后端），留最近 400 张
@@ -373,11 +376,13 @@ struct NativeWindowView: View {
             paper.paper.ignoresSafeArea()
             VStack(spacing: 0) {
                 header
-                if store.cards.isEmpty && !gridMode && !aestheticMode {
+                if store.cards.isEmpty && !gridMode && !aestheticMode && !readingMode {
                     emptyState
                 } else {
                     dateline
-                    if aestheticMode {
+                    if readingMode {
+                        ReadingBoard(store: reading, paper: paper, bottomPad: max(safeBottom, 10) + 20)
+                    } else if aestheticMode {
                         AestheticBoard(store: aesthetic, paper: paper, bottomPad: max(safeBottom, 10) + 20)
                     } else if gridMode {
                         catalog
@@ -484,14 +489,15 @@ struct NativeWindowView: View {
 
     private var dateline: some View {
         HStack {
-            Text(aestheticMode ? (aesthetic.day.isEmpty ? "" : cnDay(aesthetic.day))
+            Text(readingMode ? "\(Self.cn(reading.items.count))条待读" : aestheticMode ? (aesthetic.day.isEmpty ? "" : cnDay(aesthetic.day))
                  : (store.day.isEmpty ? "" : "\(cnDay(store.day)) · 今天\(Self.cn(store.cards.count))幅"))
                 .font(WindowFont.swiftUI(12)).tracking(1.5).foregroundColor(paper.inkSoft)
             Spacer()
             HStack(spacing: 0) {
-                modeButton("一幅一屏", on: !gridMode && !aestheticMode) { gridMode = false; aestheticMode = false }
-                modeButton("目录", on: gridMode && !aestheticMode) { gridMode = true; aestheticMode = false }
-                modeButton("审美积累", on: aestheticMode) { aestheticMode = true }
+                modeButton("一幅一屏", on: !gridMode && !aestheticMode && !readingMode) { gridMode = false; aestheticMode = false; readingMode = false }
+                modeButton("目录", on: gridMode && !aestheticMode && !readingMode) { gridMode = true; aestheticMode = false; readingMode = false }
+                modeButton("审美积累", on: aestheticMode && !readingMode) { aestheticMode = true; readingMode = false }
+                modeButton("待读", on: readingMode) { readingMode = true }
             }
             .overlay(Capsule().stroke(paper.rule, lineWidth: 1))
             .clipShape(Capsule())
@@ -1346,5 +1352,229 @@ private struct WindowZoomView: View {
             .buttonStyle(.plain)
             .padding(.trailing, 18).padding(.top, 10)
         }
+    }
+}
+
+// MARK: - 1012 第二期：待读（文字的东西）＋ 他自己留的词（后端 reading.py）
+
+struct ReadingNote: Identifiable, Equatable {
+    let id: String
+    let author: String
+    let text: String
+    let createdAt: String
+}
+
+struct ReadingItem: Identifiable, Equatable {
+    let id: String
+    let sourceName: String
+    let title: String
+    let summary: String
+    let url: String
+    let readState: String
+    let trackQuery: String
+    let fetchedAt: String
+    let notes: [ReadingNote]
+
+    init?(json: [String: Any]) {
+        guard let id = json["item_id"] as? String else { return nil }
+        self.id = id
+        sourceName = json["source_name"] as? String ?? ""
+        let zh = json["title_zh"] as? String ?? ""
+        title = zh.isEmpty ? (json["title"] as? String ?? "") : zh
+        let sz = json["summary_zh"] as? String ?? ""
+        summary = sz.isEmpty ? (json["summary"] as? String ?? "") : sz
+        url = json["url"] as? String ?? ""
+        readState = json["read_state"] as? String ?? "unread"
+        trackQuery = json["track_query"] as? String ?? ""
+        fetchedAt = json["fetched_at"] as? String ?? ""
+        notes = (json["notes"] as? [[String: Any]] ?? []).compactMap {
+            guard let nid = $0["note_id"] as? String else { return nil }
+            return ReadingNote(id: nid, author: $0["author"] as? String ?? "", text: $0["text"] as? String ?? "",
+                               createdAt: $0["created_at"] as? String ?? "")
+        }
+    }
+}
+
+struct ReadingTrack: Identifiable, Equatable {
+    let id: String
+    let query: String
+    let everyHours: Int
+    let active: Bool
+}
+
+final class ReadingStore: ObservableObject {
+    @Published var items: [ReadingItem] = []
+    @Published var tracks: [ReadingTrack] = []
+    @Published var loaded = false
+
+    func load() async {
+        if let d = try? await NativeHouseAPI.object("/api/window/reading") {
+            items = (d["items"] as? [[String: Any]] ?? []).compactMap(ReadingItem.init(json:))
+        }
+        if let d = try? await NativeHouseAPI.object("/api/window/tracks") {
+            tracks = (d["tracks"] as? [[String: Any]] ?? []).compactMap {
+                guard let id = $0["track_id"] as? String else { return nil }
+                return ReadingTrack(id: id, query: $0["query"] as? String ?? "",
+                                    everyHours: $0["every_hours"] as? Int ?? 24, active: ($0["active"] as? Int ?? 1) == 1)
+            }.filter(\.active)
+        }
+        loaded = true
+    }
+
+    func note(_ id: String, text: String) async -> Bool {
+        let body: [String: Any] = ["id": id, "author": "陈霁", "text": text]
+        guard (try? await NativeHouseAPI.object("/api/window/reading/note", method: "POST", body: body)) != nil else { return false }
+        await load()
+        return true
+    }
+}
+
+private struct ReadingBoard: View {
+    @ObservedObject var store: ReadingStore
+    let paper: WindowPaper
+    let bottomPad: CGFloat
+    @State private var opened: ReadingItem?
+
+    private static func every(_ h: Int) -> String {
+        if h % 24 == 0 { return h == 24 ? "每天" : "每 \(h / 24) 天" }
+        return "每 \(h) 小时"
+    }
+
+    var body: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                VStack(alignment: .leading, spacing: 6) {
+                    (Text("待读") + Text("。").foregroundColor(paper.rubric))
+                        .font(WindowFont.swiftUI(26, bold: true)).tracking(1)
+                    Text("THINGS TO READ, SLOWLY").font(WindowFont.smallCaps(8.5)).tracking(2.6)
+                        .foregroundColor(paper.rubric)
+                    Text(store.items.isEmpty ? (store.loaded ? "还没有新的，过一会儿再来。" : "")
+                         : "文字的东西放这里，留七天，不用当场读完。")
+                        .font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft).lineSpacing(5)
+                        .padding(.top, 4)
+                }
+                .padding(.horizontal, 22).padding(.top, 14)
+                if !store.tracks.isEmpty {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text("他在追").font(WindowFont.swiftUI(11)).tracking(2).foregroundColor(paper.rubric)
+                        ForEach(store.tracks) { t in
+                            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                                Text("「\(t.query)」").font(WindowFont.swiftUI(14)).foregroundColor(paper.ink)
+                                Spacer(minLength: 8)
+                                Text(Self.every(t.everyHours)).font(WindowFont.swiftUI(11)).foregroundColor(paper.inkSoft)
+                            }
+                        }
+                    }
+                    .padding(14)
+                    .overlay(Rectangle().stroke(paper.rule, lineWidth: 1))
+                    .padding(.horizontal, 22).padding(.top, 16)
+                }
+                Text("❦").font(.system(size: 14)).foregroundColor(paper.rubric)
+                    .frame(maxWidth: .infinity).padding(.top, 14).padding(.bottom, 6)
+                ForEach(store.items) { it in
+                    Button { opened = it } label: { row(it) }.buttonStyle(.plain)
+                    Rectangle().fill(paper.rule).frame(height: 1).padding(.horizontal, 22)
+                }
+            }
+            .padding(.bottom, bottomPad)
+        }
+        .task { await store.load() }
+        .refreshable { await store.load() }
+        .sheet(item: $opened) { it in
+            ReadingItemPage(store: store, itemId: it.id, paper: paper)
+        }
+    }
+
+    private func row(_ it: ReadingItem) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 6) {
+                Text(it.sourceName).font(WindowFont.smallCaps(9)).tracking(1.6).foregroundColor(paper.rubric)
+                if !it.trackQuery.isEmpty {
+                    Text("· 他留的「\(it.trackQuery)」").font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft)
+                }
+                Spacer(minLength: 4)
+                if it.readState != "unread" {
+                    Text(it.readState == "full" ? "他读了全文" : "他读了摘要")
+                        .font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft)
+                }
+            }
+            Text(it.title).font(WindowFont.swiftUI(16, bold: true)).foregroundColor(paper.ink)
+                .multilineTextAlignment(.leading).fixedSize(horizontal: false, vertical: true)
+            if !it.summary.isEmpty {
+                Text(it.summary).font(WindowFont.swiftUI(13)).foregroundColor(paper.inkSoft).lineSpacing(4)
+                    .lineLimit(3).multilineTextAlignment(.leading)
+            }
+            if !it.notes.isEmpty {
+                Text("✎ \(it.notes.count) 则随笔").font(WindowFont.swiftUI(10)).foregroundColor(paper.rubric)
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 22).padding(.vertical, 14)
+        .contentShape(Rectangle())
+    }
+}
+
+private struct ReadingItemPage: View {
+    @ObservedObject var store: ReadingStore
+    let itemId: String
+    let paper: WindowPaper
+    @Environment(\.openURL) private var openURL
+    @State private var draft = ""
+    @State private var sending = false
+    private var item: ReadingItem? { store.items.first { $0.id == itemId } }
+
+    var body: some View {
+        ZStack {
+            paper.paper.ignoresSafeArea()
+            if let it = item {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(it.sourceName).font(WindowFont.smallCaps(9.5)).tracking(1.8).foregroundColor(paper.rubric)
+                        Text(it.title).font(WindowFont.swiftUI(22, bold: true)).foregroundColor(paper.ink)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !it.trackQuery.isEmpty {
+                            Text("他留的词「\(it.trackQuery)」找到的").font(WindowFont.swiftUI(11)).foregroundColor(paper.inkSoft)
+                        }
+                        Text(it.summary.isEmpty ? "（没有摘要）" : it.summary)
+                            .font(WindowFont.swiftUI(15)).foregroundColor(paper.ink).lineSpacing(7)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if let u = URL(string: it.url) {
+                            Button { openURL(u) } label: {
+                                Text("看原文 ›").font(WindowFont.swiftUI(13)).foregroundColor(paper.rubric)
+                                    .padding(.vertical, 6)
+                            }.buttonStyle(.plain)
+                        }
+                        Text("❦").font(.system(size: 13)).foregroundColor(paper.rubric).frame(maxWidth: .infinity)
+                        ForEach(it.notes) { n in
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text("\(n.author) · \(String(n.createdAt.dropFirst(5).prefix(11)).replacingOccurrences(of: "T", with: " "))")
+                                    .font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft)
+                                Text(n.text).font(WindowFont.swiftUI(14)).foregroundColor(paper.ink).lineSpacing(5)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+                        }
+                        HStack(alignment: .bottom, spacing: 8) {
+                            TextField("写几句…", text: $draft, axis: .vertical)
+                                .font(WindowFont.swiftUI(14)).foregroundColor(paper.ink).lineLimit(1...5)
+                            Button {
+                                let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                                guard !t.isEmpty, !sending else { return }
+                                sending = true
+                                Task {
+                                    if await store.note(itemId, text: t) { draft = "" }
+                                    sending = false
+                                }
+                            } label: {
+                                Text("留下").font(WindowFont.swiftUI(13)).foregroundColor(paper.rubric)
+                            }.buttonStyle(.plain)
+                        }
+                        .padding(.vertical, 8)
+                        .overlay(alignment: .bottom) { Rectangle().fill(paper.rule).frame(height: 1) }
+                    }
+                    .padding(.horizontal, 24).padding(.top, 28).padding(.bottom, 40)
+                }
+            }
+        }
+        .presentationDetents([.large])
     }
 }

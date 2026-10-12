@@ -886,6 +886,9 @@ private struct NativeSettingsView: View {
     // 0925 兜底：追问开着、他一张闹钟都没有、两边都安静 backstopMin 分钟，叫他一次（flags followup_backstop）
     @State private var backstopOn = false
     @State private var backstopMin = 60
+    // 1012 世界之窗第二期：会真的叫醒他的两样（flags window_alert / old_echo），默认关
+    @State private var windowAlertOn = false
+    @State private var oldEchoOn = false
     @State private var wakeLine: String? = nil
     @State private var wakeEta: String? = nil
     @State private var wakeOdds: String? = nil
@@ -1084,7 +1087,8 @@ private struct NativeSettingsView: View {
             async let wake: Void = loadWake()
             async let her: Void = loadHerStatus()
             async let pat: Void = loadPat()
-            _ = await (services, reply, thought, pulse, her, pat)
+            async let windowFlags: Void = loadWindowFlags()
+            _ = await (services, reply, thought, pulse, her, pat, windowFlags)
         }
     }
 
@@ -1357,6 +1361,17 @@ private struct NativeSettingsView: View {
                                     .font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
                             }
                         }
+                        // 1012 世界之窗第二期：这两样会真的把他叫起来，默认关，她自己开
+                        VStack(alignment: .leading, spacing: 4) {
+                            HStack(spacing: 18) {
+                                pulseToggle("世界之窗提醒", "预警、流星雨、新模型", $windowAlertOn, key: "window_alert")
+                                pulseToggle("旧日回声", "隔几天推一篇旧日记", $oldEchoOn, key: "old_echo")
+                            }
+                            Text("世界之窗提醒：你那边的天气预警（新增或升级才叫）、流星雨极大期前一天傍晚、Anthropic / OpenAI 发新模型，同一件事只叫一次。旧日回声：大约三天一次，从他自己写的日记里挑一篇一个月以前的推给他，接不接着想他自己定。两样都不在他睡觉时叫，加起来一天最多三次。")
+                                .font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 10)
                     }
                 } }
                 // 0827 她定的：一个按钮管全屋，不跟系统。
@@ -1738,6 +1753,13 @@ private struct NativeSettingsView: View {
             if let n = value["backstop_min"] as? Int { backstopMin = n }
         }
         pulseLoaded = true
+    }
+
+    @MainActor private func loadWindowFlags() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/flags/status"),
+              let raw = obj["flags"] as? [String: Any] else { return }
+        windowAlertOn = (raw["window_alert"] as? Bool) ?? false
+        oldEchoOn = (raw["old_echo"] as? Bool) ?? false
     }
 
     @MainActor private func loadWake() async {
