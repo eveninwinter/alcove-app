@@ -35,7 +35,7 @@
   };
   const clothCache = new Map();
   // 1012 布四周留的边从 20 加到 50：浮起来的影子要散开，20 会把影子切成一个硬框
-  const PAD = 50;
+  const PAD = 70;
   function cloth(ctx, doc) {
     const key = JSON.stringify([doc.fabric, doc.shape]);
     if (!clothCache.has(key)) {
@@ -104,26 +104,56 @@
       }
       for (let i = 0; i < h; i += 60) ctx.fillRect(0, i, w, 22);
     }
-    let gap = fab === "linen" ? 3 : denim ? 2 : 4;
-    for (let x = 0; x < w; x += gap) {
-      ctx.strokeStyle = `rgba(255,255,255,${0.05 + r() * 0.1})`;
-      ctx.lineWidth = 0.5 + r() * 0.65;
-      ctx.beginPath();
-      ctx.moveTo(x, 0);
-      ctx.lineTo(denim ? x - h * 0.4 : x, h);
-      ctx.stroke();
+    // 1012 她：「画布不像刺绣底」——原来是一排排等距细线，像横格纸。改成真的织物：
+    // 经线、纬线一根一根画，每根粗细不匀（隔一段鼓出一个纱结）、有深有浅、微微歪；再铺几块大的明暗斑、一两道浅折痕
+    const loose = { linen: 2.0, cotton: 1.6, denim: 1.6, silk: 1.3, felt: 0, plaid: 1.8 }[fab] ?? 1.9;
+    const slub = fab === "linen" ? 0.09 : fab === "cotton" ? 0.04 : 0.02;
+    const yarn = (horizontal) => {
+      const span = horizontal ? h : w, run = horizontal ? w : h;
+      for (let p = r() * loose; p < span; p += loose * (0.8 + r() * 0.45)) {
+        const tone = r() - 0.3, wob = (r() - 0.5) * 0.8;
+        let q = -r() * 20;
+        while (q < run) {
+          const seg = 12 + r() * 46, fat = r() < slub ? 1.5 + r() * 0.8 : 1;
+          ctx.lineWidth = loose * (0.28 + r() * 0.3) * fat;
+          ctx.strokeStyle = tone > 0
+            ? `rgba(255,255,255,${(0.05 + r() * 0.09) * (fat > 1 ? 1.4 : 1)})`
+            : `rgba(70,50,45,${0.015 + r() * 0.03})`;
+          ctx.beginPath();
+          if (horizontal) { ctx.moveTo(q, p + wob); ctx.lineTo(q + seg, p + wob + (r() - 0.5) * 0.5); }
+          else if (denim) { ctx.moveTo(p + wob - q * 0.35, q); ctx.lineTo(p + wob - (q + seg) * 0.35, q + seg); }   // 牛仔斜纹
+          else { ctx.moveTo(p + wob, q); ctx.lineTo(p + wob + (r() - 0.5) * 0.5, q + seg); }
+          ctx.stroke();
+          q += seg + (r() < 0.12 ? r() * 4 : 0);    // 偶尔断一下，像纱线起伏
+        }
+      }
+    };
+    if (!felt) { yarn(false); yarn(true); }
+    // 大的明暗斑：布面不会是一个平的颜色
+    for (let i = 0; i < 26; i++) {
+      const gx = r() * w, gy = r() * h, rad = 40 + r() * 140, light = r() < 0.5;
+      const g = ctx.createRadialGradient(gx, gy, 0, gx, gy, rad);
+      g.addColorStop(0, light ? "rgba(255,255,255,.10)" : "rgba(60,40,40,.045)");
+      g.addColorStop(1, "rgba(0,0,0,0)");
+      ctx.fillStyle = g;
+      ctx.fillRect(gx - rad, gy - rad, rad * 2, rad * 2);
     }
-    for (let y = 0; y < h; y += gap) {
-      ctx.strokeStyle = `rgba(30,25,40,${0.025 + r() * 0.07})`;
-      ctx.lineWidth = 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, y);
-      ctx.lineTo(w, y);
-      ctx.stroke();
+    for (let i = 0; i < (felt ? 9000 : 2600); i++) {
+      ctx.fillStyle = r() > 0.5 ? "rgba(255,255,255,.16)" : "rgba(20,20,30,.06)";
+      ctx.fillRect(r() * w, r() * h, felt ? 1.5 : 0.9, felt ? 1.5 : 0.9);
     }
-    for (let i = 0; i < (felt ? 7000 : 1600); i++) {
-      ctx.fillStyle = r() > 0.5 ? "rgba(255,255,255,.15)" : "rgba(20,20,30,.05)";
-      ctx.fillRect(r() * w, r() * h, felt ? 1.5 : 1, felt ? 1.5 : 1);
+    // 一两道浅折痕（毛毡不折）：一条亮边贴一条暗边，叠几层假装柔和
+    if (!felt) {
+      for (let k = 0; k < (r() < 0.5 ? 1 : 2); k++) {
+        const y0 = h * (0.25 + r() * 0.5), y1 = y0 + (r() - 0.5) * h * 0.35, bend = (r() - 0.5) * h * 0.2;
+        for (let j = 5; j >= 1; j--) {
+          ctx.lineWidth = j * 3.2;
+          ctx.strokeStyle = `rgba(255,255,255,${denim ? 0.01 : 0.035})`;   // 深色布上亮痕要淡，不然像一道白光
+          ctx.beginPath(); ctx.moveTo(-10, y0); ctx.quadraticCurveTo(w / 2, (y0 + y1) / 2 + bend, w + 10, y1); ctx.stroke();
+          ctx.strokeStyle = `rgba(50,35,35,${0.016})`;
+          ctx.beginPath(); ctx.moveTo(-10, y0 + j * 2 + 3); ctx.quadraticCurveTo(w / 2, (y0 + y1) / 2 + bend + j * 2 + 3, w + 10, y1 + j * 2 + 3); ctx.stroke();
+        }
+      }
     }
     if (silk) {
       ctx.strokeStyle = "rgba(255,255,255,.18)";
@@ -146,23 +176,23 @@
     // 纤维颜色：布色往白里提一点（脱出来的线比布面亮），牛仔布的纬线是白的
     const hex = f.color.replace("#", ""),
       rgb = [0, 2, 4].map((k) => parseInt(hex.slice(k, k + 2), 16)),
-      lift = denim ? [222, 228, 238] : rgb.map((v) => Math.round(v + (255 - v) * 0.35));
+      lift = denim ? [222, 228, 238] : rgb.map((v) => Math.round(v + (255 - v) * 0.6));
     const fiber = (a) => `rgba(${lift[0]},${lift[1]},${lift[2]},${a})`;
     const shade = (a) => `rgba(${Math.round(rgb[0] * 0.6)},${Math.round(rgb[1] * 0.6)},${Math.round(rgb[2] * 0.6)},${a})`;
     ctx.save();
     ctx.lineCap = "round";
-    const step = felt ? 3 : silk ? 1.6 : 1.1;
+    const step = felt ? 3 : silk ? 1.2 : 0.8;
     const pts = G.resample(poly, step);
     for (let i = 0; i < pts.length; i++) {
       if (r() < (felt ? 0.5 : 0.18)) continue;          // 有疏有密
       const [nx, ny, tx, ty] = outward(i, pts), p = pts[i];
-      const len = felt ? 0.6 + r() * 1.6 : silk ? 1 + Math.pow(r(), 2) * 7 : 0.8 + Math.pow(r(), 2.8) * 9;
+      const len = felt ? 0.8 + r() * 2.4 : silk ? 2 + Math.pow(r(), 1.8) * 14 : 2.5 + Math.pow(r(), 1.9) * 20;   // 1012 她：毛边太小看不见，长度约放大两倍
       const lean = (r() - 0.5) * 1.5, bend = (r() - 0.5) * len * 0.9;
       const sx = p[0] - nx * (1 + r() * 2), sy = p[1] - ny * (1 + r() * 2);
       const ex = p[0] + nx * len + tx * lean * len, ey = p[1] + ny * len + ty * lean * len;
       const mx = (sx + ex) / 2 + tx * bend, my = (sy + ey) / 2 + ty * bend;
-      const a = felt ? 0.35 : 0.3 + r() * 0.55;
-      ctx.lineWidth = (silk ? 0.25 : 0.3) + r() * (silk ? 0.35 : 0.6);
+      const a = felt ? 0.4 : 0.45 + r() * 0.5;
+      ctx.lineWidth = (silk ? 0.3 : 0.45) + r() * (silk ? 0.4 : 0.7);
       ctx.strokeStyle = shade(a * 0.5);      // 每根纤维底下一道细影：浅色底上也看得见
       ctx.beginPath(); ctx.moveTo(sx, sy + 0.8); ctx.quadraticCurveTo(mx, my + 0.8, ex, ey + 0.8); ctx.stroke();
       ctx.strokeStyle = fiber(a);
@@ -172,18 +202,19 @@
     if (!felt) {
       let per = 0;
       for (let i = 1; i < pts.length; i++) per += Math.hypot(pts[i][0] - pts[i - 1][0], pts[i][1] - pts[i - 1][1]);
-      const n = Math.round(per / (silk ? 80 : 60));
+      const n = Math.round(per / (silk ? 70 : 42));
       for (let k = 0; k < n; k++) {
         const i = Math.floor(r() * pts.length), p = pts[i], [nx, ny, tx, ty] = outward(i, pts);
-        const L = 10 + r() * (silk ? 40 : 28), lie = r() < 0.45;
+        const L = 26 + r() * (silk ? 60 : 52), lie = r() < 0.5;
         const dirx = lie ? tx * (r() < 0.5 ? 1 : -1) * 0.85 + nx * 0.35 : nx, diry = lie ? ty * (r() < 0.5 ? 1 : -1) * 0.85 + ny * 0.35 : ny;
-        const ex = p[0] + dirx * L, ey = p[1] + diry * L;
+        const reach = lie ? L : L * 0.7;      // 往外翘的别超出画布留的 70
+        const ex = p[0] + dirx * reach, ey = p[1] + diry * reach;
         const c1x = p[0] + dirx * L * 0.35 + tx * (r() - 0.5) * L * 0.8, c1y = p[1] + diry * L * 0.35 + ty * (r() - 0.5) * L * 0.8;
         const c2x = p[0] + dirx * L * 0.7 + nx * (r() - 0.5) * L * 0.6, c2y = p[1] + diry * L * 0.7 + ny * (r() - 0.5) * L * 0.6;
-        ctx.lineWidth = 0.45 + r() * 0.35;
+        ctx.lineWidth = 0.6 + r() * 0.5;
         ctx.strokeStyle = shade(0.28);
         ctx.beginPath(); ctx.moveTo(p[0] - nx * 2, p[1] - ny * 2 + 0.6); ctx.bezierCurveTo(c1x, c1y + 0.6, c2x, c2y + 0.6, ex, ey + 0.6); ctx.stroke();
-        ctx.strokeStyle = fiber(0.55 + r() * 0.3);
+        ctx.strokeStyle = fiber(0.7 + r() * 0.25);
         ctx.beginPath(); ctx.moveTo(p[0] - nx * 2, p[1] - ny * 2); ctx.bezierCurveTo(c1x, c1y, c2x, c2y, ex, ey); ctx.stroke();
       }
     }

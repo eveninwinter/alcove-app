@@ -155,9 +155,9 @@ function draw() {
   ctx.translate(view.x, view.y);
   ctx.scale(view.scale, view.scale);
   if (exportBg(history.doc) !== "transparent") {
-    // 跟导出同一个框：布四周各 50
+    // 跟导出同一个框：布四周各 70（长线头和影子要地方）
     ctx.fillStyle = exportBg(history.doc);
-    ctx.fillRect(-50, -50, history.doc.shape.w + 100, history.doc.shape.h + 100);
+    ctx.fillRect(-70, -70, history.doc.shape.w + 140, history.doc.shape.h + 140);
   }
   let last = R.render(ctx, history.doc, scene, progress, animationLayer);
   let l = current();
@@ -1096,15 +1096,15 @@ $("keyboardFont").onclick = () => {
 async function exportPNG() {
   const s = history.doc.shape,
     c = document.createElement("canvas");
-  c.width = (s.w + 100) * 2;
-  c.height = (s.h + 100) * 2;
+  c.width = (s.w + 140) * 2;
+  c.height = (s.h + 140) * 2;
   let x = c.getContext("2d");
   x.scale(2, 2);
   if (exportBg(history.doc) !== "transparent") {
     x.fillStyle = exportBg(history.doc);
-    x.fillRect(0, 0, s.w + 100, s.h + 100);
+    x.fillRect(0, 0, s.w + 140, s.h + 140);
   }
-  x.translate(50, 50);
+  x.translate(70, 70);
   let sc = await R.compile(history.doc);
   R.render(x, history.doc, sc, 1);
   return c.toDataURL("image/png");
