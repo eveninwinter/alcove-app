@@ -102,7 +102,7 @@ final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandle
         } catch { self.error("草稿保存失败：\(error.localizedDescription)"); return false }
     }
     private func request(_ action: String, body: [String: Any]?, completion: @escaping (Result<[String: Any], Error>) -> Void) {
-        let allowed = action.range(of: "^(quilt|works|trash|restore|finish|send|work/emb_[A-Za-z0-9_-]+)$", options: .regularExpression) != nil
+        let allowed = action.range(of: "^(quilt|works|trash|restore|finish|send|search|work/emb_[A-Za-z0-9_-]+)$", options: .regularExpression) != nil   // 1012 search：搜素材
         guard allowed else { completion(.failure(URLError(.badURL))); return }
         Task {
             do {
@@ -176,6 +176,33 @@ final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandle
                     DispatchQueue.main.async { self.emit("error", ["message": success ? "已存进相册" : (failure?.localizedDescription ?? "相册保存失败")]) }
                 }
             }
+        case "exportMedia":
+            // 1012 存相册：透明 PNG / 带桌面 JPG / 绣字过程 GIF / 视频
+            guard let encoded = body["data"] as? String, let kind = body["kind"] as? String,
+                  let comma = encoded.firstIndex(of: ","), encoded[..<comma].hasSuffix(";base64"),
+                  let data = Data(base64Encoded: String(encoded[encoded.index(after: comma)...])) else {
+                error("导出失败"); return
+            }
+            var videoURL: URL?
+            if kind == "video" {
+                let ext = encoded.hasPrefix("data:video/mp4") ? "mp4" : "mov"
+                let url = FileManager.default.temporaryDirectory.appendingPathComponent("embroidery-\(UUID().uuidString).\(ext)")
+                do { try data.write(to: url) } catch { self.error("视频写入失败"); return }
+                videoURL = url
+            }
+            PHPhotoLibrary.requestAuthorization(for: .addOnly) { status in
+                guard status == .authorized || status == .limited else {
+                    DispatchQueue.main.async { self.error("没有相册写入权限，请在系统设置中允许保存照片") }; return
+                }
+                PHPhotoLibrary.shared().performChanges({
+                    let request = PHAssetCreationRequest.forAsset()
+                    if let videoURL { request.addResource(with: .video, fileURL: videoURL, options: nil) }
+                    else { request.addResource(with: .photo, data: data, options: nil) }
+                }) { success, failure in
+                    if let videoURL { try? FileManager.default.removeItem(at: videoURL) }
+                    DispatchQueue.main.async { self.emit("error", ["message": success ? "已存进相册" : (failure?.localizedDescription ?? "相册保存失败")]) }
+                }
+            }
         case "haptic": UISelectionFeedbackGenerator().selectionChanged()
         default: break
         }
@@ -241,6 +268,7 @@ private final class EmbroideryAssets: NSObject, WKURLSchemeHandler {
         case "js": mime = "application/javascript"
         case "json": mime = "application/json"
         case "png": mime = "image/png"
+        case "svg": mime = "image/svg+xml"   // 1012 搜来的图标
         case "ttf": mime = "font/ttf"
         default: mime = "text/plain"
         }

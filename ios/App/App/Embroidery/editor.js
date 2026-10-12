@@ -117,6 +117,7 @@ async function build(animate = false) {
     let next = await R.compile(history.doc);
     if (r !== revision) return;
     scene = next;
+    if (history.doc.shape.auto && autoHeight()) return build(animate);
     notice(next.warnings.join("；"));
     animationLayer = animate ? selected : null;
     progress =
@@ -454,6 +455,93 @@ function bgRow(pick) {
   r.append(custom);
   return r;
 }
+// 1012 布色（原色＝这种布本来的颜色）
+const CLOTH_COLORS = [
+  ["原色", null],
+  ["米白", "#F4F1EC"],
+  ["浅粉", "#F3DDE3"],
+  ["浅黄", "#F3EBCD"],
+  ["薄荷", "#DCEFE6"],
+  ["浅蓝", "#DDE7F3"],
+  ["浅紫", "#E6DFF0"],
+  ["浅灰", "#E3E3E6"],
+];
+const BORDER_PRESETS = [
+  ["bow", "蝴蝶结"],
+  ["vine", "花藤"],
+  ["hearts", "小爱心"],
+  ["wheat", "麦穗"],
+  ["starmoon", "星星月亮"],
+  ["wave", "波浪边"],
+  ["lock", "锁边"],
+];
+const BORDER_COLORS = ["#D23C77", "#C8333F", "#E89AB0", "#6E4C8E", "#3B5BA9", "#2AA3B8", "#1F8A70", "#5A9E3A", "#232326", "#ECE6DA"];
+function setPresetBorder(key) {
+  change((d) => {
+    const i = d.layers.findIndex((l) => String(l.asset).startsWith("preset:"));
+    if (!key) { if (i >= 0) d.layers.splice(i, 1); return; }
+    if (i >= 0) { d.layers[i].asset = "preset:" + key; return; }
+    d.layers.unshift({ id: uid(), type: "border", asset: "preset:" + key, mode: "loop", color: "#D23C77", x: 0, y: 0, scale: 1, rot: 0, stitch: 4, width: 2.4 });
+  });
+  openTool("border");
+}
+// 1012 上下对齐：用这段字绣出来的实际范围（scene.bounds）挪 y
+function verticalAlign(where) {
+  const l = current();
+  if (!l || l.type !== "text" || !scene.bounds[l.id]) return;
+  const b = scene.bounds[l.id], H = history.doc.shape.h, pad = 40, sc = l.scale || 1;
+  const height = b[3] * sc, top = b[1] * sc;
+  const y = where === "top" ? pad - top : where === "bottom" ? H - pad - height - top : (H - height) / 2 - top;
+  property((x) => (x.y = y));
+}
+// 1012 长卷：布的高度跟着内容走（最低 460，最高 3000），角花跟着贴到新的底边
+function autoHeight() {
+  const d = history.doc;
+  let bottom = 0;
+  for (const l of d.layers) {
+    if (l.mode === "loop" || l.anchor || l.hidden || !scene.bounds[l.id]) continue;
+    const b = scene.bounds[l.id];
+    bottom = Math.max(bottom, (l.y || 0) + (b[1] + b[3]) * (l.scale || 1));
+  }
+  const target = Math.max(460, Math.min(3000, Math.ceil(bottom + 70)));
+  if (Math.abs(target - d.shape.h) < 12) return false;
+  d.shape.h = target;
+  for (const l of d.layers.filter((l) => l.anchor && l.anchor[1]))
+    l.y = target - 24 - ((l.h || 100) * l.scale) / 2;
+  fit();
+  return true;
+}
+let lastSearch = "", lastResults = null;
+async function runSearch(text, box) {
+  text = (text || "").trim();
+  if (!text) return;
+  lastSearch = text;
+  box.replaceChildren(el("small", "搜索中…"));
+  try {
+    const r = await api("search", { q: text });
+    lastResults = r;
+    showResults(r, box);
+  } catch (e) {
+    box.replaceChildren(el("small", "搜索失败：" + e.message));
+  }
+}
+function showResults(r, box) {
+  box.replaceChildren();
+  const all = (r.local || []).concat(r.icons || []);
+  if (!all.length) { box.append(el("small", "没搜到，换个词试试（比如 花、星星、猫、月亮）")); return; }
+  for (const a of all) {
+    let b = button(
+      "",
+      () => {
+        add(base("motif", { asset: a.id, scale: Math.min(1, 150 / a.w), w: a.w, h: a.h, corner: a.corner || [0, 0] }));
+        openTool("object");
+      },
+      box,
+    );
+    b.title = a.id;
+    b.append(el("img", "", { src: "data/" + a.file, alt: a.id, loading: "lazy" }));
+  }
+}
 function select(options, value, fn, container) {
   let n = el("select");
   for (const [v, t] of options)
@@ -500,6 +588,14 @@ function openTool(id) {
       );
       b.style.borderBottom = "5px solid " + f.color;
     }
+    // 1012 布色：同一种布换颜色（原色＝这种布本来的颜色）
+    let cr = row();
+    cr.append(el("span", "布色"));
+    for (const [name, color] of CLOTH_COLORS) {
+      let b = button(name, () => change((d) => { if (color) d.cloth_color = color; else delete d.cloth_color; }), cr);
+      b.style.borderBottom = "5px solid " + (color || R.fabrics[history.doc.fabric]?.color || "#F1EFEC");
+      if ((history.doc.cloth_color || null) === color) b.style.fontWeight = "700";
+    }
     bgRow((color) =>
       change((d) => {
         d.export_bg = color;
@@ -509,14 +605,16 @@ function openTool(id) {
   if (id === "shape") {
     let dimensions = row();
     for (const [name, w, h] of [
-      ["横版", 800, 460],
-      ["竖版", 520, 700],
-      ["方形", 650, 650],
+      ["小卡片 5:3", 800, 480],
+      ["方形 1:1", 650, 650],
+      ["竖版 3:4", 540, 720],
+      ["横版 16:9", 800, 450],
     ])
       button(
         name,
         () => {
           change((d) => {
+            delete d.shape.auto;
             let sx = w / d.shape.w,
               sy = h / d.shape.h;
             d.shape.w = w;
@@ -542,6 +640,20 @@ function openTool(id) {
         },
         dimensions,
       );
+    // 1012 长卷：字多了布自动往下变长（只长高，宽度不动）
+    let longb = button(
+      "长卷 · 自动变长",
+      () => {
+        change((d) => {
+          d.shape.auto = !d.shape.auto;
+          if (d.shape.kind !== "rect" && d.shape.auto) d.shape.kind = "rect";
+        });
+        openTool("shape");
+        fit();
+      },
+      dimensions,
+    );
+    if (history.doc.shape.auto) longb.style.fontWeight = "700";
     for (const [axis, label] of [
       ["w", "布宽"],
       ["h", "布高"],
@@ -712,6 +824,11 @@ function openTool(id) {
       },
       r,
     );
+    // 1012 上下：整段字在布上靠上 / 居中 / 靠下（按这段字实际绣出来的高度算）
+    let vr = row();
+    vr.append(el("span", "上下"));
+    for (const [key, name] of [["top", "靠上"], ["middle", "居中"], ["bottom", "靠下"]])
+      button(name, () => verticalAlign(key), vr);
     notice("楷体按笔顺；其他字体沿中线绣");
   }
   if (id === "draw") {
@@ -761,8 +878,37 @@ function openTool(id) {
       }
     });
   }
+  if (id === "border") {
+    // 1012 一键花边：点一下整圈花边就上去；再点别的就换，「不要花边」拿掉；下面挑花边颜色
+    const cur = history.doc.layers.find((l) => String(l.asset).startsWith("preset:"));
+    let r = row();
+    for (const [key, name] of BORDER_PRESETS) {
+      let b = button(name, () => setPresetBorder(key), r);
+      if (cur && cur.asset === "preset:" + key) b.style.fontWeight = "700";
+    }
+    button("不要花边", () => setPresetBorder(null), r);
+    let cr = row();
+    cr.append(el("span", "花边色"));
+    for (const c of BORDER_COLORS) {
+      let b = button("", () => change((d) => { const l = d.layers.find((x) => String(x.asset).startsWith("preset:")); if (l) l.color = c; }), cr);
+      b.className = "spool";
+      b.title = c;
+      b.style.background = c;
+    }
+  }
   if (id === "assets") {
+    // 1012 搜素材：像修图软件搜贴纸，先出预览，点一下贴到布上再调
+    let sr = row();
+    let q = el("input", "", { type: "search", placeholder: "搜素材：星星、蝴蝶、角花…", value: lastSearch });
+    q.style.flex = "1";
+    sr.append(q);
+    let go = button("搜", () => runSearch(q.value, results), sr);
+    q.onkeydown = (e) => { if (e.key === "Enter") { e.preventDefault(); q.blur(); runSearch(q.value, results); } };
+    let results = el("div", "", { className: "assets" });
+    $("drawer").append(results);
+    if (lastSearch && lastResults) showResults(lastResults, results);
     let grid = el("div", "", { className: "assets" });
+    $("drawer").append(el("small", "全部素材"));
     $("drawer").append(grid);
     for (const a of assets) {
       let b = button(
@@ -1065,7 +1211,8 @@ for (const [id, name] of [
   ["text", "绣字"],
   ["draw", "画线"],
   ["image", "图片"],
-  ["assets", "花边"],
+  ["border", "花边"],
+  ["assets", "素材"],
   ["object", "选中项"],
 ]) {
   let b = button(name, () => openTool(id), $("tools"));
@@ -1093,21 +1240,153 @@ $("keyboardHide").onclick = () => document.activeElement?.blur();
 $("keyboardFont").onclick = () => {
   $("drawer").querySelector("select")?.focus();
 };
-async function exportPNG() {
+// 1012 存图两种：透明 PNG（不画背景）/ 带桌面 JPG（画上选的背景色；选的是透明就用米白）
+async function exportCanvas(mode = "auto", k = 2) {
   const s = history.doc.shape,
     c = document.createElement("canvas");
-  c.width = (s.w + 140) * 2;
-  c.height = (s.h + 140) * 2;
+  c.width = (s.w + 140) * k;
+  c.height = (s.h + 140) * k;
   let x = c.getContext("2d");
-  x.scale(2, 2);
-  if (exportBg(history.doc) !== "transparent") {
-    x.fillStyle = exportBg(history.doc);
+  x.scale(k, k);
+  let bg = exportBg(history.doc);
+  if (mode === "transparent") bg = "transparent";
+  if (mode === "solid" && bg === "transparent") bg = "#F4F1EC";
+  if (bg !== "transparent") {
+    x.fillStyle = bg;
     x.fillRect(0, 0, s.w + 140, s.h + 140);
   }
   x.translate(70, 70);
   let sc = await R.compile(history.doc);
   R.render(x, history.doc, sc, 1);
-  return c.toDataURL("image/png");
+  return c;
+}
+async function exportPNG(mode = "auto") {
+  return (await exportCanvas(mode)).toDataURL("image/png");
+}
+async function exportJPG() {
+  return (await exportCanvas("solid")).toDataURL("image/jpeg", 0.92);
+}
+// 1012 存绣字的过程：照回放一帧帧画（只放最终留下的针脚），存成 GIF 动图或视频
+async function replayFrames(onFrame, frames = 60, hold = 14, k = 1) {
+  const s = history.doc.shape, w = (s.w + 140) * k, h = (s.h + 140) * k;
+  const c = document.createElement("canvas");
+  c.width = Math.round(w); c.height = Math.round(h);
+  const x = c.getContext("2d");
+  const sc = await R.compile(history.doc);
+  let bg = exportBg(history.doc);
+  if (bg === "transparent") bg = "#F4F1EC";
+  for (let i = 0; i <= frames + hold; i++) {
+    x.setTransform(k, 0, 0, k, 0, 0);
+    x.fillStyle = bg;
+    x.fillRect(0, 0, s.w + 140, s.h + 140);
+    x.translate(70, 70);
+    R.render(x, history.doc, sc, Math.min(1, i / frames));
+    await onFrame(c, i);
+  }
+  return c;
+}
+async function exportGIF() {
+  const s = history.doc.shape, k = Math.min(1, 560 / (s.w + 140));
+  const enc = new GifWriter();
+  // 调色板按成品算：第一帧还没有线，按它算线的颜色就全丢了
+  const fin = await exportCanvas("solid", k);
+  const palette = GifWriter.palette(fin.getContext("2d").getImageData(0, 0, fin.width, fin.height).data);
+  await replayFrames(async (c, i) => {
+    const d = c.getContext("2d").getImageData(0, 0, c.width, c.height);
+    enc.frame(c.width, c.height, d.data, palette, i >= 60 ? 12 : 8);
+    if (i % 6 === 0) await new Promise((r) => setTimeout(r, 0));
+  }, 60, 14, k);
+  return "data:image/gif;base64," + enc.base64();
+}
+async function exportVideo() {
+  if (!window.MediaRecorder) throw Error("这台设备不支持录视频，先存 GIF 吧");
+  const s = history.doc.shape, k = Math.min(1.5, 900 / (s.w + 140));
+  const c = document.createElement("canvas");
+  c.width = Math.round((s.w + 140) * k); c.height = Math.round((s.h + 140) * k);
+  const stream = c.captureStream(30);
+  const type = ["video/mp4", "video/webm;codecs=vp9", "video/webm"].find((t) => MediaRecorder.isTypeSupported(t)) || "";
+  const rec = new MediaRecorder(stream, type ? { mimeType: type } : {});
+  const chunks = [];
+  rec.ondataavailable = (e) => e.data.size && chunks.push(e.data);
+  const done = new Promise((r) => (rec.onstop = r));
+  rec.start();
+  const x = c.getContext("2d");
+  await replayFrames(async (frame) => {
+    x.drawImage(frame, 0, 0);
+    await new Promise((r) => setTimeout(r, 1000 / 24));
+  }, 96, 30, k);
+  rec.stop();
+  await done;
+  const blob = new Blob(chunks, { type: rec.mimeType || type || "video/mp4" });
+  return await new Promise((resolve) => { const fr = new FileReader(); fr.onload = () => resolve(fr.result); fr.readAsDataURL(blob); });
+}
+// 极简 GIF 编码（256 色、LZW）：手机上几秒能编完一段回放
+class GifWriter {
+  constructor() { this.bytes = []; this.started = false; }
+  static palette(rgba) {
+    const counts = new Map();
+    for (let i = 0; i < rgba.length; i += 16) {
+      const key = ((rgba[i] >> 3) << 10) | ((rgba[i + 1] >> 3) << 5) | (rgba[i + 2] >> 3);
+      counts.set(key, (counts.get(key) || 0) + 1);
+    }
+    const top = [...counts.entries()].sort((a, b) => b[1] - a[1]).slice(0, 256).map(([k]) => [((k >> 10) & 31) * 8 + 4, ((k >> 5) & 31) * 8 + 4, (k & 31) * 8 + 4]);
+    while (top.length < 256) top.push([0, 0, 0]);
+    return top;
+  }
+  u16(v) { this.bytes.push(v & 255, (v >> 8) & 255); }
+  frame(w, h, rgba, pal, delay) {
+    const B = this.bytes;
+    if (!this.started) {
+      this.started = true;
+      for (const ch of "GIF89a") B.push(ch.charCodeAt(0));
+      this.u16(w); this.u16(h); B.push(0xf7, 0, 0);
+      for (const [r, g, b] of pal) B.push(r, g, b);
+      B.push(0x21, 0xff, 11); for (const ch of "NETSCAPE2.0") B.push(ch.charCodeAt(0)); B.push(3, 1, 0, 0, 0);
+    }
+    B.push(0x21, 0xf9, 4, 0); this.u16(delay); B.push(0, 0);
+    B.push(0x2c); this.u16(0); this.u16(0); this.u16(w); this.u16(h); B.push(0);
+    const cache = new Map(), idx = new Uint8Array(w * h);
+    for (let i = 0, p = 0; i < rgba.length; i += 4, p++) {
+      const key = ((rgba[i] >> 3) << 10) | ((rgba[i + 1] >> 3) << 5) | (rgba[i + 2] >> 3);
+      let v = cache.get(key);
+      if (v === undefined) {
+        let best = 0, bd = 1e9;
+        for (let j = 0; j < 256; j++) {
+          const q = pal[j], dd = (q[0] - rgba[i]) ** 2 + (q[1] - rgba[i + 1]) ** 2 + (q[2] - rgba[i + 2]) ** 2;
+          if (dd < bd) { bd = dd; best = j; }
+        }
+        cache.set(key, (v = best));
+      }
+      idx[p] = v;
+    }
+    this.lzw(idx);
+  }
+  lzw(idx) {
+    const B = this.bytes, min = 8, clear = 256, eoi = 257;
+    let size = 9, next = 258, dict = new Map(), out = [], cur = 0, bits = 0;
+    const emit = (code) => { cur |= code << bits; bits += size; while (bits >= 8) { out.push(cur & 255); cur >>= 8; bits -= 8; } };
+    B.push(min);
+    emit(clear);
+    let prefix = idx[0];
+    for (let i = 1; i < idx.length; i++) {
+      const c = idx[i], key = prefix * 256 + c, hit = dict.get(key);
+      if (hit !== undefined) { prefix = hit; continue; }
+      emit(prefix);
+      if (next < 4096) { dict.set(key, next++); if (next > (1 << size) && size < 12) size++; }
+      else { emit(clear); dict = new Map(); next = 258; size = 9; }
+      prefix = c;
+    }
+    emit(prefix); emit(eoi);
+    if (bits > 0) out.push(cur & 255);
+    for (let i = 0; i < out.length; i += 255) { const chunk = out.slice(i, i + 255); B.push(chunk.length, ...chunk); }
+    B.push(0);
+  }
+  base64() {
+    this.bytes.push(0x3b);
+    let bin = "";
+    for (let i = 0; i < this.bytes.length; i += 32768) bin += String.fromCharCode.apply(null, this.bytes.slice(i, i + 32768));
+    return btoa(bin);
+  }
 }
 $("done").onclick = () => {
   document.activeElement?.blur();

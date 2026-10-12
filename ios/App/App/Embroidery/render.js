@@ -37,7 +37,7 @@
   // 1012 布四周留的边从 20 加到 50：浮起来的影子要散开，20 会把影子切成一个硬框
   const PAD = 70;
   function cloth(ctx, doc) {
-    const key = JSON.stringify([doc.fabric, doc.shape]);
+    const key = JSON.stringify([doc.fabric, doc.shape, doc.cloth_color || "", doc.id || ""]);
     if (!clothCache.has(key)) {
       const c = document.createElement("canvas");
       c.width = (doc.shape.w + PAD * 2) * 2;
@@ -56,7 +56,8 @@
   function paintCloth(ctx, doc) {
     let { w, h } = doc.shape,
       poly0 = G.outline(doc.shape),
-      f = fabrics[doc.fabric] || fabrics.linen,
+      f0 = fabrics[doc.fabric] || fabrics.linen,
+      f = { ...f0, color: doc.cloth_color || f0.color },   // 1012 布色可换（同一种布换颜色）
       r = G.random("fabric:" + doc.fabric);
     // 1012 毛边重做：①布边本身不再是一条笔直的线，沿法线方向轻轻起伏；②纤维顺着布边的法线长出去（不再从布中心放射），
     // 短而密、长短不一、粗细透明度各不相同、微微弯；③隔一段甩出一根长长的松线头，弯着、有的贴着布边；④毛毡不脱线，只起一点绒
@@ -187,9 +188,12 @@
     // 1012 她：「你的折痕很突兀」——原来是一条横贯整块布、亮暗两边都很硬的线。
     // 改成一两道短的、很宽很淡的软褶：只占布宽的三到六成，两头渐隐，亮面和暗面都压到几乎看不出
     if (!felt) {
-      for (let k = 0; k < (r() < 0.5 ? 1 : 2); k++) {
-        const len = w * (0.3 + r() * 0.3), x0 = r() * (w - len), y0 = h * (0.2 + r() * 0.6);
-        const ang = (r() - 0.5) * 0.5, x1 = x0 + len * Math.cos(ang), y1 = y0 + len * Math.sin(ang), bend = (r() - 0.5) * 30;
+      // 1012 她：褶皱每块布分布随机一点、一次两条左右——种子跟着作品走（同一件作品回放、导出都一样）
+      const rc = G.random("crease:" + (doc.id || "draft") + ":" + w + "x" + h);
+      const count = rc() < 0.2 ? 1 : rc() < 0.85 ? 2 : 3;
+      for (let k = 0; k < count; k++) {
+        const len = w * (0.25 + rc() * 0.35), x0 = rc() * (w - len), y0 = h * (0.12 + rc() * 0.76);
+        const ang = (rc() - 0.5) * 1.1, x1 = x0 + len * Math.cos(ang), y1 = y0 + len * Math.sin(ang), bend = (rc() - 0.5) * 40;
         const along = (rgba) => {
           const g = ctx.createLinearGradient(x0, y0, x1, y1);
           g.addColorStop(0, "rgba(0,0,0,0)");
@@ -321,7 +325,7 @@
   }
   async function motif(asset) {
     if (assetPaths.has(asset)) return assetPaths.get(asset);
-    let im = await image("data/assets/" + asset + ".png"),
+    let im = await image(asset.startsWith("icon/") ? "data/" + asset + ".svg" : "data/assets/" + asset + ".png"),   // 1012 搜来的图标是 svg
       c = document.createElement("canvas"),
       scale = Math.min(
         1,
@@ -537,8 +541,55 @@
       y = lum(b);
     return (Math.max(x, y) + 0.05) / (Math.min(x, y) + 0.05);
   }
-  function randomPool(fabric) {
-    const base = fabrics[fabric]?.color || fabrics.linen.color;
+  // 1012 一键花边（不用素材，程序画）：沿布的轮廓往里 22 走一圈
+  function presetBorder(name, shape) {
+    const inset = 22, poly = G.outline(shape, inset);
+    const pts = G.resample(poly.concat([poly[0]]), 2);
+    const cx = pts.reduce((a, p) => a + p[0], 0) / pts.length, cy = pts.reduce((a, p) => a + p[1], 0) / pts.length;
+    const info = pts.map((p, i) => {
+      const q = pts[Math.min(pts.length - 1, i + 1)], o = pts[Math.max(0, i - 1)];
+      let tx = q[0] - o[0], ty = q[1] - o[1], tl = Math.hypot(tx, ty) || 1;
+      tx /= tl; ty /= tl;
+      let nx = -ty, ny = tx;                     // 朝布里面的法线
+      if (nx * (cx - p[0]) + ny * (cy - p[1]) < 0) { nx = -nx; ny = -ny; }
+      return { p, tx, ty, nx, ny, s: i * 2 };
+    });
+    const total = info.length * 2;
+    const offset = (fn) => info.map(({ p, nx, ny, s }) => { const d = fn(s); return [p[0] + nx * d, p[1] + ny * d]; });
+    const at = (s) => info[Math.min(info.length - 1, Math.max(0, Math.round(s / 2)))];
+    const place = (shapePts, s, scale = 1, rot = 0) => {
+      const { p, tx, ty } = at(s), a = Math.atan2(ty, tx) + rot;
+      return shapePts.map(([x, y]) => [p[0] + (x * Math.cos(a) - y * Math.sin(a)) * scale, p[1] + (x * Math.sin(a) + y * Math.cos(a)) * scale]);
+    };
+    const heart = Array.from({ length: 25 }, (_, i) => { const t = (i / 24) * Math.PI * 2; return [16 * Math.sin(t) ** 3 / 16 * 6, -(13 * Math.cos(t) - 5 * Math.cos(2 * t) - 2 * Math.cos(3 * t) - Math.cos(4 * t)) / 16 * 6]; });
+    const star = Array.from({ length: 11 }, (_, i) => { const r = i % 2 ? 2.6 : 6.5, t = (i / 10) * Math.PI * 2 - Math.PI / 2; return [r * Math.cos(t), r * Math.sin(t)]; });
+    const moon = Array.from({ length: 15 }, (_, i) => { const t = -Math.PI / 2 + (i / 14) * Math.PI * 1.6; return [6 * Math.cos(t), 6 * Math.sin(t)]; })
+      .concat(Array.from({ length: 11 }, (_, i) => { const t = Math.PI * 1.1 - (i / 10) * Math.PI * 1.6 + Math.PI / 2; return [2.5 + 4.6 * Math.cos(t), 4.6 * Math.sin(t)]; }).reverse());
+    const leaf = (side) => [[0, 0], [3, 2.5 * side], [7, 3.2 * side], [10, 0], [7, 1 * side], [3, 0.6 * side], [0, 0]];
+    const dashed = (on, off) => { const out = []; let cur = []; info.forEach(({ p, s }) => { if (s % (on + off) < on) cur.push(p); else if (cur.length) { if (cur.length > 1) out.push(cur); cur = []; } }); if (cur.length > 1) out.push(cur); return out; };
+    const every = (step, fn) => { const out = []; for (let s = step / 2; s < total; s += step) out.push(fn(s, Math.round(s / step))); return out; };
+    switch (name) {
+      case "lock": return [offset((s) => (Math.floor(s / 5) % 2 ? 4 : -4))];                                       // 锁边：来回走的锯齿
+      case "wave": return [offset((s) => -5 * Math.abs(Math.sin((s * Math.PI) / 16)) + 2)];                        // 波浪边
+      case "hearts": return dashed(7, 5).concat(every(64, (s) => place(heart, s, 1, Math.PI / 2)));               // 小爱心
+      case "vine": return [offset((s) => 3 * Math.sin(s / 14))].concat(every(18, (s, k) => place(leaf(k % 2 ? 1 : -1), s, 1.1, k % 2 ? 0.7 : -0.7))); // 花藤
+      case "wheat": return [offset(() => 0)].concat(every(9, (s) => place([[-5, -4], [0, 0], [-5, 4]], s, 1)));   // 麦穗
+      case "starmoon": return dashed(4, 6).concat(every(60, (s, k) => place(k % 2 ? moon : star, s, k % 2 ? 1.6 : 1.3)));   // 月亮小了绣出来糊，放大一点          // 星星月亮
+      case "bow": {                                                                                                  // 蝴蝶结：一圈平针，顶上正中一个结
+        const near = info.filter((it) => Math.abs(it.p[0] - cx) < shape.w * 0.08);
+        let top = near.length ? near.reduce((m, it) => (it.p[1] < m.p[1] ? it : m), near[0]) : info[0];
+        const [bx, by] = top.p;
+        const loopL = Array.from({ length: 19 }, (_, i) => { const t = (i / 18) * Math.PI * 2; return [bx - 14 * (1 - Math.cos(t)) / 2 * 1.4, by + 9 * Math.sin(t)]; });
+        const loopR = loopL.map(([x, y]) => [2 * bx - x, y]);
+        const tails = [[[bx - 2, by + 3], [bx - 10, by + 20]], [[bx + 2, by + 3], [bx + 10, by + 20]]];
+        const knot = Array.from({ length: 9 }, (_, i) => { const t = (i / 8) * Math.PI * 2; return [bx + 3 * Math.cos(t), by + 3 * Math.sin(t)]; });
+        return dashed(8, 4).filter((seg) => !seg.some(([x, y]) => Math.abs(x - bx) < 30 && Math.abs(y - by) < 14)).concat([loopL, loopR, knot, ...tails]);
+      }
+      default: return [];
+    }
+  }
+  function randomPool(fabric, clothColor) {
+    const base = clothColor || fabrics[fabric]?.color || fabrics.linen.color;
     const candidates = [
       "#B8325A",
       "#6E4C8E",
@@ -559,7 +610,7 @@
     for (const l of doc.layers) {
       if (l.hidden) continue;
       let key =
-          JSON.stringify(l) +
+          JSON.stringify(l) + (doc.cloth_color || "") +
           doc.fabric +
           JSON.stringify(doc.shape) +
           (l.mode === "loop"
@@ -576,7 +627,9 @@
           charIndices = t.charIndices;
           part.warnings = t.warnings;
         } else if (l.type === "draw") paths = [l.points];
-        else if (l.type === "border" || l.type === "motif") {
+        else if (l.type === "border" && String(l.asset).startsWith("preset:")) {
+          paths = presetBorder(l.asset.slice(7), doc.shape);
+        } else if (l.type === "border" || l.type === "motif") {
           let m = await motif(l.asset);
           paths =
             l.mode === "loop" ? along(m.paths, doc.shape, m.w, m.h) : m.paths;
@@ -613,7 +666,7 @@
           let ss = G.stitches(
             paths,
             l.id,
-            l.type === "text" ? l.size * 0.11 : 8,
+            l.type === "text" ? l.size * 0.11 : l.stitch || 8,
             l.type === "text" ? l.size * 0.045 : l.width || 3,
           );
           if (l.mode === "loop") {
@@ -634,10 +687,10 @@
               stitch: s,
               color:
                 l.type === "text" && l.colorMode === "random-character"
-                  ? randomPool(doc.fabric)[
+                  ? randomPool(doc.fabric, doc.cloth_color)[
                       Math.floor(
                         G.random(l.id + ":char:" + charIndices[s.pathIndex])() *
-                          randomPool(doc.fabric).length,
+                          randomPool(doc.fabric, doc.cloth_color).length,
                       )
                     ]
                   : l.color || "#B8325A",
@@ -734,6 +787,7 @@
     motif,
     fabrics,
     along,
+    presetBorder,
     contrast,
     randomPool,
   };
