@@ -176,6 +176,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(PondChatCard.self, from: data)
     }
 
+    /// 1014：他录好一期「只给你听」（alcove-backend/ears.py 投的）→ 聊天页小卡，点了直接进这一期
+    var earsCard: EarsChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "EARS_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(EarsChatCard.self, from: data)
+    }
+
     /// 1002：日程提醒到点（alcove-backend/reminders.py 投的）→ 聊天页像素小卡，整行居中
     var reminderCard: ReminderChatCard? {
         guard let raw = Self.taggedBody(text, tag: "REMINDER_CARD"),
@@ -990,6 +998,14 @@ struct PondChatCard: Decodable {
     let id: String
     let kind: String?
     let text: String
+}
+
+struct EarsChatCard: Decodable {
+    let id: Int
+    let no: Int
+    let title: String
+    let title_zh: String?
+    let duration: Double?
 }
 
 struct MemoryChatCard: Decodable {

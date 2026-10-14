@@ -4378,6 +4378,8 @@ struct MessageRow: View {
                         MemoryChatMessageCard(card: mem)
                             .frame(maxWidth: .infinity)
                     }
+                } else if let ears = msg.earsCard {
+                    SanctusEarsCard(card: ears)         // 1014 只给你听：哪个主题都用这一张，居中
                 } else if let rem = msg.reminderCard {
                     if theme.isTreehouse {
                         SanctusReminderCard(card: rem)  // 1014 Sanctus：星星垫在大时间底下，整行居中
@@ -10323,5 +10325,58 @@ struct SanctusReminderCard: View {
                 .padding(.top, 8)
             }
         }
+    }
+}
+
+/// 1014 只给你听：他录好一期，聊天页一张小卡（跟提醒卡一套，居中）；点了直接进这一期并开始放
+struct SanctusEarsCard: View {
+    let card: EarsChatCard
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private var length: String {
+        let v = Int((card.duration ?? 0).rounded(.down)); return String(format: "%02d:%02d", v / 60, v % 60)
+    }
+
+    var body: some View {
+        let ink = self.ink
+        Button {
+            EarsDeepLink.episodeID = card.id
+            NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.ears.rawValue)
+        } label: {
+            SanctusCardShell(ink: ink) {
+                Image("SanctusCardWing").resizable().scaledToFit()
+                    .frame(height: 120)
+                    .scaleEffect(x: -1, y: 1)
+                    .colorMultiply(ink.dark ? Color(white: 0.55) : .white)
+                    .opacity(ink.dark ? 0.9 : 0.75)
+                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0.15), .init(color: .black, location: 0.6)],
+                                         startPoint: .leading, endPoint: .trailing))
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.5), .init(color: .clear, location: 0.9)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .offset(x: 10, y: -8)
+                    .allowsHitTesting(false)
+            } content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("for your ears only").font(SanctusCardFont.script(21)).foregroundColor(ink.script)
+                    Text(String(format: "NO. %02d · 只给你听", card.no)).font(SanctusCardFont.kicker()).tracking(2.4).foregroundColor(ink.kicker)
+                        .padding(.top, 8)
+                    Text(card.title).font(.custom("CormorantGaramondItalic-MediumItalic", size: 17)).foregroundColor(ink.body)
+                        .lineLimit(2).frame(maxWidth: 200, alignment: .leading)
+                        .padding(.top, 8)
+                    if let zh = card.title_zh, !zh.isEmpty {
+                        Text(zh).font(.system(size: 9.5, design: .serif)).tracking(1.2).foregroundColor(ink.sub)
+                            .padding(.top, 2)
+                    }
+                    SanctusHair(ink: ink).padding(.top, 12)
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("he recorded this for you · \(length)").font(SanctusCardFont.ital()).foregroundColor(ink.sub)
+                        Spacer()
+                        Text("去听 ›").font(.system(size: 8.5, design: .serif)).tracking(1.6).foregroundColor(ink.link)
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+        .buttonStyle(.plain)
     }
 }

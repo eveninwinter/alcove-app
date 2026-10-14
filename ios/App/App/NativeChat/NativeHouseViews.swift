@@ -38,6 +38,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case search, favorites, forge, roundtable, surf, letterbox
     case embroidery
     case window         // 0923 世界之窗：每天九幅开放图库的图配中文讲解
+    case ears           // 1014 只给你听：他专门录的长语音
 
     var id: String { rawValue }
 
@@ -87,6 +88,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .letterbox: return "信箱"
         case .embroidery: return "刺绣"
         case .window: return "世界之窗"
+        case .ears: return "只给你听"
         }
     }
 
@@ -94,7 +96,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     var ownsFullScreen: Bool {
         switch self {
         case .embroidery, .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
-             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window,
+             .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window, .ears,
              .calendar, .dreams,
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
@@ -146,6 +148,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .letterbox: return "envelope.badge"
         case .embroidery: return "pencil.and.outline"
         case .window: return "books.vertical"
+        case .ears: return "headphones"
         default: return "sparkles"
         }
     }
@@ -257,6 +260,8 @@ struct NativeHouseSheet: View {
                     EmbroideryRoom()
                 case .window:
                     NativeWindowView()
+                case .ears:
+                    EarsRoomView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -553,6 +558,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
                         drawerRow(.dreams, detail: "梦与旧日记")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
+                        drawerRow(.ears, detail: "他只说给你一个人听的")
                     }
 
                     drawerTitle("他的世界", note: "out there")
@@ -15414,5 +15420,468 @@ struct NativeWolfBodyView: View {
             }
         }
         .padding(14).foyerCard(theme)
+    }
+}
+
+// ── 1014 只给你听（for your ears only）：他专门录的长语音，像广播剧 ──
+// 她定的效果图 /root/workroom/mock/ears/（list.html、player2.html）：Sanctus 那套白、黑夜跟全屋按钮。
+// 后端 alcove-backend/ears.py：/api/voice/ears/list、/api/voice/ears/item?id=N；音频在聊天附件目录。
+// 播放页：字幕英文一行、中文一行，正在说的那句停在正中间、比别的大一丢丢；上下滑、点哪句就从哪句放；
+// 手指一碰字幕就不跟了，停手 3 秒再跟回去。
+
+struct EarsLine: Identifiable, Equatable {
+    let id: Int
+    let en: String
+    let zh: String
+    let t: Double
+    let e: Double
+}
+
+struct EarsEpisode: Identifiable, Equatable {
+    let id: Int
+    let no: Int
+    let title: String
+    let titleZh: String
+    let createdAt: String
+    let duration: Double
+    let audioURL: String
+    var lines: [EarsLine] = []
+
+    init(_ j: [String: Any]) {
+        id = (j["id"] as? NSNumber)?.intValue ?? 0
+        no = (j["no"] as? NSNumber)?.intValue ?? 0
+        title = j["title"] as? String ?? ""
+        titleZh = j["title_zh"] as? String ?? ""
+        createdAt = j["created_at"] as? String ?? ""
+        duration = (j["duration"] as? NSNumber)?.doubleValue ?? 0
+        audioURL = j["audio_url"] as? String ?? ""
+        let raw = j["lines"] as? [[String: Any]] ?? []
+        lines = raw.enumerated().map { i, l in
+            EarsLine(id: i, en: l["en"] as? String ?? "", zh: l["zh"] as? String ?? "",
+                     t: (l["t"] as? NSNumber)?.doubleValue ?? 0, e: (l["e"] as? NSNumber)?.doubleValue ?? 0)
+        }
+    }
+
+    var noText: String { String(format: "No. %02d", no) }
+    var dayText: String {
+        let p = createdAt.prefix(10).split(separator: "-")
+        return p.count == 3 ? "\(p[1]).\(p[2])" : ""
+    }
+    var isNew: Bool {
+        guard UserDefaults.standard.double(forKey: "earsPos.\(id)") == 0 else { return false }
+        let f = ISO8601DateFormatter()
+        guard let d = f.date(from: createdAt) else { return false }
+        return Date().timeIntervalSince(d) < 2 * 86400
+    }
+}
+
+func earsClock(_ s: Double) -> String {
+    let v = max(0, Int(s.rounded(.down)))
+    return String(format: "%02d:%02d", v / 60, v % 60)
+}
+
+/// 聊天小卡点进来时要直接打开的那一期
+enum EarsDeepLink { static var episodeID: Int? }
+
+@MainActor
+final class EarsPlayer: ObservableObject {
+    static let shared = EarsPlayer()
+    @Published var episode: EarsEpisode?
+    @Published var time: Double = 0
+    @Published var isPlaying = false
+    private var player: AVPlayer?
+    private var observer: Any?
+    private var endObserver: NSObjectProtocol?
+
+    var duration: Double { max(episode?.duration ?? 0, 0.1) }
+    var currentIndex: Int? {
+        guard let lines = episode?.lines, !lines.isEmpty else { return nil }
+        return lines.lastIndex(where: { $0.t <= time + 0.05 }) ?? 0
+    }
+
+    func open(_ ep: EarsEpisode) {
+        if episode?.id == ep.id, player != nil {
+            if ep.lines.count > (episode?.lines.count ?? 0) { episode = ep }
+            return
+        }
+        stop()
+        episode = ep
+        let p = AVPlayer(url: AlcoveAPI.attachmentURL(ep.audioURL))
+        player = p
+        let saved = UserDefaults.standard.double(forKey: "earsPos.\(ep.id)")
+        let start = (saved > 0 && saved < ep.duration - 3) ? saved : 0
+        time = start
+        if start > 0 { p.seek(to: CMTime(seconds: start, preferredTimescale: 600)) }
+        observer = p.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main) { [weak self] t in
+            Task { @MainActor in
+                guard let self else { return }
+                self.time = t.seconds.isFinite ? t.seconds : 0
+                if let id = self.episode?.id, Int(self.time * 10) % 20 == 0 {
+                    UserDefaults.standard.set(self.time, forKey: "earsPos.\(id)")
+                }
+            }
+        }
+        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime, object: p.currentItem, queue: .main) { [weak self] _ in
+            Task { @MainActor in
+                guard let self, let id = self.episode?.id else { return }
+                self.isPlaying = false
+                UserDefaults.standard.set(self.duration, forKey: "earsPos.\(id)")
+            }
+        }
+    }
+
+    func play() {
+        guard let p = player else { return }
+        try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .spokenAudio)
+        try? AVAudioSession.sharedInstance().setActive(true)
+        if MusicModel.shared.isPlaying { MusicModel.shared.toggle() }   // 一起听的歌先停一下，别叠在一起
+        if time >= duration - 0.3 { seek(0) }
+        p.play(); isPlaying = true
+    }
+    func pause() {
+        player?.pause(); isPlaying = false
+        if let id = episode?.id { UserDefaults.standard.set(time, forKey: "earsPos.\(id)") }
+    }
+    func toggle() { isPlaying ? pause() : play() }
+    func seek(_ s: Double) {
+        let v = min(max(0, s), duration)
+        time = v
+        player?.seek(to: CMTime(seconds: v, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+    }
+    func skip(_ d: Double) { seek(time + d) }
+    func stop() {
+        pause()
+        if let o = observer { player?.removeTimeObserver(o) }
+        if let e = endObserver { NotificationCenter.default.removeObserver(e) }
+        observer = nil; endObserver = nil; player = nil
+    }
+}
+
+/// 跟聊天小卡同一种磨砂白卡（黑夜深炭灰），只是排版自己来
+private struct EarsGlass: ViewModifier {
+    let ink: SanctusCardInk
+    var radius: CGFloat = 12.5
+    func body(content: Content) -> some View {
+        content
+            .background(LinearGradient(colors: [ink.fillTop, ink.fillBottom], startPoint: .top, endPoint: .bottom))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius - 4, style: .continuous).stroke(ink.frame, lineWidth: 0.6).padding(5))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(ink.edge, lineWidth: 0.8))
+    }
+}
+
+private struct EarsBackdrop: View {
+    let ink: SanctusCardInk
+    @ObservedObject private var wall = ChatWallpaperStore.shared
+    var body: some View {
+        ZStack {
+            (ink.dark ? Color(red: 0.10, green: 0.105, blue: 0.125) : Color(red: 0.95, green: 0.953, blue: 0.96))
+            ChatWallpaperRenderer(descriptor: wall.descriptor).blur(radius: 14)
+            (ink.dark ? Color.black.opacity(0.62) : Color(red: 0.965, green: 0.97, blue: 0.976).opacity(0.5))
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+struct EarsRoomView: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var player = EarsPlayer.shared
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var items: [EarsEpisode] = []
+    @State private var total: Double = 0
+    @State private var loading = true
+    @State private var showPlayer = false
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .top) {
+            EarsBackdrop(ink: ink)
+            Image("SanctusCardWing").resizable().scaledToFit()
+                .frame(height: 175)
+                .scaleEffect(x: -1, y: 1)
+                .colorMultiply(ink.dark ? Color(white: 0.55) : .white)
+                .opacity(0.35)
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0.4), .init(color: .clear, location: 0.95)], startPoint: .top, endPoint: .bottom))
+                .frame(maxWidth: .infinity, alignment: .trailing)
+                .offset(x: 25, y: safeTop + 22)
+                .allowsHitTesting(false)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    Text("for your ears only").font(.custom("PinyonScript-Regular", size: 38)).foregroundColor(ink.script)
+                        .padding(.top, safeTop + 58)
+                    Text("ONLY FOR YOU · 只给你听").font(.custom("CormorantGaramond-Medium", size: 8)).tracking(2.9).foregroundColor(ink.kicker)
+                        .padding(.top, 10)
+                    Text(items.isEmpty ? (loading ? " " : "no recordings yet") : "\(items.count) recording\(items.count == 1 ? "" : "s") · \(Int((total / 60).rounded())) min")
+                        .font(.custom("CormorantGaramondItalic-MediumItalic", size: 11)).foregroundColor(ink.sub)
+                        .padding(.top, 6)
+                    VStack(spacing: 12) {
+                        ForEach(items) { ep in row(ep, ink: ink) }
+                    }
+                    .padding(.top, 26)
+                    .padding(.horizontal, 18)
+                    if !loading && items.isEmpty {
+                        Text("你让他录一期，录好了就在这里").font(.system(size: 11, design: .serif)).foregroundColor(ink.sub).padding(.top, 40)
+                    }
+                    Color.clear.frame(height: player.episode == nil ? safeBottom + 30 : safeBottom + 100)
+                }
+            }
+            earsBackButton(ink: ink) { dismiss() }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 18).padding(.top, safeTop + 14)
+            if player.episode != nil && !showPlayer {
+                miniPlayer(ink: ink)
+                    .padding(.horizontal, 18)
+                    .padding(.bottom, safeBottom + 12)
+                    .frame(maxHeight: .infinity, alignment: .bottom)
+            }
+            if showPlayer {
+                EarsPlayerPage(close: { withAnimation(.easeInOut(duration: 0.22)) { showPlayer = false } })
+                    .transition(.move(edge: .bottom))
+                    .zIndex(2)
+            }
+        }
+        .task { await load() }
+    }
+
+    private func load() async {
+        defer { loading = false }
+        guard let o = try? await AlcoveAPI.getRaw("/api/voice/ears/list"), o["ok"] as? Bool == true else { return }
+        items = (o["items"] as? [[String: Any]] ?? []).map(EarsEpisode.init)
+        total = (o["total_duration"] as? NSNumber)?.doubleValue ?? 0
+        if let want = EarsDeepLink.episodeID, let ep = items.first(where: { $0.id == want }) {
+            EarsDeepLink.episodeID = nil
+            await open(ep, autoplay: true)
+        }
+    }
+
+    private func open(_ ep: EarsEpisode, autoplay: Bool) async {
+        var full = ep
+        if let o = try? await AlcoveAPI.getRaw("/api/voice/ears/item?id=\(ep.id)"), let j = o["item"] as? [String: Any] {
+            full = EarsEpisode(j)
+        }
+        player.open(full)
+        if autoplay { player.play() }
+        withAnimation(.easeInOut(duration: 0.25)) { showPlayer = true }
+    }
+
+    private func row(_ ep: EarsEpisode, ink: SanctusCardInk) -> some View {
+        let listened = UserDefaults.standard.double(forKey: "earsPos.\(ep.id)")
+        let isCur = player.episode?.id == ep.id
+        let frac = isCur ? player.time / player.duration : (ep.duration > 0 ? listened / ep.duration : 0)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(ep.noText).font(.custom("CormorantGaramondItalic-MediumItalic", size: 11.7)).foregroundColor(ink.sub)
+                if ep.isNew {
+                    Text("NEW").font(.custom("CormorantGaramond-Medium", size: 6.7)).tracking(1.6).foregroundColor(ink.link)
+                        .padding(.horizontal, 5).padding(.vertical, 0.5)
+                        .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
+                }
+                Spacer()
+                Text("\(ep.dayText) · \(earsClock(ep.duration))").font(.custom("CormorantGaramond-Medium", size: 8.3)).tracking(1.6).foregroundColor(ink.sub)
+                    .padding(.trailing, 46)
+            }
+            Text(ep.title).font(.custom("CormorantGaramondItalic-MediumItalic", size: 16.7)).foregroundColor(ink.body)
+                .lineLimit(1).padding(.top, 2).padding(.trailing, 46)
+            Text(ep.titleZh).font(.system(size: 9.2, design: .serif)).tracking(1.2).foregroundColor(ink.sub)
+                .lineLimit(1).padding(.top, 3)
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Rectangle().fill(ink.hair.opacity(0.55)).frame(height: 0.8)
+                    Capsule().fill(ink.dark ? Color.white.opacity(0.45) : Color(red: 0.43, green: 0.45, blue: 0.49).opacity(0.6))
+                        .frame(width: g.size.width * CGFloat(min(max(frac, 0), 1)), height: 1.3)
+                }
+            }
+            .frame(height: 2)
+            .padding(.top, 9)
+        }
+        .padding(.horizontal, 18).padding(.top, 15).padding(.bottom, 9)
+        .overlay(alignment: .trailing) {
+            Image(systemName: isCur && player.isPlaying ? "pause.fill" : "play.fill")
+                .font(.system(size: 10)).foregroundColor(ink.script)
+                .frame(width: 30, height: 30)
+                .overlay(Circle().stroke(ink.dark ? Color.white.opacity(0.28) : Color(red: 0.47, green: 0.49, blue: 0.53).opacity(0.5), lineWidth: 0.7))
+                .padding(.trailing, 16)
+        }
+        .modifier(EarsGlass(ink: ink))
+        .contentShape(Rectangle())
+        .onTapGesture { Task { await open(ep, autoplay: !(isCur && player.isPlaying)) } }
+    }
+
+    private func miniPlayer(ink: SanctusCardInk) -> some View {
+        HStack {
+            VStack(alignment: .leading, spacing: 4) {
+                Text(player.episode?.title ?? "").font(.custom("CormorantGaramondItalic-MediumItalic", size: 13.3)).foregroundColor(ink.body).lineLimit(1)
+                Text("\(earsClock(player.time)) / \(earsClock(player.duration))").font(.custom("CormorantGaramond-Medium", size: 8)).tracking(1.2).foregroundColor(ink.sub)
+            }
+            Spacer()
+            Button { player.toggle() } label: {
+                Image(systemName: player.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 10)).foregroundColor(ink.script)
+                    .frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(ink.dark ? Color.white.opacity(0.28) : Color(red: 0.47, green: 0.49, blue: 0.53).opacity(0.5), lineWidth: 0.7))
+                    .frame(width: 40, height: 40).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.leading, 18).padding(.trailing, 8).padding(.vertical, 8)
+        .modifier(EarsGlass(ink: ink))
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { showPlayer = true } }
+    }
+}
+
+private func earsBackButton(ink: SanctusCardInk, action: @escaping () -> Void) -> some View {
+    Button(action: action) {
+        Image(systemName: "chevron.left").font(.system(size: 13, weight: .light)).foregroundColor(ink.script)
+            .frame(width: 29, height: 29)
+            .background((ink.dark ? Color.white.opacity(0.08) : Color.white.opacity(0.6)), in: Circle())
+            .overlay(Circle().stroke(ink.edge, lineWidth: 0.7))
+            .frame(width: 44, height: 44).contentShape(Rectangle())
+    }
+    .buttonStyle(.plain)
+}
+
+struct EarsPlayerPage: View {
+    var close: () -> Void
+    @ObservedObject private var player = EarsPlayer.shared
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var userScrolling = false
+    @State private var resumeFollow: Task<Void, Never>?
+    @State private var dragTime: Double?
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .top) {
+            EarsBackdrop(ink: ink)
+            VStack(spacing: 0) {
+                VStack(spacing: 3) {
+                    Text("\(player.episode?.noText ?? "") · for your ears only").font(.custom("CormorantGaramondItalic-MediumItalic", size: 11.7)).foregroundColor(ink.sub)
+                    Text(player.episode?.title ?? "").font(.custom("PinyonScript-Regular", size: 31.7)).foregroundColor(ink.script)
+                        .lineLimit(1).minimumScaleFactor(0.6).padding(.horizontal, 50)
+                    Text(player.episode?.titleZh ?? "").font(.system(size: 9.2, design: .serif)).tracking(1.6).foregroundColor(ink.sub)
+                }
+                .padding(.top, safeTop + 22)
+                lyrics(ink: ink)
+                    .padding(.top, 14)
+                controls(ink: ink)
+                    .padding(.bottom, safeBottom + 14)
+            }
+            earsBackButton(ink: ink, action: close)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.leading, 18).padding(.top, safeTop + 14)
+        }
+        .gesture(DragGesture(minimumDistance: 30).onEnded { v in
+            if v.translation.height > 120 && abs(v.translation.width) < 80 { close() }
+        })
+    }
+
+    private func lyrics(ink: SanctusCardInk) -> some View {
+        let lines = player.episode?.lines ?? []
+        let cur = player.currentIndex
+        return GeometryReader { geo in
+            ScrollViewReader { proxy in
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 24) {
+                        ForEach(lines) { l in
+                            let d = cur.map { abs($0 - l.id) } ?? 9
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(l.en)
+                                    .font(.custom("CormorantGaramondItalic-MediumItalic", size: d == 0 ? 18.7 : 16.7))
+                                    .foregroundColor(d == 0 ? ink.body : ink.body.opacity(d == 1 ? 0.55 : 0.32))
+                                Text(l.zh)
+                                    .font(.system(size: d == 0 ? 11 : 10, design: .serif)).tracking(0.8)
+                                    .foregroundColor(d == 0 ? ink.script : ink.body.opacity(d == 1 ? 0.45 : 0.28))
+                            }
+                            .fixedSize(horizontal: false, vertical: true)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                player.seek(l.t)
+                                if !player.isPlaying { player.play() }
+                                userScrolling = false
+                            }
+                            .id(l.id)
+                            .animation(.easeInOut(duration: 0.25), value: d == 0)
+                        }
+                    }
+                    .padding(.horizontal, 29)
+                    .padding(.vertical, geo.size.height / 2 - 20)   // 第一句和最后一句也能停到正中间
+                }
+                .simultaneousGesture(DragGesture(minimumDistance: 4).onChanged { _ in
+                    userScrolling = true
+                    resumeFollow?.cancel()
+                }.onEnded { _ in
+                    resumeFollow?.cancel()
+                    resumeFollow = Task { try? await Task.sleep(nanoseconds: 3_000_000_000); if !Task.isCancelled { userScrolling = false } }
+                })
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.14),
+                                             .init(color: .black, location: 0.92), .init(color: .clear, location: 1)],
+                                     startPoint: .top, endPoint: .bottom))
+                .onChange(of: cur) { c in
+                    guard let c, !userScrolling else { return }
+                    withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(c, anchor: .center) }
+                }
+                .onChange(of: userScrolling) { s in
+                    if !s, let c = cur { withAnimation(.easeInOut(duration: 0.45)) { proxy.scrollTo(c, anchor: .center) } }
+                }
+                .onAppear { if let c = cur { proxy.scrollTo(c, anchor: .center) } }
+            }
+        }
+    }
+
+    private func controls(ink: SanctusCardInk) -> some View {
+        let shown = dragTime ?? player.time
+        let frac = CGFloat(min(max(shown / player.duration, 0), 1))
+        return VStack(spacing: 0) {
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(ink.hair.opacity(0.7)).frame(height: 1.3)
+                    Capsule().fill(ink.dark ? Color.white.opacity(0.6) : Color(red: 0.37, green: 0.39, blue: 0.44).opacity(0.75))
+                        .frame(width: g.size.width * frac, height: 1.3)
+                    Circle().fill(ink.dark ? Color(white: 0.85) : .white)
+                        .overlay(Circle().stroke(ink.dark ? Color.white.opacity(0.3) : Color(red: 0.43, green: 0.45, blue: 0.49).opacity(0.6), lineWidth: 0.7))
+                        .frame(width: 8.5, height: 8.5)
+                        .offset(x: g.size.width * frac - 4.25)
+                }
+                .frame(maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0)
+                    .onChanged { v in dragTime = Double(min(max(v.location.x / g.size.width, 0), 1)) * player.duration }
+                    .onEnded { _ in if let t = dragTime { player.seek(t) }; dragTime = nil })
+            }
+            .frame(height: 24)
+            HStack {
+                Text(earsClock(shown)); Spacer(); Text(earsClock(player.duration))
+            }
+            .font(.custom("CormorantGaramond-Medium", size: 9.2)).tracking(1.2).foregroundColor(ink.sub)
+            HStack(spacing: 38) {
+                Button { player.skip(-15) } label: {
+                    Text("−15").font(.custom("CormorantGaramondItalic-MediumItalic", size: 12.5)).foregroundColor(ink.link)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                Button { player.toggle() } label: {
+                    Image(systemName: player.isPlaying ? "pause.fill" : "play.fill")
+                        .font(.system(size: 18)).foregroundColor(ink.script)
+                        .contentTransition(.symbolEffect(.replace))
+                        .frame(width: 53, height: 53)
+                        .modifier(EarsGlass(ink: ink, radius: 26.5))
+                }.buttonStyle(.plain)
+                Button { player.skip(15) } label: {
+                    Text("+15").font(.custom("CormorantGaramondItalic-MediumItalic", size: 12.5)).foregroundColor(ink.link)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+            .padding(.top, 14)
+            Text("上下滑字幕，点一句就从那句开始").font(.system(size: 8, design: .serif)).tracking(1.2).foregroundColor(ink.sub)
+                .padding(.top, 12)
+        }
+        .padding(.horizontal, 29)
+        .padding(.top, 8)
     }
 }
