@@ -1,0 +1,125 @@
+name: TestFlight
+
+# 1014 她的开发者账号下来了。这条线自己签名、自己传 TestFlight，
+# 旧的 build-ipa.yml（出没签名包给自签用）原样留着不动。
+# 钥匙：ios/asc_key.enc 是用 ASC_KEY_PASS 锁起来的 App Store Connect 密钥，
+# 只在这台临时 Mac 上解开，用完随机器一起销毁。
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [swiftui-native-chat]
+
+env:
+  TEAM_ID: UA72DSC5XZ
+  ASC_KEY_ID: 4TRXXG94JB
+  ASC_ISSUER_ID: c9884099-3a4d-41fa-8bdb-bd67ba8a49f1
+  # 她苹果后台登记的编号带了团队后缀，代码里是 com.luna.alcove，打包时换过去
+  APP_BUNDLE_ID: com.luna.alcove.UA72DSC5XZ
+
+jobs:
+  testflight:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Inject location token
+        env:
+          ALCOVE_LOC_TOKEN: ${{ secrets.ALCOVE_LOC_TOKEN }}
+        run: |
+          plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/App/Info.plist
+          plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/CapabilityExtensions/Broadcast/Info.plist
+
+      - name: No export-compliance prompt
+        # 只用 HTTPS，不算出口加密，免得每个包在 TestFlight 里卡一个问卷
+        run: plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
+
+      - name: Use registered bundle IDs
+        run: |
+          sed -i '' -E "s/PRODUCT_BUNDLE_IDENTIFIER = com\.luna\.alcove(\.CapabilityWidget|\.BroadcastUpload)?;/PRODUCT_BUNDLE_IDENTIFIER = ${APP_BUNDLE_ID}\1;/" ios/App/App.xcodeproj/project.pbxproj
+          grep -n "PRODUCT_BUNDLE_IDENTIFIER" ios/App/App.xcodeproj/project.pbxproj
+
+      - name: Unlock App Store Connect key
+        env:
+          ASC_KEY_PASS: ${{ secrets.ASC_KEY_PASS }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/asc"
+          openssl enc -d -aes-256-cbc -pbkdf2 -in ios/asc_key.enc \
+            -out "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" -pass env:ASC_KEY_PASS
+          echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
+
+      - name: Install CocoaPods
+        working-directory: ios/App
+        run: pod install
+
+      - name: Archive (signed)
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          BUILD_NUMBER=$(( 100 + ${{ github.run_number }} ))
+          xcodebuild \
+            -workspace App.xcworkspace \
+            -scheme App \
+            -configuration Release \
+            -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Alcove.xcarchive" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
+            DEVELOPMENT_TEAM="$TEAM_ID" \
+            CODE_SIGN_STYLE=Automatic \
+            CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+            archive 2>&1 | tee /tmp/alcove-archive.log | grep -E "error:|warning: .*sign|ARCHIVE" || true
+          test -d "$RUNNER_TEMP/Alcove.xcarchive" || { grep -E "error:" /tmp/alcove-archive.log | tail -30 | sed 's/^/::error::/'; exit 1; }
+
+      - name: Upload to TestFlight
+        run: |
+          cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>destination</key><string>upload</string>
+            <key>teamID</key><string>${TEAM_ID}</string>
+            <key>signingStyle</key><string>automatic</string>
+            <key>manageAppVersionAndBuildNumber</key><false/>
+            <key>uploadSymbols</key><true/>
+          </dict>
+          </plist>
+          EOF
+          set -o pipefail
+          xcodebuild -exportArchive \
+            -archivePath "$RUNNER_TEMP/Alcove.xcarchive" \
+            -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/export" \
+            -allowProvisioningUpdates \
+            -authenticationKeyPath "$ASC_KEY_PATH" \
+            -authenticationKeyID "$ASC_KEY_ID" \
+            -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tee /tmp/alcove-export.log
+
+      - name: Keep logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: testflight-logs
+          path: |
+            /tmp/alcove-archive.log
+            /tmp/alcove-export.log
+          if-no-files-found: ignore
