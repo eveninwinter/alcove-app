@@ -185,6 +185,8 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
     var chatVisible = true
     /// 通话页开着：他的话正在被读出来，别再弹横幅吵她
     var inCall = false
+    /// 1014 她：「我在聊天页，你在工作室发消息了，我也能收到」——工作室那页开着才不弹工作室的横幅
+    var studioVisible = false
 
     func setup() {
         let center = UNUserNotificationCenter.current()
@@ -251,6 +253,11 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
                                     @escaping (UNNotificationPresentationOptions) -> Void) {
         // 1014：app 开着的时候服务器推送不画，前台该不该响交给上面 newMessage 自己判断（聊天页开着就不响）
         if notification.request.trigger is UNPushNotificationTrigger {
+            // 1014 工作室的推送（thread Workroom）没有本地那一路兜着：app 开着、她又没在看工作室，就照常弹
+            if notification.request.content.threadIdentifier == "Workroom" && !studioVisible {
+                completionHandler([.banner, .sound, .list])
+                return
+            }
             completionHandler([])
             return
         }

@@ -7104,6 +7104,8 @@ private struct NativeStudioView: View {
         .fullScreenCover(item: $previewImage) { local in
             StudioLocalPhotoViewer(image: local.image) { previewImage = nil }
         }
+        .onAppear { AlcoveNotify.shared.studioVisible = true }       // 1014 工作室开着就不弹工作室横幅
+        .onDisappear { AlcoveNotify.shared.studioVisible = false }
         .alert("工作室", isPresented: $showStudioNotice) { Button("知道了", role: .cancel) {} } message: { Text(studioNotice) }
         .confirmationDialog("工作室操作", isPresented: $showActions, titleVisibility: .visible) {
             if let task = currentOrLatestTask, task.string("status") == "queued" { Button("暂停排队任务") { Task { await action(task, "pause") } } }
