@@ -1744,7 +1744,11 @@ struct ChatView: View {
     // 0902 她定的语音卡片：录完不直接发，先在打字框上方看转文字和情绪；
     // 垃圾桶删掉重说，发送键才真的发。发出去的气泡只带转文字，情绪只给他。
     private func voicePreviewCard(_ pv: PendingVoice) -> some View {
-        VStack(alignment: .leading, spacing: 8) {
+        // 1014 她：「没有框和底就跟背景融合了，直接做成浅米白实心底框起来」——自己刷底，字色也自己配；深浅只认全屋按钮
+        let dark = AlcoveAppearance.isDark
+        let ink = dark ? Color(red: 233/255, green: 232/255, blue: 228/255) : Color(red: 43/255, green: 43/255, blue: 48/255)
+        let dim = dark ? Color(red: 156/255, green: 155/255, blue: 163/255) : Color(red: 132/255, green: 129/255, blue: 138/255)
+        return VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
                 Image(systemName: "waveform").font(.system(size: 13, weight: .semibold))
                 Text(String(format: "语音 %d:%02d", pv.seconds / 60, pv.seconds % 60))
@@ -1761,43 +1765,47 @@ struct ChatView: View {
                 }
                 .buttonStyle(.plain)
             }
-            .foregroundColor(theme.textDim)
+            .foregroundColor(dim)
             if let err = pv.error {
-                Text(err).font(.system(size: 14)).foregroundColor(theme.textDim)
+                Text(err).font(.system(size: 14)).foregroundColor(dim)
             } else if let a = pv.analysis {
                 Text(a.text)
                     .font(.system(size: 15.5))
-                    .foregroundColor(theme.text)
+                    .foregroundColor(ink)
                     .fixedSize(horizontal: false, vertical: true)
                 if pv.emotionPending {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
-                        Text("在听语气…").font(.system(size: 12.5)).foregroundColor(theme.textDim)
+                        Text("在听语气…").font(.system(size: 12.5)).foregroundColor(dim)
                     }
                 } else if a.hasEmotion {
                     HStack(alignment: .top, spacing: 6) {
                         Text(a.emotionZh)
                             .font(.system(size: 12, weight: .semibold))
-                            .foregroundColor(theme.text)
+                            .foregroundColor(ink)
                             .padding(.horizontal, 7).padding(.vertical, 2)
-                            .background(Capsule().fill(theme.textDim.opacity(0.16)))
+                            .background(Capsule().fill(dim.opacity(0.16)))
                         Text(a.hint)
                             .font(.system(size: 12.5))
-                            .foregroundColor(theme.textDim)
+                            .foregroundColor(dim)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
             } else {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text("听写中…").font(.system(size: 14)).foregroundColor(theme.textDim)
+                    Text("听写中…").font(.system(size: 14)).foregroundColor(dim)
                 }
             }
         }
         .padding(.init(top: 12, leading: 14, bottom: 12, trailing: 10))
         .background(
             RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .fill(theme.isDark ? Color.white.opacity(0.07) : Color.black.opacity(0.045))
+                .fill(dark ? Color(red: 42/255, green: 43/255, blue: 49/255) : Color(red: 248/255, green: 246/255, blue: 241/255))
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 18, style: .continuous)
+                .stroke(dark ? Color.white.opacity(0.10) : Color.black.opacity(0.08), lineWidth: 0.6)
         )
         .padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
     }
