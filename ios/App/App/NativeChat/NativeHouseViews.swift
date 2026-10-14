@@ -7037,6 +7037,16 @@ private struct NativeStudioView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
+    // 1014 她：「工作室的页面 啥主题就跟啥主题的聊天页保持一致」「不能直接代码一样吗」——
+    // 底就是聊天页那张壁纸（同一个 ChatWallpaperStore，含她换的图和模糊），气泡用聊天页同一个零件
+    // （树屋 TreehouseBubbleFill、信息 MessagesBubbleFill，玻璃 / 雾玻璃 / 调色全跟聊天页的设置走）。顶栏和交付卡还用面板色。
+    @ObservedObject private var chatWall = ChatWallpaperStore.shared
+    @AppStorage("wallStamp") private var wallStamp = 0.0
+    @AppStorage(TreehouseWallBlur.stampKey) private var wallBlurStamp = 0.0
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var chatTheme: AlcoveTheme { _ = paletteStamp; _ = houseAppearance; return .named(themeName) }
+    private func refreshChatWall() { chatWall.refresh(themeName: themeName, theme: chatTheme, wallStamp: wallStamp) }
     // 0924 她要的：聊天页选了 Kakao，工作室半屏也跟着那套包走——壁纸、九宫格气泡、头像名字、时间贴气泡旁、日期胶囊。
     // 顶栏按钮照旧，名字就是「工作室」。别的主题一个像素不变。
     @ObservedObject private var kakaoPacks = KakaoPackStore.shared
@@ -7066,7 +7076,12 @@ private struct NativeStudioView: View {
                 }
             }
         } else {
-            LinearGradient(colors: theme.isDark ? [Color(red: 0.075, green: 0.068, blue: 0.09), Color(red: 0.13, green: 0.105, blue: 0.14)] : [Color(red: 0.985, green: 0.955, blue: 0.945), Color(red: 0.94, green: 0.91, blue: 0.90)], startPoint: .top, endPoint: .bottom)
+            ChatWallpaperRenderer(descriptor: chatWall.descriptor)
+                .onAppear { refreshChatWall() }
+                .onChange(of: themeName) { _ in refreshChatWall() }
+                .onChange(of: wallStamp) { _ in refreshChatWall() }
+                .onChange(of: wallBlurStamp) { _ in refreshChatWall() }
+                .onChange(of: houseAppearance) { _ in refreshChatWall() }
         }
     }
     /// Kakao 气泡：包里的九宫格图，时间贴外侧下角
@@ -7300,9 +7315,9 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(caption, message: item.primary, mine: mine, head: head, date: showTime ? studioDate(item.primary) : nil)
                     } else {
-                    studioText(caption, message: item.primary, color: theme.text)
+                    studioText(caption, message: item.primary, color: studioBubbleText(mine))
                         .padding(.horizontal, 14).padding(.vertical, 11)
-                        .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
+                        .modifier(StudioChatBubble(theme: chatTheme, mine: mine))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
                     }
                 }
@@ -7421,9 +7436,9 @@ private struct NativeStudioView: View {
                     if isKakao {
                         kakaoTextBubble(message.string("text"), message: message, mine: mine, head: head, date: showTime ? studioDate(message) : nil)
                     } else {
-                    studioText(message.string("text"), message: message, color: theme.text)
+                    studioText(message.string("text"), message: message, color: studioBubbleText(mine))
                         .padding(.horizontal, 14).padding(.vertical, 11)
-                        .background(mine ? theme.bubbleUser : theme.bubbleAI, in: RoundedRectangle(cornerRadius: 18))
+                        .modifier(StudioChatBubble(theme: chatTheme, mine: mine))
                         .frame(maxWidth: 300, alignment: mine ? .trailing : .leading)
                     }
                 }
@@ -7432,10 +7447,18 @@ private struct NativeStudioView: View {
         }
     }
 
+    /// 气泡上的字：跟聊天页同一套调色（「我的正文 / 他的正文」没调过就是主题原样）
+    private func studioBubbleText(_ mine: Bool) -> Color {
+        let t = chatTheme
+        return (mine ? t.textUser : t.textAI) ?? t.text
+    }
+
     private var inputBar: some View {
         StudioInputBar(pendingImages: $pendingImages,
                        quote: $studioQuote,
                        accent: theme.fyAccent,
+                       treehouse: chatTheme.isTreehouse,
+                       sendColor: chatTheme.sendButtonColor,
                        onPickPhotos: { showPhotoPicker = true },
                        onPickFile: { showFilePicker = true },
                        onPreview: { previewImage = StudioLocalPhoto(image: $0) },
@@ -7607,11 +7630,30 @@ private struct StudioDisplayItem: Identifiable {
 
 /// 输入条独立成子视图：打字只刷新这一小块，不再把整页消息列表拖着重算
 /// （0829 修「打字闪屏」的根子）。发送失败时文字退回草稿框。
+/// 1014 工作室气泡＝聊天页同一个零件：树屋走 TreehouseBubbleFill，信息走 MessagesBubbleFill，别的主题实心圆角
+private struct StudioChatBubble: ViewModifier {
+    let theme: AlcoveTheme
+    let mine: Bool
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let fill = mine ? theme.bubbleUser : theme.bubbleAI
+        if theme.isTreehouse {
+            content.modifier(TreehouseBubbleFill(isUser: mine, fill: fill, showsCorner: false, glass: MessagesPalette.thGlass))
+        } else if theme.isMessages {
+            content.modifier(MessagesBubbleFill(fill: fill, glass: MessagesPalette.glass))
+        } else {
+            content.background(fill, in: RoundedRectangle(cornerRadius: 18))
+        }
+    }
+}
+
 private struct StudioInputBar: View {
     @Binding var pendingImages: [(thumb: UIImage, data: Data, ext: String)]
     /// 0925 长按「询问」挂上来的那段；发的时候用「」括起来放在正文前面
     @Binding var quote: String?
     let accent: Color
+    var treehouse: Bool = false          // 1014 Sanctus：输入栏照聊天页那条（雾玻璃细框胶囊、drop a leaf…、蝴蝶发送键）
+    var sendColor: Color = .accentColor
     var onPickPhotos: () -> Void
     var onPickFile: () -> Void
     var onPreview: (UIImage) -> Void
@@ -7659,6 +7701,7 @@ private struct StudioInputBar: View {
                 }
                 .padding(.init(top: 8, leading: 16, bottom: 0, trailing: 10))
             }
+            if treehouse { treehouseRow } else {
             HStack(alignment: .bottom, spacing: 9) {
                 Menu {
                     Button { onPickPhotos() } label: { Label("图片", systemImage: "photo") }
@@ -7676,9 +7719,58 @@ private struct StudioInputBar: View {
                 } label: { Image(systemName: "arrow.up").font(.system(size: 15, weight: .bold)).foregroundColor(.white).frame(width: 38, height: 38).background(accent, in: Circle()) }
                     .disabled(!canSend)
             }.padding(.horizontal, 12).padding(.top, 8).padding(.bottom, 18)
+            }
         }
-        .background(.ultraThinMaterial)
+        .background { if !treehouse { Rectangle().fill(.ultraThinMaterial) } }
         .onChange(of: quote) { q in if q != nil { focused = true } }
+    }
+
+    private func sendNow() {
+        let typed = draft
+        let q = quote
+        let text = q.map { "「\($0)」\n" + typed } ?? typed
+        draft = ""; quote = nil; focused = false
+        Task { if await onSend(text) == false { draft = typed; quote = q } }
+    }
+
+    /// 跟聊天页 treehouseComposerRow 同一个样子（没有录音）
+    private var treehouseRow: some View {
+        let ink = TreehouseInk.ink
+        return HStack(alignment: .bottom, spacing: 2) {
+            Menu {
+                Button { onPickPhotos() } label: { Label("图片", systemImage: "photo") }
+                Button { onPickFile() } label: { Label("文件", systemImage: "doc") }
+            } label: {
+                Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundColor(ink)
+                    .frame(width: 40, height: 40).contentShape(Rectangle())
+            }
+            TextField("", text: $draft,
+                      prompt: Text("drop a leaf…").font(.custom("PinyonScript-Regular", size: 19)).foregroundColor(ink.opacity(0.35)),
+                      axis: .vertical)
+                .focused($focused)
+                .onReceive(NotificationCenter.default.publisher(for: .studioDropKeyboard)) { _ in focused = false }
+                .lineLimit(1...6)
+                .font(.system(size: 15))
+                .foregroundColor(ink)
+                .tint(ink)
+                .padding(.leading, 16).padding(.trailing, 10).padding(.vertical, 5)
+                .frame(minHeight: 40)
+                .modifier(TreehouseFogGlass(shape: Capsule(), border: 0.55))
+                .contentShape(Capsule())
+                .onTapGesture { focused = true }
+                .padding(.trailing, 8)
+            Button { sendNow() } label: {
+                Image("TreehouseSendButterfly").resizable().renderingMode(.template).interpolation(.high).scaledToFit()
+                    .foregroundColor(sendColor)
+                    .frame(width: 36, height: 36)
+                    .frame(width: 44, height: 44)
+                    .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .disabled(!canSend)
+            .padding(.bottom, -2)
+        }
+        .padding(.init(top: 6, leading: 14, bottom: 18, trailing: 18))
     }
 }
 

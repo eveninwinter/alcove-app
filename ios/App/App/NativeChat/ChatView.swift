@@ -8860,7 +8860,7 @@ private struct TailPillGlassModifier: ViewModifier {
 /// 1001 她要试的玻璃气泡：iOS 26 系统液态玻璃（跟打字框同一种），跟系统一模一样不带颜色（她：「不需要颜色！」）。
 /// 设置里「气泡玻璃」滑条照系统那个「透明 ↔ 色调」：0 是最透的 .clear，往右在玻璃上垫一层白（夜里黑）越来越磨砂。
 /// 不用 .interactive()，免得跟长按贴表情的缩放打架。系统低于 26 或纸页主题：照旧实心圆角
-private struct MessagesBubbleFill: ViewModifier {
+struct MessagesBubbleFill: ViewModifier {   // 1014 工作室半屏也借它
     let fill: Color
     let glass: Bool
     @AppStorage("msgGlassFrost") private var frost = 0.3
