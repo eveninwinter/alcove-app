@@ -309,11 +309,22 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
             completionHandler()      // 点了这条但没打字：别跳去聊天页，通话页该在哪还在哪
             return
         }
+        // 1014 她：「点了没进工作室 还是主聊天」——工作室的推送（thread Workroom）点了进工作室。
+        // 冷启动时 RootView 还没起来收不到通知，先记一笔，RootView 起来 / 回前台时自己补开
+        if response.notification.request.content.threadIdentifier == "Workroom" {
+            PendingHouseOpen.target = HouseDestination.studio.rawValue
+            NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.studio.rawValue)
+            completionHandler()
+            return
+        }
         // 普通点按=回聊天页（跟接听是两码事，接听会开通话页）
         NotificationCenter.default.post(name: .alcoveNotificationTapped, object: nil)
         completionHandler()
     }
 }
+
+/// 点推送要打开的屋子（冷启动兜底）：RootView 打开过就清掉
+enum PendingHouseOpen { static var target: String? }
 
 // MARK: - 无声音频保活（锁屏/后台把轮询吊着）
 

@@ -715,9 +715,13 @@ struct RootView: View {
             // 0929 聊天小卡的跳转按钮：檐下 / 不忘（挂这儿不挂主链，主链编译器算不动）
             .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenHouse)) { note in
                 if let raw = note.object as? String, let target = HouseDestination(rawValue: raw) {
+                    PendingHouseOpen.target = nil
                     presentHouse(target)
                 }
             }
+            // 1014 点工作室推送冷启动：通知发出时这里还没挂上，起来后补开
+            .onAppear { openPendingHouse() }
+            .onChange(of: scenePhase) { phase in if phase == .active { openPendingHouse() } }
             .onReceive(NotificationCenter.default.publisher(for: .alcoveListenRestore)) { _ in
                 withAnimation(.easeOut(duration: 0.22)) { listenMinimized = false }
             }
@@ -808,6 +812,12 @@ struct RootView: View {
         default:
             presentHouse(target)
         }
+    }
+
+    private func openPendingHouse() {
+        guard let raw = PendingHouseOpen.target, let target = HouseDestination(rawValue: raw) else { return }
+        PendingHouseOpen.target = nil
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { presentHouse(target) }
     }
 
     private func presentHouse(_ target: HouseDestination) {
