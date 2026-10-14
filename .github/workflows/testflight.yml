@@ -89,7 +89,9 @@ jobs:
           test -d "$RUNNER_TEMP/Alcove.xcarchive" || { grep -E "error:" /tmp/alcove-archive.log | tail -30 | sed 's/^/::error::/'; exit 1; }
 
       - name: Upload to TestFlight
+        shell: bash
         run: |
+          xcodebuild -version | tr '\n' ' ' | sed 's/^/::notice::/'; echo
           cat > "$RUNNER_TEMP/ExportOptions.plist" <<EOF
           <?xml version="1.0" encoding="UTF-8"?>
           <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -104,7 +106,7 @@ jobs:
           </dict>
           </plist>
           EOF
-          set -o pipefail
+          set +e
           xcodebuild -exportArchive \
             -archivePath "$RUNNER_TEMP/Alcove.xcarchive" \
             -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist" \
@@ -113,6 +115,17 @@ jobs:
             -authenticationKeyPath "$ASC_KEY_PATH" \
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" 2>&1 | tee /tmp/alcove-export.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            # 公开仓库没登录看不到日志全文，把错误抬成注解，服务器那头不登录也读得到
+            grep -iE "error|fail|denied|invalid|missing|no .*profile|certificate" /tmp/alcove-export.log \
+              | grep -v "^$" | tail -25 | cut -c1-900 | while IFS= read -r line; do echo "::error::$line"; done
+            for f in $(ls -d /var/folders/*/*/T/*IDEDistribution* 2>/dev/null); do
+              grep -hiE "error|fail|denied|invalid|missing" "$f"/*.log 2>/dev/null | tail -15 | cut -c1-900 \
+                | while IFS= read -r line; do echo "::error::DIST $line"; done
+            done
+          fi
+          exit "$status"
 
       - name: Keep logs on failure
         if: failure()
