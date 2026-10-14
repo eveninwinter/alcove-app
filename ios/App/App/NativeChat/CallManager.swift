@@ -3,6 +3,7 @@ import CallKit
 import AVFoundation
 import UserNotifications
 import UIKit
+import PushKit
 
 // 0829 原生来电与前台通知（工作室任务#1111-1113）。
 // 免费开发者账号方案：不走 APNs。app 活着（前台，或后台被无声音频保活吊着）时，
@@ -43,6 +44,33 @@ final class CallManager: NSObject, CXProviderDelegate {
         switch state {
         case "ringing":
             guard callId != currentCallId else { return } // 同一通铃只弹一次
+            ring(callId: callId, completion: nil)
+        default:
+            // idle/ended：他那边撤回或响铃超时，把还在响的铃收掉。
+            // 没接过 = 记成"未接来电"（最近通话里红字），接过 = 正常结束
+            if state == "idle", let uuid = currentUUID {
+                provider.reportCall(with: uuid, endedAt: Date(),
+                                    reason: answered ? .remoteEnded : .unanswered)
+                currentUUID = nil
+                currentCallId = nil
+            }
+        }
+    }
+
+    /// 1014 VoIP 推送进来（app 被划掉也会被系统拉起来）。苹果的规矩：每一条 VoIP 推送
+    /// 都必须当场报一通来电，不报 app 会被杀。轮询已经弹过同一通的，就拿同一个 UUID 再报一次
+    /// （系统会回"已存在"，不会响第二遍），规矩也算守住了。
+    func reportVoipRing(callId: String, completion: @escaping () -> Void) {
+        if callId == currentCallId, let uuid = currentUUID {
+            let update = CXCallUpdate()
+            update.localizedCallerName = "陈璟"
+            provider.reportNewIncomingCall(with: uuid, update: update) { _ in completion() }
+            return
+        }
+        ring(callId: callId, completion: completion)
+    }
+
+    private func ring(callId: String, completion: (() -> Void)?) {
             currentCallId = callId
             let uuid = UUID()
             currentUUID = uuid
@@ -60,17 +88,16 @@ final class CallManager: NSObject, CXProviderDelegate {
                     NSLog("CallKit ring failed: \(err.localizedDescription)")
                     AlcoveNotify.shared.incomingCallFallback()
                 }
+                completion?()
             }
-        default:
-            // idle/ended：他那边撤回或响铃超时，把还在响的铃收掉。
-            // 没接过 = 记成"未接来电"（最近通话里红字），接过 = 正常结束
-            if state == "idle", let uuid = currentUUID {
-                provider.reportCall(with: uuid, endedAt: Date(),
-                                    reason: answered ? .remoteEnded : .unanswered)
-                currentUUID = nil
-                currentCallId = nil
+            // 1014：app 被划掉、靠 VoIP 推送拉起来的时候没有轮询来收铃，
+            // 服务器那边 45 秒就判"没人接"了，这边 50 秒还没接就自己收成未接来电
+            DispatchQueue.main.asyncAfter(deadline: .now() + 50) { [weak self] in
+                guard let self, self.currentUUID == uuid, !self.answered else { return }
+                self.provider.reportCall(with: uuid, endedAt: Date(), reason: .unanswered)
+                self.currentUUID = nil
+                self.currentCallId = nil
             }
-        }
     }
 
     // MARK: 拨出记账（她打给他也进"最近通话"）
@@ -181,6 +208,8 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
     /// 新消息进来喊一声。她盯着聊天页时闭嘴，其他情况（别的页面/后台/锁屏）都响。
     func newMessage(_ text: String) {
         guard !inCall else { return }
+        // 1014：真推送接上以后，后台/锁屏那一声由服务器的推送来响，这里再弹就是两条
+        if RemotePush.alertRegistered && UIApplication.shared.applicationState != .active { return }
         let onChat = chatVisible && UIApplication.shared.applicationState == .active
         guard !onChat else { return }
         let content = UNMutableNotificationContent()
@@ -220,6 +249,11 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
                                 willPresent notification: UNNotification,
                                 withCompletionHandler completionHandler:
                                     @escaping (UNNotificationPresentationOptions) -> Void) {
+        // 1014：app 开着的时候服务器推送不画，前台该不该响交给上面 newMessage 自己判断（聊天页开着就不响）
+        if notification.request.trigger is UNPushNotificationTrigger {
+            completionHandler([])
+            return
+        }
         completionHandler([.banner, .sound, .list])
     }
 
@@ -325,5 +359,55 @@ final class KeepAlive {
                                                            options: .notifyOthersOnDeactivation)
         }
         running = false
+    }
+}
+
+
+// MARK: - 1014 真推送（她的开发者账号下来了，苹果的推送门开了）
+// 三个号码交给服务器：alert（消息横幅）、voip（来电，app 被划掉也能响）、
+// liveactivity / la_start（灵动岛，服务器能更新它、它没了能重新拉起来）。
+
+enum RemotePush {
+    /// 消息推送的号码交上去了：后台的横幅从此由服务器推，本地别再重复弹
+    static var alertRegistered = false
+
+    static func register(kind: String, token: Data, extra: [String: Any] = [:]) {
+        let hex = token.map { String(format: "%02x", $0) }.joined()
+        var body: [String: Any] = ["kind": kind, "token": hex,
+                                   "bundle": Bundle.main.bundleIdentifier ?? ""]
+        for (k, v) in extra { body[k] = v }
+        Task {
+            let ok = (try? await NativeHouseAPI.object("/push/register", method: "POST", body: body)) != nil
+            if kind == "alert" && ok { await MainActor.run { alertRegistered = true } }
+        }
+    }
+
+    /// 灵动岛开关：关了就告诉服务器别再远程把它拉起来
+    static func setIslandEnabled(_ on: Bool) {
+        Task { _ = try? await NativeHouseAPI.object("/push/pref", method: "POST", body: ["la_enabled": on]) }
+    }
+}
+
+final class VoipPush: NSObject, PKPushRegistryDelegate {
+    static let shared = VoipPush()
+    private var registry: PKPushRegistry?
+
+    func start() {
+        guard registry == nil else { return }
+        let r = PKPushRegistry(queue: .main)
+        r.delegate = self
+        r.desiredPushTypes = [.voIP]
+        registry = r
+    }
+
+    func pushRegistry(_ registry: PKPushRegistry, didUpdate pushCredentials: PKPushCredentials,
+                      for type: PKPushType) {
+        RemotePush.register(kind: "voip", token: pushCredentials.token)
+    }
+
+    func pushRegistry(_ registry: PKPushRegistry, didReceiveIncomingPushWith payload: PKPushPayload,
+                      for type: PKPushType, completion: @escaping () -> Void) {
+        let callId = (payload.dictionaryPayload["call_id"] as? String) ?? UUID().uuidString
+        CallManager.shared.reportVoipRing(callId: callId, completion: completion)
     }
 }

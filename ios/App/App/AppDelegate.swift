@@ -64,7 +64,25 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         if launchOptions?[.location] != nil {
             SensorReporter.shared.appActive()
         }
+        // 1014 真推送：消息横幅跟苹果领号码；VoIP 必须在启动这一刻就挂上，
+        // 被来电推送拉起来的时候系统要马上找到接电话的人
+        application.registerForRemoteNotifications()
+        VoipPush.shared.start()
+        Task { @MainActor in AlcoveLiveActivityController.observePushToStart() }
         return true
+    }
+
+    func application(_ application: UIApplication,
+                     didRegisterForRemoteNotificationsWithDeviceToken deviceToken: Data) {
+        RemotePush.register(kind: "alert", token: deviceToken)
+    }
+
+    func application(_ application: UIApplication,
+                     didFailToRegisterForRemoteNotificationsWithError error: Error) {
+        NSLog("APNs register failed: \(error.localizedDescription)")
+        Task { _ = try? await NativeHouseAPI.object("/island/log", method: "POST",
+                                                    body: ["event": "apns_register_failed",
+                                                           "error": error.localizedDescription]) }
     }
 
     func applicationWillResignActive(_ application: UIApplication) {

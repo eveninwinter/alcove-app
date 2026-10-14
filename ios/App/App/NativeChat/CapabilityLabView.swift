@@ -207,6 +207,14 @@ enum AlcoveLiveActivityController {
     private static func watch(_ activity: Activity<AlcoveLabAttributes>) {
         guard !watched.contains(activity.id) else { return }
         watched.insert(activity.id)
+        // 1014：每块岛的推送号码交给服务器，app 被划掉以后服务器照样能刷它
+        Task {
+            for await token in activity.pushTokenUpdates {
+                RemotePush.register(kind: "liveactivity", token: token,
+                                    extra: ["activity_id": activity.id,
+                                            "started_at": activity.content.state.startedAt.timeIntervalSince1970])
+            }
+        }
         let started = activity.content.state.startedAt
         Task {
             for await state in activity.activityStateUpdates {
@@ -275,6 +283,7 @@ enum AlcoveLiveActivityController {
         guard ActivityAuthorizationInfo().areActivitiesEnabled else {
             return "系统未允许实时活动，请在 iPhone 设置中开启。"
         }
+        RemotePush.setIslandEnabled(true)
         guard !starting else { return "灵动岛正在刷新。" }
         starting = true
         defer { starting = false }
@@ -292,12 +301,11 @@ enum AlcoveLiveActivityController {
         }
 
         do {
-            _ = try Activity.request(
+            _ = try requestIsland(
                 attributes: AlcoveLabAttributes(
                     name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"
                 ),
-                content: ActivityContent(state: state, staleDate: nil),
-                pushType: nil
+                content: ActivityContent(state: state, staleDate: nil)
             )
             ensurePulseUpdates()
             // 0819 她点刷新一路显示「已开启」，锁屏和灵动岛却都是空的。
@@ -397,15 +405,45 @@ enum AlcoveLiveActivityController {
             return
         }
         guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
-        _ = try? Activity.request(
+        _ = try? requestIsland(
             attributes: AlcoveLabAttributes(name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"),
-            content: ActivityContent(state: state, staleDate: nil),
-            pushType: nil
+            content: ActivityContent(state: state, staleDate: nil)
         )
         ensurePulseUpdates()
     }
 
+    /// 1014：先要带推送号码的岛；没有推送权限的签名（自签的旧包）会被拒，退回不带号码的老样子
+    @discardableResult
+    private static func requestIsland(attributes: AlcoveLabAttributes,
+                                      content: ActivityContent<AlcoveLabAttributes.ContentState>) throws -> Activity<AlcoveLabAttributes> {
+        do {
+            return try Activity.request(attributes: attributes, content: content, pushType: .token)
+        } catch {
+            report("request_token_failed", ["error": error.localizedDescription])
+            return try Activity.request(attributes: attributes, content: content, pushType: nil)
+        }
+    }
+
+    /// 1014：「远程开岛」的号码。岛被系统收掉（8 小时到点、被清）以后，服务器用它把岛重新拉起来
+    private static var pushToStartWatching = false
+    static func observePushToStart() {
+        guard !pushToStartWatching else { return }
+        pushToStartWatching = true
+        Task {
+            for await token in Activity<AlcoveLabAttributes>.pushToStartTokenUpdates {
+                RemotePush.register(kind: "la_start", token: token)
+            }
+        }
+        // 远程拉起来的岛也要挂观察者、交号码
+        Task {
+            for await activity in Activity<AlcoveLabAttributes>.activityUpdates {
+                watch(activity)
+            }
+        }
+    }
+
     static func stop() async {
+        RemotePush.setIslandEnabled(false)
         report("stop_by_switch")
         retryTask?.cancel()
         retryTask = nil

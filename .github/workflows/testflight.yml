@@ -49,6 +49,13 @@ jobs:
         # 只用 HTTPS，不算出口加密，免得每个包在 TestFlight 里卡一个问卷
         run: plutil -replace ITSAppUsesNonExemptEncryption -bool NO ios/App/App/Info.plist
 
+      - name: Push entitlement (App target only)
+        # 1014：真推送要 aps-environment。只给主 App 挂（小组件、屏幕共享不用），
+        # 而且只在这条签名线上挂，自签的旧包不受影响
+        run: |
+          perl -0pi -e 's/(\t+)(PRODUCT_BUNDLE_IDENTIFIER = com\.luna\.alcove;)/$1CODE_SIGN_ENTITLEMENTS = App\/App.entitlements;\n$1$2/g' ios/App/App.xcodeproj/project.pbxproj
+          grep -c "CODE_SIGN_ENTITLEMENTS = App/App.entitlements" ios/App/App.xcodeproj/project.pbxproj
+
       - name: Use registered bundle IDs
         run: |
           sed -i '' -E "s/PRODUCT_BUNDLE_IDENTIFIER = com\.luna\.alcove(\.CapabilityWidget|\.BroadcastUpload)?;/PRODUCT_BUNDLE_IDENTIFIER = ${APP_BUNDLE_ID}\1;/" ios/App/App.xcodeproj/project.pbxproj
