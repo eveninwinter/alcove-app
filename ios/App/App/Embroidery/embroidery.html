@@ -324,13 +324,93 @@
       #tools button { color: var(--dim); border-radius: 0; font-size: 13px; letter-spacing: 1px; min-height: 46px; }
       #tools button.active { color: var(--fg); border-bottom: 2px solid var(--fg); }
       #tools::-webkit-scrollbar, #palette::-webkit-scrollbar { display: none; }
+
+      /* ── 1014 她：「淡雅清透的感觉，这个页面你重新布置一下」 ──
+         整页一层薄雾：浅灰白底、白色半透明的小片、很细的线；按钮收成小胶囊，工具四组，颜色只在线轴和笔上出现 */
+      body {
+        --bg: #f3f3f1; --fg: #2c2c31; --dim: #8b8b92; --line: rgba(20, 20, 30, 0.07);
+        --card: rgba(255, 255, 255, 0.66); --card-line: rgba(255, 255, 255, 0.9); --accent: #2c2c31;
+        letter-spacing: 0.3px;
+      }
+      body.night {
+        --bg: #1d1e22; --fg: #e9e8e4; --dim: #9a9aa2; --line: rgba(255, 255, 255, 0.08);
+        --card: rgba(255, 255, 255, 0.06); --card-line: rgba(255, 255, 255, 0.09); --accent: #e9e8e4;
+      }
+      header { border-bottom: 0; padding-bottom: 4px; }
+      header .title { font-family: inherit; font-size: 13px; display: flex; flex-direction: column; align-items: center; gap: 4px; }
+      header small { margin-top: 0; letter-spacing: 3px; font-size: 9px; text-transform: uppercase; }
+      .seg { display: inline-flex; padding: 3px; border-radius: 999px; background: var(--card); border: 1px solid var(--card-line); box-shadow: 0 1px 8px rgba(20, 20, 40, 0.05); }
+      .seg button { min-height: 30px; min-width: 64px; padding: 4px 14px; border: 0; border-radius: 999px; font-size: 13px; color: var(--dim); letter-spacing: 2px; }
+      .seg button.active { background: var(--fg); color: var(--bg); }
+      header > button:not(#done) { color: var(--dim); }
+      #done { background: transparent; color: var(--fg); border: 1px solid var(--fg); border-radius: 999px; min-height: 32px; padding: 4px 14px; font-size: 12px; letter-spacing: 2px; }
+      #quick { background: var(--card); border: 1px solid var(--card-line); border-radius: 999px; box-shadow: 0 2px 10px rgba(20, 20, 40, 0.06); padding: 0 4px; }
+      #quick button { width: 36px; height: 36px; min-width: 36px; min-height: 36px; color: var(--dim); font-size: 17px; }
+      #notice { text-align: center; font-size: 11px; letter-spacing: 1px; }
+      #palette { border-top: 0; background: transparent; justify-content: flex-start; padding: 2px 12px 4px; min-height: 40px; }
+      #palette .spool { width: 18px; min-width: 18px; height: 24px; min-height: 24px; border-radius: 4px; border: 2px solid var(--bg); outline: 1px solid var(--line); }
+      #palette button:not(.spool) { border: 0; color: var(--dim); font-size: 11px; min-height: 30px; }
+      #threadMode { width: auto; height: 30px; color: var(--dim); font-size: 11px; }
+      #drawer { margin: 0 12px 6px; border: 1px solid var(--card-line); border-radius: 16px; background: var(--card); box-shadow: 0 2px 14px rgba(20, 20, 40, 0.05); }
+      #drawer:empty { display: none; }
+      #drawer:not(:empty) { border-top: 1px solid var(--card-line); padding-top: 6px; }
+      #drawer button { border: 1px solid var(--line); border-radius: 999px; font-size: 12px; min-height: 32px; padding: 4px 12px; letter-spacing: 1px; }
+      #drawer button.active { border-color: var(--fg); color: var(--fg); }
+      #drawer select, #drawer input:not([type=range]):not([type=color]) { border: 1px solid var(--line); border-radius: 10px; background: transparent; }
+      #drawer small { letter-spacing: 1px; }
+      .subtabs { display: flex; gap: 14px; justify-content: center; padding: 2px 0 6px; margin-bottom: 4px; border-bottom: 1px solid var(--line); }
+      #drawer .subtabs button { border: 0; border-radius: 0; min-height: 30px; padding: 2px 2px; color: var(--dim); font-size: 12px; letter-spacing: 2px; }
+      #drawer .subtabs button.active { color: var(--fg); box-shadow: inset 0 -1.5px 0 var(--fg); }
+      .assets button { border-radius: 12px !important; background: transparent; }
+      #tools { justify-content: space-evenly; gap: 2px; padding: 4px 8px 6px; border-top: 0; }
+      #tools button { min-height: 34px; min-width: 0; padding: 4px 10px; border-radius: 999px; font-size: 13px; letter-spacing: 2px; color: var(--dim); border: 1px solid transparent; }
+      #tools button.active { color: var(--fg); background: var(--card); border: 1px solid var(--card-line); border-bottom: 1px solid var(--card-line); box-shadow: 0 1px 8px rgba(20, 20, 40, 0.06); }
+
+      /* ── 1014 画图 ── */
+      #drawMode { display: none; flex: 1; min-height: 0; flex-direction: column; }
+      body.drawing #drawMode { display: flex; }
+      body.drawing #stage, body.drawing #notice, body.drawing #palette, body.drawing #keyboardTools,
+      body.drawing #drawer, body.drawing #tools, body.drawing #done { display: none !important; }
+      #dstage { position: relative; flex: 1; min-height: 160px; overflow: hidden; }
+      #dcanvas { width: 100%; height: 100%; display: block; touch-action: none; }
+      .dquick { position: absolute; right: 12px; top: 8px; display: flex; gap: 2px; padding: 0 4px; border-radius: 999px; background: var(--card); border: 1px solid var(--card-line); box-shadow: 0 2px 10px rgba(20, 20, 40, 0.06); }
+      .dquick button { border: 0; min-width: 34px; min-height: 34px; padding: 2px 8px; color: var(--dim); font-size: 15px; }
+      .dquick #dclear { font-size: 11px; letter-spacing: 1px; }
+      #dpop { position: absolute; left: 12px; bottom: 8px; padding: 10px 12px; border-radius: 16px; background: var(--card); border: 1px solid var(--card-line); box-shadow: 0 6px 24px rgba(20, 20, 40, 0.12); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px); }
+      .dsizes { display: flex; gap: 6px; align-items: center; }
+      .dsizeopt { min-width: 38px; min-height: 38px; padding: 0; border: 1px solid transparent; border-radius: 12px; display: grid; place-items: center; }
+      .dsizeopt.active { border-color: var(--fg); }
+      .dsizeopt i, .dsize i { display: block; border-radius: 50%; background: var(--fg); }
+      .dalpha { display: flex; align-items: center; gap: 10px; margin-top: 8px; }
+      .dalpha input { flex: 1; accent-color: var(--fg); }
+      #dnotice { min-height: 16px; text-align: center; font-size: 11px; color: var(--dim); letter-spacing: 1px; }
+      #dtools { display: flex; justify-content: center; gap: 4px; padding: 2px 10px; }
+      .dtool, .dsize { min-width: 54px; min-height: 52px; padding: 4px 6px; border: 1px solid transparent; border-radius: 14px; display: flex; flex-direction: column; align-items: center; gap: 2px; color: var(--dim); }
+      .dtool svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.3; stroke-linecap: round; stroke-linejoin: round; }
+      .dtool span, .dsize span { font-size: 10px; letter-spacing: 2px; }
+      .dtool.active { color: var(--fg); background: var(--card); border-color: var(--card-line); box-shadow: 0 1px 8px rgba(20, 20, 40, 0.06); }
+      .dsize i { outline: 1px solid var(--line); outline-offset: 2px; }
+      #dpalette { display: flex; justify-content: center; gap: 10px; padding: 6px 12px; }
+      .dswatch { position: relative; width: 26px; height: 26px; min-width: 26px; min-height: 26px; padding: 0; border-radius: 50%; border: 0; background: var(--c); box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 0 0 2px var(--bg); }
+      body.night .dswatch { box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 0 0 2px var(--bg); }
+      .dswatch.active { box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.12), 0 0 0 2px var(--bg), 0 0 0 3.5px var(--fg); }
+      .dmore { display: grid; place-items: center; overflow: hidden; background: conic-gradient(#e48da6, #9a7bc8, #4e6fc6, #5e9b7b, #e6c25c, #e48da6); }
+      .dmore input { position: absolute; inset: 0; opacity: 0; width: 100%; height: 100%; }
+      .dsend { display: flex; gap: 8px; align-items: center; padding: 6px 12px 8px; }
+      .dsend input { flex: 1; min-height: 40px; border-radius: 999px; border: 1px solid var(--line); background: var(--card); padding: 6px 14px; font-size: 15px; }
+      .dsend button { min-height: 40px; border-radius: 999px; padding: 4px 14px; font-size: 13px; letter-spacing: 2px; }
+      #dsave { border: 1px solid var(--line); color: var(--dim); }
+      #dsend { border: 1px solid var(--fg); color: var(--fg); min-width: 56px; }
     </style>
   </head>
   <body>
     <main>
       <header>
         <button id="close" aria-label="收起">⌄</button>
-        <div class="title">a little stitch<small id="status">草稿</small></div>
+        <div class="title">
+          <div class="seg" role="tablist"><button id="modeStitch" class="active">刺绣</button><button id="modeDraw">画图</button></div>
+          <small id="status">草稿</small>
+        </div>
         <button id="full" aria-label="切换全屏">⤢</button
         ><button id="done">完成</button>
       </header>
@@ -350,6 +430,17 @@
       </div>
       <div id="drawer"></div>
       <nav id="tools" aria-label="刺绣工具"></nav>
+      <section id="drawMode" aria-label="画图">
+        <div id="dstage">
+          <canvas id="dcanvas"></canvas>
+          <div class="dquick"><button id="dundo" aria-label="撤销">↶</button><button id="dredo" aria-label="重做">↷</button><button id="dclear">清空</button></div>
+          <div id="dpop" hidden></div>
+        </div>
+        <div id="dnotice" role="status"></div>
+        <div id="dtools"></div>
+        <div id="dpalette"></div>
+        <div class="dsend"><input id="dcaption" maxlength="500" placeholder="加一句（可不写）" /><button id="dsave">存相册</button><button id="dsend">发</button></div>
+      </section>
     </main>
     <script>
       window.ERRS = [];
@@ -364,5 +455,6 @@
     <script src="render.js"></script>
     <script src="editor.js"></script>
     <script src="finish.js"></script>
+    <script src="draw.js"></script>
   </body>
 </html>

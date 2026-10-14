@@ -579,6 +579,14 @@ function property(fn) {
   if (!current() || current().locked) return;
   change((d) => fn(d.layers.find((l) => l.id === selected)));
 }
+const TOOL_GROUPS = {
+  cloth: [["fabric", "布料"], ["shape", "形状"]],
+  deco: [["border", "花边"], ["doodle", "涂鸦"], ["assets", "素材"], ["image", "图片"]],
+};
+const lastSub = {};
+function groupOf(id) {
+  return Object.keys(TOOL_GROUPS).find((g) => TOOL_GROUPS[g].some(([k]) => k === id));
+}
 function openTool(id) {
   if (readOnly && id) {
     notice("这是定版，先另存新版本再修改");
@@ -589,9 +597,20 @@ function openTool(id) {
   guide = [];
   cutPreview = null;
   $("drawer").replaceChildren();
+  const group = groupOf(id);
   document
     .querySelectorAll("#tools button")
-    .forEach((b) => b.classList.toggle("active", b.dataset.tool === id));
+    .forEach((b) => b.classList.toggle("active", b.dataset.tool === (group || id)));
+  if (group) {
+    lastSub[group] = id;
+    let sr = el("div", "", { className: "subtabs" });
+    for (const [k, name] of TOOL_GROUPS[group]) {
+      let sb = button(name, () => openTool(k), sr);
+      sb.dataset.sub = k;
+      sb.classList.toggle("active", k === id);
+    }
+    $("drawer").append(sr);
+  }
   if (id === "fabric") {
     let r = row();
     for (const [key, f] of Object.entries(R.fabrics)) {
@@ -1279,18 +1298,14 @@ function setColor(c) {
     .forEach((b) => b.classList.toggle("active", b.title === c));
   draw();
 }
+// 1014 她：「刺绣的还是很乱」——九个工具收成四组，组里的再用一排小字切换；「选中项」不占位置，点中东西自动出来
 for (const [id, name] of [
-  ["fabric", "布料"],
-  ["shape", "形状"],
-  ["text", "绣字"],
+  ["cloth", "布"],
+  ["text", "字"],
+  ["deco", "装饰"],
   ["draw", "画线"],
-  ["image", "图片"],
-  ["border", "花边"],
-  ["doodle", "涂鸦"],
-  ["assets", "素材"],
-  ["object", "选中项"],
 ]) {
-  let b = button(name, () => openTool(id), $("tools"));
+  let b = button(name, () => openTool(TOOL_GROUPS[id] ? lastSub[id] || TOOL_GROUPS[id][0][0] : id), $("tools"));
   b.dataset.tool = id;
 }
 $("undo").onclick = () => {
@@ -1511,7 +1526,24 @@ window.__emb = (kind, p) => {
   if (kind === "saved") $("status").textContent = "草稿已存";
   if (kind === "error") notice(p.message);
 };
+// 1014 回放视频的一帧：服务器拿它一帧帧拍下来合成 mp4（聊天卡片点一下就播）
+async function replayFrame(progress, width = 720) {
+  const s = history.doc.shape, k = width / (s.w + 140);
+  const c = document.createElement("canvas");
+  c.width = Math.round((s.w + 140) * k); c.height = Math.round((s.h + 140) * k);
+  const x = c.getContext("2d");
+  x.scale(k, k);
+  let bg = exportBg(history.doc);
+  if (bg === "transparent") bg = "#F4F1EC";
+  x.fillStyle = bg;
+  x.fillRect(0, 0, s.w + 140, s.h + 140);
+  x.translate(70, 70);
+  if (!replayFrame.scene) replayFrame.scene = await R.compile(history.doc);
+  R.render(x, history.doc, replayFrame.scene, progress);
+  return c.toDataURL("image/jpeg", 0.88);
+}
 window.EmbEditor = {
+  replayFrame,
   get document() {
     return G.clone(history.doc);
   },

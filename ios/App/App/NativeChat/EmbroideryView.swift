@@ -2,6 +2,7 @@ import SwiftUI
 import WebKit
 import PhotosUI
 import Photos
+import AVFoundation
 
 // The same WKWebView stays mounted when expanding; its document, selection and undo stack survive.
 struct EmbroideryView: View {
@@ -151,7 +152,8 @@ final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandle
             request(action, body: body["body"] as? [String: Any]) { result in
                 switch result {
                 case .success(let value):
-                    if action == "finish" {
+                    // 1014 画图的定版不碰刺绣草稿（画图草稿网页自己存）
+                    if action == "finish", ((body["body"] as? [String: Any])?["document"] as? [String: Any])?["kind"] as? String != "drawing" {
                         // The server now owns the immutable version. Do not reopen it as an editable draft.
                         try? FileManager.default.removeItem(at: self.draft)
                     }
@@ -289,7 +291,7 @@ private final class EmbroideryAssets: NSObject, WKURLSchemeHandler {
             remote = AlcoveAPI.fullURL("/api/pulse-range/embroidery/png/" + name)
         } else if parts.first == "data", parts.count >= 2 {
             remote = AlcoveAPI.fullURL("/api/pulse-range/embroidery" + path)
-        } else if parts.count == 1, ["embroidery.html", "geometry.js", "glyphs.js", "render.js", "editor.js", "finish.js", "opentype.min.js", "fonts.json"].contains(name),
+        } else if parts.count == 1, ["embroidery.html", "geometry.js", "glyphs.js", "render.js", "editor.js", "finish.js", "draw.js", "opentype.min.js", "fonts.json"].contains(name),
                   let local = Bundle.main.url(forResource: name, withExtension: nil, subdirectory: "Embroidery"),
                   let data = try? Data(contentsOf: local) { finish(task, data, mime); return }
         guard let remote else { fail(task); return }
@@ -371,4 +373,146 @@ struct EmbroideryMessageCard: View {
             EmbroideryView(isPresented: $opened, startFull: true, workID: card.id, replay: replay)
         }
     }
+}
+
+
+// MARK: - 1014 聊天里的刺绣 / 画图大卡片
+// 她：「不要跟图片一样是小的正方形，至少要大一倍，iMessage 那种能看得清的」「点击自动播放过程，在原地播放，长按全屏看图」。
+// 认法：图片文件名 embroidery-emb_….png / drawing-emb_….png（后端发的时候按这个起名）。
+// 点一下去服务器拿回放视频（/embroidery/replay/<id>.mp4，没有就当场做，十几秒），在卡片里原地播完再回到图。
+
+enum ArtCardInfo {
+    static func parse(_ url: URL) -> (id: String, drawing: Bool)? {
+        let name = url.lastPathComponent
+        for (prefix, drawing) in [("embroidery-", false), ("drawing-", true)] where name.hasPrefix(prefix) && name.hasSuffix(".png") {
+            let id = String(name.dropFirst(prefix.count).dropLast(4))
+            if id.range(of: "^emb_[A-Za-z0-9_-]+$", options: .regularExpression) != nil { return (id, drawing) }
+        }
+        return nil
+    }
+}
+
+struct ArtCard: View {
+    let id: String
+    let drawing: Bool
+    let url: URL
+    let caption: String
+    let onFullScreen: () -> Void
+    @State private var player: AVPlayer?
+    @State private var loading = false
+    @State private var hint: String?
+    @State private var endObserver: NSObjectProtocol?
+
+    var body: some View {
+        // 深浅只认全屋按钮；卡片自己刷底，字色也自己配
+        let dark = AlcoveAppearance.isDark
+        let ink = dark ? Color(red: 233/255, green: 232/255, blue: 228/255) : Color(red: 52/255, green: 52/255, blue: 58/255)
+        let dim = dark ? Color(red: 156/255, green: 155/255, blue: 163/255) : Color(red: 128/255, green: 127/255, blue: 135/255)
+        VStack(alignment: .leading, spacing: 0) {
+            ZStack(alignment: .bottomTrailing) {
+                CachedImage(url: url) { img in
+                    img.resizable().scaledToFit()
+                } placeholder: {
+                    Color.primary.opacity(0.05).aspectRatio(drawing ? 0.75 : 1.55, contentMode: .fit)
+                }
+                .overlay {
+                    if let player { ArtPlayerLayer(player: player).transition(.opacity) }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 15, style: .continuous))
+                if player == nil {
+                    ZStack {
+                        Circle().fill(Color.white.opacity(dark ? 0.22 : 0.72))
+                        Circle().stroke(Color.white.opacity(0.85), lineWidth: 0.8)
+                        if loading { ProgressView().controlSize(.small) }
+                        else { Image(systemName: "play.fill").font(.system(size: 12, weight: .semibold)).foregroundColor(Color(white: 0.28)) }
+                    }
+                    .frame(width: 34, height: 34)
+                    .padding(9)
+                }
+            }
+            .padding(8)
+            Text(hint ?? (caption.isEmpty ? (drawing ? "画 · 点一下看它画出来" : "刺绣 · 点一下看它绣出来") : caption))
+                .font(.system(size: caption.isEmpty || hint != nil ? 12.5 : 15.5, design: .serif))
+                .foregroundColor(caption.isEmpty || hint != nil ? dim : ink)
+                .fixedSize(horizontal: false, vertical: true)
+                .padding(.horizontal, 14).padding(.top, 2).padding(.bottom, 12)
+        }
+        .frame(width: drawing ? 240 : 280)
+        .background(
+            RoundedRectangle(cornerRadius: 22, style: .continuous)
+                .fill(.ultraThinMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+                    .fill(dark ? Color.black.opacity(0.18) : Color.white.opacity(0.42)))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 22, style: .continuous)
+            .stroke(Color.white.opacity(dark ? 0.12 : 0.75), lineWidth: 0.8))
+        .shadow(color: .black.opacity(dark ? 0.25 : 0.07), radius: 14, x: 0, y: 4)
+        .contentShape(RoundedRectangle(cornerRadius: 22, style: .continuous))
+        .onTapGesture { play() }
+        .onLongPressGesture(minimumDuration: 0.35) { onFullScreen() }
+        .onDisappear { stop() }
+    }
+
+    private func play() {
+        if player != nil { stop(); return }
+        guard !loading else { return }
+        loading = true
+        Task {
+            let file = await Self.replayFile(id)
+            await MainActor.run {
+                loading = false
+                guard let file else {
+                    hint = "回放还在准备，过一会儿再点"
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) { hint = nil }
+                    return
+                }
+                let p = AVPlayer(url: file)
+                p.isMuted = true
+                endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,
+                                                                     object: p.currentItem, queue: .main) { _ in
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { stop() }
+                }
+                withAnimation(.easeOut(duration: 0.2)) { player = p }
+                p.play()
+            }
+        }
+    }
+
+    private func stop() {
+        player?.pause()
+        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
+        endObserver = nil
+        withAnimation(.easeIn(duration: 0.25)) { player = nil }
+    }
+
+    /// 回放视频存在手机里（Caches/art-replay），下次点直接播
+    static func replayFile(_ id: String) async -> URL? {
+        let dir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0].appendingPathComponent("art-replay", isDirectory: true)
+        let file = dir.appendingPathComponent(id + ".mp4")
+        if FileManager.default.fileExists(atPath: file.path) { return file }
+        var req = URLRequest(url: AlcoveAPI.fullURL("/api/pulse-range/embroidery/replay/" + id + ".mp4"))
+        req.timeoutInterval = 90
+        guard let (data, resp) = try? await AlcoveAPI.session.data(for: req),
+              let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode), data.count > 1000 else { return nil }
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        guard (try? data.write(to: file, options: .atomic)) != nil else { return nil }
+        return file
+    }
+}
+
+private struct ArtPlayerLayer: UIViewRepresentable {
+    let player: AVPlayer
+    final class PlayerView: UIView {
+        override class var layerClass: AnyClass { AVPlayerLayer.self }
+        var playerLayer: AVPlayerLayer { layer as! AVPlayerLayer }
+    }
+    func makeUIView(context: Context) -> PlayerView {
+        let v = PlayerView()
+        v.backgroundColor = .clear
+        v.playerLayer.videoGravity = .resizeAspect
+        v.playerLayer.player = player
+        v.isUserInteractionEnabled = false
+        return v
+    }
+    func updateUIView(_ v: PlayerView, context: Context) { v.playerLayer.player = player }
 }

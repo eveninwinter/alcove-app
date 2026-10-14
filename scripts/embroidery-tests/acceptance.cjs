@@ -78,7 +78,7 @@ const { chromium } = require("playwright-core");
         return "30 fabric/shape exports";
       }),
     );
-    await p.locator("#tools button[data-tool=assets]").click();
+    await p.locator("#tools button[data-tool=deco]").click(); await p.locator(".subtabs button[data-sub=assets]").click();   // 1014 素材收进「装饰」
     await p.locator(".assets button").first().click();
     await p.getByRole("button", { name: "补齐四角", exact: true }).click();
     await p.waitForTimeout(300);

@@ -45,7 +45,7 @@ const fs = require("fs");
         return { dots, errors: ERRS };
       }),
     );
-    await p.getByRole("button", { name: "形状", exact: true }).click();
+    await p.locator("#tools button[data-tool=cloth]").click(); await p.getByRole("button", { name: "形状", exact: true }).click();   // 1014 形状收进「布」
     await p.getByRole("button", { name: "竖版 3:4", exact: true }).click();   // 1012 尺寸预设改名
     let shape = await p.evaluate(() => EmbEditor.document.shape);
     if (shape.w !== 540 || shape.h !== 720) throw Error("portrait");

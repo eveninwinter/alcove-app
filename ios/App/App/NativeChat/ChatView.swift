@@ -4668,6 +4668,7 @@ struct MessageRow: View {
     /// 有正文气泡的，小片挂在正文气泡下；没有的（纯图、语音）挂在图 / 语音条下
     private var showsTextBubble: Bool {
         msg.embroideryCard == nil && msg.musicCard == nil && !msg.displayText.isEmpty && !msg.isSticker && !msg.isBareLink && !msg.isAudio
+            && !(isUser && photoURLs.isEmpty && artInfo != nil)     // 1014 她那句「加一句」已经在卡片里了
     }
 
     /// 表情包长按菜单的「保存到相册」存的就是这张表情
@@ -5428,6 +5429,15 @@ struct MessageRow: View {
         }
     }
 
+    /// 1014 刺绣 / 画图的大卡片：一张图、文件名是 embroidery-emb_… / drawing-emb_…
+    private var artInfo: (id: String, drawing: Bool, url: URL)? {
+        var u: URL?
+        if photoURLs.count == 1 { u = photoURLs[0] }
+        else if photoURLs.isEmpty, msg.isImage, let raw = msg.attachmentUrl { u = AlcoveAPI.attachmentURL(raw) }
+        guard let u, let info = ArtCardInfo.parse(u) else { return nil }
+        return (info.id, info.drawing, u)
+    }
+
     private var hasPhotoBlock: Bool {
         !photoURLs.isEmpty || (msg.isImage && !(msg.attachmentUrl ?? "").isEmpty)
     }
@@ -5440,7 +5450,12 @@ struct MessageRow: View {
 
     @ViewBuilder
     private var photoBlockInner: some View {
-        if !photoURLs.isEmpty {
+        if let art = artInfo {
+            // 她发的画带着「加一句」（就是这条消息的字），放进卡片里；他那边的话照旧在下面单独一个泡
+            ArtCard(id: art.id, drawing: art.drawing, url: art.url,
+                    caption: isUser && photoURLs.isEmpty ? msg.displayText : "",
+                    onFullScreen: { onTapImages([art.url], .constant(0)) })
+        } else if !photoURLs.isEmpty {
             OfficialPhotoGridMessageView(urls: photoURLs, messageID: "chat-\(msg.id)",
                                          onOpen: onTapImages, nativeMenu: onReactLongPress == nil)
                 .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
@@ -5466,6 +5481,8 @@ struct MessageRow: View {
             }
             .contentShape(Rectangle())
             .onTapGesture { toggle() }
+        } else if artInfo != nil {
+            photoBlockCore      // 1014 刺绣 / 画图卡片：点一下播放、长按全屏，不挂长按菜单
         } else if hasPhotoBlock {
             reactable(photoBlockCore, kind: .image, urls: photoSaveURLs)
         } else {
