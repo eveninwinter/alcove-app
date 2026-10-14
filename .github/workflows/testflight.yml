@@ -70,6 +70,36 @@ jobs:
             -out "$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" -pass env:ASC_KEY_PASS
           echo "ASC_KEY_PATH=$RUNNER_TEMP/asc/AuthKey_${ASC_KEY_ID}.p8" >> "$GITHUB_ENV"
 
+      - name: Clear old CI signing certificates
+        # 1014：每次在新机器上自动签名，苹果都会给账号新建一张证书，攒满上限就报
+        # "maximum number of certificates"、包打不出来。打包前用同一把钥匙把以前流水线建的证书删掉
+        # （只删 displayName 是 "Created via API" 的，她自己在别处建的不碰）。推送用的是 .p8 钥匙，不受影响。
+        # 这一步出什么错都不拦后面打包；每张证书的类型和名字都写进注解，方便不登录也能看。
+        continue-on-error: true
+        shell: bash
+        run: |
+          python3 -m venv "$RUNNER_TEMP/certvenv"
+          "$RUNNER_TEMP/certvenv/bin/pip" install -q pyjwt cryptography requests
+          "$RUNNER_TEMP/certvenv/bin/python" - <<'PY'
+          import os, time, jwt, requests
+          key = open(os.environ["ASC_KEY_PATH"]).read()
+          now = int(time.time())
+          tok = jwt.encode({"iss": os.environ["ASC_ISSUER_ID"], "iat": now, "exp": now + 900, "aud": "appstoreconnect-v1"},
+                           key, algorithm="ES256", headers={"kid": os.environ["ASC_KEY_ID"], "typ": "JWT"})
+          h = {"Authorization": f"Bearer {tok}"}
+          r = requests.get("https://api.appstoreconnect.apple.com/v1/certificates?limit=200", headers=h, timeout=30)
+          r.raise_for_status()
+          kinds = {"DEVELOPMENT", "IOS_DEVELOPMENT", "DISTRIBUTION", "IOS_DISTRIBUTION"}
+          for c in r.json().get("data", []):
+              a = c["attributes"]
+              ctype, disp, name = a.get("certificateType"), a.get("displayName") or "", a.get("name") or ""
+              ours = ctype in kinds and disp == "Created via API"
+              print(f"::notice::cert {ctype} | {disp} | {name} | {a.get('expirationDate')} | {'revoke' if ours else 'keep'}")
+              if ours:
+                  d = requests.delete(f"https://api.appstoreconnect.apple.com/v1/certificates/{c['id']}", headers=h, timeout=30)
+                  print(f"::notice::revoked {name}: HTTP {d.status_code}")
+          PY
+
       - name: Install CocoaPods
         working-directory: ios/App
         run: pod install
