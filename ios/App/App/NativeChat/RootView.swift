@@ -19,7 +19,8 @@ struct RootView: View {
     @State private var showChatPlayer = false
     @State private var showChatInsight = false
     @ObservedObject private var listenMusic = MusicModel.shared
-    @ObservedObject private var treehouseHeader = TreehouseHeaderModel.shared   // 1009 树屋顶栏的心率 / 模型名
+    // 1015 #3823 她：「日记页面为啥几秒卡一下」——这里原来 @ObservedObject 树屋顶栏的心率 / 模型名，
+    // 心率 4 秒一跳，每跳一次整个根页面（聊天页＋盖在上面的日记页）全重算。改成顶栏两个小零件自己盯（TreehouseModelLabel / TreehouseBpmBadge）
     @State private var roundtableUnread = 0
     @State private var latestRoundtableID = 0
     @State private var thinkingEnabled = false
@@ -406,12 +407,7 @@ struct RootView: View {
                                        font: "PinyonScript-Regular", size: 24, cjkSize: 15)
                             .tracking(0)
                             .lineLimit(1)
-                        Text(treehouseHeader.model.isEmpty ? " " : treehouseHeader.model)
-                            // 1010 #3563 她：模型名换 Cormorant 斜体，12.5 → 15
-                            .font(.custom("CormorantGaramondItalic-MediumItalic", size: 15))
-                            .tracking(0.2)
-                            .foregroundColor(TreehouseInk.gray)
-                            .lineLimit(1)
+                        TreehouseModelLabel()
                     }
                 }
                 .contentShape(Rectangle())
@@ -421,22 +417,7 @@ struct RootView: View {
                 // 1010 她那张图：心率数字、电话、音符、菜单之间净空 16–18，菜单离屏幕右边 17。
                 // 电话 / 音符 / 菜单的框左右各多 6 给手指点，所以间距 18 → 5（心率数字跟电话之间补回去）
                 HStack(alignment: .center, spacing: 5) {
-                    if let bpm = treehouseHeader.bpm {
-                        HStack(spacing: 7) {
-                            // 1010 #3593 她挑 2：涂鸦心换成一道心电线，跟别的图标同一种细线
-                            treehouseIcon(TreehousePulseIcon(), TreehousePulseIcon.size)
-                            // 1010 #3596–3601 她：数字用时间戳那个字体（Cormorant 默认的老式数字，3/4/5/7/9 往下伸、6/8 往上冒，不换样式）。
-                            // 对齐按 0/1/2 那种矮数字的高度：x 高那一截（基线上 0.193em）的正中对上图标正中，
-                            // 字框正中在基线上 (0.924 − 0.287)/2 = 0.3185em，差 0.1255em，往上提这么多；心率换成几都是同一个规矩
-                            Text("\(bpm)").font(.custom("CormorantGaramond-Medium", size: 18))
-                                .offset(y: -0.1255 * 18)
-                                .lineLimit(1)
-                                .fixedSize(horizontal: true, vertical: false)
-                        }
-                        .fixedSize(horizontal: true, vertical: false)
-                        .layoutPriority(1)
-                        .padding(.trailing, 5)
-                    }
+                    TreehouseBpmBadge(icon: treehouseIcon(TreehousePulseIcon(), TreehousePulseIcon.size))
                     Button { activeCall = .outgoing } label: {
                         treehouseIcon(TreehousePhoneIcon(), TreehousePhoneIcon.size)
                             .frame(width: TreehousePhoneIcon.size.width + 12, height: 44).contentShape(Rectangle())
@@ -981,4 +962,41 @@ func scriptNameText(_ s: String, font: String, size: CGFloat, cjkSize: CGFloat) 
     }
     flush()
     return out
+}
+
+// 1015 #3823：树屋顶栏的模型名 / 心率各自盯 TreehouseHeaderModel，心率 4 秒一跳只重画这两个小零件，
+// 不再把整个根页面（连带盖在上面的日记页）拉一遍。样子跟原来写在 RootView 里的一字不差
+private struct TreehouseModelLabel: View {
+    @ObservedObject private var header = TreehouseHeaderModel.shared
+    var body: some View {
+        Text(header.model.isEmpty ? " " : header.model)
+            // 1010 #3563 她：模型名换 Cormorant 斜体，12.5 → 15
+            .font(.custom("CormorantGaramondItalic-MediumItalic", size: 15))
+            .tracking(0.2)
+            .foregroundColor(TreehouseInk.gray)
+            .lineLimit(1)
+    }
+}
+
+private struct TreehouseBpmBadge<Icon: View>: View {
+    let icon: Icon
+    @ObservedObject private var header = TreehouseHeaderModel.shared
+    var body: some View {
+        if let bpm = header.bpm {
+            HStack(spacing: 7) {
+                // 1010 #3593 她挑 2：涂鸦心换成一道心电线，跟别的图标同一种细线
+                icon
+                // 1010 #3596–3601 她：数字用时间戳那个字体（Cormorant 默认的老式数字，3/4/5/7/9 往下伸、6/8 往上冒，不换样式）。
+                // 对齐按 0/1/2 那种矮数字的高度：x 高那一截（基线上 0.193em）的正中对上图标正中，
+                // 字框正中在基线上 (0.924 − 0.287)/2 = 0.3185em，差 0.1255em，往上提这么多；心率换成几都是同一个规矩
+                Text("\(bpm)").font(.custom("CormorantGaramond-Medium", size: 18))
+                    .offset(y: -0.1255 * 18)
+                    .lineLimit(1)
+                    .fixedSize(horizontal: true, vertical: false)
+            }
+            .fixedSize(horizontal: true, vertical: false)
+            .layoutPriority(1)
+            .padding(.trailing, 5)
+        }
+    }
 }
