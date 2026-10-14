@@ -98,7 +98,7 @@ jobs:
           <plist version="1.0">
           <dict>
             <key>method</key><string>app-store-connect</string>
-            <key>destination</key><string>upload</string>
+            <key>destination</key><string>export</string>
             <key>teamID</key><string>${TEAM_ID}</string>
             <key>signingStyle</key><string>automatic</string>
             <key>manageAppVersionAndBuildNumber</key><false/>
@@ -125,6 +125,20 @@ jobs:
                 | while IFS= read -r line; do echo "::error::DIST $line"; done
             done
           fi
+          [ "$status" -ne 0 ] && exit "$status"
+          # 1014：Xcode 26.6 直传那条路苹果不认它生成的 JWT（同一把钥匙服务器上直连 API 是通的），
+          # 改成先导出 ipa、再用 altool 自己传
+          mkdir -p ~/.appstoreconnect/private_keys
+          cp "$ASC_KEY_PATH" ~/.appstoreconnect/private_keys/
+          IPA=$(ls "$RUNNER_TEMP"/export/*.ipa | head -1)
+          echo "::notice::ipa $IPA"
+          xcrun altool --upload-app -f "$IPA" -t ios \
+            --apiKey "$ASC_KEY_ID" --apiIssuer "$ASC_ISSUER_ID" --output-format normal 2>&1 | tee /tmp/alcove-upload.log
+          status=${PIPESTATUS[0]}
+          if [ "$status" -ne 0 ]; then
+            grep -iE "error|fail|invalid|missing|denied" /tmp/alcove-upload.log | tail -25 | cut -c1-900 \
+              | while IFS= read -r line; do echo "::error::UPLOAD $line"; done
+          fi
           exit "$status"
 
       - name: Keep logs on failure
@@ -135,4 +149,5 @@ jobs:
           path: |
             /tmp/alcove-archive.log
             /tmp/alcove-export.log
+            /tmp/alcove-upload.log
           if-no-files-found: ignore
