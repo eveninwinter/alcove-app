@@ -323,6 +323,34 @@
       ctx.fill();
     }
   }
+  // 1014 卡顿：同一层、同一颜色、同粗细连着的针合成一批画，每批五笔（原来每针五笔，几千针一帧上万笔）。
+  // 针眼的小暗点分 a、b 两遍画：相邻两针在同一个针眼叠两层，跟原来一针一针画时深浅一样。
+  function stitchRun(ctx, run, color, w) {
+    ctx.lineCap = "round";
+    ctx.beginPath();
+    for (const { a, b } of run) { ctx.moveTo(a[0], a[1] + 1.6); ctx.lineTo(b[0], b[1] + 1.6); }
+    ctx.lineWidth = w + 1;
+    ctx.strokeStyle = "rgba(35,20,30,.23)";
+    ctx.stroke();
+    ctx.beginPath();
+    for (const { a, b } of run) { ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); }
+    ctx.strokeStyle = color;
+    ctx.lineWidth = w;
+    ctx.stroke();
+    ctx.beginPath();
+    for (const { a, b } of run) { ctx.moveTo(a[0], a[1] - w * 0.22); ctx.lineTo(b[0], b[1] - w * 0.22); }
+    ctx.strokeStyle = "rgba(255,255,255,.38)";
+    ctx.lineWidth = w * 0.28;
+    ctx.setLineDash([2, 3]);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    ctx.fillStyle = "rgba(25,12,20,.28)";
+    for (const end of ["a", "b"]) {
+      ctx.beginPath();
+      for (const s of run) { const p = s[end]; ctx.moveTo(p[0] + w * 0.24, p[1]); ctx.arc(p[0], p[1], w * 0.24, 0, Math.PI * 2); }
+      ctx.fill();
+    }
+  }
   async function motif(asset) {
     if (assetPaths.has(asset)) return assetPaths.get(asset);
     let im = await image(asset.startsWith("icon/") ? "data/" + asset + ".svg" : "data/assets/" + asset + ".png"),   // 1012 搜来的图标是 svg
@@ -625,8 +653,13 @@
       warnings = [];
     for (const l of doc.layers) {
       if (l.hidden) continue;
+      // 1014 她：「添加素材的时候特别卡 放大缩小」——原来 key 里带着位置/缩放/角度，拖一下就整层针脚重算；
+      // 针脚是按这层自己的坐标算的，挪动不影响，key 里去掉这几样。照片的 src 动辄几 MB，只取长度和尾巴。
+      let keyLayer = { ...l };
+      for (const k of ["x", "y", "rot", "scale", "flipX", "flipY", "locked"]) delete keyLayer[k];
+      if (typeof keyLayer.src === "string") keyLayer.src = keyLayer.src.length + ":" + keyLayer.src.slice(-96);
       let key =
-          JSON.stringify(l) + (doc.cloth_color || "") +
+          JSON.stringify(keyLayer) + (doc.cloth_color || "") +
           doc.fabric +
           JSON.stringify(doc.shape) +
           (l.mode === "loop"
@@ -716,8 +749,13 @@
                   : l.color || "#B8325A",
             });
         }
+        part.layer = l;
         compiled.set(key, part);
         if (compiled.size > 150) compiled.delete(compiled.keys().next().value);
+      } else if (part.layer !== l) {
+        // 缓存里的针脚挂着旧的图层对象（旧位置），换成现在这层，画的时候才在新位置
+        part = { ...part, layer: l, ops: part.ops.map((o) => ({ ...o, layer: l })) };
+        compiled.set(key, part);
       }
       ops.push(...part.ops);
       bounds[l.id] = part.bounds;
@@ -752,19 +790,34 @@
       );
     } else
       visible = scene.ops.slice(0, Math.floor(scene.ops.length * progress));
+    // 1014 卡顿：原来每一针都 save / 挪位置 / 转 / 缩放 / restore，几千针每帧几千次；同一层连着的针只变换一次
+    let curLayer = null, run = [], runColor = null, runWidth = 0;
+    const flush = () => { if (run.length) { stitchRun(ctx, run, runColor, runWidth); run = []; } };
     for (const op of visible) {
       let l = op.layer;
-      ctx.save();
-      if (l.mode !== "loop") {
-        ctx.translate(l.x || 0, l.y || 0);
-        ctx.rotate(l.rot || 0);
-        ctx.scale(
-          (l.scale || 1) * (l.flipX ? -1 : 1),
-          (l.scale || 1) * (l.flipY ? -1 : 1),
-        );
+      if (l !== curLayer) {
+        flush();
+        if (curLayer) ctx.restore();
+        ctx.save();
+        curLayer = l;
+        if (l.mode !== "loop") {
+          ctx.translate(l.x || 0, l.y || 0);
+          ctx.rotate(l.rot || 0);
+          ctx.scale(
+            (l.scale || 1) * (l.flipX ? -1 : 1),
+            (l.scale || 1) * (l.flipY ? -1 : 1),
+          );
+        }
       }
-      if (op.kind === "stitch") stitch(ctx, op.stitch, op.color);
-      else {
+      if (op.kind === "stitch") {
+        if (run.length && (op.color !== runColor || Math.abs(op.stitch.width - runWidth) > 0.01)) flush();
+        if (!run.length) { runColor = op.color; runWidth = op.stitch.width; }
+        run.push(op.stitch);
+        continue;
+      }
+      flush();
+      {
+        ctx.save();
         let { image: im, w, h } = op,
           c = l.crop || { x: 0, y: 0, w: 1, h: 1 };
         if (l.style === "patch") {
@@ -791,9 +844,11 @@
           for (let x = -w / 2; x < w / 2; x += 3)
             ctx.fillRect(x, -h / 2, 0.6, h);
         }
+        ctx.restore();
       }
-      ctx.restore();
     }
+    flush();
+    if (curLayer) ctx.restore();
     ctx.restore();
     return revealLayer
       ? visible.filter((o) => o.layer.id === revealLayer).at(-1)

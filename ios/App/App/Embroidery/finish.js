@@ -17,4 +17,4 @@ root.EmbFinish={receive,api,show,quilt,replay};
 })(globalThis);
 
 // 1012 存相册统一走这里：原生那边认 png / jpg / gif / video；没原生（浏览器测试）就直接下载
-function saveMedia(data,kind){if(bridge('exportMedia',{data,kind}))return;const ext={png:'png',jpg:'jpg',gif:'gif',video:data.startsWith('data:video/mp4')?'mp4':'webm'}[kind];let a=el('a','',{download:history.doc.id+'.'+ext,href:data});a.click();}
+function saveMedia(data,kind){if(bridge('exportMedia',{data,media:kind}))return;   /* 1014 原来传 kind 会盖掉指令名 exportMedia，手机收到不认识的指令就什么都不做 */const ext={png:'png',jpg:'jpg',gif:'gif',video:data.startsWith('data:video/mp4')?'mp4':'webm'}[kind];let a=el('a','',{download:history.doc.id+'.'+ext,href:data});a.click();}

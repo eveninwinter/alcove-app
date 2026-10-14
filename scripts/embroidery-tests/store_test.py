@@ -17,7 +17,7 @@ class EmbroideryTest(unittest.TestCase):
     def tearDown(self):self.temp.cleanup()
     def fake(self,endpoint,payload):
         self.count+=1
-        with sqlite3.connect(self.chat) as db: db.execute('INSERT INTO messages(role,text) VALUES(?,?)',(payload['role'],payload['text']))
+        with sqlite3.connect(self.chat) as db: db.execute('INSERT INTO messages(role,text,attachment_filename) VALUES(?,?,?)',(payload['role'],payload['text'],payload.get('attachment_filename')))   # 1012 起按附件文件名去重，真接口会写这一列
         return {'ok':True}
     def test_finish_freeze_and_quilt(self):
         first=self.store.finish(self.doc,self.png);again=self.store.finish(self.doc,self.png)
@@ -33,7 +33,7 @@ class EmbroideryTest(unittest.TestCase):
         cb=lambda d,p:deliver(d,p,self.chat,self.root/'attachments',self.fake)
         first=self.store.send(self.doc['id'],cb);self.assertEqual(first,self.store.send(self.doc['id'],cb));self.assertEqual(self.count,1)
         with sqlite3.connect(self.chat) as db:
-            row=db.execute('SELECT text,attachment_url FROM messages').fetchone();self.assertIn('EMBROIDERY_CARD',row[0]);self.assertTrue(row[1].endswith('.png'))
+            row=db.execute('SELECT text,attachment_url FROM messages').fetchone();self.assertEqual(row[0],'')   # 1012 她：不要卡片，就是一张普通图片;self.assertTrue(row[1].endswith('.png'))
     def test_uncertain_never_reinjects(self):
         self.store.finish(self.doc,self.png)
         def timeout(d,p):raise TimeoutError()

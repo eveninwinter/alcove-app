@@ -178,7 +178,8 @@ final class EmbroiderySession: NSObject, ObservableObject, WKScriptMessageHandle
             }
         case "exportMedia":
             // 1012 存相册：透明 PNG / 带桌面 JPG / 绣字过程 GIF / 视频
-            guard let encoded = body["data"] as? String, let kind = body["kind"] as? String,
+            // 1014 类型放在 media 里：原来叫 kind，跟指令名 kind 撞了，存图从没走到这里
+            guard let encoded = body["data"] as? String, let kind = body["media"] as? String,
                   let comma = encoded.firstIndex(of: ","), encoded[..<comma].hasSuffix(";base64"),
                   let data = Data(base64Encoded: String(encoded[encoded.index(after: comma)...])) else {
                 error("导出失败"); return
