@@ -1128,7 +1128,7 @@ private struct NativeSettingsView: View {
                             .font(.system(size: 13, weight: .medium))
                     }
                     Divider().opacity(0.25)
-                    settingRow("全部清空", cacheJustFreed.map { "刚腾出 " + ImageDiskCache.format($0) } ?? "相册里的照片不清，别的再看会重新拉") {
+                    settingRow("全部清空", cacheJustFreed.map { "刚腾出 " + ImageDiskCache.format($0) } ?? "相册照片和表情包不清，别的再看会重新拉") {
                         Button("清空", role: .destructive) { purgeCache(before: nil) }
                             .font(.system(size: 13, weight: .medium))
                     }

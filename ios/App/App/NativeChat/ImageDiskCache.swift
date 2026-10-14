@@ -45,11 +45,14 @@ final class ImageDiskCache {
     // MARK: - 读
 
     static func isAlbum(_ url: URL) -> Bool { url.path.contains("/album/media/") }
+    /// 1014 她：「表情包和相册的图片永远不会被清缓存」——表情包跟相册放同一格（albumDir），清理、清空都不碰
+    static func isSticker(_ url: URL) -> Bool { url.path.hasPrefix("/stickers/") || url.path.hasPrefix("/api/stickers/") }
+    static func isPinned(_ url: URL) -> Bool { isAlbum(url) || isSticker(url) }
 
     func fileURL(for url: URL) -> URL {
         let digest = SHA256.hash(data: Data(url.absoluteString.utf8))
         let name = digest.map { String(format: "%02x", $0) }.joined()
-        return (Self.isAlbum(url) ? albumDir : dir).appendingPathComponent(name + ".img")
+        return (Self.isPinned(url) ? albumDir : dir).appendingPathComponent(name + ".img")
     }
 
     /// 只查内存、绝不碰磁盘——View 的 init（跑在主线程）只准用这个。
@@ -61,8 +64,8 @@ final class ImageDiskCache {
     /// 磁盘命中：读盘 + 解码 + 预解码位图。只在后台任务里调。
     private func diskLoad(_ url: URL) -> UIImage? {
         let f = fileURL(for: url)
-        if Self.isAlbum(url), !FileManager.default.fileExists(atPath: f.path) {
-            // 0912 以前相册的图混在 alcove-images 里：挪过来，别再下一遍
+        if Self.isPinned(url), !FileManager.default.fileExists(atPath: f.path) {
+            // 0912 以前相册的图（1014 起加上表情包）混在 alcove-images 里：挪过来，别再下一遍
             try? FileManager.default.moveItem(at: dir.appendingPathComponent(f.lastPathComponent), to: f)
         }
         guard let data = try? Data(contentsOf: f), let img = UIImage(data: data) else { return nil }
@@ -143,7 +146,7 @@ final class ImageDiskCache {
     func oldestDate() -> Date? { entries().map(\.date).min() }
 
     /// 清掉某天之前存的；传 nil 就是全部清。返回腾出来的字节数。
-    /// 只扫 dir，相册那格（albumDir）不在账上也不在清理范围里。
+    /// 只扫 dir，相册和表情包那格（albumDir）不在账上也不在清理范围里。
     @discardableResult
     func clear(before cutoff: Date?) -> Int64 {
         var freed: Int64 = 0
