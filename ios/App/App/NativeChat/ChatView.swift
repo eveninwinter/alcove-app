@@ -10344,16 +10344,11 @@ struct SanctusEarsCard: View {
             NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.ears.rawValue)
         } label: {
             SanctusCardShell(ink: ink) {
-                Image("SanctusCardWing").resizable().scaledToFit()
-                    .frame(height: 120)
-                    .scaleEffect(x: -1, y: 1)
-                    .colorMultiply(ink.dark ? Color(white: 0.55) : .white)
-                    .opacity(ink.dark ? 0.9 : 0.75)
-                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0.15), .init(color: .black, location: 0.6)],
-                                         startPoint: .leading, endPoint: .trailing))
-                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.5), .init(color: .clear, location: 0.9)],
-                                         startPoint: .top, endPoint: .bottom))
-                    .offset(x: 10, y: -8)
+                // 1014 她给的两个小仙子＋星星，竖着压扁一点；实的不渐变；黑夜压暗一点（一半太暗，她要折中 0.72）
+                Image("SanctusCardFairies").resizable()
+                    .frame(width: 97, height: 88)
+                    .colorMultiply(ink.dark ? Color(white: 0.72) : .white)
+                    .padding(.top, 12.5).padding(.trailing, 37.5)   // 往左挪一点（她 #3803）
                     .allowsHitTesting(false)
             } content: {
                 VStack(alignment: .leading, spacing: 0) {
