@@ -10001,7 +10001,7 @@ enum SanctusCardFont {
 /// 卡壳：磨砂底、外白边、内细框；内容自己排
 struct SanctusCardShell<Content: View, Art: View>: View {
     let ink: SanctusCardInk
-    var align: Alignment = .leading   // 他的靠左；她送的歌靠右；提醒居中
+    var align: Alignment = .center   // 1014 她：「请保持所有卡片居中」
     @ViewBuilder var art: () -> Art
     @ViewBuilder var content: () -> Content
     var body: some View {

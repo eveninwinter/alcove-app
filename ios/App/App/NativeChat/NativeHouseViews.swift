@@ -3296,7 +3296,7 @@ struct MusicMessageCard: View {
     /// 封面叠在音符上面（白天白边、黑夜压暗）；中间那条细线就是进度条
     private var sanctusBody: some View {
         let ink: SanctusCardInk = { _ = houseAppearance; return SanctusCardInk() }()
-        return SanctusCardShell(ink: ink, align: isUser ? .trailing : .leading) {
+        return SanctusCardShell(ink: ink) {   // 1014 她：所有卡片居中
             ZStack(alignment: .topTrailing) {
                 Image(ink.dark ? "SanctusCardNotesNight" : "SanctusCardNotes").resizable().scaledToFit()
                     .frame(height: 142)
