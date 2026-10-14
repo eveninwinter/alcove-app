@@ -4338,7 +4338,8 @@ struct MessageRow: View {
                     MorningPaperMessageCard(date: paperDate, theme: cardTheme, messageID: msg.id)
                 } else if let inside = msg.insideText {
                     if theme.isTreehouse {
-                        SanctusInsideCard(text: inside, messageID: msg.id)   // 1014 Sanctus 专用，跟他的气泡靠左
+                        SanctusInsideCard(text: inside, messageID: msg.id)   // 1014 Sanctus 专用
+                            .frame(maxWidth: .infinity)   // 卡在按钮 / 列表里会缩成内容宽，外面再撑一次才真居中
                     } else {
                         InsideMessageCard(text: inside, date: msg.date, theme: cardTheme, messageID: msg.id)
                             .frame(maxWidth: .infinity)   // 0929 她要的：整行居中
@@ -4367,6 +4368,7 @@ struct MessageRow: View {
                 } else if let pond = msg.pondCard {
                     if theme.isTreehouse {
                         SanctusPondCard(card: pond)
+                            .frame(maxWidth: .infinity)
                     } else {
                         PondChatMessageCard(card: pond)
                             .frame(maxWidth: .infinity)
@@ -4374,15 +4376,18 @@ struct MessageRow: View {
                 } else if let mem = msg.memoryCard {
                     if theme.isTreehouse {
                         SanctusMemoryCard(card: mem)
+                            .frame(maxWidth: .infinity)
                     } else {
                         MemoryChatMessageCard(card: mem)
                             .frame(maxWidth: .infinity)
                     }
                 } else if let ears = msg.earsCard {
                     SanctusEarsCard(card: ears)         // 1014 只给你听：哪个主题都用这一张，居中
+                        .frame(maxWidth: .infinity)
                 } else if let rem = msg.reminderCard {
                     if theme.isTreehouse {
                         SanctusReminderCard(card: rem)  // 1014 Sanctus：星星垫在大时间底下，整行居中
+                            .frame(maxWidth: .infinity)
                     } else {
                         ReminderMessageCard(card: rem)      // 1002 日程提醒到点
                             .frame(maxWidth: .infinity)

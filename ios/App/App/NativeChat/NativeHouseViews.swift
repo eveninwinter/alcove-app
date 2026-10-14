@@ -3295,7 +3295,7 @@ struct MusicMessageCard: View {
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
 
     var body: some View {
-        if theme.isTreehouse { sanctusBody } else { classicBody }
+        if theme.isTreehouse { sanctusBody.frame(maxWidth: .infinity) } else { classicBody }
     }
 
     /// 1014 Sanctus：跟檐下 / 不忘那套白卡一样；她给的音符放大调淡往右歪一点，垫在中间；
