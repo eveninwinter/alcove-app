@@ -4337,8 +4337,12 @@ struct MessageRow: View {
                 if let paperDate = msg.morningPaperDate {
                     MorningPaperMessageCard(date: paperDate, theme: cardTheme, messageID: msg.id)
                 } else if let inside = msg.insideText {
-                    InsideMessageCard(text: inside, date: msg.date, theme: cardTheme, messageID: msg.id)
-                        .frame(maxWidth: .infinity)   // 0929 她要的：整行居中
+                    if theme.isTreehouse {
+                        SanctusInsideCard(text: inside, messageID: msg.id)   // 1014 Sanctus 专用，跟他的气泡靠左
+                    } else {
+                        InsideMessageCard(text: inside, date: msg.date, theme: cardTheme, messageID: msg.id)
+                            .frame(maxWidth: .infinity)   // 0929 她要的：整行居中
+                    }
                 } else if let ghost = msg.ghostCard {
                     GhostActivityMessageCard(card: ghost, theme: cardTheme)
                 } else if let play = msg.playCard {
@@ -4361,11 +4365,19 @@ struct MessageRow: View {
                 } else if let album = msg.albumSavedCard {
                     AlbumSavedMessageCard(batch: album, theme: cardTheme)
                 } else if let pond = msg.pondCard {
-                    PondChatMessageCard(card: pond)
-                        .frame(maxWidth: .infinity)
+                    if theme.isTreehouse {
+                        SanctusPondCard(card: pond)
+                    } else {
+                        PondChatMessageCard(card: pond)
+                            .frame(maxWidth: .infinity)
+                    }
                 } else if let mem = msg.memoryCard {
-                    MemoryChatMessageCard(card: mem)
-                        .frame(maxWidth: .infinity)
+                    if theme.isTreehouse {
+                        SanctusMemoryCard(card: mem)
+                    } else {
+                        MemoryChatMessageCard(card: mem)
+                            .frame(maxWidth: .infinity)
+                    }
                 } else if let rem = msg.reminderCard {
                     ReminderMessageCard(card: rem)      // 1002 日程提醒到点
                         .frame(maxWidth: .infinity)
@@ -9947,5 +9959,282 @@ struct ReactionOverlay: View {
             onDismiss()
             then?()
         }
+    }
+}
+
+// ── 1014 Sanctus（树屋）主题专用的三张聊天小卡：檐下 / 不忘 / inside ──
+// 她定的效果图在 /root/workroom/mock/angel-cards/（白天 v10＋v14，黑夜 dark1）。
+// 半透白磨砂底＋外白边＋里面一圈淡灰细框；右上角是她给的三张图：翅膀（往左往下淡出）、兔子（实的）、seen this Angel?（实的）。
+// 黑夜：深炭灰底；图不变色只压暗（翅膀 0.55、兔子 0.6），Angel 那张本来就是暗字，不压。深浅只认全屋按钮。
+
+struct SanctusCardInk {
+    let dark: Bool
+    init() { dark = AlcoveAppearance.isDark }
+    private func rgb(_ hex: Int, _ a: Double = 1) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255, opacity: a)
+    }
+    var fillTop: Color { dark ? rgb(0x2C2D34, 0.80) : Color.white.opacity(0.82) }
+    var fillBottom: Color { dark ? rgb(0x222329, 0.74) : rgb(0xFAFBFD, 0.70) }
+    var edge: Color { dark ? Color.white.opacity(0.10) : Color.white.opacity(0.95) }
+    var frame: Color { dark ? Color.white.opacity(0.08) : rgb(0x969AA4, 0.22) }
+    var script: Color { dark ? rgb(0xC3C6CE) : rgb(0x6F7480) }
+    var kicker: Color { dark ? rgb(0x8B8F99) : rgb(0x9A9EA8) }
+    var body: Color { dark ? rgb(0xE3E4E8) : rgb(0x3E4048) }
+    var sub: Color { dark ? rgb(0x8B8F99) : rgb(0x9A9EA8) }
+    var link: Color { dark ? rgb(0xA3A7B0) : rgb(0x7D818C) }
+    var hair: Color { dark ? Color.white.opacity(0.14) : rgb(0x969AA4, 0.45) }
+    var pill: Color { dark ? Color.white.opacity(0.18) : rgb(0x969AA4, 0.5) }
+    var dotLine: UIColor { dark ? UIColor.white.withAlphaComponent(0.28) : UIColor(red: 0x96/255, green: 0x9A/255, blue: 0xA4/255, alpha: 0.6) }
+    var bodyUI: UIColor { dark ? UIColor(red: 0xE3/255, green: 0xE4/255, blue: 0xE8/255, alpha: 1) : UIColor(red: 0x3E/255, green: 0x40/255, blue: 0x48/255, alpha: 1) }
+}
+
+private enum SanctusCardFont {
+    static func script(_ s: CGFloat) -> Font { .custom("PinyonScript-Regular", size: s) }
+    static func kicker() -> Font { .custom("CormorantGaramond-Medium", size: 7.5) }
+    static func ital(_ s: CGFloat = 10.5) -> Font { .custom("CormorantGaramondItalic-MediumItalic", size: s) }
+}
+
+/// 卡壳：磨砂底、外白边、内细框；内容自己排
+private struct SanctusCardShell<Content: View, Art: View>: View {
+    let ink: SanctusCardInk
+    @ViewBuilder var art: () -> Art
+    @ViewBuilder var content: () -> Content
+    var body: some View {
+        content()
+            .padding(.horizontal, 19).padding(.top, 17).padding(.bottom, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(alignment: .topTrailing) { art() }
+            .background(LinearGradient(colors: [ink.fillTop, ink.fillBottom], startPoint: .top, endPoint: .bottom))
+            .clipShape(RoundedRectangle(cornerRadius: 12.5, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 8.5, style: .continuous).stroke(ink.frame, lineWidth: 0.6).padding(5))
+            .overlay(RoundedRectangle(cornerRadius: 12.5, style: .continuous).stroke(ink.edge, lineWidth: 0.8))
+            .frame(maxWidth: 316)
+            .frame(maxWidth: .infinity, alignment: .leading)
+    }
+}
+
+private struct SanctusHair: View {
+    let ink: SanctusCardInk
+    var body: some View {
+        LinearGradient(stops: [.init(color: ink.hair.opacity(0), location: 0), .init(color: ink.hair, location: 0.12),
+                               .init(color: ink.hair, location: 0.88), .init(color: ink.hair.opacity(0), location: 1)],
+                       startPoint: .leading, endPoint: .trailing)
+            .frame(height: 0.5)
+            .padding(.horizontal, -2)
+    }
+}
+
+struct SanctusPondCard: View {
+    let card: PondChatCard
+    @State private var expanded = false
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private var foldable: Bool { card.text.count > 54 || card.text.contains("\n") }
+
+    var body: some View {
+        let ink = self.ink
+        SanctusCardShell(ink: ink) {
+            Image("SanctusCardWing").resizable().scaledToFit()
+                .frame(height: 146)
+                .colorMultiply(ink.dark ? Color(white: 0.55) : .white)
+                .opacity(ink.dark ? 1 : 0.85)
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0.2), .init(color: .black.opacity(0.5), location: 0.45), .init(color: .black, location: 0.72)],
+                                     startPoint: .leading, endPoint: .trailing))
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0.55), .init(color: .clear, location: 0.88)],
+                                     startPoint: .top, endPoint: .bottom))
+                .offset(x: 6, y: -10)
+                .allowsHitTesting(false)
+        } content: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("under the eaves").font(SanctusCardFont.script(22.5)).foregroundColor(ink.script)
+                Text(card.kind == "wish" ? "ON THE EAVES · 檐下 · 许愿" : "ON THE EAVES · 檐下")
+                    .font(SanctusCardFont.kicker()).tracking(2.4).foregroundColor(ink.kicker)
+                    .padding(.top, 8)
+                Text(card.text)
+                    .font(.system(size: 12, design: .serif))
+                    .lineSpacing(6.5)
+                    .foregroundColor(ink.body)
+                    .lineLimit(expanded ? nil : 3)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: expanded ? .infinity : 196, alignment: .leading)
+                    .padding(.top, 8)
+                    .contentShape(Rectangle())
+                    .onTapGesture { if foldable { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } }
+                SanctusHair(ink: ink).padding(.top, 11)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("he left one here").font(SanctusCardFont.ital()).foregroundColor(ink.sub)
+                    if foldable {
+                        Text(expanded ? "⌃" : "⌄").font(.system(size: 9)).foregroundColor(ink.sub)
+                    }
+                    Spacer()
+                    Button {
+                        NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.pond.rawValue)
+                    } label: {
+                        Text("去檐下看看 ›").font(.system(size: 8.5, design: .serif)).tracking(1.6).foregroundColor(ink.link)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 8)
+            }
+        }
+    }
+}
+
+struct SanctusMemoryCard: View {
+    let card: MemoryChatCard
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private var dayText: String { (card.day ?? "").replacingOccurrences(of: "-", with: ".") }
+
+    var body: some View {
+        let ink = self.ink
+        Button {
+            BuwangDeepLink.search = card.title
+            NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.memory.rawValue)
+        } label: {
+            SanctusCardShell(ink: ink) {
+                Image("SanctusCardRabbit").resizable().scaledToFit()
+                    .frame(width: 98)
+                    .colorMultiply(ink.dark ? Color(white: 0.6) : .white)
+                    .padding(.top, 17).padding(.trailing, 12)
+                    .allowsHitTesting(false)
+            } content: {
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("KEPT · 不忘").font(SanctusCardFont.kicker()).tracking(2.4).foregroundColor(ink.kicker)
+                    Text("remembered").font(SanctusCardFont.script(19)).foregroundColor(ink.script)
+                        .padding(.top, 4)
+                    Text(card.title)
+                        .font(.system(size: 12.5, weight: .medium, design: .serif))
+                        .lineSpacing(5)
+                        .foregroundColor(ink.body)
+                        .lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: 180, alignment: .leading)
+                        .padding(.top, 10)
+                    SanctusHair(ink: ink).padding(.top, 12)
+                    HStack(alignment: .center) {
+                        if let thread = card.thread, !thread.isEmpty {
+                            Text(thread).font(.system(size: 7.5, design: .serif)).tracking(1.2).foregroundColor(ink.link)
+                                .padding(.horizontal, 6).padding(.vertical, 1.5)
+                                .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
+                        }
+                        Spacer()
+                        Text(dayText.isEmpty ? "kept by him" : "\(dayText) · kept by him")
+                            .font(SanctusCardFont.ital()).foregroundColor(ink.sub)
+                    }
+                    .padding(.top, 8)
+                }
+            }
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+struct SanctusInsideCard: View {
+    let text: String
+    let messageID: String
+    @State private var expanded = false
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    // 图在正文右上，往上探进标题那块；正文绕着图走（展开后过了图就铺满整行，她 1014：「展开之后下面的右边不要空」）
+    private let artW: CGFloat = 87
+    private let artH: CGFloat = 62
+    private let artRise: CGFloat = 34   // 图顶比正文顶高出多少
+
+    private func collapse() {
+        var t = Transaction(); t.disablesAnimations = true
+        withTransaction(t) { expanded = false }
+        NotificationCenter.default.post(name: .alcoveRecenterMessage, object: messageID)
+    }
+
+    var body: some View {
+        let ink = self.ink
+        SanctusCardShell(ink: ink) {
+            EmptyView()
+        } content: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("inside").font(SanctusCardFont.script(22.5)).foregroundColor(ink.script)
+                Text("THINGS LEFT UNSAID · 心里话").font(SanctusCardFont.kicker()).tracking(2.4).foregroundColor(ink.kicker)
+                    .padding(.top, 6)
+                SanctusWrapText(text: text, color: ink.bodyUI, dotColor: ink.dotLine,
+                                maxLines: expanded ? 0 : 2,
+                                exclusion: CGSize(width: artW + 8, height: artH - artRise + 2))
+                    .overlay(alignment: .topTrailing) {
+                        Image("SanctusCardAngel").resizable().scaledToFit()
+                            .frame(width: artW, height: artH)
+                            .opacity(0.75)
+                            .offset(x: 8, y: -artRise)
+                            .allowsHitTesting(false)
+                    }
+                    .padding(.top, 8)
+                SanctusHair(ink: ink).padding(.top, 9)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("kept inside").font(SanctusCardFont.ital()).foregroundColor(ink.sub)
+                    Spacer()
+                    Text(expanded ? "收起 ⌃" : "展开 ⌄").font(.system(size: 8.5, design: .serif)).tracking(1.6).foregroundColor(ink.link)
+                }
+                .padding(.top, 8)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if expanded { collapse() } else { withAnimation(.easeInOut(duration: 0.2)) { expanded = true } }
+        }
+    }
+}
+
+/// 绕图排字：右上角挖掉一块（exclusionPaths），过了那块就铺满整行；带灰色点下划线
+private struct SanctusWrapText: UIViewRepresentable {
+    let text: String
+    let color: UIColor
+    let dotColor: UIColor
+    let maxLines: Int
+    let exclusion: CGSize
+
+    private var attributed: NSAttributedString {
+        let p = NSMutableParagraphStyle()
+        p.lineSpacing = 8
+        p.alignment = .justified
+        p.lineBreakMode = .byWordWrapping
+        var font = UIFont.systemFont(ofSize: 12)
+        if let d = font.fontDescriptor.withDesign(.serif) { font = UIFont(descriptor: d, size: 12) }
+        return NSAttributedString(string: text, attributes: [
+            .font: font, .foregroundColor: color, .paragraphStyle: p,
+            .underlineStyle: NSUnderlineStyle.single.rawValue | NSUnderlineStyle.patternDot.rawValue,
+            .underlineColor: dotColor,
+        ])
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let v = UITextView()
+        v.isEditable = false
+        v.isSelectable = false
+        v.isScrollEnabled = false
+        v.isUserInteractionEnabled = false
+        v.backgroundColor = .clear
+        v.textContainerInset = .zero
+        v.textContainer.lineFragmentPadding = 0
+        v.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        return v
+    }
+
+    private func apply(_ v: UITextView, width: CGFloat) {
+        v.attributedText = attributed
+        v.textContainer.maximumNumberOfLines = maxLines
+        v.textContainer.lineBreakMode = maxLines > 0 ? .byTruncatingTail : .byWordWrapping
+        v.textContainer.exclusionPaths = [UIBezierPath(rect: CGRect(x: max(0, width - exclusion.width), y: 0,
+                                                                    width: exclusion.width, height: exclusion.height))]
+    }
+
+    func updateUIView(_ v: UITextView, context: Context) {
+        apply(v, width: v.bounds.width > 0 ? v.bounds.width : 270)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView v: UITextView, context: Context) -> CGSize? {
+        let w = proposal.width ?? 270
+        apply(v, width: w)
+        let h = v.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
+        return CGSize(width: w, height: ceil(h))
     }
 }
