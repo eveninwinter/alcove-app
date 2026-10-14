@@ -4379,8 +4379,12 @@ struct MessageRow: View {
                             .frame(maxWidth: .infinity)
                     }
                 } else if let rem = msg.reminderCard {
-                    ReminderMessageCard(card: rem)      // 1002 日程提醒到点
-                        .frame(maxWidth: .infinity)
+                    if theme.isTreehouse {
+                        SanctusReminderCard(card: rem)  // 1014 Sanctus：星星垫在大时间底下，整行居中
+                    } else {
+                        ReminderMessageCard(card: rem)      // 1002 日程提醒到点
+                            .frame(maxWidth: .infinity)
+                    }
                 } else if let embroidery = msg.embroideryCard {
                     EmbroideryMessageCard(card: embroidery)
                 } else if let loc = msg.locationCard {
@@ -9988,15 +9992,16 @@ struct SanctusCardInk {
     var bodyUI: UIColor { dark ? UIColor(red: 0xE3/255, green: 0xE4/255, blue: 0xE8/255, alpha: 1) : UIColor(red: 0x3E/255, green: 0x40/255, blue: 0x48/255, alpha: 1) }
 }
 
-private enum SanctusCardFont {
+enum SanctusCardFont {
     static func script(_ s: CGFloat) -> Font { .custom("PinyonScript-Regular", size: s) }
     static func kicker() -> Font { .custom("CormorantGaramond-Medium", size: 7.5) }
     static func ital(_ s: CGFloat = 10.5) -> Font { .custom("CormorantGaramondItalic-MediumItalic", size: s) }
 }
 
 /// 卡壳：磨砂底、外白边、内细框；内容自己排
-private struct SanctusCardShell<Content: View, Art: View>: View {
+struct SanctusCardShell<Content: View, Art: View>: View {
     let ink: SanctusCardInk
+    var align: Alignment = .leading   // 他的靠左；她送的歌靠右；提醒居中
     @ViewBuilder var art: () -> Art
     @ViewBuilder var content: () -> Content
     var body: some View {
@@ -10009,11 +10014,11 @@ private struct SanctusCardShell<Content: View, Art: View>: View {
             .overlay(RoundedRectangle(cornerRadius: 8.5, style: .continuous).stroke(ink.frame, lineWidth: 0.6).padding(5))
             .overlay(RoundedRectangle(cornerRadius: 12.5, style: .continuous).stroke(ink.edge, lineWidth: 0.8))
             .frame(maxWidth: 316)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, alignment: align)
     }
 }
 
-private struct SanctusHair: View {
+struct SanctusHair: View {
     let ink: SanctusCardInk
     var body: some View {
         LinearGradient(stops: [.init(color: ink.hair.opacity(0), location: 0), .init(color: ink.hair, location: 0.12),
@@ -10236,5 +10241,87 @@ private struct SanctusWrapText: UIViewRepresentable {
         apply(v, width: w)
         let h = v.sizeThatFits(CGSize(width: w, height: .greatestFiniteMagnitude)).height
         return CGSize(width: w, height: ceil(h))
+    }
+}
+
+/// 1014 Sanctus 提醒卡：她给的数字星星（左右翻过来、压扁一点、很淡）垫在大时间底下，下半截淡掉不压底下那行
+struct SanctusReminderCard: View {
+    let card: ReminderChatCard
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private var him: Bool { card.author == "assistant" }
+
+    private var bigTime: String {
+        let t = (card.time ?? "").trimmingCharacters(in: .whitespaces)
+        return t.isEmpty ? "all day" : t
+    }
+    private var dateLine: String {
+        let p = card.day.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return card.day }
+        var c = DateComponents(); c.year = p[0]; c.month = p[1]; c.day = p[2]
+        var wd = ""
+        if let dt = Calendar.current.date(from: c) {
+            wd = ["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"][(Calendar.current.component(.weekday, from: dt) - 1) % 7]
+        }
+        return "\(p[1]).\(p[2]) · \(wd)"
+    }
+    private var footLine: String {
+        var parts: [String] = []
+        if let c = card.created, c.count >= 10 {
+            let p = c.prefix(10).split(separator: "-").compactMap { Int($0) }
+            if p.count == 3 { parts.append("\(p[1]).\(p[2]) 订的") }
+        }
+        if let r = card.repeatLabel, !r.isEmpty { parts.append(r) }
+        if let s = card.status, !s.isEmpty { parts.append(s) }
+        return parts.joined(separator: " · ")
+    }
+
+    var body: some View {
+        let ink = self.ink
+        SanctusCardShell(ink: ink, align: .center) {
+            ZStack(alignment: .topTrailing) {
+                Image("SanctusCardStar").renderingMode(.template).resizable()
+                    .frame(width: 183, height: 147)
+                    .scaleEffect(x: -1, y: 1)
+                    .foregroundColor(ink.dark ? Color(red: 0.80, green: 0.81, blue: 0.84) : Color(red: 0.47, green: 0.49, blue: 0.53))
+                    .opacity(ink.dark ? 0.34 : 0.36)
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.55), .init(color: .clear, location: 0.86)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .offset(x: 7, y: -6)
+                VStack(alignment: .trailing, spacing: 4) {
+                    Text(bigTime).font(.custom("CormorantGaramondItalic-MediumItalic", size: 49))
+                        .foregroundColor(ink.dark ? Color.white.opacity(0.30) : Color(red: 0.47, green: 0.49, blue: 0.53).opacity(0.62))
+                        .lineLimit(1).minimumScaleFactor(0.5)
+                    Text(dateLine).font(.custom("CormorantGaramond-Medium", size: 8.3)).tracking(2).foregroundColor(ink.kicker)
+                        .padding(.trailing, 3)
+                }
+                .padding(.top, 8).padding(.trailing, 18)
+            }
+            .allowsHitTesting(false)
+        } content: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("reminder").font(SanctusCardFont.script(22.5)).foregroundColor(ink.script)
+                Text("AT THE HOUR · 提醒").font(SanctusCardFont.kicker()).tracking(2.4).foregroundColor(ink.kicker)
+                    .padding(.top, 8)
+                Text(card.title).font(.system(size: 12.5, weight: .medium, design: .serif)).foregroundColor(ink.body)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: 170, alignment: .leading)
+                    .padding(.top, 8)
+                if let n = card.note, !n.isEmpty {
+                    Text(n).font(.system(size: 9, design: .serif)).foregroundColor(ink.sub).lineLimit(2)
+                        .frame(maxWidth: 170, alignment: .leading)
+                        .padding(.top, 4)
+                }
+                SanctusHair(ink: ink).padding(.top, 13)
+                HStack(alignment: .center) {
+                    Text(him ? "他订的" : "你订的").font(.system(size: 7.5, design: .serif)).tracking(1.2).foregroundColor(ink.link)
+                        .padding(.horizontal, 6).padding(.vertical, 1.5)
+                        .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
+                    Spacer(minLength: 6)
+                    Text(footLine).font(.system(size: 7.5, design: .serif)).tracking(0.4).foregroundColor(ink.sub).lineLimit(1)
+                }
+                .padding(.top, 8)
+            }
+        }
     }
 }

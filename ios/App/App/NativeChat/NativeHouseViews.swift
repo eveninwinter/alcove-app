@@ -3286,7 +3286,110 @@ struct MusicMessageCard: View {
     /// 一行大概装得下二十来个字，超了才给展开键（0826 她要收起时只留一行）
     private var needsToggle: Bool { song.message.count > 17 }
 
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+
     var body: some View {
+        if theme.isTreehouse { sanctusBody } else { classicBody }
+    }
+
+    /// 1014 Sanctus：跟檐下 / 不忘那套白卡一样；她给的音符放大调淡往右歪一点，垫在中间；
+    /// 封面叠在音符上面（白天白边、黑夜压暗）；中间那条细线就是进度条
+    private var sanctusBody: some View {
+        let ink: SanctusCardInk = { _ = houseAppearance; return SanctusCardInk() }()
+        return SanctusCardShell(ink: ink, align: isUser ? .trailing : .leading) {
+            ZStack(alignment: .topTrailing) {
+                Image(ink.dark ? "SanctusCardNotesNight" : "SanctusCardNotes").resizable().scaledToFit()
+                    .frame(height: 142)
+                    .colorMultiply(ink.dark ? Color(white: 0.6) : .white)
+                    .opacity(ink.dark ? 0.45 : 0.42)
+                    .mask(LinearGradient(stops: [.init(color: .black, location: 0.62), .init(color: .clear, location: 0.92)],
+                                         startPoint: .top, endPoint: .bottom))
+                    .rotationEffect(.degrees(12))
+                    .padding(.trailing, 62).offset(y: -11)
+                Group {
+                    if let picture = cover.image {
+                        Image(uiImage: picture).resizable().scaledToFill()
+                    } else {
+                        ZStack {
+                            (ink.dark ? Color(white: 0.22) : Color(white: 0.93))
+                            Image(systemName: "music.note").font(.system(size: 15)).foregroundColor(ink.sub)
+                        }
+                    }
+                }
+                .frame(width: 55, height: 55)
+                .brightness(ink.dark ? -0.08 : 0)
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .stroke(ink.dark ? Color.white.opacity(0.14) : Color.white.opacity(0.95), lineWidth: 0.8))
+                .shadow(color: ink.dark ? .clear : Color(red: 0.43, green: 0.45, blue: 0.49).opacity(0.18), radius: 2.5, y: 1)
+                .padding(.top, 38).padding(.trailing, 25)
+            }
+            .allowsHitTesting(false)
+        } content: {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(isUser ? "a song for him" : "a song for you").font(SanctusCardFont.script(21)).foregroundColor(ink.script)
+                Text(isUser ? "FOR HIM · 送给陈璟" : "FOR YOU · 为你点播").font(SanctusCardFont.kicker()).tracking(2.4).foregroundColor(ink.kicker)
+                    .padding(.top, 8)
+                Text(song.name).font(.system(size: 14, weight: .semibold, design: .serif)).foregroundColor(ink.body)
+                    .lineLimit(1).frame(maxWidth: 160, alignment: .leading)
+                    .padding(.top, 9)
+                Text(song.artist).font(.custom("CormorantGaramondItalic-MediumItalic", size: 10)).tracking(0.4).foregroundColor(ink.sub)
+                    .lineLimit(1).frame(maxWidth: 160, alignment: .leading)
+                    .padding(.top, 2)
+                SanctusHair(ink: ink)
+                    .overlay(alignment: .leading) {
+                        GeometryReader { geo in
+                            Capsule().fill(ink.dark ? Color.white.opacity(0.45) : Color(red: 0.43, green: 0.45, blue: 0.49).opacity(0.55))
+                                .frame(width: geo.size.width * CGFloat(progressFraction), height: 1.3)
+                                .frame(maxHeight: .infinity, alignment: .center)
+                        }
+                        .animation(.linear(duration: 0.3), value: progressFraction)
+                    }
+                    .padding(.top, 10)
+                HStack(alignment: .center, spacing: 8) {
+                    if !song.message.isEmpty {
+                        Text(messageLine).font(.system(size: 9.5, design: .serif))
+                            .foregroundColor(ink.dark ? Color(red: 0.79, green: 0.80, blue: 0.83) : Color(red: 0.35, green: 0.36, blue: 0.40))
+                            .lineLimit(messageExpanded ? nil : 1)
+                            .fixedSize(horizontal: false, vertical: messageExpanded)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                            .contentShape(Rectangle())
+                            .onTapGesture { if needsToggle { withAnimation(.easeInOut(duration: 0.2)) { messageExpanded.toggle() } } }
+                    } else {
+                        Spacer(minLength: 0)
+                    }
+                    Button {
+                        if isCurrent && isPlaying { model.toggle() } else { play() }
+                    } label: {
+                        Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                            .font(.system(size: 9, weight: .semibold))
+                            .contentTransition(.symbolEffect(.replace))
+                            .foregroundColor(ink.script)
+                            .frame(width: 26, height: 26)
+                            .overlay(Circle().stroke(ink.dark ? Color.white.opacity(0.28) : Color(red: 0.47, green: 0.49, blue: 0.53).opacity(0.55), lineWidth: 0.7))
+                            .frame(width: 40, height: 40)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+                .padding(.top, 2)
+            }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture {
+            if !isCurrent { play() }
+            showPlayer = true
+        }
+        .sheet(isPresented: $showPlayer) {
+            MusicPlayerSheet(model: model)
+                .presentationDetents([.fraction(0.72)])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(.ultraThinMaterial)
+        }
+        .onAppear { cover.load(song.cover) }
+    }
+
+    private var classicBody: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 11) {
                 // 点播那一行跟歌名歌手叠在同一列里，别自己独占一行，
