@@ -120,7 +120,8 @@ struct PGGlobePage: View {
                     .padding(.leading, 8)
                 }
                 .padding(.top, 6)
-                if let st = data?.stats { statsRow(st, ink: ink).padding(.top, 16).padding(.horizontal, 18) }
+                // 地球那块画面四周多留了一圈透明柔光，会盖到上下的东西：上下这些都压在地球上面
+                if let st = data?.stats { statsRow(st, ink: ink).padding(.top, 16).padding(.horizontal, 18).zIndex(1) }
                 Spacer(minLength: 0)
                 ZStack {
                     if let data {
@@ -132,12 +133,13 @@ struct PGGlobePage: View {
                         Text("地球还没画好，过一会儿再来").font(PGFont.ital(14)).foregroundColor(ink.sub)
                     }
                 }
-                .frame(width: side, height: side)
-                .frame(width: geo.size.width)
+                // 画面比地球那格大三成（透明），球外柔光有地方淡掉，不会被切出一个方框；排版上还是只占 side 那么高
+                .frame(width: side * PGGlobeController.room, height: side * PGGlobeController.room)
+                .frame(width: geo.size.width, height: side)
                 Spacer(minLength: 0)
-                if let data, data.places.count > 1 { timeSlider(data, ink: ink).padding(.horizontal, 30) }
-                if let l = data?.latest { latestCard(l, ink: ink).padding(.horizontal, 22).padding(.top, 14) }
-                legend(ink).padding(.top, 16)
+                if let data, data.places.count > 1 { timeSlider(data, ink: ink).padding(.horizontal, 30).zIndex(1) }
+                if let l = data?.latest { latestCard(l, ink: ink).padding(.horizontal, 22).padding(.top, 14).zIndex(1) }
+                legend(ink).padding(.top, 16).zIndex(1)
                 Text("拖动转一转 · 两指放大看地名 · 点一个地方看那天")
                     .font(.system(size: 11, design: .serif)).tracking(1.6).foregroundColor(ink.hint)
                     .padding(.top, 10)
@@ -324,8 +326,10 @@ private struct PGGlobeSCN: UIViewRepresentable {
 }
 
 final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
-    /// 效果图：球图 1000 见方、半径 470 → 正交相机半高 = 500/470
-    static let baseScale: Double = 500.0 / 470.0
+    /// SCNView 比排版上那一格大这么多（四周透明，留给球外柔光淡出）
+    static let room: CGFloat = 1.3
+    /// 效果图：球图 1000 见方、半径 470 → 正交相机半高 = 500/470，再乘上多留的那圈
+    static let baseScale: Double = 500.0 / 470.0 * Double(room)
     /// 效果图里 1 像素合多少球面单位（球半径 = 1）
     static let px: CGFloat = 1.0 / 470.0
 
@@ -509,6 +513,8 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
                 } else {
                     a = 0.75 * h1 + 0.35 * h2
                 }
+                // 画面边上（半径 1.38 处）之前淡到零，别留下一道直边
+                a *= min(max((1.36 - rho) / 0.18, 0), 1)
                 a = min(max(a, 0), 1)
                 let o = (yy * n + xx) * 4
                 px[o] = UInt8(cr * a); px[o + 1] = UInt8(cg * a); px[o + 2] = UInt8(cb * a); px[o + 3] = UInt8(255 * a)
@@ -690,30 +696,36 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
         let a2: [NSAttributedString.Key: Any] = [.font: nameFont, .foregroundColor: ink.place]
         let w = max((coord as NSString).size(withAttributes: a1).width, (l.name as NSString).size(withAttributes: a2).width)
         let dx: CGFloat = 28, dy: CGFloat = up ? -44 : 6
-        // 画布：锚点（落脚点）在 (pad, ay)
-        let pad: CGFloat = 4
-        let top = min(dy, 0) - pad, bottom = max(dy + 52, 0) + pad
-        let size = CGSize(width: pad + dx + w + pad, height: bottom - top)
-        let anchor = CGPoint(x: pad, y: -top)
-        let img = Self.draw(size) { ctx in
-            ctx.setStrokeColor(ink.leader.cgColor)
-            ctx.setLineWidth(1)
-            ctx.move(to: anchor)
-            ctx.addLine(to: CGPoint(x: anchor.x + dx, y: anchor.y + dy + 14))
-            ctx.strokePath()
-            (coord as NSString).draw(at: CGPoint(x: anchor.x + dx, y: anchor.y + dy), withAttributes: a1)
-            (l.name as NSString).draw(at: CGPoint(x: anchor.x + dx, y: anchor.y + dy + 24), withAttributes: a2)
-        }
-        let plane = SCNPlane(width: size.width * Self.px, height: size.height * Self.px)
-        plane.firstMaterial = Self.flatMaterial(img)
-        let child = SCNNode(geometry: plane)
-        // 平面中心挪开，让锚点落在节点原点上
-        child.position = SCNVector3(Float((size.width / 2 - anchor.x) * Self.px), Float(-(size.height / 2 - anchor.y) * Self.px), 0)
-        child.renderingOrder = 18
+        // 左右各画一份：点在球的右半边时用左边那份，字不出画面（1015 #3888 预览里日本那两处被切）
         let n = SCNNode()
         n.simdPosition = p
         n.constraints = [SCNBillboardConstraint()]
-        n.addChildNode(child)
+        for left in [false, true] {
+            let pad: CGFloat = 4
+            let top = min(dy, 0) - pad, bottom = max(dy + 52, 0) + pad
+            let size = CGSize(width: pad + dx + w + pad, height: bottom - top)
+            // 锚点（落脚点）：右边那份在画布左边，左边那份在画布右边
+            let anchor = CGPoint(x: left ? size.width - pad : pad, y: -top)
+            let tx = left ? anchor.x - dx - w : anchor.x + dx
+            let img = Self.draw(size) { ctx in
+                ctx.setStrokeColor(ink.leader.cgColor)
+                ctx.setLineWidth(1)
+                ctx.move(to: anchor)
+                ctx.addLine(to: CGPoint(x: left ? anchor.x - dx : anchor.x + dx, y: anchor.y + dy + 14))
+                ctx.strokePath()
+                (coord as NSString).draw(at: CGPoint(x: tx, y: anchor.y + dy), withAttributes: a1)
+                (l.name as NSString).draw(at: CGPoint(x: tx, y: anchor.y + dy + 24), withAttributes: a2)
+            }
+            let plane = SCNPlane(width: size.width * Self.px, height: size.height * Self.px)
+            plane.firstMaterial = Self.flatMaterial(img)
+            let child = SCNNode(geometry: plane)
+            // 平面中心挪开，让锚点落在节点原点上
+            child.position = SCNVector3(Float((size.width / 2 - anchor.x) * Self.px), Float(-(size.height / 2 - anchor.y) * Self.px), 0)
+            child.renderingOrder = 18
+            child.name = left ? "L" : "R"
+            child.opacity = left ? 0 : 1
+            n.addChildNode(child)
+        }
         return n
     }
 
@@ -759,7 +771,7 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
         let s = 1 / zoom   // 点和字在屏幕上一直一样大
         // 地名放大到 1.5 倍开始浮出来，1.9 倍全显；屏幕上挤在一起的，先到先得（最近去的排在前面）
         let nameFade = CGFloat(min(max((zoom - 1.5) / 0.4, 0), 1))
-        let ptPerPx = (view?.bounds.width ?? 400) / 1000   // 效果图 1 像素在屏幕上合多少点（字条不跟着放大）
+        let ptPerPx = (view?.bounds.width ?? 400) / Self.room / 1000   // 效果图 1 像素在屏幕上合多少点（字条不跟着放大）
         let ls = CGFloat(Self.labelScale)
         let scrubbing = timeIdx != nil
         var taken: [CGRect] = []
@@ -772,6 +784,8 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
             case .label:
                 isText = true
                 if scrubbing { o = 0 }   // 拖时间的时候坐标小字先收起来
+                let toLeft = w.x > 0.35
+                for c in m.node.childNodes { c.opacity = (c.name == "L") == toLeft ? 1 : 0 }
             case .ring:
                 if scrubbing { o = 0 }
             case .dot:
@@ -814,7 +828,7 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
 
     /// 屏幕上一个点（pt）合多少弧度
     private var radPerPoint: Float {
-        let side = Float(view?.bounds.width ?? 400)
+        let side = Float((view?.bounds.width ?? 400) / Self.room)
         return 1 / max(side * 0.47 * zoom, 1)
     }
 

@@ -355,12 +355,12 @@ struct PeregrinatioRoom: View {
     }
 
     /// 一页 3×3：每排邮票下半截插在透明插袋里，地名写在插袋上
-    /// 1015 #3889 她：字太小、空的地方舒展一下 → 邮票 94×108 放到 104×124，插袋上的字 6.6 放到 9.5，行距拉开
+    /// 1015 #3889 她：字太小、空的地方舒展一下 → 邮票 94×108 放到 100×120，插袋上的字 6.6 放到 9.5，行距拉开（104×124 三排放不下，压到便签）
     private func albumPage(_ items: [PGTrip], ink: PGInk) -> some View {
         let rows = stride(from: 0, to: items.count, by: 3).map { Array(items[$0..<min($0 + 3, items.count)]) }
         let newest = trips.first?.id
-        let sw: CGFloat = 104, sh: CGFloat = 124, gap: CGFloat = 14, labW: CGFloat = 112
-        return VStack(spacing: 30) {
+        let sw: CGFloat = 100, sh: CGFloat = 120, gap: CGFloat = 16, labW: CGFloat = 110
+        return VStack(spacing: 22) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 ZStack(alignment: .top) {
                     HStack(spacing: gap) {
@@ -388,7 +388,7 @@ struct PeregrinatioRoom: View {
                     }
                     // 插袋：盖住邮票下半截，地名写在袋子上
                     VStack(spacing: 0) {
-                        Spacer().frame(height: 80)
+                        Spacer().frame(height: 77)
                         ZStack(alignment: .bottom) {
                             LinearGradient(colors: [ink.sleeveTop, ink.sleeveBottom], startPoint: .top, endPoint: .bottom)
                                 .background(.ultraThinMaterial.opacity(0.35))
@@ -416,7 +416,7 @@ struct PeregrinatioRoom: View {
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 30)
+        .padding(.top, 24)
     }
 
     private func lingerNote(_ l: PGLingerItem, ink: PGInk) -> some View {
