@@ -496,23 +496,18 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
     }
 
     /// 球外一圈柔光（效果图 halo 0.09 + halo2 0.35；黑夜只亮背光那一侧）。
-    /// 1015 #3894 她截图：原来用半透明贴图，真机上只要有一点透明度就成了纯白，一整个大白圆、边上一刀切。
-    /// 改成「叠加」：贴图不透明，每个像素存的是「在页面底色上要亮多少」，加上去。页面底色是定的，
-    /// 加完正好等于效果图里「白（黑夜是冷银）按 a 盖在底色上」，跟透明度怎么解释无关。
+    /// 透明画布上不能用不透明黑底做加法混合：它会把整块矩形的 alpha 写成 1。
+    /// 使用预乘 alpha 的柔光贴图，边界 alpha 为零，与页面自然合成。
     static func haloPlane(dark: Bool) -> SCNGeometry {
         let reach: CGFloat = 1.7, n = 512
         var px = [UInt8](repeating: 0, count: n * n * 4)
-        // SceneKit 在线性空间里叠加：底色和光的颜色都先换成线性值
-        func lin(_ v: Double) -> Double { pow(v / 255, 2.2) }
-        let glowC: [Double] = (dark ? [200, 206, 220] : [255, 255, 255]).map(lin)
-        let bgC: [Double] = (dark ? [17, 18, 21] : [241, 242, 244]).map(lin)
+        let glowC: [Double] = dark ? [200, 206, 220] : [255, 255, 255]
         for yy in 0..<n {
             for xx in 0..<n {
                 let x = (Double(xx) + 0.5) / Double(n) * 2 * Double(reach) - Double(reach)
                 let y = Double(reach) - (Double(yy) + 0.5) / Double(n) * 2 * Double(reach)
                 let rho = (x * x + y * y).squareRoot()
                 let o = (yy * n + xx) * 4
-                px[o + 3] = 255
                 guard rho > 1 else { continue }
                 let h1 = exp(-pow((rho - 1) / 0.09, 2)), h2 = exp(-pow((rho - 1) / 0.35, 2))
                 var a: Double
@@ -525,16 +520,16 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
                 // 画面边上（半径 1.38 处）之前淡到零，别留下一道直边
                 a *= min(max((1.36 - rho) / 0.18, 0), 1)
                 a = min(max(a, 0), 1)
+                px[o + 3] = UInt8((a * 255).rounded())
                 for c in 0..<3 {
-                    let add = max(glowC[c] - bgC[c], 0) * a          // 线性空间里要加的量
-                    px[o + c] = UInt8(min(255, (pow(add, 1 / 2.2) * 255).rounded()))   // 存成 sRGB，SceneKit 读的时候会换回线性
+                    px[o + c] = UInt8((glowC[c] * a).rounded())
                 }
             }
         }
         let cs = CGColorSpace(name: CGColorSpace.sRGB)!
         let cg = px.withUnsafeMutableBytes { buf -> CGImage? in
             CGContext(data: buf.baseAddress, width: n, height: n, bitsPerComponent: 8, bytesPerRow: n * 4, space: cs,
-                      bitmapInfo: CGImageAlphaInfo.noneSkipLast.rawValue)?.makeImage()
+                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)?.makeImage()
         }
         let plane = SCNPlane(width: reach * 2, height: reach * 2)
         let m = SCNMaterial()
@@ -542,7 +537,8 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
         if let cg { m.diffuse.contents = UIImage(cgImage: cg) }
         m.writesToDepthBuffer = false
         m.readsFromDepthBuffer = false
-        m.blendMode = .add
+        m.blendMode = .alpha
+        m.transparencyMode = .aOne
         plane.firstMaterial = m
         return plane
     }

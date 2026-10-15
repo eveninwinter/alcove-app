@@ -283,8 +283,10 @@ struct PeregrinatioRoom: View {
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
+                    .frame(height: 3 * (min(108, max(90, (UIScreen.main.bounds.width - 68) / 3)) * 1.2 + 26) + 46)
                     if let l = latestLinger { lingerNote(l, ink: ink).padding(.horizontal, 22).padding(.bottom, 12) }
                     pageDots(ink).padding(.bottom, 14)
+                    Spacer(minLength: 0)
                 }
             }
             .padding(.top, max(safeTop, 20))
@@ -365,7 +367,7 @@ struct PeregrinatioRoom: View {
     }
 
     /// 1015 #3895 她：「这个页面下面不要留空，看着真的很烦」→ 邮票宽按屏宽算（最大 108），高按可用高度能放多大放多大，
-    /// 三排在这一页里上下均匀摊开，便签直接贴在最后一排下面
+    /// 三排固定小间距，不再用 Spacer 把手机上多余高度塞进行间；便签跟在邮册后面
     private func albumGrid(_ items: [PGTrip], ink: PGInk, size: CGSize) -> some View {
         let rows = stride(from: 0, to: items.count, by: 3).map { Array(items[$0..<min($0 + 3, items.count)]) }
         let newest = trips.first?.id
@@ -375,7 +377,7 @@ struct PeregrinatioRoom: View {
         let sw = max(90, min(108, byW, byH)), sh = sw * 1.2, labW = sw + 10
         return VStack(spacing: 0) {
             ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
-                if i > 0 { Spacer(minLength: 18) }
+                if i > 0 { Color.clear.frame(height: 8) }
                 ZStack(alignment: .top) {
                     HStack(spacing: gap) {
                         ForEach(row) { t in
