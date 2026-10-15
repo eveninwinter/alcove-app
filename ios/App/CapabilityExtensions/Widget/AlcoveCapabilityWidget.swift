@@ -229,7 +229,7 @@ private struct AlcoveLabLiveActivity: Widget {
             LiveBanner(message: context.state.message, bpm: context.state.bpm)
         } dynamicIsland: { context in
             // 1015 #3824–3834 她：灵动岛换成她给的吊坠图（狼＋兔子，/root/workroom/mock/island/locket.png 抠的）。
-            // 收起：岛照旧黑，左边吊坠装进一枚白色小胶囊（圆角跟岛同心），右边心率用聊天页顶栏那个 Cormorant 数字；
+            // 收起：岛照旧黑，左边只放吊坠（1015 去掉了白胶囊、放大到 26），右边心率用聊天页顶栏那个 Cormorant 数字；
             // 展开：本来整块铺白，真机上四周一圈黑边盖不住，1015 她让换黑底
             DynamicIsland {
                 DynamicIslandExpandedRegion(.bottom) {
@@ -251,21 +251,16 @@ private struct AlcoveLabLiveActivity: Widget {
     }
 }
 
-/// 收起时左边那枚：白色小胶囊里一个吊坠。吊坠右边挂着扣环、右边那颗心也大，摆正中看着往右偏，往左挪一点（她 #3833「左移动一点居中」）
+/// 收起时左边那枚：只有吊坠，直接放在黑岛上（1015 #3886–3887 她：去掉白框只留挂件、放大一点；原来是白胶囊里 21 高的吊坠）
 private struct LocketTag: View {
     var minimal = false
 
     var body: some View {
         if minimal {
-            Image("Locket").resizable().scaledToFit().frame(width: 21)
-                .offset(x: -0.6)
-                .frame(width: 27, height: 27)
-                .background(Circle().fill(Color.white))
+            Image("Locket").resizable().scaledToFit().frame(width: 26)
         } else {
-            Image("Locket").resizable().scaledToFit().frame(height: 21)
-                .offset(x: -1.7)
-                .frame(width: 53, height: 27)
-                .background(Capsule().fill(Color.white))
+            Image("Locket").resizable().scaledToFit().frame(height: 26)
+                .padding(.leading, 2)
         }
     }
 }

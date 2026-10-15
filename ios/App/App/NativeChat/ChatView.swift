@@ -4271,9 +4271,12 @@ struct MessageRow: View {
     /// 只有话没有动作的轮次不挂轨迹行（那些话本来就在气泡里）
     private var trailWorthShowing: Bool { trailToolCount > 0 }
     /// 塔罗卡那一行：整行居中（两侧留白都不吃）。0929 她要檐下 / 不忘 / Inside 三张小卡也在屏幕正中，一并走这条
+    /// ‼️ 新加居中的卡一定登记在这里：光在卡上写 .frame(maxWidth: .infinity) 不够，他那边右侧还留着 48 的空，卡会偏左
+    /// （1015 明信片卡就是漏了这里，她：「卡片居中。到底要我说几次？」，只给你听、信封同一个坑一起补）
     private var isTarotRow: Bool {
         msg.tarotCard != nil || msg.tarotOffer != nil
             || msg.insideText != nil || msg.pondCard != nil || msg.memoryCard != nil || msg.reminderCard != nil
+            || msg.postcardCard != nil || msg.earsCard != nil || msg.letterCard != nil
     }
 
     var body: some View {
