@@ -95,14 +95,14 @@ struct PGGlobePage: View {
         // #3889 她：字太小、空的地方舒展一下；旅行数字、最近一趟、时间滑条、他正在哪「全都做你试一下」。
         // 从上到下：标题（返回键同一行）→ 他正在哪 → 旅行数字 → 地球 → 时间滑条 → 最近一趟 → 图例和提示。
         GeometryReader { geo in
-            let k = geo.size.width / 942
-            // 地球照效果图 1000 见方；屏幕矮的手机让一让，别把下面挤出去
-            let side = max(240, min(1000 * k, geo.size.height - 352 - (data?.now == nil ? 0 : 22)))
+            // 地球那一格：她 #3890「地球缩小一点旁边留一点空」→ 只占屏宽 88%（球左右各空出二十多点）；屏幕矮的手机再让一让
+            let side = max(240, min(geo.size.width * 0.88, geo.size.height - 352 - (data?.now == nil ? 0 : 22)))
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    // 返回键跟标题那一行竖着居中对齐
+                    // 返回键在原位（安全区下面 44 高那一格）不动，标题挪上来跟它竖着居中对齐（她 #3890）
                     Text("Peregrinatio").font(PGFont.script(34)).foregroundColor(ink.title)
                         .frame(maxWidth: .infinity)
+                        .frame(height: 44)
                         .overlay(alignment: .leading) {
                             Button { dismiss() } label: {
                                 Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
@@ -121,7 +121,6 @@ struct PGGlobePage: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, 6)
                 // 地球那块画面四周多留了一圈透明柔光，会盖到上下的东西：上下这些都压在地球上面
                 if let st = data?.stats { statsRow(st, ink: ink).padding(.top, 16).padding(.horizontal, 18).zIndex(1) }
                 Spacer(minLength: 0)

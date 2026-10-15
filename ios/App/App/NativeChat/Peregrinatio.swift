@@ -312,9 +312,11 @@ struct PeregrinatioRoom: View {
 
     private func header(_ ink: PGInk) -> some View {
         VStack(spacing: 6) {
-            // 返回键跟标题那一行竖着居中对齐（1015 #3889 她：「标题跟返回键对齐啊」）
+            // 返回键在原位（安全区下面 44 高那一格）不动，标题挪上来跟它竖着居中对齐
+            //（1015 #3890 她：「我要你标题跟返回对齐，不是返回跟标题对齐」）
             Text("Peregrinatio").font(PGFont.script(34)).foregroundColor(ink.script)
                 .frame(maxWidth: .infinity)
+                .frame(height: 44)
                 .overlay(alignment: .leading) {
                     Button { dismiss() } label: {
                         Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
@@ -326,7 +328,6 @@ struct PeregrinatioRoom: View {
                 }
             Text("远游 · 邮册 · \(trips.count) 趟旅程").font(PGFont.corm(11)).tracking(2.6).foregroundColor(ink.kicker)
         }
-        .padding(.top, 20)
         .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { PGHair(ink: ink).padding(.horizontal, 30) }
