@@ -289,15 +289,6 @@ struct PeregrinatioRoom: View {
             .padding(.top, max(safeTop, 20))
             if let t = pulled { pulledLayer(t, ink: ink) }
         }
-        .overlay(alignment: .topLeading) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
-                    .frame(width: 44, height: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 8).padding(.top, max(safeTop, 20))
-            .opacity(pulled == nil ? 1 : 0)
-        }
         .fullScreenCover(item: $diary) { t in PGDiaryView(trip: t) }
         .task {
             PGFont.ensureHand()
@@ -321,7 +312,18 @@ struct PeregrinatioRoom: View {
 
     private func header(_ ink: PGInk) -> some View {
         VStack(spacing: 6) {
+            // 返回键跟标题那一行竖着居中对齐（1015 #3889 她：「标题跟返回键对齐啊」）
             Text("Peregrinatio").font(PGFont.script(34)).foregroundColor(ink.script)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .leading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 8)
+                    .opacity(pulled == nil ? 1 : 0)
+                }
             Text("远游 · 邮册 · \(trips.count) 趟旅程").font(PGFont.corm(11)).tracking(2.6).foregroundColor(ink.kicker)
         }
         .padding(.top, 20)
@@ -396,9 +398,9 @@ struct PeregrinatioRoom: View {
                                 .overlay(alignment: .bottom) { Rectangle().fill(ink.sleeveEdge.opacity(0.7)).frame(height: 0.6) }
                             HStack(spacing: gap + sw - labW) {
                                 ForEach(row) { t in
-                                    HStack {
+                                    // 地名和日期一起放在这枚邮票正下方的正中间（她 #3889）
+                                    HStack(alignment: .firstTextBaseline, spacing: 6) {
                                         Text(t.label.uppercased()).font(PGFont.corm(9.5)).tracking(0.8).lineLimit(1).minimumScaleFactor(0.75)
-                                        Spacer(minLength: 2)
                                         Text(t.day).font(PGFont.ital(9.5))
                                     }
                                     .foregroundColor(ink.stampInk)

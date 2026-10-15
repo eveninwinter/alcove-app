@@ -100,7 +100,17 @@ struct PGGlobePage: View {
             let side = max(240, min(1000 * k, geo.size.height - 352 - (data?.now == nil ? 0 : 22)))
             VStack(spacing: 0) {
                 VStack(spacing: 0) {
+                    // 返回键跟标题那一行竖着居中对齐
                     Text("Peregrinatio").font(PGFont.script(34)).foregroundColor(ink.title)
+                        .frame(maxWidth: .infinity)
+                        .overlay(alignment: .leading) {
+                            Button { dismiss() } label: {
+                                Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
+                                    .frame(width: 44, height: 44).contentShape(Rectangle())
+                            }
+                            .buttonStyle(.plain)
+                            .padding(.leading, 8)
+                        }
                     Text("远游 · \(data?.counts.places ?? 0) PLACES · \(data?.counts.postcards ?? 0) POSTCARDS")
                         .font(PGFont.corm(11)).tracking(2.6).foregroundColor(ink.kicker)
                         .padding(.top, 6)
@@ -111,14 +121,6 @@ struct PGGlobePage: View {
                     }
                 }
                 .frame(maxWidth: .infinity)
-                .overlay(alignment: .topLeading) {
-                    Button { dismiss() } label: {
-                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
-                            .frame(width: 44, height: 44).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.leading, 8)
-                }
                 .padding(.top, 6)
                 // 地球那块画面四周多留了一圈透明柔光，会盖到上下的东西：上下这些都压在地球上面
                 if let st = data?.stats { statsRow(st, ink: ink).padding(.top, 16).padding(.horizontal, 18).zIndex(1) }
