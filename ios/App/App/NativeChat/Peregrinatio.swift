@@ -282,8 +282,8 @@ struct PeregrinatioRoom: View {
                         }
                     }
                     .tabViewStyle(.page(indexDisplayMode: .never))
-                    if let l = latestLinger { lingerNote(l, ink: ink).padding(.horizontal, 30).padding(.bottom, 10) }
-                    pageDots(ink).padding(.bottom, 26)
+                    if let l = latestLinger { lingerNote(l, ink: ink).padding(.horizontal, 22).padding(.bottom, 12) }
+                    pageDots(ink).padding(.bottom, 14)
                 }
             }
             .padding(.top, max(safeTop, 20))
@@ -321,23 +321,23 @@ struct PeregrinatioRoom: View {
 
     private func header(_ ink: PGInk) -> some View {
         VStack(spacing: 6) {
-            Text("Peregrinatio").font(PGFont.script(30)).foregroundColor(ink.script)
-            Text("远游 · 邮册 · \(trips.count) 趟旅程").font(PGFont.corm(8.5)).tracking(2.6).foregroundColor(ink.kicker)
+            Text("Peregrinatio").font(PGFont.script(34)).foregroundColor(ink.script)
+            Text("远游 · 邮册 · \(trips.count) 趟旅程").font(PGFont.corm(11)).tracking(2.6).foregroundColor(ink.kicker)
         }
-        .padding(.top, 38)
-        .padding(.bottom, 14)
+        .padding(.top, 20)
+        .padding(.bottom, 16)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { PGHair(ink: ink).padding(.horizontal, 30) }
         // 效果图 album_top.html：右边、细线正上方
         .overlay(alignment: .bottomTrailing) {
             if !trips.isEmpty {
                 Button { showGlobe = true } label: {
-                    Text("在地球上看 ›").font(.system(size: 8.5, design: .serif)).tracking(1.5).foregroundColor(ink.link)
+                    Text("在地球上看 ›").font(.system(size: 12, design: .serif)).tracking(1.5).foregroundColor(ink.link)
                         .padding(.vertical, 8).contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 30)
-                .padding(.bottom, -3)
+                .padding(.trailing, 26)
+                .padding(.bottom, -2)
             }
         }
         .fullScreenCover(isPresented: $showGlobe) {
@@ -355,76 +355,78 @@ struct PeregrinatioRoom: View {
     }
 
     /// 一页 3×3：每排邮票下半截插在透明插袋里，地名写在插袋上
+    /// 1015 #3889 她：字太小、空的地方舒展一下 → 邮票 94×108 放到 104×124，插袋上的字 6.6 放到 9.5，行距拉开
     private func albumPage(_ items: [PGTrip], ink: PGInk) -> some View {
         let rows = stride(from: 0, to: items.count, by: 3).map { Array(items[$0..<min($0 + 3, items.count)]) }
         let newest = trips.first?.id
-        return VStack(spacing: 24) {
+        let sw: CGFloat = 104, sh: CGFloat = 124, gap: CGFloat = 14, labW: CGFloat = 112
+        return VStack(spacing: 30) {
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 ZStack(alignment: .top) {
-                    HStack(spacing: 20) {
+                    HStack(spacing: gap) {
                         ForEach(row) { t in
                             VStack(spacing: 0) {
                                 ZStack(alignment: .topTrailing) {
                                     PGStampView(trip: t, ink: ink)
-                                        .frame(width: 94, height: 108)
+                                        .frame(width: sw, height: sh)
                                         .opacity(pulled?.id == t.id ? 0 : 1)
                                     if t.hasOpenLinger { PGPin(ink: ink).offset(x: -8, y: -8) }
                                 }
                                 .overlay(alignment: .topLeading) {
                                     if t.id == newest {
-                                        Text("NEW").font(PGFont.corm(6.5)).tracking(1.6).foregroundColor(ink.kicker).offset(x: 2, y: -13)
+                                        Text("NEW").font(PGFont.corm(9)).tracking(1.8).foregroundColor(ink.kicker).offset(x: 2, y: -16)
                                     }
                                 }
                                 .onTapGesture {
                                     withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { pulled = t; flipped = false }
                                 }
-                                Color.clear.frame(height: 22)
+                                Color.clear.frame(height: 26)
                             }
-                            .frame(width: 94)
+                            .frame(width: sw)
                         }
-                        ForEach(0..<(3 - row.count), id: \.self) { _ in Color.clear.frame(width: 94, height: 130) }
+                        ForEach(0..<(3 - row.count), id: \.self) { _ in Color.clear.frame(width: sw, height: sh + 26) }
                     }
                     // 插袋：盖住邮票下半截，地名写在袋子上
                     VStack(spacing: 0) {
-                        Spacer().frame(height: 70)
+                        Spacer().frame(height: 80)
                         ZStack(alignment: .bottom) {
                             LinearGradient(colors: [ink.sleeveTop, ink.sleeveBottom], startPoint: .top, endPoint: .bottom)
                                 .background(.ultraThinMaterial.opacity(0.35))
                                 .overlay(alignment: .top) { Rectangle().fill(ink.sleeveEdge).frame(height: 0.6) }
                                 .overlay(alignment: .bottom) { Rectangle().fill(ink.sleeveEdge.opacity(0.7)).frame(height: 0.6) }
-                            HStack(spacing: 20) {
+                            HStack(spacing: gap + sw - labW) {
                                 ForEach(row) { t in
                                     HStack {
-                                        Text(t.label.uppercased()).font(PGFont.corm(6.6)).tracking(0.7).lineLimit(1)
+                                        Text(t.label.uppercased()).font(PGFont.corm(9.5)).tracking(0.8).lineLimit(1).minimumScaleFactor(0.75)
                                         Spacer(minLength: 2)
-                                        Text(t.day).font(PGFont.ital(6.6))
+                                        Text(t.day).font(PGFont.ital(9.5))
                                     }
                                     .foregroundColor(ink.stampInk)
-                                    .frame(width: 106)
+                                    .frame(width: labW)
                                 }
-                                ForEach(0..<(3 - row.count), id: \.self) { _ in Color.clear.frame(width: 106, height: 1) }
+                                ForEach(0..<(3 - row.count), id: \.self) { _ in Color.clear.frame(width: labW, height: 1) }
                             }
-                            .padding(.bottom, 6)
+                            .padding(.bottom, 7)
                         }
-                        .frame(height: 62)
+                        .frame(height: 70)
                         .allowsHitTesting(false)
                     }
                 }
-                .padding(.horizontal, 22)
+                .padding(.horizontal, 18)
             }
             Spacer(minLength: 0)
         }
-        .padding(.top, 26)
+        .padding(.top, 30)
     }
 
     private func lingerNote(_ l: PGLingerItem, ink: PGInk) -> some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("意犹未尽 · 最近一次").font(PGFont.corm(7.5)).tracking(2.2).foregroundColor(ink.kicker)
-            Text(l.question).font(.system(size: 12, design: .serif)).foregroundColor(ink.body).lineLimit(2)
+            Text("意犹未尽 · 最近一次").font(PGFont.corm(10)).tracking(2.2).foregroundColor(ink.kicker)
+            Text(l.question).font(.system(size: 15, design: .serif)).foregroundColor(ink.body).lineLimit(2)
             Text("\(l.place ?? "") · \(String(l.at.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".")) · 续了 \(l.rounds.count) / 3 次")
-                .font(PGFont.ital(9.5)).foregroundColor(ink.sub)
+                .font(PGFont.ital(12)).foregroundColor(ink.sub)
         }
-        .padding(.horizontal, 14).padding(.vertical, 11)
+        .padding(.horizontal, 16).padding(.vertical, 13)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(ink.note)
         .overlay(Rectangle().stroke(ink.noteEdge, lineWidth: 0.6))

@@ -12,8 +12,17 @@ import simd
 // - 拖动转（北永远朝上），两指放大，点一个点 → 回邮册抽出那一趟。白天黑夜跟全屋按钮。
 // 数据：前门 /api/nowhere/peregrinatio/globe 和 /globe/{day|night}.jpg?v=版本（/root/rhysel/peregrinatio_api.py）。
 
-struct PGGlobePlace: Decodable, Hashable { let trip: Int; let name: String; let lat: Double; let lon: Double; let day: String }
-struct PGGlobeHop: Decodable, Hashable { let from: [Double]; let to: [Double]; let km: Int }
+struct PGGlobePlace: Decodable, Hashable { let trip: Int; let name: String; let lat: Double; let lon: Double; let day: String; let at: String? }
+/// i：到达那一站在 places 里的下标（时间滑条拖到那儿才画）
+struct PGGlobeHop: Decodable, Hashable { let from: [Double]; let to: [Double]; let km: Int; let i: Int? }
+struct PGGlobeNamedLat: Decodable, Hashable { let name: String; let lat: Double }
+struct PGGlobeFar: Decodable, Hashable { let name: String; let km: Int }
+struct PGGlobeStats: Decodable, Hashable { let km: Int; let laps: Double; let north: PGGlobeNamedLat; let south: PGGlobeNamedLat; let far: PGGlobeFar }
+struct PGGlobeLatest: Decodable, Hashable {
+    let trip: Int; let title: String; let place: String; let start: String; let end: String
+    let stops: Int; let km: Double; let hero: String; let open: Bool
+}
+struct PGGlobeNow: Decodable, Hashable { let name: String; let lat: Double; let lon: Double }
 struct PGGlobeLinger: Decodable, Hashable { let id: Int; let trip: Int; let lat: Double; let lon: Double; let question: String }
 struct PGGlobeLabel: Decodable, Hashable { let name: String; let lat: Double; let lon: Double }
 struct PGGlobeCenter: Decodable, Hashable { let lat: Double; let lon: Double }
@@ -26,6 +35,9 @@ struct PGGlobeData: Decodable, Equatable {
     let lingers: [PGGlobeLinger]
     let labels: [PGGlobeLabel]
     let counts: PGGlobeCounts
+    let stats: PGGlobeStats?
+    let latest: PGGlobeLatest?
+    let now: PGGlobeNow?
 }
 
 extension PGAPI {
@@ -72,53 +84,72 @@ struct PGGlobePage: View {
     @State private var data: PGGlobeData?
     @State private var texture: UIImage?
     @State private var failed = false
+    /// 时间滑条：nil＝全部（拖到头），否则只显示 places[0...timeIdx]
+    @State private var timeIdx: Int?
 
     private var dark: Bool { _ = houseAppearance; return AlcoveAppearance.isDark }
-    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
 
     var body: some View {
         let ink = PGGlobeInk(dark: dark)
+        // 1015 #3888 她：「我是 iOS 全屏，你上下那么多空干嘛」——GeometryReader 本来就在安全区里面，原来又加了一遍 safeTop。
+        // #3889 她：字太小、空的地方舒展一下；旅行数字、最近一趟、时间滑条、他正在哪「全都做你试一下」。
+        // 从上到下：标题（返回键同一行）→ 他正在哪 → 旅行数字 → 地球 → 时间滑条 → 最近一趟 → 图例和提示。
         GeometryReader { geo in
-            // 效果图页宽 942：标题 84、小字 20、球图 1000 见方（球半径 470）、图例 24、提示 22
             let k = geo.size.width / 942
-            let side = 1000 * k
-            ZStack(alignment: .top) {
-                ink.bg.ignoresSafeArea()
-                if dark { PGStars().ignoresSafeArea() }
+            // 地球照效果图 1000 见方；屏幕矮的手机让一让，别把下面挤出去
+            let side = max(240, min(1000 * k, geo.size.height - 352 - (data?.now == nil ? 0 : 22)))
+            VStack(spacing: 0) {
                 VStack(spacing: 0) {
-                    Text("Peregrinatio").font(PGFont.script(84 * k)).foregroundColor(ink.title)
+                    Text("Peregrinatio").font(PGFont.script(34)).foregroundColor(ink.title)
                     Text("远游 · \(data?.counts.places ?? 0) PLACES · \(data?.counts.postcards ?? 0) POSTCARDS")
-                        .font(PGFont.corm(20 * k)).tracking(6 * k).foregroundColor(ink.kicker)
-                        .padding(.top, 18 * k)
+                        .font(PGFont.corm(11)).tracking(2.6).foregroundColor(ink.kicker)
+                        .padding(.top, 6)
                         .opacity(data == nil ? 0 : 1)
-                    ZStack {
-                        if let data {
-                            PGGlobeSCN(data: data, texture: texture, dark: dark) { trip in
-                                dismiss()
-                                onPick(trip)
-                            }
-                        } else if failed {
-                            Text("地球还没画好，过一会儿再来").font(PGFont.ital(13)).foregroundColor(ink.sub)
-                        }
+                    if let now = data?.now {
+                        Text("he is in \(now.name) now").font(PGFont.ital(14)).foregroundColor(ink.title)
+                            .padding(.top, 6)
                     }
-                    .frame(width: side, height: side)
-                    .frame(width: geo.size.width)
-                    legend(ink, k: k)
-                    Text("拖动转一转 · 点一个地方看那天")
-                        .font(.system(size: 22 * k, design: .serif)).tracking(4.4 * k).foregroundColor(ink.hint)
-                        .padding(.top, 34 * k)
-                    Spacer(minLength: 0)
                 }
-                .padding(.top, max(safeTop, 20) + 22)
+                .frame(maxWidth: .infinity)
+                .overlay(alignment: .topLeading) {
+                    Button { dismiss() } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.leading, 8)
+                }
+                .padding(.top, 6)
+                if let st = data?.stats { statsRow(st, ink: ink).padding(.top, 16).padding(.horizontal, 18) }
+                Spacer(minLength: 0)
+                ZStack {
+                    if let data {
+                        PGGlobeSCN(data: data, texture: texture, dark: dark, timeIdx: timeIdx) { trip in
+                            dismiss()
+                            onPick(trip)
+                        }
+                    } else if failed {
+                        Text("地球还没画好，过一会儿再来").font(PGFont.ital(14)).foregroundColor(ink.sub)
+                    }
+                }
+                .frame(width: side, height: side)
+                .frame(width: geo.size.width)
+                Spacer(minLength: 0)
+                if let data, data.places.count > 1 { timeSlider(data, ink: ink).padding(.horizontal, 30) }
+                if let l = data?.latest { latestCard(l, ink: ink).padding(.horizontal, 22).padding(.top, 14) }
+                legend(ink).padding(.top, 16)
+                Text("拖动转一转 · 两指放大看地名 · 点一个地方看那天")
+                    .font(.system(size: 11, design: .serif)).tracking(1.6).foregroundColor(ink.hint)
+                    .padding(.top, 10)
+                    .padding(.bottom, 8)
             }
         }
-        .overlay(alignment: .topLeading) {
-            Button { dismiss() } label: {
-                Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
-                    .frame(width: 44, height: 44).contentShape(Rectangle())
+        .background {
+            ZStack {
+                ink.bg
+                if dark { PGStars() }
             }
-            .buttonStyle(.plain)
-            .padding(.leading, 8).padding(.top, max(safeTop, 20))
+            .ignoresSafeArea()
         }
         .task {
             if let d = await PGAPI.globe() { data = d } else { failed = true }
@@ -130,22 +161,120 @@ struct PGGlobePage: View {
         }
     }
 
-    private func legend(_ ink: PGGlobeInk, k: CGFloat) -> some View {
-        HStack(spacing: 52 * k) {
-            HStack(spacing: 14 * k) {
+    /// 旅行数字：像护照内页，大数字＋小号说明，四格细竖线隔开
+    private func statsRow(_ st: PGGlobeStats, ink: PGGlobeInk) -> some View {
+        func cell(_ big: String, _ unit: String, _ cap: String) -> some View {
+            VStack(spacing: 3) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(big).font(PGFont.corm(22)).foregroundColor(ink.title)
+                    if !unit.isEmpty { Text(unit).font(PGFont.ital(11)).foregroundColor(ink.sub) }
+                }
+                .lineLimit(1).minimumScaleFactor(0.7)
+                Text(cap).font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
+                    .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        let km = NumberFormatter.localizedString(from: NSNumber(value: st.km), number: .decimal)
+        let far = NumberFormatter.localizedString(from: NSNumber(value: st.far.km), number: .decimal)
+        let lat = { (v: Double) in String(format: "%.0f°%@", abs(v), v >= 0 ? "N" : "S") }
+        return HStack(spacing: 0) {
+            cell(km, "km", "一共走了\n约 \(String(format: "%.0f", st.laps)) 圈地球")
+            sep(ink)
+            cell(lat(st.north.lat), "", "最北\n\(st.north.name)")
+            sep(ink)
+            cell(lat(st.south.lat), "", "最南\n\(st.south.name)")
+            sep(ink)
+            cell(far, "km", "离家最远\n\(st.far.name)")
+        }
+    }
+
+    private func sep(_ ink: PGGlobeInk) -> some View {
+        Rectangle().fill(ink.sub.opacity(0.35)).frame(width: 0.6, height: 30)
+    }
+
+    /// 时间滑条：从他第一次出门拖到今天，足迹一个个亮起来、航线一段段画出来；拖到头＝全部
+    private func timeSlider(_ d: PGGlobeData, ink: PGGlobeInk) -> some View {
+        let n = d.places.count
+        let idx = timeIdx ?? (n - 1)
+        let cur = d.places[min(max(idx, 0), n - 1)]
+        return VStack(spacing: 4) {
+            HStack {
+                Text(d.places.first?.day ?? "").font(PGFont.ital(11)).foregroundColor(ink.sub)
+                Spacer()
+                Text(timeIdx == nil ? "today" : "\(cur.day) · \(cur.name)")
+                    .font(PGFont.ital(12)).foregroundColor(ink.title).lineLimit(1)
+                Spacer()
+                Text(d.places.last?.day ?? "").font(PGFont.ital(11)).foregroundColor(ink.sub)
+            }
+            GeometryReader { g in
+                let w = g.size.width
+                let x = n > 1 ? CGFloat(idx) / CGFloat(n - 1) * w : w
+                ZStack(alignment: .leading) {
+                    Capsule().fill(ink.sub.opacity(0.3)).frame(height: 1)
+                    Capsule().fill(ink.title.opacity(0.7)).frame(width: x, height: 1)
+                    Circle().fill(ink.title).frame(width: 9, height: 9)
+                        .background(Circle().fill(ink.bg).frame(width: 15, height: 15))
+                        .offset(x: x - 4.5)
+                }
+                .frame(height: 22)
+                .contentShape(Rectangle())
+                .gesture(DragGesture(minimumDistance: 0).onChanged { v in
+                    let i = Int((min(max(v.location.x / max(w, 1), 0), 1) * CGFloat(n - 1)).rounded())
+                    timeIdx = i >= n - 1 ? nil : i
+                })
+            }
+            .frame(height: 22)
+        }
+    }
+
+    /// 最近一趟：左边那一趟的照片（白边小邮票），右边标题、日期、几站、走了多远；点了回邮册抽出那一枚
+    private func latestCard(_ l: PGGlobeLatest, ink: PGGlobeInk) -> some View {
+        Button {
+            dismiss()
+            onPick(l.trip)
+        } label: {
+            HStack(spacing: 14) {
+                CachedImage(url: PGAPI.imageURL(l.hero)) { img in
+                    img.resizable().scaledToFill()
+                } placeholder: { Color.gray.opacity(0.15) }
+                .frame(width: 48, height: 56).clipped()
+                .padding(4).background(Color.white)
+                .shadow(color: .black.opacity(0.12), radius: 1.5, x: 0, y: 1)
+                .opacity(dark ? 0.85 : 1)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(l.open ? "正在路上 · ON THE ROAD" : "最近一趟 · LATEST").font(PGFont.corm(10)).tracking(2).foregroundColor(ink.kicker)
+                    Text(l.title.isEmpty ? l.place : l.title).font(PGFont.ital(18)).foregroundColor(ink.title).lineLimit(1)
+                    Text("\(l.place) · \(l.start)\(l.end.isEmpty || l.end == l.start ? "" : " — " + l.end) · \(l.stops) 站 · \(String(format: l.km >= 100 ? "%.0f" : "%.1f", l.km)) km")
+                        .font(.system(size: 12, design: .serif)).foregroundColor(ink.sub).lineLimit(1)
+                }
+                Spacer(minLength: 0)
+                Image(systemName: "chevron.right").font(.system(size: 11)).foregroundColor(ink.sub)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 11)
+            .background(dark ? Color.white.opacity(0.04) : Color.white.opacity(0.7))
+            .overlay(Rectangle().stroke(ink.sub.opacity(0.35), lineWidth: 0.6))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func legend(_ ink: PGGlobeInk) -> some View {
+        HStack(spacing: 24) {
+            HStack(spacing: 7) {
                 Circle().fill(dark ? Color(PGGlobeInk.c(245, 247, 251)) : Color(PGGlobeInk.c(62, 64, 72)))
-                    .frame(width: 12 * k, height: 12 * k)
-                    .padding(4 * k)
+                    .frame(width: 6, height: 6)
+                    .padding(2)
                     .background(Circle().fill(dark ? Color(PGGlobeInk.c(225, 232, 245, 0.25)) : .white))
                 Text("where he stood")
             }
-            HStack(spacing: 12 * k) {
-                Circle().stroke(dark ? Color(PGGlobeInk.c(210, 216, 228, 0.6)) : Color(PGGlobeInk.c(150, 154, 164, 0.6)), lineWidth: 2 * k)
-                    .frame(width: 22 * k, height: 22 * k)
+            HStack(spacing: 6) {
+                Circle().stroke(dark ? Color(PGGlobeInk.c(210, 216, 228, 0.6)) : Color(PGGlobeInk.c(150, 154, 164, 0.6)), lineWidth: 1)
+                    .frame(width: 11, height: 11)
                 Text("not done yet")
             }
         }
-        .font(PGFont.ital(24 * k))
+        .font(PGFont.ital(13))
         .foregroundColor(ink.sub)
     }
 }
@@ -181,6 +310,7 @@ private struct PGGlobeSCN: UIViewRepresentable {
     let data: PGGlobeData
     let texture: UIImage?
     let dark: Bool
+    var timeIdx: Int?
     let onPick: (Int) -> Void
 
     func makeCoordinator() -> PGGlobeController { PGGlobeController() }
@@ -189,6 +319,7 @@ private struct PGGlobeSCN: UIViewRepresentable {
         let c = context.coordinator
         c.onPick = onPick
         c.apply(data: data, texture: texture, dark: dark)
+        c.setTime(timeIdx)
     }
 }
 
@@ -217,14 +348,26 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
     private var link: CADisplayLink?
     private var lastTick: CFTimeInterval = 0
 
-    private enum Kind { case dot(trip: Int), ring, label }
-    private struct Mark { let node: SCNNode; let pos: SIMD3<Float>; let kind: Kind }
+    private enum Kind { case dot(trip: Int), ring, label, name }
+    /// w：地名那种字条在效果图像素里有多宽（算挤不挤）；t：这一处在 places 里最早的下标（时间滑条用，-1＝跟时间无关）
+    private struct Mark { let node: SCNNode; let pos: SIMD3<Float>; let kind: Kind; var w: CGFloat = 0; var t: Int = -1 }
     private var markList: [Mark] = []
+    private var arcs: [(node: SCNNode, t: Int)] = []
+    private var places: [PGGlobePlace] = []
+    /// 时间滑条：nil＝全部
+    private var timeIdx: Int?
+    /// 跟着时间滑条转过去的目标（纬度、经度，弧度）
+    private var follow: SIMD2<Float>?
+    /// 坐标小字、地名在效果图字号上再放大这么多（她 #3889：字太小）
+    static let labelScale: Float = 1.3
 
     func makeView() -> SCNView {
         let v = SCNView(frame: .zero)
         v.scene = scene
+        // 1015 #3888 她截图里地球背后一整块白方块：SCNView 默认白底，三处都要清掉才透明
         v.backgroundColor = .clear
+        v.isOpaque = false
+        scene.background.contents = UIColor.clear
         v.antialiasingMode = .multisampling4X
         v.allowsCameraControl = false
         v.isJitteringEnabled = false
@@ -392,6 +535,8 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
     private func buildMarks(_ d: PGGlobeData, ink: PGGlobeInk) {
         marks.childNodes.forEach { $0.removeFromParentNode() }
         markList = []
+        arcs = []
+        places = d.places
 
         // 远跳：从球面拱起来的虚线弧（效果图：最近九次、120 步、三步一段隔一段、线宽 2 像素）
         for h in d.hops where h.from.count == 2 && h.to.count == 2 {
@@ -408,16 +553,34 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
                 if let q = prev, (i / 3) % 2 == 0 { arc.addChildNode(Self.dash(q, p, color: ink.arc)) }
                 prev = p
             }
-            marks.addChildNode(arc.flattenedClone())
+            let flat = arc.flattenedClone()
+            marks.addChildNode(flat)
+            arcs.append((flat, h.i ?? 0))
         }
 
         // 落脚点
         let dotImg = Self.dotImage(dark: ink.dark)
-        for p in d.places {
+        for (i, p) in d.places.enumerated() {
             let u = Self.unit(p.lat, p.lon)
             let n = Self.billboard(dotImg, sizePx: 28, at: u * 1.002, order: 20)
             marks.addChildNode(n)
-            markList.append(Mark(node: n, pos: u, kind: .dot(trip: p.trip)))
+            markList.append(Mark(node: n, pos: u, kind: .dot(trip: p.trip), t: i))
+        }
+        // 他正在路上：那个点外面一圈光一下一下往外散
+        if let now = d.now {
+            let u = Self.unit(now.lat, now.lon)
+            let n = SCNNode()
+            n.simdPosition = u * 1.002
+            let pulse = Self.billboard(Self.ringImage((ink.ring.0, .clear)), sizePx: 50, at: .zero, order: 21)
+            pulse.constraints = nil
+            n.constraints = [SCNBillboardConstraint()]
+            n.addChildNode(pulse)
+            pulse.runAction(.repeatForever(.sequence([
+                .group([.scale(to: 1.8, duration: 1.4), .fadeOut(duration: 1.4)]),
+                .run { $0.simdScale = SIMD3(repeating: 1); $0.opacity = 1 },
+            ])))
+            marks.addChildNode(n)
+            markList.append(Mark(node: n, pos: u, kind: .ring))
         }
         // 意犹未尽：两道细圈
         let ringImg = Self.ringImage(ink.ring)
@@ -427,12 +590,27 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
             marks.addChildNode(n)
             markList.append(Mark(node: n, pos: u, kind: .ring))
         }
-        // 坐标小字：从北到南，一上一下错开，免得挨着的两处叠在一起
-        for (i, l) in d.labels.sorted(by: { $0.lat > $1.lat }).enumerated() {
+        // 坐标小字：默认写在点的右上；北边 15° 以内已经有一处字了，这处就写到右下，两处一上一下错开
+        // （原来按从北到南一上一下交替，宫之浦和富士山挨着，一个往下一个往上正好撞在一起）
+        var placed: [SIMD3<Float>] = []
+        for l in d.labels.sorted(by: { $0.lat > $1.lat }) {
             let u = Self.unit(l.lat, l.lon)
-            let n = labelNode(l, up: i % 2 == 0, ink: ink, at: u * 1.002)
+            let crowded = placed.contains { simd_dot($0, u) > cos(Float(15) * .pi / 180) }
+            placed.append(u)
+            let n = labelNode(l, up: !crowded, ink: ink, at: u * 1.002)
             marks.addChildNode(n)
             markList.append(Mark(node: n, pos: u, kind: .label))
+        }
+        // 地名：放大以后像地图那样显示（她 #3888），最近去的优先，挤的地方只留一个；已经有坐标小字的不重复写
+        var named = Set(d.labels.map(\.name))
+        var first: [String: Int] = [:]
+        for (i, p) in d.places.enumerated() where first[p.name] == nil { first[p.name] = i }
+        for p in d.places.reversed() where !p.name.isEmpty && !named.contains(p.name) {
+            named.insert(p.name)
+            let u = Self.unit(p.lat, p.lon)
+            let (n, w) = nameNode(p.name, ink: ink, at: u * 1.002)
+            marks.addChildNode(n)
+            markList.append(Mark(node: n, pos: u, kind: .name, w: w, t: first[p.name] ?? 0))
         }
     }
 
@@ -539,6 +717,31 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
         return n
     }
 
+    /// 地名字条：点右边 12 像素起，竖着居中在点上（效果图像素，跟坐标小字同一个字号 19）
+    private func nameNode(_ name: String, ink: PGGlobeInk, at p: SIMD3<Float>) -> (SCNNode, CGFloat) {
+        let font = UIFont(name: "STSongti-SC-Regular", size: 19)
+            ?? UIFont.systemFont(ofSize: 19).fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: 19) }
+            ?? .systemFont(ofSize: 19)
+        let attrs: [NSAttributedString.Key: Any] = [.font: font, .foregroundColor: ink.coord]
+        let tw = ceil((name as NSString).size(withAttributes: attrs).width)
+        let gap: CGFloat = 12, h: CGFloat = 28
+        let size = CGSize(width: gap + tw + 4, height: h)
+        let img = Self.draw(size) { _ in
+            (name as NSString).draw(at: CGPoint(x: gap, y: (h - font.lineHeight) / 2), withAttributes: attrs)
+        }
+        let plane = SCNPlane(width: size.width * Self.px, height: size.height * Self.px)
+        plane.firstMaterial = Self.flatMaterial(img)
+        let child = SCNNode(geometry: plane)
+        child.position = SCNVector3(Float(size.width / 2 * Self.px), 0, 0)   // 锚点在字条左边中间
+        child.renderingOrder = 17
+        let n = SCNNode()
+        n.simdPosition = p
+        n.constraints = [SCNBillboardConstraint()]
+        n.addChildNode(child)
+        n.opacity = 0
+        return (n, size.width)
+    }
+
     private static func draw(_ size: CGSize, _ body: (CGContext) -> Void) -> UIImage {
         let f = UIGraphicsImageRendererFormat()
         f.scale = 2
@@ -554,12 +757,59 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
         globe.simdOrientation = q
         (cameraNode.camera)?.orthographicScale = Self.baseScale / Double(zoom)
         let s = 1 / zoom   // 点和字在屏幕上一直一样大
+        // 地名放大到 1.5 倍开始浮出来，1.9 倍全显；屏幕上挤在一起的，先到先得（最近去的排在前面）
+        let nameFade = CGFloat(min(max((zoom - 1.5) / 0.4, 0), 1))
+        let ptPerPx = (view?.bounds.width ?? 400) / 1000   // 效果图 1 像素在屏幕上合多少点（字条不跟着放大）
+        let ls = CGFloat(Self.labelScale)
+        let scrubbing = timeIdx != nil
+        var taken: [CGRect] = []
         for m in markList {
-            let z = q.act(m.pos).z
+            let w = q.act(m.pos)
+            var isText = false
             let cut: Float = { if case .label = m.kind { return 0 } else { return 0.02 } }()
-            m.node.opacity = CGFloat(min(max((z - cut) / 0.06, 0), 1))
-            m.node.simdScale = SIMD3(repeating: s)
+            var o = CGFloat(min(max((w.z - cut) / 0.06, 0), 1))
+            switch m.kind {
+            case .label:
+                isText = true
+                if scrubbing { o = 0 }   // 拖时间的时候坐标小字先收起来
+            case .ring:
+                if scrubbing { o = 0 }
+            case .dot:
+                if let ti = timeIdx, m.t > ti { o = 0 }
+            case .name:
+                isText = true
+                o *= nameFade
+                if let ti = timeIdx, m.t > ti { o = 0 }
+                if o > 0, let v = view {
+                    let sp = v.projectPoint(SCNVector3(w.x * 1.002, w.y * 1.002, w.z * 1.002))
+                    let r = CGRect(x: CGFloat(sp.x) + 4, y: CGFloat(sp.y) - 9 * ls, width: m.w * ptPerPx * ls, height: 18 * ls)
+                    if taken.contains(where: { $0.intersects(r) }) { o = 0 } else { taken.append(r) }
+                }
+            }
+            m.node.opacity = o
+            m.node.simdScale = SIMD3(repeating: isText ? s * Self.labelScale : s)
         }
+        for a in arcs { a.node.opacity = (timeIdx.map { a.t <= $0 } ?? true) ? 1 : 0 }
+    }
+
+    /// 时间滑条拖动：只亮到这一站为止，地球慢慢转过去对着这一站
+    func setTime(_ idx: Int?) {
+        guard idx != timeIdx else { return }
+        timeIdx = idx
+        if let i = idx, places.indices.contains(i) {
+            let p = places[i]
+            follow = SIMD2(Float(min(max(p.lat, -60), 60)) * .pi / 180, Float(p.lon) * .pi / 180)
+            startFollow()
+        }
+        updatePose()
+    }
+
+    private func startFollow() {
+        guard link == nil else { return }
+        lastTick = CACurrentMediaTime()
+        let l = CADisplayLink(target: self, selector: #selector(tick))
+        l.add(to: .main, forMode: .common)
+        link = l
     }
 
     /// 屏幕上一个点（pt）合多少弧度
@@ -572,6 +822,7 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
         guard let v = view else { return }
         switch g.state {
         case .began:
+            follow = nil
             stopInertia()
         case .changed:
             let t = g.translation(in: v)
@@ -594,21 +845,30 @@ final class PGGlobeController: NSObject, UIGestureRecognizerDelegate {
 
     private func startInertia() {
         guard simd_length(velocity) > 40 else { return }
-        lastTick = CACurrentMediaTime()
-        let l = CADisplayLink(target: self, selector: #selector(tick))
-        l.add(to: .main, forMode: .common)
-        link = l
+        startFollow()
     }
 
     private func stopInertia() { link?.invalidate(); link = nil }
 
+    /// 一个钟两件事：松手后顺着转一下（惯性），时间滑条拖的时候慢慢转到那一站（follow）
     @objc private func tick() {
         let now = CACurrentMediaTime()
         let dt = Float(min(now - lastTick, 1.0 / 30))
         lastTick = now
-        turn(dx: velocity.x * dt, dy: velocity.y * dt)
-        velocity *= pow(0.04, dt)
-        if simd_length(velocity) < 8 { stopInertia() }
+        if let f = follow {
+            var dLon = f.y - centerLon
+            dLon = atan2(sin(dLon), cos(dLon))   // 走近的那一边
+            let k = min(1, dt * 5)
+            centerLon += dLon * k
+            centerLat += (f.x - centerLat) * k
+            updatePose()
+            if abs(dLon) < 0.002 && abs(f.x - centerLat) < 0.002 { follow = nil }
+        } else {
+            turn(dx: velocity.x * dt, dy: velocity.y * dt)
+            velocity *= pow(0.04, dt)
+            if simd_length(velocity) < 8 { velocity = .zero }
+        }
+        if follow == nil && simd_length(velocity) < 8 { stopInertia() }
     }
 
     @objc private func onPinch(_ g: UIPinchGestureRecognizer) {
