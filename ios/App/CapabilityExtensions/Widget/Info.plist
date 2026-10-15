@@ -31,6 +31,8 @@
 	<array>
 		<string>silkscreen.ttf</string>
 		<string>pinyon.ttf</string>
+		<string>cormorant.ttf</string>
+		<string>cormorant-italic.ttf</string>
 	</array>
 </dict>
 </plist>

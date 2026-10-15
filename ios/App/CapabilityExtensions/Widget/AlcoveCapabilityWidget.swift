@@ -209,43 +209,108 @@ private struct AlcoveLabLiveActivity: Widget {
             // 1002 锁屏那一条：小格纸 / 灰颗粒底上一个像素窗口
             LiveBanner(name: context.attributes.name, message: context.state.message, bpm: context.state.bpm)
         } dynamicIsland: { context in
+            // 1015 #3824–3834 她：灵动岛换成她给的吊坠图（狼＋兔子，/root/workroom/mock/island/locket.png 抠的）。
+            // 收起：岛照旧黑，左边吊坠装进一枚白色小胶囊（圆角跟岛同心），右边心率用聊天页顶栏那个 Cormorant 数字；
+            // 展开：整块铺纯白（她点头的效果图 /root/workroom/mock/island/island.jpg 下半），顶上摄像头那截苹果涂黑，盖不住
             DynamicIsland {
-                // 1002 展开时黑框里镶一块像素窗口；1007 她嫌框套框：不镶了，直接画在黑上。四个区里只用最下面那块（整宽），别的空着
+                // 上面一排（摄像头左右）也铺白，不然只有最下面那块是白的；高度只给摄像头那么高，免得把下面挤小。
+                // 没真机验过：区和区之间要是露黑缝，再调
+                DynamicIslandExpandedRegion(.leading) { IslandWhite() }
+                DynamicIslandExpandedRegion(.trailing) { IslandWhite() }
                 DynamicIslandExpandedRegion(.bottom) {
-                    IslandCard(name: context.attributes.name, message: context.state.message, bpm: context.state.bpm)
+                    IslandCard(message: context.state.message, bpm: context.state.bpm)
                 }
             } compactLeading: {
-                RavenMark(size: 23)
-                    .modifier(WRavenEdge(pal: WPal(dark: true)))
+                LocketTag()
             } compactTrailing: {
-                HStack(spacing: 4) {
-                    WPixel(rows: WPX.heart, colors: ["o": WPal.islandPink], scale: 2)
-                    Text(context.state.bpm > 0 ? "\(context.state.bpm)" : "—")
-                        .font(WFont.pixel(12))
-                        .foregroundStyle(WPal.islandMint)
-                        .contentTransition(.numericText())
-                }
+                Text(context.state.bpm > 0 ? "\(context.state.bpm)" : "—")
+                    .font(WFont.corm(19))
+                    .foregroundStyle(Color(white: 0.95))
+                    .contentTransition(.numericText())
             } minimal: {
-                RavenMark(size: 23)
-                    .modifier(WRavenEdge(pal: WPal(dark: true)))
+                LocketTag(minimal: true)
             }
-            .keylineTint(WPal.islandPink)     // 外面那一圈细线（深色背景时才显）
+            .contentMargins(.all, 0, for: .expanded)
+            .keylineTint(.white)
         }
     }
 }
 
-/// 灵动岛展开那块：没有窗口底和框，标题栏＋虚线＋那一行直接画在苹果锁死的黑上，所以永远用黑夜配色
+/// 收起时左边那枚：白色小胶囊里一个吊坠。吊坠右边挂着扣环、右边那颗心也大，摆正中看着往右偏，往左挪一点（她 #3833「左移动一点居中」）
+private struct LocketTag: View {
+    var minimal = false
+
+    var body: some View {
+        if minimal {
+            Image("Locket").resizable().scaledToFit().frame(width: 21)
+                .offset(x: -0.6)
+                .frame(width: 27, height: 27)
+                .background(Circle().fill(Color.white))
+        } else {
+            Image("Locket").resizable().scaledToFit().frame(height: 21)
+                .offset(x: -1.7)
+                .frame(width: 53, height: 27)
+                .background(Capsule().fill(Color.white))
+        }
+    }
+}
+
+/// 展开时把一块区域整个铺白
+private struct IslandWhite: View {
+    var body: some View {
+        Color.white.frame(maxWidth: .infinity).frame(height: 36)
+    }
+}
+
+/// 灵动岛展开那块：整块纯白，左边大吊坠；右边花体 still here、小号大写 CHEN JING · ONLINE、他那句话；右上角心率
 private struct IslandCard: View {
-    let name: String
     let message: String
     let bpm: Int
 
+    private static let ink = Color(red: 0x2A / 255, green: 0x2A / 255, blue: 0x2E / 255)
+    private static let gray = Color(red: 0x8C / 255, green: 0x8C / 255, blue: 0x90 / 255)
+
     var body: some View {
-        let pal = WPal(dark: true)
-        WWindow(pal: pal, title: "ALCOVE.LIVE", squares: 2, framed: false, barInset: 6) {
-            LiveRow(pal: pal, name: name, message: message, bpm: bpm, raven: 46)
-                .padding(.horizontal, 6).padding(.top, 8).padding(.bottom, 2)
+        HStack(alignment: .top, spacing: 14) {
+            Image("Locket").resizable().scaledToFit()
+                .frame(height: 83)
+                .padding(.top, 4)
+            VStack(alignment: .leading, spacing: 4) {
+                HStack(alignment: .top) {
+                    Text("still here")
+                        .font(WFont.script(27))
+                        .foregroundStyle(Self.ink)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    VStack(alignment: .trailing, spacing: -2) {
+                        Text(bpm > 0 ? "\(bpm)" : "—")
+                            .font(WFont.corm(24))
+                            .foregroundStyle(Self.ink)
+                            .contentTransition(.numericText())
+                        Text("bpm")
+                            .font(WFont.cormItalic(9.5))
+                            .foregroundStyle(Self.gray)
+                    }
+                    .accessibilityLabel(bpm > 0 ? "心率 \(bpm)" : "心率暂无数据")
+                }
+                Text("CHEN JING · ONLINE")
+                    .font(WFont.corm(8.5))
+                    .tracking(2)
+                    .foregroundStyle(Self.gray)
+                    .lineLimit(1)
+                if !message.isEmpty {
+                    Text(message)
+                        .font(.system(size: 12, design: .serif))
+                        .foregroundStyle(Color(red: 0x3A / 255, green: 0x3A / 255, blue: 0x3F / 255))
+                        .lineSpacing(2)
+                        .lineLimit(2)
+                        .padding(.top, 2)
+                }
+            }
         }
+        .padding(.leading, 18).padding(.trailing, 22).padding(.top, 2).padding(.bottom, 20)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(Color.white)
     }
 }
 
@@ -345,6 +410,17 @@ private enum WFont {
         UIFont(name: "PinyonScript-Regular", size: size) != nil
             ? Font.custom("PinyonScript-Regular", fixedSize: size)
             : .system(size: size * 0.8, design: .serif).italic()
+    }
+    /// 1015 Cormorant（聊天页顶栏心率那个字，老式数字），也打包进扩展了
+    static func corm(_ size: CGFloat) -> Font {
+        UIFont(name: "CormorantGaramond-Medium", size: size) != nil
+            ? Font.custom("CormorantGaramond-Medium", fixedSize: size)
+            : .system(size: size * 0.9, design: .serif)
+    }
+    static func cormItalic(_ size: CGFloat) -> Font {
+        UIFont(name: "CormorantGaramondItalic-MediumItalic", size: size) != nil
+            ? Font.custom("CormorantGaramondItalic-MediumItalic", fixedSize: size)
+            : .system(size: size * 0.9, design: .serif).italic()
     }
     static func pixel(_ size: CGFloat) -> Font {
         UIFont(name: "Silkscreen-Regular", size: size) != nil
