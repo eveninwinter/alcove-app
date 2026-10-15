@@ -4894,7 +4894,7 @@ struct MessageRow: View {
                     }
                         .padding(.horizontal, 14)
                         .padding(.vertical, 9)
-                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI, showsCorner: isUser || showTime,
+                        .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI,
                                                       glass: MessagesPalette.thGlass))
                 } else {
                     bubbleContents
@@ -7634,7 +7634,6 @@ struct TreehouseContextLine: View {
 struct TreehouseBubbleFill: ViewModifier {
     let isUser: Bool
     let fill: Color
-    var showsCorner: Bool = true
     /// #3519 树屋也能切玻璃：跟信息主题那种一样——系统玻璃，上面薄薄一层白（夜里黑），浓淡跟「玻璃」那根滑条走
     var glass: Bool = false
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
@@ -7645,9 +7644,11 @@ struct TreehouseBubbleFill: ViewModifier {
     @ViewBuilder
     func body(content: Content) -> some View {
         let _ = houseAppearance
+        // 1015 她：「全部统一成主聊天我的气泡形状」——她的泡每条右下角都收成 5，他的照镜子每条左下角收 5
+        // （原来他只有一串最后一条收角）；工作室、圆桌也走这个零件
         let shape = UnevenRoundedRectangle(topLeadingRadius: 18,
-                                           bottomLeadingRadius: !isUser && showsCorner ? 5 : 18,
-                                           bottomTrailingRadius: isUser && showsCorner ? 5 : 18,
+                                           bottomLeadingRadius: isUser ? 18 : 5,
+                                           bottomTrailingRadius: isUser ? 5 : 18,
                                            topTrailingRadius: 18, style: .continuous)
         if glass && kind == "fog" {
             content.modifier(FogGlassBubble(shape: shape, fog: fog, night: TreehouseInk.night))
@@ -7672,19 +7673,25 @@ struct TreehouseBubbleFill: ViewModifier {
 }
 
 /// 1011 她：「玻璃气泡能不能也做一个切换 现在的透玻璃和雾玻璃？雾玻璃也能调节程度」——
-/// 雾玻璃＝把气泡后面的壁纸磨糊（系统毛玻璃），fog 越大毛玻璃越实、上面那层白（夜里黑）越浓。透玻璃还是原来的液态玻璃
+/// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：原来是把系统磨砂层调成半透明（0.25～1），磨糊的那层底下还透着没糊的壁纸，
+/// 看着就是一层淡雾。改成真毛玻璃：磨砂层永远不透明（后面的壁纸整块磨糊），滑条只管磨得多厚、上面那层白（夜里黑）多浓
 struct FogGlassBubble<S: Shape>: ViewModifier {
     let shape: S
     let fog: Double
     let night: Bool
+    private var material: Material {
+        if fog < 0.34 { return .ultraThinMaterial }
+        if fog < 0.67 { return .thinMaterial }
+        return .regularMaterial
+    }
     func body(content: Content) -> some View {
         content
-            .background((night ? Color.black : Color.white).opacity(0.05 + fog * 0.3), in: shape)
+            .background((night ? Color.black : Color.white).opacity(fog * 0.22), in: shape)
             .background {
-                shape.fill(.regularMaterial)
-                    .opacity(0.25 + fog * 0.75)
+                shape.fill(material)
                     .environment(\.colorScheme, night ? .dark : .light)
             }
+            .overlay(shape.stroke(Color.white.opacity(night ? 0.10 : 0.45), lineWidth: 0.6).allowsHitTesting(false))
     }
 }
 
@@ -8877,7 +8884,7 @@ struct MessagesBubbleFill: ViewModifier {   // 1014 工作室半屏也借它
     let fill: Color
     let glass: Bool
     @AppStorage("msgGlassFrost") private var frost = 0.3
-    @AppStorage("msgGlassKind") private var kind = "clear"   // 1011 她：玻璃气泡分透玻璃 / 雾玻璃
+    @AppStorage("msgGlassKind") private var kind = "clear"   // 1011 她：玻璃气泡分透玻璃 / 毛玻璃（存的值还叫 fog）
     @AppStorage("msgGlassFog") private var fog = 0.5
     @Environment(\.colorScheme) private var scheme
 

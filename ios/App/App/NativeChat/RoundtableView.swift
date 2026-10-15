@@ -1130,8 +1130,7 @@ private struct RoundtableRow: View {
                 .textSelection(.enabled)
                 .padding(.horizontal, 14)
                 .padding(.vertical, 10)
-                .background(RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .fill(isUser ? theme.bubbleUser : theme.bubbleAI))
+                .modifier(RoundtableBubbleShape(theme: theme, isUser: isUser))
         }
     }
 
@@ -2006,5 +2005,21 @@ private struct RoundtableStickerPicker: View {
             .navigationBarTitleDisplayMode(.inline)
         }
         .task { stickers = (try? await AlcoveAPI.stickers()) ?? [] }
+    }
+}
+
+/// 1015 她：「圆桌、工作室全部统一成主聊天我的气泡形状」——Sanctus 下跟聊天页同一个零件（收角那种，圆桌照旧实心不上玻璃），
+/// 别的主题照旧实心圆角
+private struct RoundtableBubbleShape: ViewModifier {
+    let theme: AlcoveTheme
+    let isUser: Bool
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        let fill = isUser ? theme.bubbleUser : theme.bubbleAI
+        if theme.isTreehouse {
+            content.modifier(TreehouseBubbleFill(isUser: isUser, fill: fill))
+        } else {
+            content.background(RoundedRectangle(cornerRadius: 18, style: .continuous).fill(fill))
+        }
     }
 }

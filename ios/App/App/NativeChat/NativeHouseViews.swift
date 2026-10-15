@@ -2224,7 +2224,7 @@ private struct BubbleAppearanceSettingsView: View {
         Picker("玻璃", selection: Binding(get: { glassKind },
                                           set: { glassKind = $0; MessagesPalette.bump() })) {
             Text("透玻璃").tag("clear")
-            Text("雾玻璃").tag("fog")
+            Text("毛玻璃").tag("fog")   // 1015 她叫它毛玻璃；存的值还是 fog，原来选过的不丢
         }
         .pickerStyle(.segmented)
         if glassKind == "fog" { glassFogSlider } else { glassFrostSlider }
@@ -2232,7 +2232,7 @@ private struct BubbleAppearanceSettingsView: View {
 
     private var glassFogSlider: some View {
         HStack(spacing: 9) {
-            Text("雾玻璃")
+            Text("毛玻璃")
                 .font(.system(size: 12))
                 .frame(width: 100, alignment: .leading)
             Text("淡")
@@ -7200,8 +7200,12 @@ private struct NativeStudioView: View {
 
     var body: some View {
         VStack(spacing: 0) {
+            // 1015 她：「换玻璃气泡之后顶栏没有实心了，和气泡重叠了」——底换成壁纸以后顶栏是透明的，玻璃气泡滑上去叠在字上。
+            // 顶栏垫一块实心（聊天页的底色，Sanctus 白天冷白、黑夜炭灰），压在列表上面，列表在顶栏下沿裁掉
             header
-            Divider().opacity(0.18)
+                .background { chatTheme.fade.ignoresSafeArea(edges: .top) }
+                .zIndex(1)
+            Divider().opacity(0.18).zIndex(1)
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 13) {
@@ -7246,6 +7250,7 @@ private struct NativeStudioView: View {
                     }.padding(.horizontal, isKakao ? 12 : 15).padding(.bottom, 16)   // 0924 晚：Kakao 下跟主聊天列表一样留 12
                 }
                 .defaultScrollAnchor(.bottom)
+                .clipped()
                 // 0904 她报的「工作室键盘下不去，只有发一条才收」：往下滑列表跟手收，点列表任何地方也收
                 .scrollDismissesKeyboard(.interactively)
                 // 1003 她报的「一复制你的消息，选中的字一秒就没了」：原来这里叫「当前第一响应者」全体退下，
@@ -7697,7 +7702,7 @@ private struct StudioChatBubble: ViewModifier {
     func body(content: Content) -> some View {
         let fill = mine ? theme.bubbleUser : theme.bubbleAI
         if theme.isTreehouse {
-            content.modifier(TreehouseBubbleFill(isUser: mine, fill: fill, showsCorner: false, glass: MessagesPalette.thGlass))
+            content.modifier(TreehouseBubbleFill(isUser: mine, fill: fill, glass: MessagesPalette.thGlass))
         } else if theme.isMessages {
             content.modifier(MessagesBubbleFill(fill: fill, glass: MessagesPalette.glass))
         } else {
