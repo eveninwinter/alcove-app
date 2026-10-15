@@ -770,7 +770,9 @@ struct PGTimelineView: View {
                     Circle().fill(ink.script).frame(width: 8, height: 8)
                         .padding(3).background(Circle().fill(ink.paper))
                 }
-                Text(day(l.at)).font(PGFont.ital(13.5)).foregroundColor(ink.link).fixedSize().offset(y: 17)
+                // 日期底下垫一小块纸色，竖线从它后面过去，不穿过字
+                Text(day(l.at)).font(PGFont.ital(13.5)).foregroundColor(ink.link).fixedSize()
+                    .padding(.vertical, 2).background(ink.paper).offset(y: 17)
             }
             .frame(width: 44)
             .padding(.leading, 30).padding(.top, 4)
