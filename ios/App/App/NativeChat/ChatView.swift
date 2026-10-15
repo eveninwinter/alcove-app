@@ -7674,21 +7674,18 @@ struct TreehouseBubbleFill: ViewModifier {
 
 /// 1011 她：「玻璃气泡能不能也做一个切换 现在的透玻璃和雾玻璃？雾玻璃也能调节程度」——
 /// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：原来是把系统磨砂层调成半透明（0.25～1），磨糊的那层底下还透着没糊的壁纸，
-/// 看着就是一层淡雾。改成真毛玻璃：磨砂层永远不透明（后面的壁纸整块磨糊），滑条只管磨得多厚、上面那层白（夜里黑）多浓
+/// 看着就是一层淡雾。改成真毛玻璃：磨砂层永远不透明（后面的壁纸整块磨糊）。
+/// 1015 #3907 她：「我喜欢越往左滑的感觉 右边气泡直接全黑了」——整根滑条都用最薄那种磨砂（原来右边换 thin / regular，夜里发黑），
+/// 滑条只在上面垫一层很淡的白（夜里黑，再减半），最多 8%，往右只是比最左边稍白 / 稍暗一点
 struct FogGlassBubble<S: Shape>: ViewModifier {
     let shape: S
     let fog: Double
     let night: Bool
-    private var material: Material {
-        if fog < 0.34 { return .ultraThinMaterial }
-        if fog < 0.67 { return .thinMaterial }
-        return .regularMaterial
-    }
     func body(content: Content) -> some View {
         content
-            .background((night ? Color.black : Color.white).opacity(fog * 0.22), in: shape)
+            .background((night ? Color.black : Color.white).opacity(fog * (night ? 0.04 : 0.08)), in: shape)
             .background {
-                shape.fill(material)
+                shape.fill(.ultraThinMaterial)
                     .environment(\.colorScheme, night ? .dark : .light)
             }
             .overlay(shape.stroke(Color.white.opacity(night ? 0.10 : 0.45), lineWidth: 0.6).allowsHitTesting(false))
