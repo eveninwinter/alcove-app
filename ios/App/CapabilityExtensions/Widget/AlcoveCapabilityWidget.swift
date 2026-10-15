@@ -15,6 +15,27 @@ struct AlcoveCapabilityWidgetBundle: WidgetBundle {
 
 private struct LabEntry: TimelineEntry {
     let date: Date
+    /// 中号小组件的「假透明」底：她桌面壁纸里小组件背后那一块（白天 / 深色模式各一张，没有就退回纯白 / 炭灰）
+    var wallLight: UIImage? = nil
+    var wallDark: UIImage? = nil
+}
+
+/// 1015 #3896 她：桌面小组件要透明底，像 Top Widgets 那样「上传桌面壁纸的假透明」。
+/// 苹果不让小组件真透明，做法：她发空白桌面截图＋放着小组件的截图，工作室在服务器上把小组件背后那块壁纸裁好，
+/// 放在 /api/attachments/widget-bg-medium.jpg（深色模式 widget-bg-medium-dark.jpg），小组件刷新时取回来当底。
+/// 换壁纸 / 挪位置只要重新裁一张，不用重装。
+private enum WidgetWall {
+    static let base = "https://alcove.ob-memory.uk/api/attachments/"
+
+    static func fetch(_ name: String) async -> UIImage? {
+        guard let url = URL(string: base + name) else { return nil }
+        var req = URLRequest(url: url)
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.timeoutInterval = 10
+        guard let (data, resp) = try? await URLSession.shared.data(for: req),
+              (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
+        return UIImage(data: data)
+    }
 }
 
 private struct LabProvider: TimelineProvider {
@@ -30,7 +51,18 @@ private struct LabProvider: TimelineProvider {
             value: 1,
             to: calendar.startOfDay(for: now)
         ) ?? now.addingTimeInterval(86_400)
-        completion(Timeline(entries: [LabEntry(date: now)], policy: .after(nextMidnight)))
+        // 底图换了要尽快跟上：最多六个钟头重取一次（天数还是零点换）
+        let refresh = min(nextMidnight, now.addingTimeInterval(6 * 3600))
+        guard context.family == .systemMedium else {
+            completion(Timeline(entries: [LabEntry(date: now)], policy: .after(refresh)))
+            return
+        }
+        Task {
+            async let light = WidgetWall.fetch("widget-bg-medium.jpg")
+            async let dark = WidgetWall.fetch("widget-bg-medium-dark.jpg")
+            let entry = LabEntry(date: now, wallLight: await light, wallDark: await dark)
+            completion(Timeline(entries: [entry], policy: .after(refresh)))
+        }
     }
 }
 
@@ -62,11 +94,21 @@ private struct AlcoveWidgetView: View {
     @ViewBuilder
     var body: some View {
         switch family {
-        case .systemSmall, .systemMedium:
+        case .systemSmall:
             // 1015 #3834–3837 她：换成吊坠图、纯白底；黑夜（跟手机深色模式走，小组件读不到 App 的日夜按钮）深炭灰底、吊坠压暗一点。
             // 效果图 /root/workroom/mock/island/widgets.jpg（白天）、widgets-dark.jpg（黑夜）
             widgetContent
                 .containerBackground(for: .widget) { sp.card }
+        case .systemMedium:
+            // 1015 #3896：中号用她桌面壁纸裁出来的那块当底（假透明），取不到就照旧纯白 / 炭灰
+            widgetContent
+                .containerBackground(for: .widget) {
+                    if let wall = scheme == .dark ? entry.wallDark : entry.wallLight {
+                        Image(uiImage: wall).resizable().scaledToFill()
+                    } else {
+                        sp.card
+                    }
+                }
         default:
             widgetContent
                 .containerBackground(.clear, for: .widget)
