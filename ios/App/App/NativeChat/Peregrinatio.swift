@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 // MARK: - 1015 远游 Peregrinatio（原乌有乡）
 // 她定的（#3838–3873，效果图 /root/workroom/mock/album/、/root/workroom/mock/angel-cards/pccard2.html）：
@@ -121,19 +122,58 @@ enum PGFont {
     static func script(_ s: CGFloat) -> Font { .custom("PinyonScript-Regular", size: s) }
     static func corm(_ s: CGFloat) -> Font { .custom("CormorantGaramond-Medium", size: s) }
     static func ital(_ s: CGFloat) -> Font { .custom("CormorantGaramondItalic-MediumItalic", size: s) }
-    static let handID = "peregrinatio-hand"
-    /// 手写字：字体架下载注册好了用它，没好之前先用宋体顶着
-    static func handName() -> String? { KakaoPackStore.shared.registeredName(handID) }
+    /// 手写字：远游自己下载注册好了用它，没好之前先用宋体顶着
+    static func handName() -> String? { PGHandFont.shared.name }
     static func hand(_ s: CGFloat) -> Font { handName().map { .custom($0, size: s) } ?? .system(size: s, design: .serif) }
     static func handUI(_ s: CGFloat) -> UIFont {
         if let n = handName(), let f = UIFont(name: n, size: s) { return f }
         let base = UIFont.systemFont(ofSize: s)
         return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: s) } ?? base
     }
-    static func ensureHand() {
-        let store = KakaoPackStore.shared
-        if store.fonts.isEmpty { store.refresh() }
-        store.ensureFont(id: handID)
+    static func ensureHand() { PGHandFont.shared.ensure() }
+}
+
+/// 1015 她：「手写字体咋没有」——原来借设置里那套字体名单，名单还没拿到就放弃了、之后不再试。
+/// 改成远游自己下：字体架上那份 /api/kakao/fonts/peregrinatio-hand.ttf，存进 Application Support，CoreText 当场注册，不进安装包
+final class PGHandFont: ObservableObject {
+    static let shared = PGHandFont()
+    @Published private(set) var name: String?
+    private var loading = false
+
+    private static var file: URL {
+        FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("peregrinatio", isDirectory: true)
+            .appendingPathComponent("hand.ttf")
+    }
+
+    private static func register(_ url: URL) -> String? {
+        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)   // 重复注册会报错，忽略，名字照样取得到
+        guard let descs = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor],
+              let d = descs.first else { return nil }
+        return CTFontDescriptorCopyAttribute(d, kCTFontNameAttribute) as? String
+    }
+
+    func ensure() {
+        guard name == nil, !loading else { return }
+        let f = Self.file
+        if FileManager.default.fileExists(atPath: f.path), let n = Self.register(f) {
+            name = n
+            return
+        }
+        loading = true
+        Task {
+            var got: String?
+            if let (data, resp) = try? await URLSession.shared.data(from: AlcoveAPI.fullURL("/api/kakao/fonts/peregrinatio-hand.ttf")),
+               (resp as? HTTPURLResponse)?.statusCode == 200, data.count > 100_000 {
+                try? FileManager.default.createDirectory(at: f.deletingLastPathComponent(), withIntermediateDirectories: true)
+                try? data.write(to: f, options: .atomic)
+                got = Self.register(f)
+            }
+            await MainActor.run {
+                self.loading = false
+                if let got { self.name = got }
+            }
+        }
     }
 }
 
@@ -169,15 +209,18 @@ struct PGStampView: View {
         let pad = 9 * scale
         ZStack {
             ink.stampPaper
-            CachedImage(url: PGAPI.imageURL(trip.hero)) { img in
-                img.resizable().scaledToFill()
-            } placeholder: {
-                Color(white: 0.9)
-            }
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .clipped()
-            .overlay(Rectangle().stroke(ink.stampInk.opacity(0.45), lineWidth: 0.6).padding(-3 * scale))
-            .padding(pad)
+            // 1015 她：邮票固定大小，照片裁进框里（原来 scaledToFill 按原比例把邮票撑得参差不齐）
+            Color.clear
+                .overlay(
+                    CachedImage(url: PGAPI.imageURL(trip.hero)) { img in
+                        img.resizable().scaledToFill()
+                    } placeholder: {
+                        Color(white: 0.9)
+                    }
+                )
+                .clipped()
+                .overlay(Rectangle().stroke(ink.stampInk.opacity(0.45), lineWidth: 0.6).padding(-3 * scale))
+                .padding(pad)
         }
         .clipShape(PGStampShape(hole: 2.6 * scale, step: 8 * scale), style: FillStyle(eoFill: true))
         .brightness(ink.dark ? -0.2 : 0)
@@ -203,7 +246,7 @@ struct PGPin: View {
 struct PeregrinatioRoom: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
-    @ObservedObject private var fontStore = KakaoPackStore.shared
+    @ObservedObject private var handFont = PGHandFont.shared
     @State private var trips: [PGTrip] = []
     @State private var lingers: [PGLingerItem] = []
     @State private var loaded = false
@@ -439,7 +482,7 @@ struct PGPostcardBack: View {
     let trip: PGTrip
     let ink: PGInk
     let onOpen: () -> Void
-    @ObservedObject private var fontStore = KakaoPackStore.shared
+    @ObservedObject private var handFont = PGHandFont.shared
 
     private var card: PGPostcard? { trip.postcards.last }
 
@@ -524,7 +567,7 @@ struct PGDiaryView: View {
     let trip: PGTrip
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
-    @ObservedObject private var fontStore = KakaoPackStore.shared
+    @ObservedObject private var handFont = PGHandFont.shared
     private var ink: PGInk { _ = houseAppearance; return PGInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
 
@@ -564,7 +607,7 @@ struct PGDiaryView: View {
                         }
                         .padding(.horizontal, 28).padding(.bottom, 2)
                     }
-                    PGFlowText(text: bodyText, stops: inlineStops, ink: ink, fontStamp: fontStore.stamp)
+                    PGFlowText(text: bodyText, stops: inlineStops, ink: ink, fontName: handFont.name)
                         .padding(.horizontal, 28).padding(.top, 14)
                     if let l = trip.linger.first {
                         PGHair(ink: ink).padding(.horizontal, 28).padding(.top, 14)
@@ -592,7 +635,7 @@ struct PGFlowText: UIViewRepresentable {
     let text: String
     let stops: [PGStop]
     let ink: PGInk
-    let fontStamp: Double
+    let fontName: String?
 
     func makeUIView(context: Context) -> PGFlowView { PGFlowView() }
 
