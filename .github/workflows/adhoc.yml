@@ -107,6 +107,26 @@ jobs:
           path: ${{ runner.temp }}/Alcove-AdHoc.ipa
           retention-days: 7
 
+      - name: Publish install link
+        # 1015 她：装 App 只走 Ad Hoc 安装链接。打完把 IPA 传到前门 /api/adhoc/upload，
+        # 前门生成安装页、往工作室发一条新链接（钥匙复用 ALCOVE_LOC_TOKEN，前门那边同一把）
+        env:
+          ALCOVE_LOC_TOKEN: ${{ secrets.ALCOVE_LOC_TOKEN }}
+        run: |
+          set -euo pipefail
+          for i in 1 2 3; do
+            if curl -sf --max-time 600 -X POST \
+                 -H "X-Loc-Token: ${ALCOVE_LOC_TOKEN}" -H "X-Commit: ${GITHUB_SHA}" \
+                 -H "Content-Type: application/octet-stream" \
+                 --data-binary @"$RUNNER_TEMP/Alcove-AdHoc.ipa" \
+                 https://alcove.ob-memory.uk/api/adhoc/upload; then
+              exit 0
+            fi
+            sleep 20
+          done
+          echo "安装包没传上去" >&2
+          exit 1
+
       - name: Clean signing assets
         if: always()
         run: |
