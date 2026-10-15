@@ -1,0 +1,114 @@
+name: Build Ad Hoc IPA
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [swiftui-native-chat]
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      # 0924 晚她定的：字体不打包（包从 30MB 涨到 80MB，她的字体点了就下，一直能用），拉字体那步删了
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync Capacitor iOS
+        run: npx cap sync ios
+
+      - name: Inject location token
+        env:
+          ALCOVE_LOC_TOKEN: ${{ secrets.ALCOVE_LOC_TOKEN }}
+        run: |
+          plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/App/Info.plist
+          plutil -replace AlcoveLocToken -string "${ALCOVE_LOC_TOKEN}" ios/App/CapabilityExtensions/Broadcast/Info.plist
+
+      - name: Install CocoaPods
+        working-directory: ios/App
+        run: pod install
+
+      - name: Install signing assets
+        env:
+          SIGN_PASS: ${{ secrets.ASC_KEY_PASS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          export SIGN_DIR="$RUNNER_TEMP/adhoc-signing"
+          export PROFILE_MAP="$SIGN_DIR/profiles.json"
+          mkdir -p "$SIGN_DIR"
+          openssl enc -d -aes-256-cbc -pbkdf2 -in ios/adhoc-signing.enc -pass env:SIGN_PASS | tar -xf - -C "$SIGN_DIR"
+          KEYCHAIN="$RUNNER_TEMP/adhoc.keychain-db"
+          security create-keychain -p "$SIGN_PASS" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$SIGN_PASS" "$KEYCHAIN"
+          security import "$SIGN_DIR/distribution.p12" -P "$SIGN_PASS" -A -t cert -f pkcs12 -k "$KEYCHAIN"
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -k "$SIGN_PASS" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" login.keychain-db
+          python3 scripts/adhoc/profiles.py
+          echo "SIGN_DIR=$SIGN_DIR" >> "$GITHUB_ENV"
+          echo "PROFILE_MAP=$PROFILE_MAP" >> "$GITHUB_ENV"
+          echo "BUILD_NUMBER=$((20000 + GITHUB_RUN_NUMBER))" >> "$GITHUB_ENV"
+
+      - name: Configure registered app and extension IDs
+        run: ruby scripts/adhoc/configure.rb
+
+      - name: Archive signed App
+        working-directory: ios/App
+        run: |
+          set -o pipefail
+          xcodebuild -workspace App.xcworkspace -scheme App -configuration Release \
+            -sdk iphoneos -destination 'generic/platform=iOS' \
+            -archivePath "$RUNNER_TEMP/Alcove-AdHoc.xcarchive" archive \
+            2>&1 | tee /tmp/alcove-adhoc-build.log
+
+      - name: Export Ad Hoc IPA
+        run: |
+          set -o pipefail
+          xcodebuild -exportArchive -archivePath "$RUNNER_TEMP/Alcove-AdHoc.xcarchive" \
+            -exportOptionsPlist "$SIGN_DIR/ExportOptions.plist" \
+            -exportPath "$RUNNER_TEMP/adhoc-export" 2>&1 | tee /tmp/alcove-adhoc-export.log
+          test "$(find "$RUNNER_TEMP/adhoc-export" -maxdepth 1 -name '*.ipa' | wc -l | tr -d ' ')" = 1
+          cp "$RUNNER_TEMP"/adhoc-export/*.ipa "$RUNNER_TEMP/Alcove-AdHoc.ipa"
+
+      - name: Verify native mist splash on iPhone simulator
+        # 0909：这道检查一度全红，当时判成「CI 没显卡、检查太较真」，加了
+        # continue-on-error 放行 —— 判错了。真因是 file:// 页面不许读本地图片像素，
+        # WebGL 和 2D 兜底两条渲染路径一起被掐断，真机上同样划不动。
+        # 根因修掉后它连过两次，闸门收回来，别再让一个对的警报被静音。
+        run: bash scripts/mist-splash-smoke/run.sh
+
+      - name: Upload mist splash verification
+        # 0909 她说的：每个包底下都挂一个八兆的截图包，碍眼。
+        # 改成只在出事时才留证 —— 检查过了就不上传，下载页只剩 IPA 一个；
+        # 哪天再红，截图和 result.json 照旧躺在那儿等人来看（今晚就是靠它定的位）。
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Mist-splash-verification
+          path: mist-smoke-results/
+          if-no-files-found: ignore
+
+      - name: Upload signed IPA
+        uses: actions/upload-artifact@v4
+        with:
+          name: Alcove-AdHoc-ipa
+          path: ${{ runner.temp }}/Alcove-AdHoc.ipa
+          retention-days: 7
+
+      - name: Clean signing assets
+        if: always()
+        run: |
+          security delete-keychain "$RUNNER_TEMP/adhoc.keychain-db" 2>/dev/null || true
+          rm -rf "$RUNNER_TEMP/adhoc-signing"
