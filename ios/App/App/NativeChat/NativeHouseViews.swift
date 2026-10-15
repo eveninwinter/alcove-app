@@ -564,13 +564,13 @@ struct NativeHouseDrawer: View {
                     drawerTitle("他的世界", note: "out there")
                     VStack(spacing: 7) {
                         drawerRow(.nowhere, detail: "邮册与旅行日记")
-                        drawerRow(.surf, detail: "X、小红书、B站与 YouTube")
+                        // 1015 #3898 她圈掉：冲浪收藏、Crosstalk、燎 三个入口拿掉（页面代码留着）
                         drawerRow(.window, detail: "每天九幅：宇宙、文物、生物与风景")
                     }
 
                     drawerTitle("工具与游戏", note: "little things")
                     VStack(spacing: 7) {
-                        ForEach([HouseDestination.forge, .crosstalk, .coread, .cowatch, .liao, .qipai]) { target in
+                        ForEach([HouseDestination.forge, .coread, .cowatch, .qipai]) { target in
                             drawerRow(target, detail: drawerDetail(target))
                         }
                     }
