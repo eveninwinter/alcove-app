@@ -7673,22 +7673,84 @@ struct TreehouseBubbleFill: ViewModifier {
 }
 
 /// 1011 她：「玻璃气泡能不能也做一个切换 现在的透玻璃和雾玻璃？雾玻璃也能调节程度」——
-/// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：原来是把系统磨砂层调成半透明（0.25～1），磨糊的那层底下还透着没糊的壁纸，
-/// 看着就是一层淡雾。改成真毛玻璃：磨砂层永远不透明（后面的壁纸整块磨糊）。
-/// 1015 #3907 她：「我喜欢越往左滑的感觉 右边气泡直接全黑了」——整根滑条都用最薄那种磨砂（原来右边换 thin / regular，夜里发黑），
-/// 滑条只在上面垫一层很淡的白（夜里黑，再减半），最多 8%，往右只是比最左边稍白 / 稍暗一点
+/// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：原来把系统磨砂层调成半透明，底下透着没糊的壁纸，看着是淡雾 → 磨砂层改成不透明。
+/// 1015 #3907/#3910 她：「我喜欢越往左滑的感觉」「这个左滑的感觉继续深入」——系统磨砂最薄就是 ultraThin，再薄没有现成的，
+/// 改成自己管模糊的深浅（AdjustableBlurView）：最右＝原来最左那种最薄磨砂，往左越磨越轻、越透，但一直是真糊不是半透明。
+/// 上面不再垫白 / 黑
 struct FogGlassBubble<S: Shape>: ViewModifier {
     let shape: S
     let fog: Double
     let night: Bool
     func body(content: Content) -> some View {
         content
-            .background((night ? Color.black : Color.white).opacity(fog * (night ? 0.04 : 0.08)), in: shape)
             .background {
-                shape.fill(.ultraThinMaterial)
-                    .environment(\.colorScheme, night ? .dark : .light)
+                AdjustableBlurView(amount: 0.3 + 0.7 * min(1, max(0, fog)), dark: night)
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
             }
             .overlay(shape.stroke(Color.white.opacity(night ? 0.10 : 0.45), lineWidth: 0.6).allowsHitTesting(false))
+    }
+}
+
+/// 深浅能调的毛玻璃：系统最薄磨砂（ultraThin）做终点，用一个停住的动画把它卡在中间——
+/// amount 1＝完整的最薄磨砂，越小糊得越轻、那层灰白也越淡。
+/// 停住的动画切后台再回来会被系统冲掉，所以进窗口、回前台都重新卡一次；视图销毁前把动画停掉（不停会崩）
+struct AdjustableBlurView: UIViewRepresentable {
+    let amount: Double
+    let dark: Bool
+
+    final class BlurView: UIVisualEffectView {
+        private var animator: UIViewPropertyAnimator?
+        private var amount: Double = 1
+        private var dark = false
+        private var built = false
+
+        override init(effect: UIVisualEffect?) {
+            super.init(effect: effect)
+            NotificationCenter.default.addObserver(self, selector: #selector(rebuild),
+                                                   name: UIApplication.willEnterForegroundNotification, object: nil)
+        }
+        required init?(coder: NSCoder) { fatalError() }
+
+        func apply(amount: Double, dark: Bool) {
+            if built && amount == self.amount && dark == self.dark { return }
+            self.amount = amount
+            self.dark = dark
+            rebuild()
+        }
+
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            if window != nil { rebuild() }
+        }
+
+        @objc func rebuild() {
+            if let old = animator, old.state == .active { old.stopAnimation(true) }
+            effect = nil
+            let style: UIBlurEffect.Style = dark ? .systemUltraThinMaterialDark : .systemUltraThinMaterialLight
+            let a = UIViewPropertyAnimator(duration: 1, curve: .linear) { [weak self] in
+                self?.effect = UIBlurEffect(style: style)
+            }
+            a.pausesOnCompletion = true
+            a.fractionComplete = CGFloat(amount)
+            animator = a
+            built = true
+        }
+
+        deinit {
+            NotificationCenter.default.removeObserver(self)
+            if let old = animator, old.state == .active { old.stopAnimation(true) }
+        }
+    }
+
+    func makeUIView(context: Context) -> BlurView {
+        let v = BlurView(effect: nil)
+        v.isUserInteractionEnabled = false
+        return v
+    }
+
+    func updateUIView(_ uiView: BlurView, context: Context) {
+        uiView.apply(amount: amount, dark: dark)
     }
 }
 
