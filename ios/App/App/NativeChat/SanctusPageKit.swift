@@ -40,6 +40,18 @@ struct SanctusPageInk {
     var on: Color { dark ? rgb(0xC3C6CE) : rgb(0x3E4048) }
     /// 输入框底
     var field: Color { dark ? Color.white.opacity(0.04) : Color.white.opacity(0.85) }
+    /// 电光蓝：一页最多点一处（心电线头、八维最想的那一维、起伏线的最后一点）
+    var blue: Color { dark ? rgb(0x3A55FF) : rgb(0x0B1BFF) }
+}
+
+extension View {
+    /// 单张卡片（不分组的那种：心率卡、体温卡……）：同一种玻璃、17 圆角、白边，里面的东西超出去就裁掉
+    func sanctusCard(_ ink: SanctusPageInk, radius: CGFloat = 17) -> some View {
+        self
+            .background(ink.row, in: RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(ink.rowEdge, lineWidth: 0.7))
+    }
 }
 
 enum SanctusPageFont {
@@ -358,5 +370,36 @@ extension EnvironmentValues {
     var sanctusInk: SanctusPageInk {
         get { self[SanctusInkKey.self] }
         set { self[SanctusInkKey.self] = newValue }
+    }
+}
+
+// MARK: 自动换行
+
+/// 一排小东西（胶囊标签）放不下就换行
+struct SanctusFlow: Layout {
+    var spacing: CGFloat = 6
+
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? .infinity
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0, width: CGFloat = 0
+        for v in subviews {
+            let sz = v.sizeThatFits(.unspecified)
+            if x > 0 && x + sz.width > maxW { x = 0; y += rowH + spacing; rowH = 0 }
+            x += sz.width + spacing
+            rowH = max(rowH, sz.height)
+            width = max(width, x - spacing)
+        }
+        return CGSize(width: proposal.width ?? width, height: y + rowH)
+    }
+
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for v in subviews {
+            let sz = v.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + sz.width > bounds.maxX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(sz))
+            x += sz.width + spacing
+            rowH = max(rowH, sz.height)
+        }
     }
 }

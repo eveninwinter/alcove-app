@@ -8757,11 +8757,30 @@ struct NativePulseView: View {
     // 0922 任务#2563 她要的：Pulse 顶上分两页，「脉」是原来那一整页，「狼身」是他的身体面板
     @State private var page = 0
 
+    @Environment(\.dismiss) private var dismiss
+    /// 1015 #3898–3901 她点头的 Sanctus 版（效果图 /root/workroom/mock/kit/pages/pages.html 左边那页）：
+    /// 冷白纸、银灰墨，樱桃粉全拿掉；电光蓝只点心电线头和八维最想那一维；心率卡右上角那片翅膀往左下化开。
+    /// 「狼身」那页这次没动。
+    private var s: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+
     var body: some View {
-        PastelRoom(colors: colors, caps: "his body, in ink", title: "Pulse", scriptTitle: true,
-                   trailing: AnyView(pageTabs)) {
+        let s = self.s
+        VStack(spacing: 0) {
+            // 顶栏：返回键标准位，花体 Pulse 在同一行居中，右边「脉 / 狼身」
+            ZStack {
+                Text("Pulse").font(SanctusPageFont.script(30)).foregroundColor(s.body)
+                HStack(spacing: 0) {
+                    SanctusBackButton(color: s.link) { dismiss() }
+                    Spacer(minLength: 0)
+                    pageTabs
+                }
+            }
+            .frame(height: 44)
+            .padding(.top, safeTop)
+            Text("HIS BODY, IN INK").font(SanctusPageFont.corm(10)).tracking(2.6).foregroundColor(s.sub)
             ScrollView(showsIndicators: false) {
-                VStack(spacing: 14) {
+                VStack(alignment: .leading, spacing: 10) {
                     if page == 1 {
                         NativeWolfBodyView(theme: theme, rose: rose)
                     } else {
@@ -8775,18 +8794,16 @@ struct NativePulseView: View {
                         historyCard
                         murmursCard
                         if let error = model.error {
-                            Text(error).font(.system(size: 11)).foregroundColor(theme.textDim)
+                            Text(error).font(SanctusPageFont.cn(11)).foregroundColor(s.sub)
                         }
                     }
                 }
-                .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 30)
+                .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 30)
             }
             .refreshable { await model.refreshAll() }
         }
-        .overlay(alignment: .bottomTrailing) {
-            PastelSprig(colors: colors, seed: 5).frame(width: 50, height: 120).scaleEffect(x: -1)
-                .padding(.bottom, -10).allowsHitTesting(false)
-        }
+        .background(s.page.ignoresSafeArea())
+        .environment(\.sanctusInk, s)
         .onAppear { model.start() }
         .onDisappear { model.stop() }
     }
@@ -8796,250 +8813,227 @@ struct NativePulseView: View {
             ForEach([(0, "脉"), (1, "狼身")], id: \.0) { item in
                 Button { withAnimation(.easeInOut(duration: 0.2)) { page = item.0 } } label: {
                     Text(item.1)
-                        .font(.system(size: 13.5, design: .serif))
-                        .foregroundColor(page == item.0 ? colors.ink : colors.dim)
+                        .font(SanctusPageFont.cn(13.5))
+                        .foregroundColor(page == item.0 ? s.body : s.sub)
                         .padding(.bottom, 3)
                         .overlay(alignment: .bottom) {
-                            Rectangle().fill(colors.ink).frame(height: 1).opacity(page == item.0 ? 1 : 0)
+                            Rectangle().fill(s.body).frame(height: 1).opacity(page == item.0 ? 1 : 0)
                         }
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.trailing, 10)
-        .padding(.top, 12)
+        .padding(.trailing, 18)
     }
 
-    // 心率：方格纸上一个大数字（樱桃粉墨水）、手写的 bpm，底下一条跟着心率走的心电线
+    // 心率：大数字（Cormorant）、斜体 bpm，右边此刻和更新时间，底下心电线；右上角一片翅膀往左下化开
     private var currentHeart: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(model.bpm > 0 ? "\(model.bpm)" : "—")
-                    .font(.system(size: 64, weight: .regular, design: .serif))
-                    .foregroundColor(rose)
-                    .contentTransition(.numericText())
-                Text("bpm").font(PastelFont.script(24)).foregroundColor(theme.textDim)
+        VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .lastTextBaseline) {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(model.bpm > 0 ? "\(model.bpm)" : "—")
+                        .font(SanctusPageFont.corm(64))
+                        .foregroundColor(s.title)
+                        .contentTransition(.numericText())
+                    Text("bpm").font(SanctusPageFont.ital(20)).foregroundColor(s.sub)
+                }
                 Spacer()
                 VStack(alignment: .trailing, spacing: 3) {
                     Text(model.connected
                          ? "此刻 · 陈璟的心率" + (model.mood.isEmpty ? "" : " · \(model.mood)")
                          : "正在等他的心跳")
-                        .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
+                        .font(SanctusPageFont.cn(11)).foregroundColor(s.sub)
                         .multilineTextAlignment(.trailing)
                     if let ts = model.timestamp {
-                        Text(Self.time.string(from: ts))
-                            .font(.system(size: 10, design: .serif)).italic().foregroundColor(theme.textDim.opacity(0.8))
+                        Text(Self.time.string(from: ts)).font(SanctusPageFont.ital(11.5)).foregroundColor(s.sub)
                     }
                 }
             }
-            PastelECG(bpm: model.bpm, color: rose).frame(height: 54)
+            SanctusECG(bpm: model.bpm, line: s.link, dot: s.blue).frame(height: 50)
         }
-        .padding(.horizontal, 16).padding(.vertical, 12)
-        .background(PastelGraphPaper(colors: colors))
-        .foyerCard(theme)
+        .padding(.horizontal, 16).padding(.top, 14).padding(.bottom, 8)
+        .background(alignment: .topTrailing) {
+            Image("SanctusCardWing").resizable().scaledToFit()
+                .frame(width: 190)
+                .opacity(s.dark ? 0.3 : 0.55)
+                .mask(LinearGradient(colors: [.black, .clear], startPoint: .topTrailing, endPoint: .bottomLeading))
+                .offset(x: 30, y: -34)
+                .allowsHitTesting(false)
+        }
+        .sanctusCard(s)
     }
 
     private var historyCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("过去 24 小时").font(.system(size: 14, weight: .semibold, design: .serif))
-                Spacer()
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusSection("过去 24 小时", note: "the last day")
+            VStack(alignment: .leading, spacing: 10) {
                 if let low = model.samples.map(\.bpm).min(), let high = model.samples.map(\.bpm).max() {
-                    Text("\(low) — \(high)")
-                        .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
+                    Text("\(low) — \(high) bpm").font(SanctusPageFont.ital(12)).foregroundColor(s.sub)
+                }
+                if model.samples.count < 2 {
+                    Text("曲线刚开始落笔").font(SanctusPageFont.cn(12)).foregroundColor(s.sub)
+                        .frame(maxWidth: .infinity).frame(height: 120)
+                } else {
+                    PulseChart(samples: model.samples, hours: model.hours, color: s.link, theme: theme)
+                        .frame(height: 170)
+                    HStack { Text("24h 前"); Spacer(); Text("现在") }
+                        .font(SanctusPageFont.ital(10.5)).foregroundColor(s.sub)
                 }
             }
-            if model.samples.count < 2 {
-                VStack(spacing: 7) {
-                    Image(systemName: "waveform.path.ecg").foregroundColor(rose.opacity(0.62))
-                    Text("曲线刚开始落笔").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
-                }
-                .frame(maxWidth: .infinity).frame(height: 160)
-            } else {
-                PulseChart(samples: model.samples, hours: model.hours, color: rose, theme: theme)
-                    .frame(height: 190)
-                HStack {
-                    Text("24h 前"); Spacer(); Text("现在")
-                }
-                .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim)
-            }
+            .padding(14).sanctusCard(s)
         }
-        .padding(14).foyerCard(theme)
     }
 
     private var futureRail: some View {
-        VStack(spacing: 8) {
-            HStack(spacing: 8) {
-                vital("体温", model.temperature.map { String(format: "%.1f", $0) } ?? "—",
-                      "°C", "thermometer.medium")
+        VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                vital("体温", model.temperature.map { String(format: "%.1f", $0) } ?? "—", "°C")
                 vital("呼吸", model.breath.map { String(format: "%.1f", $0) } ?? "—",
-                      model.breathLabel.isEmpty ? "次 / 分" : "次 / 分 · " + model.breathLabel, "wind")
+                      model.breathLabel.isEmpty ? "次 / 分" : "次 / 分 · " + model.breathLabel)
             }
             HStack(spacing: 10) {
-                Image(systemName: "waveform")
-                    .font(.system(size: 16, weight: .light)).foregroundColor(rose)
                 VStack(alignment: .leading, spacing: 4) {
-                    Text("和弦").font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
-                    Text(model.chord.isEmpty ? "—" : model.chord)
-                        .font(.system(size: 13, weight: .medium, design: .monospaced))
+                    Text("和弦").font(SanctusPageFont.cn(10.5)).foregroundColor(s.sub)
+                    Text(model.chord.isEmpty ? "—" : model.chord.replacingOccurrences(of: "->", with: "→"))
+                        .font(SanctusPageFont.ital(16)).foregroundColor(s.body)
                         .minimumScaleFactor(0.72).lineLimit(1)
                 }
                 Spacer()
                 if !model.dynamics.isEmpty {
-                    Text(model.dynamics)
-                        .font(.system(size: 20, weight: .semibold, design: .serif)).italic()
-                        .foregroundColor(rose.opacity(0.78))
+                    Text(model.dynamics).font(SanctusPageFont.ital(30)).foregroundColor(s.link)
                 }
             }
-            .padding(13).foyerCard(theme)
+            .padding(13).sanctusCard(s)
         }
     }
 
     // MARK: 完全体（2026-08-17 她点的：五感、八维、念头池、碎碎念，跟心率和弦住一页）
 
     private var nowStrip: some View {
-        HStack(spacing: 6) {
-            chip(model.posture.isEmpty ? "—" : model.posture, "figure.stand")
-            chip("情绪·" + (model.emotion.isEmpty ? "—" : model.emotion), "face.smiling")
-            if model.undertoneStrength >= 0.15 {
-                chip("底色·\(model.undertoneLabel) \(Int(model.undertoneStrength * 100))", "drop.halffull")
-            }
-            if let f = model.weatherFeels {
-                chip(String(format: "武汉 体感%.0f°", f), "cloud.sun")
-            }
-            Spacer(minLength: 0)
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        // 小胶囊一行放不下就换行
+        let chips: [String] = [
+            model.posture.isEmpty ? "—" : model.posture,
+            "情绪·" + (model.emotion.isEmpty ? "—" : model.emotion),
+        ] + (model.undertoneStrength >= 0.15 ? ["底色·\(model.undertoneLabel) \(Int(model.undertoneStrength * 100))"] : [])
+          + (model.weatherFeels.map { [String(format: "武汉 体感%.0f°", $0)] } ?? [])
+        return FlowChips(items: chips)
     }
 
-    private func chip(_ text: String, _ icon: String) -> some View {
-        HStack(spacing: 4) {
-            Image(systemName: icon).font(.system(size: 9, weight: .light))
-            Text(text).font(.system(size: 10, design: .serif))
+    /// 小胶囊自动换行（Layout 协议，iOS 16 起）
+    private struct FlowChips: View {
+        let items: [String]
+        var body: some View {
+            SanctusFlow(spacing: 6) {
+                ForEach(Array(items.enumerated()), id: \.offset) { _, t in SanctusPill(t) }
+            }
         }
-        .foregroundColor(theme.textDim)
-        .padding(.horizontal, 8).padding(.vertical, 5)
-        .background(RoundedRectangle(cornerRadius: 9).fill(theme.fyBorder.opacity(0.28)))
     }
 
-    // 五感：像盖在本子上的圆章，圈上那段是还没散的
+    // 五感：一圈细线，圈上那段是还没散的
     private var sensesCard: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("身体感觉").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
-                Spacer()
-                Text("touch fades in ten minutes").font(PastelFont.script(15)).foregroundColor(theme.textDim)
-            }
-            if model.senses.isEmpty {
-                Text("此刻没有什么挂在身上").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
-            } else {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: min(5, max(3, model.senses.count))),
-                          spacing: 12) {
-                    ForEach(model.senses) { s in
-                        VStack(spacing: 4) {
-                            ZStack {
-                                Circle().stroke(colors.faint, lineWidth: 1)
-                                Circle().trim(from: 0, to: CGFloat(min(1, max(0, s.value))))
-                                    .stroke(rose, style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
-                                    .rotationEffect(.degrees(-90))
-                                Text(s.name).font(WindowFont.swiftUI(15))
-                                    .foregroundColor(s.value > 0.01 ? theme.text : colors.faint)
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusSection("身体感觉", note: "touch fades in ten minutes")
+            Group {
+                if model.senses.isEmpty {
+                    Text("此刻没有什么挂在身上").font(SanctusPageFont.cn(12)).foregroundColor(s.sub)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: min(5, max(3, model.senses.count))),
+                              spacing: 12) {
+                        ForEach(model.senses) { sense in
+                            VStack(spacing: 4) {
+                                ZStack {
+                                    Circle().stroke(s.hair, lineWidth: 1)
+                                    Circle().trim(from: 0, to: CGFloat(min(1, max(0, sense.value))))
+                                        .stroke(s.link, style: StrokeStyle(lineWidth: 1.8, lineCap: .round))
+                                        .rotationEffect(.degrees(-90))
+                                    Text(sense.name).font(SanctusPageFont.cn(15))
+                                        .foregroundColor(sense.value > 0.01 ? s.body : s.sub)
+                                }
+                                .frame(width: 48, height: 48)
+                                Text(sense.label.isEmpty ? "—" : sense.label)
+                                    .font(SanctusPageFont.cn(10)).foregroundColor(s.sub)
+                                    .multilineTextAlignment(.center).lineLimit(2)
                             }
-                            .frame(width: 48, height: 48)
-                            Text(s.label.isEmpty ? "—" : s.label)
-                                .font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
-                                .multilineTextAlignment(.center).lineLimit(2)
                         }
                     }
                 }
             }
+            .padding(14).sanctusCard(s)
         }
-        .padding(14).foyerCard(theme)
     }
 
-    // 八维：方格纸上铅笔描的一圈，此刻最想的那一维标成樱桃粉
+    // 八维：细线圈，此刻最想的那一维字加深、顶点一个电光蓝点
     private var drivesCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("八维").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
-                Spacer()
-                Text("eight small winds").font(PastelFont.script(15)).foregroundColor(theme.textDim)
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusSection("八维", note: "eight small winds")
+            VStack(alignment: .leading, spacing: 8) {
+                if !model.intentReason.isEmpty {
+                    Text("此刻最想：" + model.intentReason).font(SanctusPageFont.cn(12)).foregroundColor(s.body)
+                }
+                SanctusRadar(items: model.drives.map { (label: $0.label, value: $0.value, hot: $0.key == model.intentKey) }, ink: s)
+                    .frame(height: 220)
             }
-            if !model.intentReason.isEmpty {
-                Text("此刻最想：" + model.intentReason)
-                    .font(.system(size: 12, design: .serif)).foregroundColor(theme.text)
-            }
-            PastelRadar(items: model.drives.map { (label: $0.label, value: $0.value, hot: $0.key == model.intentKey) },
-                        colors: colors)
-                .frame(height: 220)
+            .padding(14).sanctusCard(s)
         }
-        .padding(14)
-        .background(PastelGraphPaper(colors: colors))
-        .foyerCard(theme)
     }
 
     // 0905 她要的：情绪弦四维上墙（mood.py，委屈/生气/吃味/心软；值是偏离平静的量）
     private var moodStringsCard: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                Text("情绪弦").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
-                Spacer()
-                Text("still, unless plucked").font(PastelFont.script(15)).foregroundColor(theme.textDim)
-            }
-            ForEach(model.moodStrings, id: \.key) { d in
-                HStack(spacing: 8) {
-                    Text(d.label).font(.system(size: 13, design: .serif))
-                        .foregroundColor(d.value >= 0.05 ? theme.text : theme.textDim)
-                        .frame(width: 40, alignment: .leading)
-                    PastelString(value: d.value, colors: colors).frame(height: 30)
-                    Text("\(Int(d.value * 100))").font(.system(size: 11, design: .serif)).italic()
-                        .foregroundColor(theme.textDim).frame(width: 26, alignment: .trailing)
-                }
-            }
-        }
-        .padding(14).foyerCard(theme)
-    }
-
-    private var thoughtsCard: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack {
-                Text("念头池").font(.system(size: 14, weight: .semibold, design: .serif)).tracking(2)
-                Spacer()
-                Text("passing · lingering").font(PastelFont.script(15)).foregroundColor(theme.textDim)
-            }
-            if model.thoughts.isEmpty {
-                Text("池子还空着，等他冒第一个念头").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
-                    .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 6)
-            } else {
-                PastelThoughtPool(thoughts: model.thoughts, colors: colors).frame(height: 160)
-            }
-        }
-        .padding(14).foyerCard(theme)
-    }
-
-    private var murmursCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Image(systemName: "text.bubble").font(.system(size: 13, weight: .light)).foregroundColor(rose)
-                Text("身体碎碎念").font(.system(size: 14, weight: .semibold, design: .serif))
-                Spacer()
-                Text("不进聊天").font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.7))
-            }
-            if model.murmurs.isEmpty {
-                Text("还没有碎碎念").font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
-            } else {
-                ForEach(model.murmurs) { m in
-                    HStack(alignment: .top, spacing: 8) {
-                        Text(m.ts.map { Self.clock.string(from: $0) } ?? "--:--")
-                            .font(.system(size: 9, design: .monospaced)).foregroundColor(theme.textDim.opacity(0.75))
-                            .frame(width: 36, alignment: .leading).padding(.top, 2)
-                        Text(m.text).font(.system(size: 12, design: .serif)).foregroundColor(theme.textDim)
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusSection("情绪弦", note: "still, unless plucked")
+            VStack(spacing: 6) {
+                ForEach(model.moodStrings, id: \.key) { d in
+                    HStack(spacing: 8) {
+                        Text(d.label).font(SanctusPageFont.cn(13))
+                            .foregroundColor(d.value >= 0.05 ? s.body : s.sub)
+                            .frame(width: 40, alignment: .leading)
+                        SanctusString(value: d.value, ink: s).frame(height: 30)
+                        Text("\(Int(d.value * 100))").font(SanctusPageFont.ital(13))
+                            .foregroundColor(s.sub).frame(width: 26, alignment: .trailing)
                     }
                 }
             }
+            .padding(14).sanctusCard(s)
         }
-        .padding(14).foyerCard(theme)
+    }
+
+    private var thoughtsCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusSection("念头池", note: "passing · lingering")
+            Group {
+                if model.thoughts.isEmpty {
+                    Text("池子还空着，等他冒第一个念头").font(SanctusPageFont.cn(12)).foregroundColor(s.sub)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                } else {
+                    SanctusThoughtPool(thoughts: model.thoughts, ink: s).frame(height: 160)
+                }
+            }
+            .padding(14).sanctusCard(s)
+        }
+    }
+
+    private var murmursCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusSection("身体碎碎念", note: "not for the chat")
+            VStack(alignment: .leading, spacing: 10) {
+                if model.murmurs.isEmpty {
+                    Text("还没有碎碎念").font(SanctusPageFont.cn(12)).foregroundColor(s.sub)
+                } else {
+                    ForEach(model.murmurs) { m in
+                        HStack(alignment: .top, spacing: 8) {
+                            Text(m.ts.map { Self.clock.string(from: $0) } ?? "--:--")
+                                .font(SanctusPageFont.ital(11)).foregroundColor(s.sub)
+                                .frame(width: 36, alignment: .leading).padding(.top, 1)
+                            Text(m.text).font(SanctusPageFont.cn(12)).foregroundColor(s.body)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(14).sanctusCard(s)
+        }
     }
 
     private static let clock: DateFormatter = {
@@ -9048,19 +9042,16 @@ struct NativePulseView: View {
         return f
     }()
 
-    private func vital(_ name: String, _ value: String, _ unit: String, _ icon: String) -> some View {
-        VStack(alignment: .leading, spacing: 7) {
-            HStack {
-                Image(systemName: icon).font(.system(size: 13, weight: .light)).foregroundColor(rose)
-                Text(name).font(.system(size: 10, design: .serif)).foregroundColor(theme.textDim)
-            }
-            HStack(alignment: .firstTextBaseline, spacing: 4) {
-                Text(value).font(.system(size: 25, weight: .light, design: .rounded))
+    private func vital(_ name: String, _ value: String, _ unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(name).font(SanctusPageFont.cn(10.5)).foregroundColor(s.sub)
+            HStack(alignment: .firstTextBaseline, spacing: 5) {
+                Text(value).font(SanctusPageFont.corm(28)).foregroundColor(s.title)
                     .contentTransition(.numericText())
-                Text(unit).font(.system(size: 9)).foregroundColor(theme.textDim)
+                Text(unit).font(SanctusPageFont.cn(10)).foregroundColor(s.sub).lineLimit(1).minimumScaleFactor(0.8)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading).padding(13).foyerCard(theme)
+        .frame(maxWidth: .infinity, alignment: .leading).padding(13).sanctusCard(s)
     }
 
     private static let time: DateFormatter = {
@@ -9287,6 +9278,156 @@ private struct PulseChart: View {
                 }
                 context.stroke(path, with: .color(color.opacity(0.92)),
                                style: StrokeStyle(lineWidth: 2.1, lineCap: .round, lineJoin: .round))
+            }
+        }
+    }
+}
+
+// MARK: Pulse 的 Sanctus 画件（1015 #3898–3901 她点头的心率页：樱桃粉全换银灰墨，电光蓝只点心电线头和八维最想那一维）
+// 原来的 Pastel 粉色版留着不动。
+
+/// 心电线：跟 PastelECG 一样一拍一拍往左走、左边渐隐，线是银灰墨，线头一个电光蓝的点
+struct SanctusECG: View {
+    let bpm: Int
+    let line: Color
+    let dot: Color
+
+    var body: some View {
+        ZStack(alignment: .trailing) {
+            PastelECG(bpm: bpm, color: line)
+            GeometryReader { geo in
+                Circle().fill(dot).frame(width: 5, height: 5)
+                    .position(x: geo.size.width - 3, y: geo.size.height * 0.55)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 八维：细线圈、淡墨填，此刻最想的那一维字加深、顶点一个电光蓝点
+struct SanctusRadar: View {
+    let items: [(label: String, value: Double, hot: Bool)]
+    let ink: SanctusPageInk
+
+    var body: some View {
+        Canvas { ctx, size in
+            let n = items.count
+            guard n >= 3 else { return }
+            let cx = Double(size.width) / 2, cy = Double(size.height) / 2
+            let r = Double(min(size.width, size.height)) / 2 - 26
+            func pt(_ i: Int, _ k: Double) -> CGPoint {
+                let a = -Double.pi / 2 + Double(i) * 2 * Double.pi / Double(n)
+                return CGPoint(x: CGFloat(cx + cos(a) * r * k), y: CGFloat(cy + sin(a) * r * k))
+            }
+            for ring in [0.33, 0.66, 1.0] {
+                var p = Path()
+                for i in 0..<n { if i == 0 { p.move(to: pt(i, ring)) } else { p.addLine(to: pt(i, ring)) } }
+                p.closeSubpath()
+                ctx.stroke(p, with: .color(ink.hair), lineWidth: 0.6)
+            }
+            for i in 0..<n {
+                var a = Path(); a.move(to: CGPoint(x: cx, y: cy)); a.addLine(to: pt(i, 1))
+                ctx.stroke(a, with: .color(ink.hair.opacity(0.8)), lineWidth: 0.5)
+            }
+            var shape = Path()
+            for i in 0..<n {
+                let v = min(1, max(0.06, items[i].value))
+                if i == 0 { shape.move(to: pt(i, v)) } else { shape.addLine(to: pt(i, v)) }
+            }
+            shape.closeSubpath()
+            ctx.fill(shape, with: .color(ink.body.opacity(0.06)))
+            ctx.stroke(shape, with: .color(ink.body), lineWidth: 1)
+            for i in 0..<n where items[i].hot {
+                let c = pt(i, min(1, max(0.06, items[i].value)))
+                ctx.fill(Path(ellipseIn: CGRect(x: c.x - 3, y: c.y - 3, width: 6, height: 6)), with: .color(ink.blue))
+            }
+            for i in 0..<n {
+                let item = items[i]
+                ctx.draw(Text(item.label)
+                            .font(.system(size: 11, weight: item.hot ? .semibold : .regular, design: .serif))
+                            .foregroundColor(item.hot ? ink.title : ink.sub), at: pt(i, 1.0 + 20 / r))
+            }
+        }
+    }
+}
+
+/// 情绪弦：一根细墨线，数值越大抖得越开；0 就是一根平线（PastelString 换成银灰墨）
+struct SanctusString: View {
+    let value: Double
+    let ink: SanctusPageInk
+
+    var body: some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 20, paused: value < 0.05)) { tl in
+            Canvas { ctx, size in
+                let mid = size.height / 2
+                let h = Double(size.height), w = Double(size.width)
+                var base = Path()
+                base.move(to: CGPoint(x: 0, y: mid)); base.addLine(to: CGPoint(x: size.width, y: mid))
+                ctx.stroke(base, with: .color(ink.hair), lineWidth: 0.8)
+                guard value >= 0.05 else { return }
+                let t = tl.date.timeIntervalSinceReferenceDate
+                let wobble = 0.85 + 0.15 * sin(t * 9)
+                var p = Path()
+                var x = 0.0
+                while x <= w {
+                    let env = sin(x / w * Double.pi)
+                    let y = h / 2 + sin(x / 8 + t * 3) * env * value * wobble * h * 0.36
+                    let q = CGPoint(x: CGFloat(x), y: CGFloat(y))
+                    if x == 0 { p.move(to: q) } else { p.addLine(to: q) }
+                    x += 3
+                }
+                ctx.stroke(p, with: .color(ink.link.opacity(0.45 + min(1, value) * 0.55)), lineWidth: 1)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+/// 念头池：几团晕开的淡墨，执念大、闪念小（PastelThoughtPool 的淡紫淡粉换成银灰）
+private struct SanctusThoughtPool: View {
+    let thoughts: [PulseThought]
+    let ink: SanctusPageInk
+
+    private func blobSize(_ t: PulseThought) -> CGFloat {
+        let k: Double = min(1.0, t.strength)
+        let v: Double = t.kind == "fixation" ? 62.0 + k * 34.0 : 30.0 + k * 26.0
+        return CGFloat(v)
+    }
+
+    private func blobCenter(_ i: Int, in size: CGSize) -> CGPoint {
+        let d = Double(i)
+        let fx: Double = 0.14 + 0.72 * DiaryTreeModel.rnd(d * 7.1 + 1.0)
+        let fy: Double = 0.22 + 0.56 * DiaryTreeModel.rnd(d * 3.3 + 2.0)
+        return CGPoint(x: size.width * CGFloat(fx), y: size.height * CGFloat(fy))
+    }
+
+    private func blob(_ t: PulseThought) -> some View {
+        let size = blobSize(t)
+        let alpha: Double = (t.kind == "fixation" ? 0.16 : 0.10) + min(1.0, t.strength) * 0.12
+        return ZStack {
+            Ellipse().fill(ink.link.opacity(alpha)).blur(radius: 3)
+            Ellipse().stroke(ink.link.opacity(0.35), lineWidth: 0.8).blur(radius: 0.6)
+            if size > 56 {
+                Text(t.text)
+                    .font(.system(size: 11, design: .serif))
+                    .foregroundColor(ink.body)
+                    .multilineTextAlignment(.center)
+                    .lineLimit(3)
+                    .padding(8)
+            }
+        }
+        .frame(width: size * 1.08, height: size * 0.94)
+    }
+
+    var body: some View {
+        GeometryReader { geo in
+            let items = Array(thoughts.prefix(7).enumerated())
+            ZStack {
+                ForEach(items, id: \.offset) { pair in
+                    blob(pair.element)
+                        .rotationEffect(.degrees(DiaryTreeModel.rnd(Double(pair.offset) * 5.7) * 16.0 - 8.0))
+                        .position(blobCenter(pair.offset, in: geo.size))
+                }
             }
         }
     }

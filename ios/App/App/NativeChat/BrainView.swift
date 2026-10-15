@@ -184,8 +184,11 @@ struct NativeBrainView: View {
     @State private var editing: BrainMemory?       // 1003 她要的：长按「改」
     @State private var deleting: BrainMemory?      // 1003 长按「删」→ 先问一句
     @ObservedObject private var fontStore = KakaoPackStore.shared
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
 
     private var palette: GlassPalette { .named(themeName) }
+    /// 1015 #3899–3901 首页换成 Sanctus（她点头的 /root/workroom/mock/kit/pages/buwang3.html）；子页先不动
+    private var sInk: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
     private var ink: BuwangInk { BuwangInk(dark: palette.isDark) }
 
     private var pageTitle: String {
@@ -199,10 +202,20 @@ struct NativeBrainView: View {
 
     var body: some View {
         ZStack {
-            BuwangPaper(ink: ink)      // 0928 她要的：纸面、蓝粉白紫、手写体（照 Kakao 那套的温度，不要 AI 味）
+            if page == .hub {
+                sInk.page.ignoresSafeArea()
+            } else {
+                BuwangPaper(ink: ink)      // 0928 她要的：纸面、蓝粉白紫、手写体（照 Kakao 那套的温度，不要 AI 味）
+            }
             VStack(spacing: 0) {
-                GlassHeader(title: pageTitle, palette: palette, onBack: goBack,
-                            trailing: page == .memories ? AnyView(queueButton) : nil)
+                if page == .hub {
+                    SanctusTopBar(title: "不忘", onBack: goBack) { EmptyView() }
+                        .padding(.top, FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 54)
+                        .environment(\.sanctusInk, sInk)
+                } else {
+                    GlassHeader(title: pageTitle, palette: palette, onBack: goBack,
+                                trailing: page == .memories ? AnyView(queueButton) : nil)
+                }
                 switch page {
                 case .hub:
                     hub
@@ -354,53 +367,97 @@ struct NativeBrainView: View {
     // ── 大厅 ──
     // 0928 她给的两张参考（梗辞典文件夹 / 别人的不忘大厅）＋效果图 ①：手写标题、大数字、起伏线，
     // 下面「翻看 / 运转 / 调参」三组小卡片；纸面、蓝粉白紫、贴一点胶带。
+    /// 首页（1015 她：整体布局改、不要一长条、兔子贴着数字）：一屏放下——
+    /// 大数字＋兔子、每天新增的起伏线、三格统计、搜索、五条线一行一条、十个入口两排圆图标
     private var hub: some View {
-        ScrollView(showsIndicators: false) {
-            VStack(spacing: 0) {
-                BuwangTitle(ink: ink, zh: "不忘", en: "what we keep")
-                    .padding(.top, -6)
-                hubSearch
-                VStack(spacing: 0) {
-                    Text("\(shownTotal)")
-                        .font(.system(size: 62, weight: .semibold, design: .serif))
-                        .foregroundColor(ink.ink)
-                        .contentTransition(.numericText())
-                    Text("条记忆醒着")
-                        .font(BuwangFont.hand(17)).tracking(2)
-                        .foregroundColor(ink.ink2)
-                        .padding(.top, -6)
-                }
-                .padding(.top, 8)
+        let s = sInk
+        return ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                hubHero(s)
                 if status.daily.count > 1 {
                     ZStack {
                         BrainSpark(values: status.daily)
                             .trim(from: 0, to: drawn)
-                            .stroke(ink.cherry.opacity(0.75), style: StrokeStyle(lineWidth: 1.6, lineCap: .round, lineJoin: .round))
-                        BrainSparkDot(values: status.daily, progress: drawn)
-                            .fill(ink.cherry)
+                            .stroke(s.link, style: StrokeStyle(lineWidth: 1.2, lineCap: .round, lineJoin: .round))
+                        BrainSparkDot(values: status.daily, progress: drawn).fill(s.blue)
                     }
-                    .frame(height: 46)
-                    .padding(.horizontal, 30)
+                    .frame(height: 32)
                     .padding(.top, 6)
                 }
-                hubStat
-                hubGroups
+                hubStats(s)
+                hubSearch(s)
+                SanctusSection("五条线", note: "the threads")
+                    .contentShape(Rectangle())
+                    .onTapGesture { withAnimation(.easeInOut(duration: 0.25)) { page = .threads } }   // 未归线、其他线从这进
+                hubThreads(s)
+                hubTiles(s)
             }
+            .padding(.horizontal, 18)
             .padding(.bottom, 34)
         }
+        .environment(\.sanctusInk, s)
         .onAppear { animateHub() }
         .onChange(of: status.total) { _, _ in animateHub() }
     }
 
-    private var hubSearch: some View {
+    private func hubHero(_ s: SanctusPageInk) -> some View {
+        HStack(alignment: .top, spacing: 12) {
+            VStack(alignment: .leading, spacing: 0) {
+                Text("WHAT WE KEEP").font(SanctusPageFont.corm(10)).tracking(2.6).foregroundColor(s.sub)
+                Text(shownTotal.formatted())
+                    .font(SanctusPageFont.corm(58)).foregroundColor(s.title)
+                    .contentTransition(.numericText())
+                    .padding(.top, 6)
+                Text("条记忆醒着").font(SanctusPageFont.cn(13)).tracking(2).foregroundColor(s.link)
+            }
+            // 兔子贴着数字（她 #3901「兔子和左边数字靠近一点别留空」）
+            Image("SanctusCardRabbit").resizable().scaledToFit()
+                .frame(width: 118)
+                .rotationEffect(.degrees(4))
+                .shadow(color: .black.opacity(0.12), radius: 1.5, x: 0, y: 1)
+                .opacity(s.dark ? 0.85 : 1)
+                .padding(.top, 4)
+            Spacer(minLength: 0)
+        }
+        .padding(.top, 4).padding(.horizontal, 4)
+    }
+
+    /// 「18 分钟前」拆成大数字和小单位
+    private func splitAgo(_ text: String) -> (String, String) {
+        let num = String(text.prefix { $0.isNumber || $0 == "." })
+        guard !num.isEmpty else { return (text.isEmpty ? "—" : text, "") }
+        return (num, String(text.dropFirst(num.count)).trimmingCharacters(in: .whitespaces))
+    }
+
+    private func hubStats(_ s: SanctusPageInk) -> some View {
+        let recall = splitAgo(status.recallAgo)
+        func cell(_ big: String, _ unit: String, _ cap: String) -> some View {
+            VStack(spacing: 1) {
+                HStack(alignment: .firstTextBaseline, spacing: 2) {
+                    Text(big).font(SanctusPageFont.corm(21)).foregroundColor(s.title)
+                    if !unit.isEmpty { Text(unit).font(SanctusPageFont.cn(10)).foregroundColor(s.sub) }
+                }
+                .lineLimit(1).minimumScaleFactor(0.7)
+                Text(cap).font(SanctusPageFont.cn(10)).foregroundColor(s.sub)
+            }
+            .frame(maxWidth: .infinity)
+        }
+        return HStack(spacing: 0) {
+            cell(recall.0, recall.1, "上次召回")
+            Rectangle().fill(s.hair).frame(width: 0.6, height: 28)
+            cell("\(tune.int("surfaced_7d"))", "", "7 天浮现")
+            Rectangle().fill(s.hair).frame(width: 0.6, height: 28)
+            cell("+\(status.week)", "", "本周新记")
+        }
+        .padding(.top, 8)
+    }
+
+    private func hubSearch(_ s: SanctusPageInk) -> some View {
         // 0927 她要的：第一页顶上就能搜，回车进「记忆」页带着这个词
         HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 12))
-                .foregroundColor(ink.ink3)
+            Image(systemName: "magnifyingglass").font(.system(size: 13, weight: .light)).foregroundColor(s.link)
             TextField("翻找记忆", text: $hubQuery)
-                .font(.system(size: 13))
-                .foregroundColor(ink.ink)
+                .font(SanctusPageFont.cn(13)).foregroundColor(s.body)
                 .submitLabel(.search)
                 .onSubmit {
                     let q = hubQuery.trimmingCharacters(in: .whitespaces)
@@ -410,91 +467,105 @@ struct NativeBrainView: View {
                 }
             if !hubQuery.isEmpty {
                 Button { hubQuery = "" } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 12))
-                        .foregroundColor(ink.ink3)
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundColor(s.sub)
                 }
                 .buttonStyle(.plain)
             }
         }
         .padding(.horizontal, 13).padding(.vertical, 9)
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.card)
-            .shadow(color: ink.shadow, radius: 6, x: 0, y: 3))
-        .padding(.horizontal, 16)
-        .padding(.top, 8)
+        .background(s.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(s.rowFrame, lineWidth: 0.6))
+        .padding(.top, 12)
     }
 
-    private var hubStat: some View {
-        let surfaced = tune.int("surfaced_7d")
-        let pending = status.pendingEmotion + status.pendingFact
-        return HStack(spacing: 4) {
-            Text("上次召回 \(status.recallAgo.isEmpty ? "—" : status.recallAgo)")
-            Text("·")
-            Text("7 天浮现")
-            Text("\(surfaced)").foregroundColor(ink.cherry).fontWeight(.semibold)
-            Text("· 本周 +\(status.week)")
-            if pending > 0 {
-                Text("· \(pending) 条等我点头").foregroundColor(ink.cherry)
-            }
-        }
-        .font(.system(size: 11.5))
-        .foregroundColor(ink.ink2)
-        .padding(.top, 4)
-    }
-
-    private var hubGroups: some View {
-        let cols = [GridItem(.flexible(), spacing: 9), GridItem(.flexible(), spacing: 9)]
-        let alive = status.timers.filter { $0.alive }.count
-        let pending = status.pendingEmotion + status.pendingFact
-        let wrongOpen = tune.int("wrong_open")
-        let brainSub = (status.timers.isEmpty ? "—" : "\(alive)/\(status.timers.count) 个钟在走")
-            + (status.nightlyAgo.isEmpty ? "" : " · 夜里 \(status.nightlyAgo)")
-        let patrolSub = "巡逻 " + (status.patrolAgo.isEmpty ? "—" : status.patrolAgo) + " · 快照 " + (status.snapshot.isEmpty ? "—" : status.snapshot)
+    /// 五条线：线名、长短条（按条数取对数，小线也看得见）、条数、最近一次是多久前；点哪条进哪条
+    private func hubThreads(_ s: SanctusPageInk) -> some View {
+        let shown = Array(threads.prefix(5))
+        let top = Double(max(1, shown.map(\.count).max() ?? 1))
         return VStack(spacing: 0) {
-            BuwangSection(ink: ink, zh: "翻看", en: "READ")
-            LazyVGrid(columns: cols, spacing: 9) {
-                BuwangCard(ink: ink, icon: "book", tint: ink.blue, title: "记忆", sub: "一条条找、看") { openMemories() }
-                BuwangCard(ink: ink, icon: "line.3.horizontal", tint: ink.pink, title: pageTitleFor(.threads), sub: "按线分开看") {
-                    withAnimation(.easeInOut(duration: 0.25)) { page = .threads }
-                }
-                BuwangCard(ink: ink, icon: "books.vertical", tint: ink.lilac, title: "叙事卷", sub: "写成卷的故事") {
-                    withAnimation(.easeInOut(duration: 0.25)) { page = .volumes }
-                }
-                BuwangCard(ink: ink, icon: "photo", tint: ink.mint, title: "带图的", sub: "有小图的记忆") { openMemories(images: true) }
-                BuwangCard(ink: ink, icon: "trash", tint: ink.pink, title: "回收站", sub: "删掉的留 7 天") {
-                    withAnimation(.easeInOut(duration: 0.25)) { page = .trash }
-                }
+            if shown.isEmpty {
+                Text("线还没理出来").font(SanctusPageFont.cn(12)).foregroundColor(s.sub)
+                    .frame(maxWidth: .infinity, alignment: .leading).padding(14)
             }
-            .padding(.horizontal, 16)
-
-            BuwangSection(ink: ink, zh: "运转", en: "RUNNING")
-            LazyVGrid(columns: cols, spacing: 9) {
-                BuwangCard(ink: ink, icon: "clock", tint: ink.blue, title: "今天的脑子", sub: brainSub) { showBrainSheet = true }
-                BuwangCard(ink: ink, icon: "tray.full", tint: ink.pink, title: "审核",
-                           sub: pending > 0 ? "情绪 \(status.pendingEmotion) · 事实 \(status.pendingFact)" : "现在没有要审的",
-                           badge: pending) { openQueue() }
-                BuwangCard(ink: ink, icon: "scope", tint: ink.mint, title: "巡逻·快照", sub: patrolSub) { showBrainSheet = true }
+            ForEach(Array(shown.enumerated()), id: \.element.id) { i, t in
+                if i > 0 { Rectangle().fill(s.hair).frame(height: 0.5) }
+                Button { openMemories(thread: t.thread) } label: {
+                    HStack(spacing: 10) {
+                        Text(t.thread).font(SanctusPageFont.cn(13.5)).foregroundColor(s.body)
+                            .frame(width: 50, alignment: .leading)
+                        GeometryReader { g in
+                            let k = 0.18 + 0.82 * log(Double(t.count) + 1) / log(top + 1)
+                            ZStack(alignment: .leading) {
+                                Rectangle().fill(s.hair).frame(height: 1)
+                                Capsule().fill(s.link).frame(width: g.size.width * CGFloat(k), height: 2)
+                            }
+                            .frame(maxHeight: .infinity)
+                        }
+                        .frame(height: 20)
+                        Text(t.count.formatted()).font(SanctusPageFont.corm(14)).foregroundColor(s.title)
+                            .frame(width: 42, alignment: .trailing)
+                        Text(t.newestAgo).font(SanctusPageFont.cn(10)).foregroundColor(s.sub)
+                            .lineLimit(1).frame(width: 62, alignment: .trailing)
+                    }
+                    .padding(.horizontal, 14).padding(.vertical, 7)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
             }
-            .padding(.horizontal, 16)
-
-            BuwangSection(ink: ink, zh: "调参", en: "TUNING")
-            LazyVGrid(columns: cols, spacing: 9) {
-                BuwangCard(ink: ink, icon: "water.waves", tint: ink.lilac, title: "浮现", sub: "试问 · 阈值 · 他最近的", tape: ink.lilac) {
-                    withAnimation(.easeInOut(duration: 0.25)) { page = .surface }
-                }
-                BuwangCard(ink: ink, icon: "text.magnifyingglass", tint: ink.mint, title: "召回", sub: "不看的停用词") {
-                    withAnimation(.easeInOut(duration: 0.25)) { page = .stopwords }
-                }
-                BuwangCard(ink: ink, icon: "xmark.square", tint: ink.pink, title: "错题本",
-                           sub: wrongOpen > 0 ? "召错的，\(wrongOpen) 道待修" : "召错的记在这", badge: wrongOpen) {
-                    withAnimation(.easeInOut(duration: 0.25)) { page = .wrongbook }
-                }
-                BuwangCard(ink: ink, icon: "character.book.closed", tint: ink.faint, title: "专名库", sub: "等你来写", dashed: true) {
-                    showHubToast("专名库等你写好表格，我再开这一页")
-                }
-            }
-            .padding(.horizontal, 16)
         }
+        .padding(.vertical, 4)
+        .sanctusCard(s)
+    }
+
+    /// 十个入口：两排圆图标（翻看 / 运转 / 调参原来那三组卡片收进来）
+    private func hubTiles(_ s: SanctusPageInk) -> some View {
+        let pending = status.pendingEmotion + status.pendingFact
+        let alive = status.timers.filter { $0.alive }.count
+        let allAlive = !status.timers.isEmpty && alive == status.timers.count
+        let wrongOpen = tune.int("wrong_open")
+        let cols = Array(repeating: GridItem(.flexible(), spacing: 4), count: 5)
+        return LazyVGrid(columns: cols, spacing: 12) {
+            hubTile(s, "book", "记忆") { openMemories() }
+            hubTile(s, "books.vertical", "叙事卷") { withAnimation(.easeInOut(duration: 0.25)) { page = .volumes } }
+            hubTile(s, "photo", "带图的") { openMemories(images: true) }
+            hubTile(s, "trash", "回收站") { withAnimation(.easeInOut(duration: 0.25)) { page = .trash } }
+            hubTile(s, "clock", status.timers.isEmpty ? "脑子" : "脑子 \(alive)/\(status.timers.count)", live: allAlive) { showBrainSheet = true }
+            hubTile(s, "tray.full", "审核", badge: pending) { openQueue() }
+            hubTile(s, "water.waves", "浮现") { withAnimation(.easeInOut(duration: 0.25)) { page = .surface } }
+            hubTile(s, "text.magnifyingglass", "召回") { withAnimation(.easeInOut(duration: 0.25)) { page = .stopwords } }
+            hubTile(s, "xmark.square", "错题本", badge: wrongOpen) { withAnimation(.easeInOut(duration: 0.25)) { page = .wrongbook } }
+            hubTile(s, "character.book.closed", "专名库") { showHubToast("专名库等你写好表格，我再开这一页") }
+        }
+        .padding(.top, 16)
+    }
+
+    private func hubTile(_ s: SanctusPageInk, _ icon: String, _ title: String, badge: Int = 0, live: Bool = false,
+                         action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            VStack(spacing: 5) {
+                Image(systemName: icon).font(.system(size: 17, weight: .light)).foregroundColor(s.icon)
+                    .frame(width: 46, height: 46)
+                    .background(Circle().fill(s.row))
+                    .overlay(Circle().stroke(s.rowEdge, lineWidth: 0.7))
+                    .overlay(alignment: .topTrailing) {
+                        if badge > 0 {
+                            Text("\(badge)").font(SanctusPageFont.corm(10)).foregroundColor(s.link)
+                                .padding(.horizontal, 5)
+                                .background(Capsule().fill(s.page))
+                                .overlay(Capsule().stroke(s.sub.opacity(0.6), lineWidth: 0.6))
+                                .offset(x: 3, y: -3)
+                        } else if live {
+                            Circle().fill(s.link).frame(width: 6, height: 6)
+                                .background(Circle().fill(s.link.opacity(0.15)).frame(width: 12, height: 12))
+                                .offset(x: -3, y: 3)
+                        }
+                    }
+                Text(title).font(SanctusPageFont.cn(10.5)).foregroundColor(s.link).lineLimit(1).minimumScaleFactor(0.8)
+            }
+            .frame(maxWidth: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
     private func showHubToast(_ text: String) {
