@@ -36,6 +36,23 @@ private enum WidgetWall {
               (resp as? HTTPURLResponse)?.statusCode == 200 else { return nil }
         return UIImage(data: data)
     }
+
+    /// 底图整体是亮的还是暗的：缩成 1×1 看平均亮度
+    static func isLight(_ img: UIImage) -> Bool {
+        guard let cg = img.cgImage else { return true }
+        var px = [UInt8](repeating: 0, count: 4)
+        let ok = px.withUnsafeMutableBytes { buf -> Bool in
+            guard let ctx = CGContext(data: buf.baseAddress, width: 1, height: 1, bitsPerComponent: 8, bytesPerRow: 4,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return false }
+            ctx.interpolationQuality = .medium
+            ctx.draw(cg, in: CGRect(x: 0, y: 0, width: 1, height: 1))
+            return true
+        }
+        guard ok else { return true }
+        let lum = 0.299 * Double(px[0]) + 0.587 * Double(px[1]) + 0.114 * Double(px[2])
+        return lum > 140
+    }
 }
 
 private struct LabProvider: TimelineProvider {
@@ -103,7 +120,7 @@ private struct AlcoveWidgetView: View {
             // 1015 #3896：中号用她桌面壁纸裁出来的那块当底（假透明），取不到就照旧纯白 / 炭灰
             widgetContent
                 .containerBackground(for: .widget) {
-                    if let wall = scheme == .dark ? entry.wallDark : entry.wallLight {
+                    if let wall {
                         Image(uiImage: wall).resizable().scaledToFill()
                     } else {
                         sp.card
@@ -115,7 +132,12 @@ private struct AlcoveWidgetView: View {
         }
     }
 
-    private var sp: SPal { SPal(dark: scheme == .dark) }
+    /// 中号用了壁纸底：字和吊坠按底图亮暗挑（她的壁纸是浅灰，深色模式下也得用深色的字，不然看不见）；没有底图照旧跟手机深浅走
+    private var wall: UIImage? {
+        guard family == .systemMedium else { return nil }
+        return scheme == .dark ? entry.wallDark : entry.wallLight
+    }
+    private var sp: SPal { SPal(dark: wall.map { !WidgetWall.isLight($0) } ?? (scheme == .dark)) }
 
     @ViewBuilder
     private var widgetContent: some View {
