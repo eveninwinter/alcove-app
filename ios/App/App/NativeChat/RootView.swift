@@ -1,4 +1,5 @@
 import SwiftUI
+import UserNotifications
 
 // App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
@@ -40,6 +41,12 @@ struct RootView: View {
     private var windowDark: Bool {
         _ = houseAppearance
         return AlcoveAppearance.isDark   // 0928 她拍板：整个 Alcove 就认一个黑白开关，不看主题
+    }
+
+    /// 1015 #3897 她：「图标上一直显示九条未读」——推送带的数字是「她最后说话之后他说了几条」，
+    /// App 打开以后从来不清，看完了还挂着，要等下一条推送才变。打开 / 回前台就清零。
+    static func clearIconBadge() {
+        UNUserNotificationCenter.current().setBadgeCount(0) { _ in }
     }
 
     static func applyWindowStyle(dark: Bool) {
@@ -211,10 +218,14 @@ struct RootView: View {
         // 弹出来的 sheet / fullScreenCover 认的是窗口的深浅＝手机系统的，systemBackground 这些系统色全跟手机走。
         // 在窗口上直接钉死，所有弹出页的系统色就都跟 App 主题了。
         // 0928 晚：Kakao 的 named() 恒报白天，上面那句钉成了白天、黑夜开关不认 → 相册白底白字。Kakao 下认全屋开关
-        .onAppear { Self.applyWindowStyle(dark: windowDark) }
+        .onAppear {
+            Self.applyWindowStyle(dark: windowDark)
+            Self.clearIconBadge()
+        }
         .onChange(of: windowDark) { dark in Self.applyWindowStyle(dark: dark) }
         .onChange(of: scenePhase) { phase in
             if phase == .active {
+                Self.clearIconBadge()
                 SensorReporter.shared.appActive()
                 Task { await refreshThinkingState() }
                 Task { await refreshSleepState() }
