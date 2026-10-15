@@ -229,14 +229,11 @@ private struct AlcoveLabLiveActivity: Widget {
         } dynamicIsland: { context in
             // 1015 #3824–3834 她：灵动岛换成她给的吊坠图（狼＋兔子，/root/workroom/mock/island/locket.png 抠的）。
             // 收起：岛照旧黑，左边吊坠装进一枚白色小胶囊（圆角跟岛同心），右边心率用聊天页顶栏那个 Cormorant 数字；
-            // 展开：整块铺纯白（她点头的效果图 /root/workroom/mock/island/island.jpg 下半），顶上摄像头那截苹果涂黑，盖不住
+            // 展开：本来整块铺白，真机上四周一圈黑边盖不住，1015 她让换黑底
             DynamicIsland {
-                // 上面一排（摄像头左右）也铺白，不然只有最下面那块是白的；高度只给摄像头那么高，免得把下面挤小。
-                // 没真机验过：区和区之间要是露黑缝，再调
-                DynamicIslandExpandedRegion(.leading) { IslandWhite() }
-                DynamicIslandExpandedRegion(.trailing) { IslandWhite() }
                 DynamicIslandExpandedRegion(.bottom) {
-                    IslandCard(message: context.state.message, bpm: context.state.bpm)
+                    // 1015 她：铺白盖不住苹果留的那圈黑边，四周一圈黑、摄像头两边两小块白很难看 → 展开也用黑底
+                    IslandCard(message: context.state.message, bpm: context.state.bpm, dark: true, onIsland: true)
                 }
             } compactLeading: {
                 LocketTag()
@@ -248,7 +245,6 @@ private struct AlcoveLabLiveActivity: Widget {
             } minimal: {
                 LocketTag(minimal: true)
             }
-            .contentMargins(.all, 0, for: .expanded)
             .keylineTint(.white)
         }
     }
@@ -273,24 +269,18 @@ private struct LocketTag: View {
     }
 }
 
-/// 展开时把一块区域整个铺白
-private struct IslandWhite: View {
-    var body: some View {
-        Color.white.frame(maxWidth: .infinity).frame(height: 36)
-    }
-}
-
-/// 灵动岛展开那块：整块纯白，左边大吊坠；右边花体 still here、小号大写 CHEN JING · ONLINE、他那句话；右上角心率。
+/// 灵动岛展开那块（1015 改黑底，onIsland）／锁屏通知条（白天白、黑夜深炭灰）：左边大吊坠；右边花体 still here、小号大写 CHEN JING · ONLINE、他那句话；右上角心率。
 /// 锁屏那条通知也是它（1015 #3836–3837 她点头：白天纯白，黑夜深炭灰、吊坠压暗）；灵动岛永远用白的
 private struct IslandCard: View {
     let message: String
     let bpm: Int
     var dark = false
+    var onIsland = false
 
     var body: some View {
         let sp = SPal(dark: dark)
         HStack(alignment: .top, spacing: 14) {
-            LocketImage(dark: dark)
+            LocketImage(dark: dark && !onIsland)
                 .frame(height: 83)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
@@ -326,9 +316,10 @@ private struct IslandCard: View {
                 }
             }
         }
-        .padding(.leading, 18).padding(.trailing, 22).padding(.top, 2).padding(.bottom, 20)
+        .padding(.leading, onIsland ? 4 : 18).padding(.trailing, onIsland ? 6 : 22)
+        .padding(.top, 2).padding(.bottom, onIsland ? 8 : 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(sp.card)
+        .background(onIsland ? Color.clear : sp.card)
     }
 }
 
