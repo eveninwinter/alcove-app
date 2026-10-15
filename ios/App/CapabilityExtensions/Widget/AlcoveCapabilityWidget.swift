@@ -59,80 +59,81 @@ private struct AlcoveWidgetView: View {
 
     @Environment(\.colorScheme) private var scheme
 
-    private var pal: WPal { WPal(dark: scheme == .dark) }
-
     @ViewBuilder
     var body: some View {
         switch family {
         case .systemSmall, .systemMedium:
-            // 1002 她要的：跟 App 里一样的像素风（终端 / 日记页那套），跟手机深浅走
-            // 1007 她要去边框：外圈纸边、粉框、粉影全拿掉，窗口本身铺满整块（效果图 mock/widget-noframe/a）
+            // 1015 #3834–3837 她：换成吊坠图、纯白底；黑夜（跟手机深色模式走，小组件读不到 App 的日夜按钮）深炭灰底、吊坠压暗一点。
+            // 效果图 /root/workroom/mock/island/widgets.jpg（白天）、widgets-dark.jpg（黑夜）
             widgetContent
-                .containerBackground(for: .widget) { pal.card }
+                .containerBackground(for: .widget) { sp.card }
         default:
             widgetContent
                 .containerBackground(.clear, for: .widget)
         }
     }
 
+    private var sp: SPal { SPal(dark: scheme == .dark) }
+
     @ViewBuilder
     private var widgetContent: some View {
         switch family {
         case .systemMedium:
-            WWindow(pal: pal, title: "ALCOVE.EXE", squares: 3, framed: false, barInset: 14) {
-                HStack(spacing: 10) {
-                    SleepingRavenMark(size: 112)
-                        .modifier(WRavenEdge(pal: pal))
-                    VStack(alignment: .center, spacing: 6) {
-                        Text("Time, gently kept.")
-                            .font(WFont.script(24))
-                            .foregroundStyle(pal.lilacInk)
+            HStack(spacing: 0) {
+                LocketImage(dark: sp.dark)
+                    .frame(height: 90)
+                    .padding(.leading, 18)
+                Spacer(minLength: 10)
+                VStack(alignment: .leading, spacing: 0) {
+                    Text("Time, gently kept.")
+                        .font(WFont.script(21))
+                        .foregroundStyle(sp.ink)
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    HStack(alignment: .firstTextBaseline, spacing: 12) {
+                        Text("\(togetherDays)")
+                            .font(WFont.corm(49))
+                            .foregroundStyle(sp.ink)
                             .lineLimit(1)
-                            .minimumScaleFactor(0.7)
-                        HStack(alignment: .lastTextBaseline, spacing: 6) {
-                            WPixel(rows: WPX.spark, colors: ["o": pal.pinkInk], scale: 2)
-                            Text("\(togetherDays)")
-                                .font(WFont.pixel(38))
-                                .foregroundStyle(pal.pinkInk)
-                                .lineLimit(1)
-                                .minimumScaleFactor(0.6)
-                            Text("DAYS")
-                                .font(WFont.pixel(10))
-                                .tracking(1.2)
-                                .foregroundStyle(pal.sub)
-                        }
-                        Text("SINCE 2026.06.01")
-                            .font(WFont.pixel(8.5))
-                            .tracking(0.8)
-                            .foregroundStyle(pal.sub)
+                            .minimumScaleFactor(0.6)
+                        Text("DAYS")
+                            .font(WFont.corm(10))
+                            .tracking(2.5)
+                            .foregroundStyle(sp.gray)
                     }
-                    .frame(maxWidth: .infinity)
+                    .padding(.leading, 7).padding(.top, 6)
+                    Text("SINCE 2026 · 06 · 01")
+                        .font(WFont.corm(8.5))
+                        .tracking(2)
+                        .foregroundStyle(sp.gray)
+                        .padding(.leading, 9).padding(.top, 8)
                 }
-                .padding(.leading, 8).padding(.trailing, 14)
-                .frame(maxHeight: .infinity)
+                .padding(.trailing, 20)
             }
-            .padding(.top, 2)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
 
         case .accessoryCircular:
+            // 锁屏：苹果统一染成半透明白，吊坠黑的地方会透过去（白天黑夜一样）
             ZStack {
                 AccessoryWidgetBackground()
-                RavenMark(size: 35)
+                Image("Locket").resizable().scaledToFit().padding(.horizontal, 8)
             }
             .widgetAccentable()
 
         case .accessoryRectangular:
-            // 锁屏长条：系统会染成单色，颜色出不来，字和心换成像素的
-            HStack(spacing: 7) {
-                SleepingRavenMark(size: 40)
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("PRESENT")
-                        .font(WFont.pixel(13))
-                    Text("NEAR, ALWAYS.")
-                        .font(WFont.pixel(8))
-                        .foregroundStyle(.secondary)
+            HStack(spacing: 8) {
+                Image("Locket").resizable().scaledToFit().frame(width: 62)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("still here")
+                        .font(WFont.script(24))
+                        .lineLimit(1)
+                        .minimumScaleFactor(0.7)
+                    Text("NEAR, ALWAYS")
+                        .font(WFont.corm(9))
+                        .tracking(2)
+                        .lineLimit(1)
                 }
-                Spacer(minLength: 2)
-                WPixel(rows: WPX.heart, colors: ["o": .primary], scale: 2)
+                Spacer(minLength: 0)
             }
             .widgetAccentable()
 
@@ -140,24 +141,22 @@ private struct AlcoveWidgetView: View {
             Label("Still here", systemImage: "heart.fill")
 
         default:
-            WWindow(pal: pal, title: "ONLINE", squares: 1, framed: false, barInset: 13) {
-                VStack(spacing: 3) {
-                    RavenMark(size: 70)
-                        .modifier(WRavenEdge(pal: pal))
-                    Text("STILL HERE")
-                        .font(WFont.pixel(12))
-                        .tracking(0.8)
-                        .foregroundStyle(pal.pinkInk)
-                    HStack(spacing: 4) {
-                        Text("陈璟")
-                            .font(.system(size: 10))
-                            .foregroundStyle(pal.sub)
-                        WPixel(rows: WPX.heartOutline, colors: ["o": pal.pinkInk, "f": pal.pink], scale: 1)
-                    }
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            VStack(spacing: 0) {
+                LocketImage(dark: sp.dark)
+                    .frame(width: 104)
+                    .padding(.top, 4)
+                Text("still here")
+                    .font(WFont.script(23))
+                    .foregroundStyle(sp.ink)
+                    .lineLimit(1)
+                    .padding(.top, 8)
+                Text("CHEN JING")
+                    .font(WFont.corm(8.5))
+                    .tracking(2.5)
+                    .foregroundStyle(sp.gray)
+                    .padding(.top, 8)
             }
-            .padding(.top, 2).padding(.bottom, 4)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
 
@@ -170,6 +169,25 @@ private struct AlcoveWidgetView: View {
         let start = calendar.startOfDay(for: startDate)
         let today = calendar.startOfDay(for: entry.date)
         return max(0, calendar.dateComponents([.day], from: start, to: today).day ?? 0)
+    }
+}
+
+/// 1015 Sanctus 那套：白天纯白，黑夜深炭灰（冷，不带棕）
+private struct SPal {
+    let dark: Bool
+    var card: Color { dark ? Color(red: 0x26 / 255, green: 0x26 / 255, blue: 0x2A / 255) : .white }
+    var ink: Color { dark ? Color(red: 0xE4 / 255, green: 0xE4 / 255, blue: 0xE7 / 255) : Color(red: 0x2A / 255, green: 0x2A / 255, blue: 0x2E / 255) }
+    var gray: Color { dark ? Color(red: 0x8E / 255, green: 0x8E / 255, blue: 0x93 / 255) : Color(red: 0x8C / 255, green: 0x8C / 255, blue: 0x90 / 255) }
+    var msg: Color { dark ? Color(red: 0xC9 / 255, green: 0xC9 / 255, blue: 0xCD / 255) : Color(red: 0x3A / 255, green: 0x3A / 255, blue: 0x3F / 255) }
+}
+
+/// 她给的吊坠（狼＋兔子）；黑夜不改颜色，只压暗到八成多
+private struct LocketImage: View {
+    var dark = false
+    var body: some View {
+        Image("Locket").resizable().scaledToFit()
+            .colorMultiply(dark ? Color(white: 0.82) : .white)
+            .accessibilityHidden(true)
     }
 }
 
@@ -206,8 +224,8 @@ private struct RavenMark: View {
 private struct AlcoveLabLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AlcoveLabAttributes.self) { context in
-            // 1002 锁屏那一条：小格纸 / 灰颗粒底上一个像素窗口
-            LiveBanner(name: context.attributes.name, message: context.state.message, bpm: context.state.bpm)
+            // 1015 锁屏那一条：跟展开的岛同一张卡（白天白、黑夜深炭灰）
+            LiveBanner(message: context.state.message, bpm: context.state.bpm)
         } dynamicIsland: { context in
             // 1015 #3824–3834 她：灵动岛换成她给的吊坠图（狼＋兔子，/root/workroom/mock/island/locket.png 抠的）。
             // 收起：岛照旧黑，左边吊坠装进一枚白色小胶囊（圆角跟岛同心），右边心率用聊天页顶栏那个 Cormorant 数字；
@@ -262,46 +280,46 @@ private struct IslandWhite: View {
     }
 }
 
-/// 灵动岛展开那块：整块纯白，左边大吊坠；右边花体 still here、小号大写 CHEN JING · ONLINE、他那句话；右上角心率
+/// 灵动岛展开那块：整块纯白，左边大吊坠；右边花体 still here、小号大写 CHEN JING · ONLINE、他那句话；右上角心率。
+/// 锁屏那条通知也是它（1015 #3836–3837 她点头：白天纯白，黑夜深炭灰、吊坠压暗）；灵动岛永远用白的
 private struct IslandCard: View {
     let message: String
     let bpm: Int
-
-    private static let ink = Color(red: 0x2A / 255, green: 0x2A / 255, blue: 0x2E / 255)
-    private static let gray = Color(red: 0x8C / 255, green: 0x8C / 255, blue: 0x90 / 255)
+    var dark = false
 
     var body: some View {
+        let sp = SPal(dark: dark)
         HStack(alignment: .top, spacing: 14) {
-            Image("Locket").resizable().scaledToFit()
+            LocketImage(dark: dark)
                 .frame(height: 83)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 4) {
                 HStack(alignment: .top) {
                     Text("still here")
                         .font(WFont.script(27))
-                        .foregroundStyle(Self.ink)
+                        .foregroundStyle(sp.ink)
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     VStack(alignment: .trailing, spacing: -2) {
                         Text(bpm > 0 ? "\(bpm)" : "—")
                             .font(WFont.corm(24))
-                            .foregroundStyle(Self.ink)
+                            .foregroundStyle(sp.ink)
                             .contentTransition(.numericText())
                         Text("bpm")
                             .font(WFont.cormItalic(9.5))
-                            .foregroundStyle(Self.gray)
+                            .foregroundStyle(sp.gray)
                     }
                     .accessibilityLabel(bpm > 0 ? "心率 \(bpm)" : "心率暂无数据")
                 }
                 Text("CHEN JING · ONLINE")
                     .font(WFont.corm(8.5))
                     .tracking(2)
-                    .foregroundStyle(Self.gray)
+                    .foregroundStyle(sp.gray)
                     .lineLimit(1)
                 if !message.isEmpty {
                     Text(message)
                         .font(.system(size: 12, design: .serif))
-                        .foregroundStyle(Color(red: 0x3A / 255, green: 0x3A / 255, blue: 0x3F / 255))
+                        .foregroundStyle(sp.msg)
                         .lineSpacing(2)
                         .lineLimit(2)
                         .padding(.top, 2)
@@ -310,27 +328,22 @@ private struct IslandCard: View {
         }
         .padding(.leading, 18).padding(.trailing, 22).padding(.top, 2).padding(.bottom, 20)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color.white)
+        .background(sp.card)
     }
 }
 
 private struct LiveBanner: View {
-    let name: String
     let message: String
     let bpm: Int
     @Environment(\.colorScheme) private var scheme
 
     var body: some View {
-        let pal = WPal(dark: scheme == .dark)
-        // 1007 去边框：外圈纸边和粉框拿掉，窗口本身就是整条
-        WWindow(pal: pal, title: "ALCOVE.LIVE", squares: 2, framed: false, barInset: 14) {
-            LiveRow(pal: pal, name: name, message: message, bpm: bpm, raven: 50)
-                .padding(.horizontal, 14).padding(.top, 8).padding(.bottom, 10)
-        }
-        .padding(.top, 2)
-        .background(pal.card)
-        .activityBackgroundTint(pal.card)
-        .activitySystemActionForegroundColor(pal.pinkInk)
+        let dark = scheme == .dark
+        IslandCard(message: message, bpm: bpm, dark: dark)
+            .padding(.top, 16)
+            .background(SPal(dark: dark).card)
+            .activityBackgroundTint(SPal(dark: dark).card)
+            .activitySystemActionForegroundColor(SPal(dark: dark).ink)
     }
 }
 
