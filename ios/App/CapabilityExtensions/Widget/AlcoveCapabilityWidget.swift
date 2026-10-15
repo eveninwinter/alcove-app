@@ -128,10 +128,11 @@ private struct AlcoveWidgetView: View {
                         .font(WFont.script(24))
                         .lineLimit(1)
                         .minimumScaleFactor(0.7)
-                    Text("NEAR, ALWAYS")
+                    Text("FOREVER")   // 1015 #3883：NEAR, ALWAYS 锁屏放不下被截，她挑了七个字母的
                         .font(WFont.corm(9))
                         .tracking(2)
                         .lineLimit(1)
+                        .minimumScaleFactor(0.8)
                 }
                 Spacer(minLength: 0)
             }

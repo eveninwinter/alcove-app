@@ -448,7 +448,8 @@ struct PeregrinatioRoom: View {
                     .frame(width: 282, height: 350)
                     .opacity(flipped ? 0 : 1)
                 PGPostcardBack(trip: t, ink: ink) { open(t) }
-                    .frame(width: 300, height: 500)
+                    .frame(width: 300)
+                    .frame(maxHeight: UIScreen.main.bounds.height * 0.72)
                     .rotation3DEffect(.degrees(180), axis: (x: 0, y: 1, z: 0))
                     .opacity(flipped ? 1 : 0)
             }
@@ -504,6 +505,9 @@ struct PGHair: View {
 }
 
 /// 邮票背面＝他寄来的明信片：手写字，右上角盖邮戳，右下「去看看他的旅程…」
+/// 明信片背面（1015 #3881 她改：字放大到 17、高度跟着他写了多少字走，下面别空一大片；
+/// 效果图 /root/workroom/mock/postcard-back/back_new.jpg）。第一张的头几行让开右上的邮戳，往下排满整行；
+/// 字多到超过屏幕四分之三就封顶，在卡里滑。一趟寄了好几张的，细线隔开往下排。
 struct PGPostcardBack: View {
     let trip: PGTrip
     let ink: PGInk
@@ -511,49 +515,112 @@ struct PGPostcardBack: View {
     @ObservedObject private var handFont = PGHandFont.shared
 
     private var card: PGPostcard? { trip.postcards.last }
+    private static let textColor = UIColor(red: 0x3E / 255, green: 0x40 / 255, blue: 0x48 / 255, alpha: 1)
 
     var body: some View {
-        ZStack(alignment: .topLeading) {
-            ink.stampPaper
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Color.clear.frame(height: 4)
-                    if trip.postcards.isEmpty {
-                        Text("这一趟他没寄明信片。").font(PGFont.hand(13)).foregroundColor(Color(white: 0.5))
-                    }
-                    ForEach(Array(trip.postcards.enumerated()), id: \.element.id) { i, c in
-                        if i > 0 { PGHair(ink: PGInk.light).padding(.vertical, 12) }
-                        Text(c.text).font(PGFont.hand(13.5)).lineSpacing(5)
-                            .foregroundColor(Color(red: 0x3E / 255, green: 0x40 / 255, blue: 0x48 / 255))
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .padding(.trailing, i == 0 ? 60 : 0)
-                    }
-                    Color.clear.frame(height: 40)
-                }
-                .padding(.horizontal, 24).padding(.top, 26)
-            }
-            PGPostmark(stamp: card?.stamp, place: trip.label)
-                .frame(width: 80, height: 80)
-                .opacity(0.55)
-                .padding(.top, 14).padding(.trailing, 14)
-                .frame(maxWidth: .infinity, alignment: .topTrailing)
-                .allowsHitTesting(false)
-            VStack {
-                Spacer()
-                HStack {
-                    Spacer()
-                    Button(action: onOpen) {
-                        Text("去看看他的旅程…").font(PGFont.ital(12)).foregroundColor(Color(white: 0.55))
-                            .padding(.vertical, 8).padding(.horizontal, 6).contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                }
-                .padding(.trailing, 16).padding(.bottom, 10)
-            }
+        ViewThatFits(in: .vertical) {
+            content
+            ScrollView(showsIndicators: false) { content }
         }
+        .background(ink.stampPaper)
         .clipShape(PGStampShape(hole: 2.6, step: 8), style: FillStyle(eoFill: true))
         .brightness(ink.dark ? -0.2 : 0)
         .shadow(color: .black.opacity(ink.dark ? 0.5 : 0.18), radius: 2, x: 0, y: 1)
+    }
+
+    private var content: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if trip.postcards.isEmpty {
+                PGPostcardText(text: "这一趟他没寄明信片。", color: UIColor(white: 0.5, alpha: 1), avoidPostmark: true, fontName: handFont.name)
+            }
+            ForEach(Array(trip.postcards.enumerated()), id: \.element.id) { i, c in
+                if i > 0 { PGHair(ink: PGInk.light).padding(.vertical, 14) }
+                PGPostcardText(text: c.text, color: Self.textColor, avoidPostmark: i == 0, fontName: handFont.name)
+            }
+            HStack {
+                Spacer()
+                Button(action: onOpen) {
+                    Text("去看看他的旅程…").font(PGFont.ital(13)).foregroundColor(Color(white: 0.55))
+                        .padding(.vertical, 8).padding(.leading, 6).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 14)
+        }
+        .padding(.horizontal, 24).padding(.top, 24).padding(.bottom, 10)
+        .overlay(alignment: .topTrailing) {
+            PGPostmark(stamp: card?.stamp, place: trip.label)
+                .frame(width: 80, height: 80)
+                .opacity(0.55)
+                .padding(.top, 16).padding(.trailing, 16)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// 明信片正文：手写 17 号；avoidPostmark 时右上角挖掉邮戳那块（卡宽 300、邮戳 80 离边 16、字离边 24 → 字区右边 82×76 让开）
+struct PGPostcardText: UIViewRepresentable {
+    let text: String
+    let color: UIColor
+    let avoidPostmark: Bool
+    let fontName: String?
+
+    func makeUIView(context: Context) -> PGPostcardTextView { PGPostcardTextView() }
+    func updateUIView(_ v: PGPostcardTextView, context: Context) { v.configure(text: text, color: color, avoid: avoidPostmark) }
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: PGPostcardTextView, context: Context) -> CGSize? {
+        let w = proposal.width ?? 252
+        return CGSize(width: w, height: uiView.height(for: w))
+    }
+}
+
+final class PGPostcardTextView: UIView {
+    static let markW: CGFloat = 82, markH: CGFloat = 76
+    private let tv = UITextView()
+    private var avoid = false
+    private var key = ""
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        tv.isEditable = false
+        tv.isScrollEnabled = false
+        tv.isSelectable = false
+        tv.backgroundColor = .clear
+        tv.textContainerInset = .zero
+        tv.textContainer.lineFragmentPadding = 0
+        addSubview(tv)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(text: String, color: UIColor, avoid: Bool) {
+        let k = "\(text)|\(avoid)|\(PGFont.handName() ?? "")|\(color.description)"
+        guard k != key else { return }
+        key = k
+        self.avoid = avoid
+        let ps = NSMutableParagraphStyle()
+        ps.lineSpacing = 8.5
+        tv.attributedText = NSAttributedString(string: text, attributes: [
+            .font: PGFont.handUI(17), .foregroundColor: color, .paragraphStyle: ps])
+        setNeedsLayout()
+    }
+
+    private func apply(width w: CGFloat) {
+        tv.textContainer.size = CGSize(width: w, height: .greatestFiniteMagnitude)
+        tv.textContainer.exclusionPaths = avoid
+            ? [UIBezierPath(rect: CGRect(x: w - Self.markW, y: 0, width: Self.markW + 20, height: Self.markH))] : []
+    }
+
+    func height(for w: CGFloat) -> CGFloat {
+        apply(width: w)
+        let lm = tv.layoutManager
+        lm.ensureLayout(for: tv.textContainer)
+        let h = ceil(lm.usedRect(for: tv.textContainer).height) + 2
+        return avoid ? max(h, Self.markH) : h   // 字少也要把邮戳那块撑出来，「去看看」别顶上去
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        apply(width: bounds.width)
+        tv.frame = bounds
     }
 }
 
@@ -577,12 +644,12 @@ struct PGPostmark: View {
             Circle().stroke(c, lineWidth: 0.8).padding(7)
             VStack(spacing: 2) {
                 Text((stamp?.place ?? place).components(separatedBy: ",").first?.uppercased() ?? "")
-                    .font(PGFont.corm(6.2)).tracking(1.2).lineLimit(1).minimumScaleFactor(0.6)
-                Text(date).font(PGFont.corm(7.5))
-                Text(time).font(PGFont.ital(6.8))
+                    .font(PGFont.corm(9)).tracking(1.2).lineLimit(1).minimumScaleFactor(0.6)
+                Text(date).font(PGFont.corm(10))
+                Text(time).font(PGFont.ital(9))
             }
             .foregroundColor(c)
-            .padding(.horizontal, 14)
+            .padding(.horizontal, 12)
         }
     }
 }
@@ -705,7 +772,7 @@ final class PGFlowView: UIView {
         ps.alignment = .justified
         let bodyColor = UIColor(ink.body)
         tv.attributedText = NSAttributedString(string: text, attributes: [
-            .font: PGFont.handUI(13.5), .foregroundColor: bodyColor, .paragraphStyle: ps])
+            .font: PGFont.handUI(17), .foregroundColor: bodyColor, .paragraphStyle: ps])
         figs.forEach { $0.0.removeFromSuperview(); $0.1.removeFromSuperview() }
         figs = stops.map { s in
             let iv = UIImageView()
