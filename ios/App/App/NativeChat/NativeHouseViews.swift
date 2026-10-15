@@ -2014,7 +2014,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3
     @AppStorage("msgGlassKind") private var glassKind = "clear"   // 1011：透玻璃 / 雾玻璃
-    @AppStorage("msgGlassFog") private var glassFog = 0.5   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
+    @AppStorage("msgGlassFog2") private var glassFog = 0.5   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
     @AppStorage(MessagesPalette.glassKey) private var bubbleGlass = true   // 1001：信息主题普通 / 玻璃气泡，两套颜色各存各的
     @AppStorage(MessagesPalette.thGlassKey) private var thGlass = false     // 1009 #3519：树屋自己的普通 / 玻璃
     // 0924 她报的：「气泡与文字」的预览换了字体还是系统字，跟全局字体走

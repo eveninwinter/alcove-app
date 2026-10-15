@@ -7639,7 +7639,7 @@ struct TreehouseBubbleFill: ViewModifier {
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("msgGlassFrost") private var frost = 0.3
     @AppStorage("msgGlassKind") private var kind = "clear"
-    @AppStorage("msgGlassFog") private var fog = 0.5
+    @AppStorage("msgGlassFog2") private var fog = 0.5   // 1015 换新名：重新从正中间（她喜欢的那样）开始
 
     @ViewBuilder
     func body(content: Content) -> some View {
@@ -7674,19 +7674,25 @@ struct TreehouseBubbleFill: ViewModifier {
 
 /// 1011 她：「玻璃气泡能不能也做一个切换 现在的透玻璃和雾玻璃？雾玻璃也能调节程度」——
 /// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：原来把系统磨砂层调成半透明，底下透着没糊的壁纸，看着是淡雾 → 磨砂层改成不透明。
-/// 1015 #3907/#3910 她：「我喜欢越往左滑的感觉」「这个左滑的感觉继续深入」——系统磨砂最薄就是 ultraThin，再薄没有现成的，
-/// 改成自己管模糊的深浅（AdjustableBlurView）：最右＝原来最左那种最薄磨砂，往左越磨越轻、越透，但一直是真糊不是半透明。
-/// 上面不再垫白 / 黑
+/// 1015 #3907/#3910/#3912 她：「我喜欢越往左滑的感觉」「谁要你把我现在的放最右边了 你就不能折中吗」——
+/// 她喜欢的那个（完整的最薄磨砂、上面不垫白 / 黑）放在滑条正中间：
+/// 往左＝同一种磨砂卡在半路，糊得轻、更透；往右＝上面再叠一层最薄磨砂，糊得更深，但不垫黑所以不会变全黑
 struct FogGlassBubble<S: Shape>: ViewModifier {
     let shape: S
     let fog: Double
     let night: Bool
     func body(content: Content) -> some View {
+        let f = min(1, max(0, fog))
         content
             .background {
-                AdjustableBlurView(amount: 0.3 + 0.7 * min(1, max(0, fog)), dark: night)
-                    .clipShape(shape)
-                    .allowsHitTesting(false)
+                ZStack {
+                    AdjustableBlurView(amount: f < 0.5 ? 0.3 + 1.4 * f : 1, dark: night)
+                    if f > 0.5 {
+                        AdjustableBlurView(amount: (f - 0.5) * 2 * 0.8, dark: night)
+                    }
+                }
+                .clipShape(shape)
+                .allowsHitTesting(false)
             }
             .overlay(shape.stroke(Color.white.opacity(night ? 0.10 : 0.45), lineWidth: 0.6).allowsHitTesting(false))
     }
@@ -8944,7 +8950,7 @@ struct MessagesBubbleFill: ViewModifier {   // 1014 工作室半屏也借它
     let glass: Bool
     @AppStorage("msgGlassFrost") private var frost = 0.3
     @AppStorage("msgGlassKind") private var kind = "clear"   // 1011 她：玻璃气泡分透玻璃 / 毛玻璃（存的值还叫 fog）
-    @AppStorage("msgGlassFog") private var fog = 0.5
+    @AppStorage("msgGlassFog2") private var fog = 0.5   // 1015 换新名：重新从正中间（她喜欢的那样）开始
     @Environment(\.colorScheme) private var scheme
 
     @ViewBuilder
