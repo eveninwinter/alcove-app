@@ -48,7 +48,7 @@ private let PN_ENTRIES: [PNEntry] = [
     PNEntry(en: "KEEP", zh: "不忘", grp: "KEEP"),
     PNEntry(en: "DREAMS", zh: "Dreams", grp: "KEEP"),
     PNEntry(en: "STUDY", zh: "书房", grp: "WANDER"),
-    PNEntry(en: "NOWHERE", zh: "乌有乡", grp: "WANDER"),
+    PNEntry(en: "PEREGRINATIO", zh: "远游", grp: "WANDER"),
     PNEntry(en: "SURF", zh: "冲浪收藏", grp: "WANDER"),
     PNEntry(en: "WINDOW", zh: "世界之窗", grp: "WANDER"),
     PNEntry(en: "RINGS", zh: "年轮", grp: "KEEP"),

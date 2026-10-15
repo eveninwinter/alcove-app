@@ -4381,6 +4381,9 @@ struct MessageRow: View {
                         MemoryChatMessageCard(card: mem)
                             .frame(maxWidth: .infinity)
                     }
+                } else if let pc = msg.postcardCard {
+                    SanctusPostcardCard(card: pc)       // 1015 远游明信片：哪个主题都用这一张，居中
+                        .frame(maxWidth: .infinity)
                 } else if let ears = msg.earsCard {
                     SanctusEarsCard(card: ears)         // 1014 只给你听：哪个主题都用这一张，居中
                         .frame(maxWidth: .infinity)

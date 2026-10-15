@@ -71,7 +71,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .clockwork: return "发条"
         case .album: return "相册"
         case .morningPaper: return "Morning Paper"
-        case .nowhere: return "乌有乡"
+        case .nowhere: return "远游"
         case .pulse: return "Pulse"
         case .crosstalk: return "Crosstalk"
         case .radio: return "Radio"
@@ -297,7 +297,7 @@ struct NativeHouseSheet: View {
                 case .morningPaper:
                     NativeMorningPaperView()
                 case .nowhere:
-                    NativeNowhereView()
+                    PeregrinatioRoom()   // 1015 乌有乡改成远游：邮册＋旅行日记（Peregrinatio.swift）
                 case .pulse:
                     NativePulseView()
                 default:
@@ -563,7 +563,7 @@ struct NativeHouseDrawer: View {
 
                     drawerTitle("他的世界", note: "out there")
                     VStack(spacing: 7) {
-                        drawerRow(.nowhere, detail: "足迹与明信片")
+                        drawerRow(.nowhere, detail: "邮册与旅行日记")
                         drawerRow(.surf, detail: "X、小红书、B站与 YouTube")
                         drawerRow(.window, detail: "每天九幅：宇宙、文物、生物与风景")
                     }

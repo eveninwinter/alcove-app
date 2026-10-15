@@ -184,6 +184,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(EarsChatCard.self, from: data)
     }
 
+    /// 1015：他在远游寄了一张明信片（/root/rhysel/peregrinatio.py 投的）→ 聊天页小卡，点邮票跟邮册里一样抽出来
+    var postcardCard: PostcardChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "POSTCARD_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(PostcardChatCard.self, from: data)
+    }
+
     /// 1002：日程提醒到点（alcove-backend/reminders.py 投的）→ 聊天页像素小卡，整行居中
     var reminderCard: ReminderChatCard? {
         guard let raw = Self.taggedBody(text, tag: "REMINDER_CARD"),
