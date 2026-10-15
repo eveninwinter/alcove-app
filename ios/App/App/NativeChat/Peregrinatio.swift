@@ -695,6 +695,7 @@ struct PGTimelineView: View {
     let items: [PGLingerItem]
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
     private var ink: PGInk { _ = houseAppearance; return PGInk() }
 
     /// 还开着的在前，同一类里新的在前
@@ -731,12 +732,13 @@ struct PGTimelineView: View {
                     Color.clear.frame(height: 60)
                 }
             }
+            .padding(.top, max(safeTop, 20))
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
                     .frame(width: 44, height: 44).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .padding(.leading, 8)   // 全屏弹出的页本身就在安全区里，返回键贴着安全区那一行，不再加 safeTop
+            .padding(.leading, 8).padding(.top, max(safeTop, 20))
         }
     }
 
