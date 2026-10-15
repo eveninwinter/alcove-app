@@ -689,12 +689,17 @@ struct PGDiaryView: View {
             ScrollView(showsIndicators: false) {
                 VStack(alignment: .leading, spacing: 0) {
                     ZStack(alignment: .bottomLeading) {
-                        CachedImage(url: PGAPI.imageURL(trip.hero)) { img in
-                            img.resizable().scaledToFill()
-                        } placeholder: { ink.paper }
-                        .frame(height: 330)
-                        .frame(maxWidth: .infinity)
-                        .clipped()
+                        // 先定一个屏宽×330 的框，图放进框里裁。原来是图自己 scaledToFill 再 frame，
+                        // 撒哈拉那种特别宽的图会把整页撑宽，正文跟着排出屏幕（1015 #3893 她截图）
+                        Color.clear
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 330)
+                            .overlay {
+                                CachedImage(url: PGAPI.imageURL(trip.hero)) { img in
+                                    img.resizable().scaledToFill()
+                                } placeholder: { ink.paper }
+                            }
+                            .clipped()
                         .brightness(ink.dark ? -0.12 : 0)
                         .mask(LinearGradient(stops: [.init(color: .black, location: 0.55), .init(color: .clear, location: 1)],
                                              startPoint: .top, endPoint: .bottom))
@@ -773,10 +778,11 @@ final class PGFlowView: UIView {
         key = k
         let ps = NSMutableParagraphStyle()
         ps.lineSpacing = 9
-        ps.paragraphSpacing = 9
+        ps.paragraphSpacing = 16
+        ps.firstLineHeadIndent = 34   // 每段开头空两个字（17 号字 × 2）
         ps.alignment = .justified
         let bodyColor = UIColor(ink.body)
-        tv.attributedText = NSAttributedString(string: text, attributes: [
+        tv.attributedText = NSAttributedString(string: Self.paragraphs(text).joined(separator: "\n"), attributes: [
             .font: PGFont.handUI(17), .foregroundColor: bodyColor, .paragraphStyle: ps])
         figs.forEach { $0.0.removeFromSuperview(); $0.1.removeFromSuperview() }
         figs = stops.map { s in
@@ -800,6 +806,51 @@ final class PGFlowView: UIView {
         lastWidth = 0
         setNeedsLayout()
         invalidateIntrinsicContentSize()
+    }
+
+    /// 自动分段（1015 #3893 她：他写的日记连成一坨，没空行也要自己分段）：
+    /// 他自己换了行的照他的分；没换行的长段，按句子结尾（。！？…）攒到一百来字断一段，尾巴太短（<35 字）并回上一段。
+    /// 他自己分过段的，单段超过 260 字才再切；整篇一个换行都没有的，超过 140 字就切。
+    static func paragraphs(_ text: String) -> [String] {
+        let raw = text.components(separatedBy: .newlines)
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty }
+        let hadBreaks = raw.count > 1
+        var out: [String] = []
+        for p in raw {
+            guard p.count > (hadBreaks ? 260 : 140) else { out.append(p); continue }
+            var chunk: [String] = []
+            var cur = ""
+            for s in sentences(p) {
+                cur += s
+                if cur.count >= 100 { chunk.append(cur); cur = "" }
+            }
+            if !cur.isEmpty {
+                if cur.count < 35, !chunk.isEmpty { chunk[chunk.count - 1] += cur } else { chunk.append(cur) }
+            }
+            out += chunk
+        }
+        return out
+    }
+
+    /// 按句子结尾切开，结尾后面跟着的引号、括号算在这一句里
+    private static func sentences(_ p: String) -> [String] {
+        let ends: Set<Character> = ["。", "！", "？", "!", "?", "…"]
+        let closers: Set<Character> = ["。", "！", "？", "!", "?", "…", "」", "』", "”", "\"", "）", ")"]
+        var out: [String] = []
+        var cur = ""
+        let chars = Array(p)
+        var i = 0
+        while i < chars.count {
+            cur.append(chars[i])
+            if ends.contains(chars[i]) {
+                while i + 1 < chars.count, closers.contains(chars[i + 1]) { i += 1; cur.append(chars[i]) }
+                out.append(cur); cur = ""
+            }
+            i += 1
+        }
+        if !cur.trimmingCharacters(in: .whitespaces).isEmpty { out.append(cur) }
+        return out
     }
 
     /// 第 i 张图的框：一右一左，每张往下错开（字少时也不会叠在一起）
