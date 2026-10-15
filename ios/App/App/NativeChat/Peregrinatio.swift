@@ -256,6 +256,7 @@ struct PeregrinatioRoom: View {
     @State private var flipped = false
     @State private var diary: PGTrip?
     @State private var showGlobe = false
+    @State private var showTimeline = false
 
     private var ink: PGInk { _ = houseAppearance; return PGInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -360,11 +361,21 @@ struct PeregrinatioRoom: View {
     /// 一页 3×3：每排邮票下半截插在透明插袋里，地名写在插袋上
     /// 1015 #3889 她：字太小、空的地方舒展一下 → 邮票 94×108 放到 100×120，插袋上的字 6.6 放到 9.5，行距拉开（104×124 三排放不下，压到便签）
     private func albumPage(_ items: [PGTrip], ink: PGInk) -> some View {
+        GeometryReader { geo in albumGrid(items, ink: ink, size: geo.size) }
+    }
+
+    /// 1015 #3895 她：「这个页面下面不要留空，看着真的很烦」→ 邮票宽按屏宽算（最大 108），高按可用高度能放多大放多大，
+    /// 三排在这一页里上下均匀摊开，便签直接贴在最后一排下面
+    private func albumGrid(_ items: [PGTrip], ink: PGInk, size: CGSize) -> some View {
         let rows = stride(from: 0, to: items.count, by: 3).map { Array(items[$0..<min($0 + 3, items.count)]) }
         let newest = trips.first?.id
-        let sw: CGFloat = 100, sh: CGFloat = 120, gap: CGFloat = 16, labW: CGFloat = 110
-        return VStack(spacing: 22) {
-            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+        let gap: CGFloat = 16
+        let byW = (size.width - 36 - gap * 2) / 3
+        let byH = ((size.height - 24 - 18 * 2) / 3 - 26) / 1.2
+        let sw = max(90, min(108, byW, byH)), sh = sw * 1.2, labW = sw + 10
+        return VStack(spacing: 0) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { i, row in
+                if i > 0 { Spacer(minLength: 18) }
                 ZStack(alignment: .top) {
                     HStack(spacing: gap) {
                         ForEach(row) { t in
@@ -391,7 +402,7 @@ struct PeregrinatioRoom: View {
                     }
                     // 插袋：盖住邮票下半截，地名写在袋子上
                     VStack(spacing: 0) {
-                        Spacer().frame(height: 77)
+                        Spacer().frame(height: sh * 0.64)   // 插袋盖住邮票下面三分之一多一点
                         ZStack(alignment: .bottom) {
                             LinearGradient(colors: [ink.sleeveTop, ink.sleeveBottom], startPoint: .top, endPoint: .bottom)
                                 .background(.ultraThinMaterial.opacity(0.35))
@@ -411,28 +422,41 @@ struct PeregrinatioRoom: View {
                             }
                             .padding(.bottom, 7)
                         }
-                        .frame(height: 70)
+                        .frame(height: sh * 0.36 + 26)
                         .allowsHitTesting(false)
                     }
                 }
                 .padding(.horizontal, 18)
             }
-            Spacer(minLength: 0)
+            if rows.count < 3 { Spacer(minLength: 0) }   // 最后一页不满三排就靠上
         }
         .padding(.top, 24)
+        .padding(.bottom, 6)
+        .frame(width: size.width, height: size.height, alignment: .top)
     }
 
+    /// 页底最近一条意犹未尽：点了进时间线（她 #3895）
     private func lingerNote(_ l: PGLingerItem, ink: PGInk) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("意犹未尽 · 最近一次").font(PGFont.corm(10)).tracking(2.2).foregroundColor(ink.kicker)
-            Text(l.question).font(.system(size: 15, design: .serif)).foregroundColor(ink.body).lineLimit(2)
-            Text("\(l.place ?? "") · \(String(l.at.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".")) · 续了 \(l.rounds.count) / 3 次")
-                .font(PGFont.ital(12)).foregroundColor(ink.sub)
+        Button { showTimeline = true } label: {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("意犹未尽 · 最近一次").font(PGFont.corm(10)).tracking(2.2).foregroundColor(ink.kicker)
+                Text(l.question).font(.system(size: 15, design: .serif)).foregroundColor(ink.body).lineLimit(2)
+                    .multilineTextAlignment(.leading)
+                HStack(alignment: .firstTextBaseline) {
+                    Text("\(l.place ?? "") · \(String(l.at.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".")) · 续了 \(l.rounds.count) / 3 次")
+                        .font(PGFont.ital(12)).foregroundColor(ink.sub)
+                    Spacer(minLength: 8)
+                    Text("时间线 ›").font(.system(size: 12, design: .serif)).tracking(1.5).foregroundColor(ink.link)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ink.note)
+            .overlay(Rectangle().stroke(ink.noteEdge, lineWidth: 0.6))
+            .contentShape(Rectangle())
         }
-        .padding(.horizontal, 16).padding(.vertical, 13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(ink.note)
-        .overlay(Rectangle().stroke(ink.noteEdge, lineWidth: 0.6))
+        .buttonStyle(.plain)
+        .fullScreenCover(isPresented: $showTimeline) { PGTimelineView(items: lingers) }
     }
 
     private func pageDots(_ ink: PGInk) -> some View {
@@ -656,6 +680,130 @@ struct PGPostmark: View {
             .foregroundColor(c)
             .padding(.horizontal, 12)
         }
+    }
+}
+
+// MARK: - 意犹未尽 · 时间线（1015 #3895 她：点意犹未尽要跳时间线）
+// 效果图 /root/workroom/mock/album/ling.html（白天）、ling_night.html（黑夜），她 #3858 点头、日期放大过一档；
+// 这里整体字号再大一档（她后来说远游的字都太小）。水彩纸底 PGPaper / PGPaperNight（她要的「材质」只在这一页用）。
+// 右上一组散开的字母拼「you will find the answer — if there is none, that too is a reply」；花体 still wondering；
+// 左边一根竖线，每件一个点（续满三次＝空心、整张灰掉写「合上了」），右边一张便签：问题、哪里、续了几次、每次续的日期和查到的。
+
+struct PGTimelineView: View {
+    let items: [PGLingerItem]
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: PGInk { _ = houseAppearance; return PGInk() }
+
+    /// 还开着的在前，同一类里新的在前
+    private var sorted: [PGLingerItem] {
+        items.sorted { a, b in
+            let ca = !(a.closed_at ?? "").isEmpty, cb = !(b.closed_at ?? "").isEmpty
+            return ca != cb ? !ca : a.at > b.at
+        }
+    }
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .topLeading) {
+            Image(ink.dark ? "PGPaperNight" : "PGPaper").resizable().scaledToFill().ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    scatter(ink).frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 30).padding(.top, 52)
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text("still wondering").font(PGFont.script(34)).foregroundColor(ink.script)
+                        Text("意犹未尽 · 时间线 · \(items.count) 件").font(PGFont.corm(11)).tracking(2.6).foregroundColor(ink.kicker)
+                    }
+                    .padding(.leading, 30).padding(.top, 34)
+                    if items.isEmpty {
+                        Text("他还没有没看够的事").font(PGFont.ital(15)).foregroundColor(ink.sub).padding(.leading, 30).padding(.top, 40)
+                    }
+                    VStack(alignment: .leading, spacing: 26) {
+                        ForEach(sorted) { entry($0, ink: ink) }
+                    }
+                    .padding(.top, 30)
+                    .background(alignment: .topLeading) {
+                        // 竖线：从第一个点往下到最后一件
+                        Rectangle().fill(ink.hair.opacity(0.9)).frame(width: 0.8).padding(.leading, 52).padding(.top, 34).padding(.bottom, 10)
+                    }
+                    Color.clear.frame(height: 60)
+                }
+            }
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left").font(.system(size: 17, weight: .regular)).foregroundColor(ink.link)
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 8)   // 全屏弹出的页本身就在安全区里，返回键贴着安全区那一行，不再加 safeTop
+        }
+    }
+
+    /// 右上角散开的字母：11 列一格一个字母，空格就空一格
+    private func scatter(_ ink: PGInk) -> some View {
+        let line = Array("you will find the answer — if there is none, that too is a reply")
+        let cols = 11
+        let rows = stride(from: 0, to: line.count, by: cols).map { Array(line[$0..<min($0 + cols, line.count)]) }
+        return VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, r in
+                HStack(spacing: 0) {
+                    ForEach(Array(r.enumerated()), id: \.offset) { _, ch in
+                        Text(String(ch)).font(.system(size: 12, design: .serif)).foregroundColor(ink.sub)
+                            .frame(width: 19, alignment: .leading)
+                    }
+                }
+            }
+        }
+    }
+
+    private func day(_ iso: String) -> String { String(iso.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".") }
+
+    private func entry(_ l: PGLingerItem, ink: PGInk) -> some View {
+        let closed = !(l.closed_at ?? "").isEmpty
+        let main = closed ? ink.sub : ink.body
+        return HStack(alignment: .top, spacing: 0) {
+            // 点和日期
+            ZStack(alignment: .top) {
+                if closed {
+                    Circle().stroke(ink.sub, lineWidth: 0.8).frame(width: 8, height: 8)
+                        .background(Circle().fill(ink.paper))
+                } else {
+                    Circle().fill(ink.script).frame(width: 8, height: 8)
+                        .padding(3).background(Circle().fill(ink.paper))
+                }
+                Text(day(l.at)).font(PGFont.ital(13.5)).foregroundColor(ink.link).fixedSize().offset(y: 17)
+            }
+            .frame(width: 44)
+            .padding(.leading, 30).padding(.top, 4)
+            // 便签
+            VStack(alignment: .leading, spacing: 0) {
+                Text(l.question).font(.system(size: 15, design: .serif)).foregroundColor(main).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text([l.place ?? "", closed ? "续满 \(l.rounds.count) / 3 · 合上了" : "续了 \(l.rounds.count) / 3"]
+                        .filter { !$0.isEmpty }.joined(separator: " · "))
+                    .font(PGFont.ital(11.5)).foregroundColor(ink.sub).padding(.top, 5)
+                ForEach(Array(l.rounds.enumerated()), id: \.offset) { _, r in
+                    HStack(alignment: .firstTextBaseline, spacing: 9) {
+                        Text(day(r.at)).font(PGFont.corm(12.5)).tracking(0.8).foregroundColor(ink.link)
+                        Text(r.text).font(.system(size: 13, design: .serif)).foregroundColor(closed ? ink.sub : ink.body.opacity(0.85))
+                            .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    }
+                    .padding(.top, 8)
+                    .overlay(alignment: .top) {
+                        Line().stroke(ink.noteEdge, style: StrokeStyle(lineWidth: 0.6, dash: [3, 3])).frame(height: 0.6)
+                    }
+                    .padding(.top, 8)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ink.note)
+            .overlay(Rectangle().stroke(ink.noteEdge, lineWidth: 0.6))
+            .padding(.leading, 0).padding(.trailing, 26)
+        }
+    }
+
+    private struct Line: Shape {
+        func path(in r: CGRect) -> Path { var p = Path(); p.move(to: .zero); p.addLine(to: CGPoint(x: r.width, y: 0)); return p }
     }
 }
 
