@@ -7248,6 +7248,7 @@ private struct NativeStudioView: View {
                         }
                         Color.clear.frame(height: 1).id("studio-tail")
                     }.padding(.horizontal, isKakao ? 12 : 15).padding(.bottom, 16)   // 0924 晚：Kakao 下跟主聊天列表一样留 12
+                    .background(StudioScrollClipper())
                 }
                 .defaultScrollAnchor(.bottom)
                 .clipped()
@@ -7695,6 +7696,35 @@ private struct StudioDisplayItem: Identifiable {
 /// 输入条独立成子视图：打字只刷新这一小块，不再把整页消息列表拖着重算
 /// （0829 修「打字闪屏」的根子）。发送失败时文字退回草稿框。
 /// 1014 工作室气泡＝聊天页同一个零件：树屋走 TreehouseBubbleFill，信息走 MessagesBubbleFill，别的主题实心圆角
+/// 1015 她：「只有玻璃气泡这样」——上一版顶栏垫了实心、列表也 .clipped()，实心气泡被裁住了，玻璃 / 毛玻璃气泡还是冒到顶栏上面。
+/// 玻璃和磨砂是系统另画的一层，SwiftUI 的裁剪管不到它们；列表底下那个 UIScrollView 自己又不裁边。
+/// 这里垫一个看不见的小 UIView，顺着父视图往上找到那个 UIScrollView，在系统那一层把边裁死
+private struct StudioScrollClipper: UIViewRepresentable {
+    final class Probe: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            DispatchQueue.main.async { [weak self] in self?.clipScroller() }
+        }
+        func clipScroller() {
+            var v = superview
+            while let cur = v {
+                if let scroller = cur as? UIScrollView {
+                    scroller.clipsToBounds = true
+                    return
+                }
+                v = cur.superview
+            }
+        }
+    }
+    func makeUIView(context: Context) -> Probe {
+        let p = Probe()
+        p.isUserInteractionEnabled = false
+        p.backgroundColor = .clear
+        return p
+    }
+    func updateUIView(_ uiView: Probe, context: Context) { uiView.clipScroller() }
+}
+
 private struct StudioChatBubble: ViewModifier {
     let theme: AlcoveTheme
     let mine: Bool
