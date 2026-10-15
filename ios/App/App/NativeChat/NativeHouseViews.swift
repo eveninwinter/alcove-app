@@ -940,13 +940,66 @@ private struct NativeSettingsView: View {
     // 皮也换成檐下那套，跟共读室一个屋檐下。
     var body: some View {
         ZStack {
-            Color.clear   // 0924：底子交给抽屉那层面板壁纸，跟侧边栏一个样
+            // 1015 #3903 设置首页换成 Sanctus（她点头的 /root/workroom/mock/kit/kit.html 左边和右边那两张）；进了子页还是原来那套
+            if page == nil { SanctusPageInk().page.ignoresSafeArea() } else { Color.clear }   // 0924：子页底子交给抽屉那层面板壁纸
             VStack(spacing: 0) {
-                settingsHeader
-                if page == nil { settingsIndex } else { settingsControls }
+                if page == nil {
+                    SanctusTopBar(title: "设置", onBack: { dismiss() }) { EmptyView() }
+                        .padding(.top, FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 46)
+                    sanctusIndex
+                } else {
+                    settingsHeader
+                    settingsControls
+                }
             }
+            .environment(\.sanctusInk, SanctusPageInk())
         }
         .preferredColorScheme(interfaceDark ? .dark : .light)
+    }
+
+    /// 设置首页：三组玻璃卡（你们 / 日常 / 后台），一行一个子页
+    private var sanctusIndex: some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                SanctusSection("你们", note: "the two of us")
+                SanctusGroup { sanctusRow(.people) }
+                SanctusSection("日常", note: "day to day")
+                SanctusGroup {
+                    sanctusRow(.chat)
+                    sanctusRow(.appearance)
+                    sanctusRow(.relationship)
+                }
+                SanctusSection("后台", note: "behind the scenes")
+                SanctusGroup {
+                    sanctusRow(.storage)
+                    sanctusRow(.system)
+                    sanctusRow(.services)
+                }
+                SanctusFootnote("设置改了马上生效，不用重开 App。")
+            }
+            .padding(.horizontal, 18).padding(.top, 6).padding(.bottom, 30)
+        }
+    }
+
+    private func sanctusRow(_ target: Page) -> some View {
+        let detail = target == .storage ? "图片缓存与清理" : settingsSummary(target)
+        let value: String? = target == .storage && cacheCount > 0 ? "\(cacheCount) 张 · \(ImageDiskCache.format(cacheBytes))" : nil
+        return SanctusRow(icon: sanctusIcon(target), title: target.title, detail: detail, value: value) {
+            withAnimation(.easeInOut(duration: 0.18)) { page = target }
+        }
+    }
+
+    /// 首页的线条图标（原来那套是彩色实心方块，这套只用细线）
+    private func sanctusIcon(_ page: Page) -> String {
+        switch page {
+        case .people: return "person.2"
+        case .chat: return "bubble.left"
+        case .appearance: return "paintbrush"
+        case .relationship: return "heart"
+        case .storage: return "archivebox"
+        case .system: return "gearshape"
+        case .services: return "server.rack"
+        }
     }
 
     private var settingsHeader: some View {

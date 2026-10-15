@@ -49,50 +49,63 @@ struct NativeFactoryView: View {
 
     private var palette: GlassPalette { .named(themeName) }
 
+    /// 1015 #3903 换成 Sanctus（她点头的 /root/workroom/mock/kit/factory.html 左边）：分组标题＋玻璃卡，一行一个文件
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 54 }
+
+    private static func groupNote(_ group: String) -> String? {
+        switch group {
+        case "锚点": return "what he reads"
+        case "记忆（主聊天）": return "what he keeps"
+        case "API 房间": return "the other room"
+        case "工作室": return "the workroom"
+        case "记忆（工作室）": return "what I keep"
+        default: return nil
+        }
+    }
+
     var body: some View {
+        let ink = SanctusPageInk()
         ZStack {
-            GlassBackdrop(palette: palette)
+            ink.page.ignoresSafeArea()
             VStack(spacing: 0) {
-                GlassHeader(title: "出厂设置", palette: palette, onBack: { dismiss() })
+                SanctusTopBar(title: "出厂设置", onBack: { dismiss() }) { EmptyView() }
+                    .padding(.top, safeTop)
                 if loading {
-                    Spacer(); ProgressView().tint(palette.ink3); Spacer()
+                    Spacer(); ProgressView().tint(ink.sub); Spacer()
                 } else {
-                    ScrollView {
+                    ScrollView(showsIndicators: false) {
                         LazyVStack(alignment: .leading, spacing: 0) {
-                            Text(note.isEmpty
-                                 ? "改坏了最多他说话变怪，右上角能翻回上一版。记忆那些长按能删"
-                                 : note)
-                                .font(.system(size: 10.5))
-                                .foregroundColor(note.isEmpty ? palette.ink3 : palette.gold)
-                                .padding(.bottom, 12)
+                            Text(note.isEmpty ? "改坏了最多他说话变怪，右上角能翻回上一版。记忆那些长按能删" : note)
+                                .font(SanctusPageFont.cn(11))
+                                .foregroundColor(note.isEmpty ? ink.sub : ink.body)
+                                .padding(.horizontal, 6).padding(.top, 4)
                             ForEach(groups) { g in
-                                Text(g.group.uppercased())
-                                    .font(.system(size: 10, weight: .semibold))
-                                    .tracking(2)
-                                    .foregroundColor(palette.acc.opacity(0.85))
-                                    .padding(.top, 14).padding(.bottom, 8)
-                                ForEach(g.items) { f in
-                                    row(f)
-                                        .onTapGesture { opened = f }
-                                        .contextMenu {
-                                            // memory 才给删，锚点少一份他就缺一块
-                                            if f.key.hasPrefix("mem") && f.name.uppercased() != "MEMORY.MD" {
-                                                Button(role: .destructive) {
-                                                    pendingDelete = f
-                                                } label: {
-                                                    Label("删掉这条", systemImage: "trash")
+                                SanctusSection(g.group, note: Self.groupNote(g.group))
+                                SanctusGroup {
+                                    ForEach(g.items) { f in
+                                        row(f, ink)
+                                            .onTapGesture { opened = f }
+                                            .contextMenu {
+                                                // memory 才给删，锚点少一份他就缺一块
+                                                if f.key.hasPrefix("mem") && f.name.uppercased() != "MEMORY.MD" {
+                                                    Button(role: .destructive) {
+                                                        pendingDelete = f
+                                                    } label: {
+                                                        Label("删掉这条", systemImage: "trash")
+                                                    }
                                                 }
                                             }
-                                        }
+                                    }
                                 }
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 18)
                         .padding(.bottom, 28)
                     }
                 }
             }
         }
+        .environment(\.sanctusInk, ink)
         .task { await load() }
         .confirmationDialog(
             pendingDelete.map { "删掉「\($0.title)」？" } ?? "",
@@ -118,31 +131,26 @@ struct NativeFactoryView: View {
         }
     }
 
-    private func row(_ f: FactoryFile) -> some View {
+    private func row(_ f: FactoryFile, _ ink: SanctusPageInk) -> some View {
         HStack(spacing: 10) {
-            VStack(alignment: .leading, spacing: 2) {
-                Text(f.title)
-                    .font(.system(size: 14, weight: .medium, design: .serif))
-                    .foregroundColor(palette.ink)
+            VStack(alignment: .leading, spacing: 3) {
+                Text(f.title).font(SanctusPageFont.cn(14.5, .medium)).foregroundColor(ink.body)
                 if !f.desc.isEmpty {
-                    Text(f.desc).font(.system(size: 10.5)).foregroundColor(palette.ink3)
+                    Text(f.desc).font(SanctusPageFont.cn(11)).foregroundColor(ink.sub)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
             Spacer(minLength: 0)
             VStack(alignment: .trailing, spacing: 2) {
-                Text("\(f.chars) B")
-                    .font(.system(size: 9.5, design: .monospaced))
-                    .foregroundColor(palette.ink3)
+                Text("\(f.chars.formatted()) B")
                 Text(f.at)
-                    .font(.system(size: 9, design: .monospaced))
-                    .foregroundColor(palette.ink3.opacity(0.75))
             }
-            Image(systemName: "chevron.right").font(.system(size: 9)).foregroundColor(palette.ink3)
+            .font(SanctusPageFont.corm(11.5)).foregroundColor(ink.sub)
+            Image(systemName: "chevron.right").font(.system(size: 9, weight: .semibold)).foregroundColor(ink.sub.opacity(0.7))
         }
-        .padding(.horizontal, 13).padding(.vertical, 11)
+        .padding(.horizontal, 14).padding(.vertical, 11)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(palette, radius: 14)
-        .padding(.bottom, 8)
+        .contentShape(Rectangle())
     }
 
     private func remove(_ f: FactoryFile) async {
@@ -362,144 +370,136 @@ private struct PromptEditor: View {
 
     private var dirty: Bool { edits != original }
 
+    /// 每张表的花体小注（1015 #3903 她点头的 /root/workroom/mock/kit/factory.html 右边那页）
+    private static func tableNote(_ kind: String) -> String? {
+        switch kind {
+        case "chase": return "when he looks for you"
+        case "followup": return "when you go quiet"
+        case "backstop": return "the last knock"
+        case "ghost": return "his own time"
+        case "wake": return "waking on his own"
+        case "morning": return "good morning"
+        case "paper": return "the morning lesson"
+        case "libido": return "before dawn"
+        case "dream": return "while he sleeps"
+        case "startle", "dream_startle", "rain_startle": return "woken in the night"
+        default: return nil
+        }
+    }
+
     var body: some View {
+        let ink = SanctusPageInk()
         ZStack {
-            GlassBackdrop(palette: palette)
+            ink.page.ignoresSafeArea()
             VStack(spacing: 0) {
-                GlassHeader(title: "心跳 prompt", palette: palette, onBack: { dismiss() })
+                // 这页是从出厂设置弹出来的，本身在安全区里，顶栏不用再加安全区
+                SanctusTopBar(title: "心跳 prompt", onBack: { dismiss() }) { EmptyView() }
                 if loading {
-                    Spacer(); ProgressView().tint(palette.ink3); Spacer()
+                    Spacer(); ProgressView().tint(ink.sub); Spacer()
                 } else {
-                    ScrollView {
+                    ScrollView(showsIndicators: false) {
                         VStack(alignment: .leading, spacing: 0) {
-                            Text("他被叫醒时读到的**整条**，两轮各一份——灰的是代码现算的，改不了但看得见；\n带框的是你写的，随便改。两张表各走各的，读到的东西不一样。")
-                                .font(.system(size: 10.5))
-                                .foregroundColor(palette.ink3)
-                                .lineSpacing(3)
-                                .padding(.bottom, 14)
-                            ForEach(Array(tables.enumerated()), id: \.element.id) { idx, t in
-                                VStack(alignment: .leading, spacing: 3) {
-                                    HStack(spacing: 5) {
-                                        Image(systemName: t.kind == "ghost"
-                                              ? "figure.walk" : "bubble.left.fill")
-                                            .font(.system(size: 9))
-                                        Text(t.title)
-                                            .font(.system(size: 13, weight: .semibold))
-                                            .tracking(0.5)
-                                        Spacer(minLength: 0)
-                                    }
-                                    .foregroundColor(palette.acc)
-                                    if !t.note.isEmpty {
-                                        Text(t.note)
-                                            .font(.system(size: 9.5))
-                                            .foregroundColor(palette.ink3)
-                                            .fixedSize(horizontal: false, vertical: true)
-                                    }
+                            Text("他被叫醒时读到的整条，一轮一张表。灰的是代码现算的，改不了但看得见；白框的是你写的，随便改。")
+                                .font(SanctusPageFont.cn(11)).foregroundColor(ink.sub).lineSpacing(3)
+                                .fixedSize(horizontal: false, vertical: true)
+                                .padding(.horizontal, 6).padding(.top, 4)
+                            ForEach(tables) { t in
+                                SanctusSection(t.title, note: Self.tableNote(t.kind))
+                                if !t.note.isEmpty {
+                                    Text(t.note).font(SanctusPageFont.cn(11)).foregroundColor(ink.sub).lineSpacing(2)
+                                        .fixedSize(horizontal: false, vertical: true)
+                                        .padding(.horizontal, 4).padding(.bottom, 10)
                                 }
-                                .padding(.bottom, 10)
-                                ForEach(t.blocks) { b in
-                                    block(b)
-                                }
-                                if idx < tables.count - 1 {
-                                    Rectangle()
-                                        .fill(palette.ink3.opacity(0.18))
-                                        .frame(height: 1)
-                                        .padding(.top, 6).padding(.bottom, 18)
-                                }
+                                ForEach(t.blocks) { b in block(b, ink) }
                             }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, 18)
                         .padding(.bottom, 30)
                     }
-                    bottomBar
+                    bottomBar(ink)
                 }
             }
         }
+        .environment(\.sanctusInk, ink)
         .task { await load() }
     }
 
-    @ViewBuilder private func block(_ b: PromptBlock) -> some View {
+    @ViewBuilder private func block(_ b: PromptBlock, _ ink: SanctusPageInk) -> some View {
         if b.kind == "gap" {
-            Rectangle().fill(Color.clear).frame(height: 10)
+            Color.clear.frame(height: 4)
         } else if b.kind == "locked" {
+            // 代码现算的：灰底、一把小锁，只能看
             VStack(alignment: .leading, spacing: 5) {
-                HStack(spacing: 5) {
-                    Image(systemName: "lock.fill").font(.system(size: 8))
-                    Text(b.label).font(.system(size: 10, weight: .medium)).tracking(0.5)
+                HStack(spacing: 6) {
+                    Image(systemName: "lock").font(.system(size: 9, weight: .light))
+                    Text(b.label).font(SanctusPageFont.cn(10.5)).tracking(0.5)
                     Spacer(minLength: 0)
                 }
-                .foregroundColor(palette.ink3)
+                .foregroundColor(ink.sub)
                 if b.empty {
-                    Text("（现在是空的，有未读的时候这块才出现）")
-                        .font(.system(size: 11.5))
-                        .foregroundColor(palette.ink3.opacity(0.7))
-                        .italic()
+                    Text("（现在是空的，有未读的时候这块才出现）").font(SanctusPageFont.cn(12)).foregroundColor(ink.sub.opacity(0.8))
                 } else {
-                    Text(b.text)
-                        .font(.system(size: 12.5, design: .monospaced))
-                        .foregroundColor(palette.ink2)
-                        .lineSpacing(3)
+                    Text(b.text).font(SanctusPageFont.cn(12.5)).foregroundColor(ink.sub).lineSpacing(4)
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !b.note.isEmpty {
-                    Text(b.note).font(.system(size: 9.5)).foregroundColor(palette.ink3.opacity(0.8))
+                    Text(b.note).font(SanctusPageFont.cn(10)).foregroundColor(ink.sub.opacity(0.8))
                 }
             }
-            .padding(12)
+            .padding(.horizontal, 13).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .fill(palette.ink3.opacity(0.07)))
-            .padding(.bottom, 9)
+                .fill(ink.dark ? Color.white.opacity(0.04) : Color(red: 0x96 / 255, green: 0x9A / 255, blue: 0xA4 / 255).opacity(0.10)))
+            .padding(.bottom, 8)
         } else {
+            // 她写的：白框、标着字数，整段能改
             VStack(alignment: .leading, spacing: 6) {
-                HStack(spacing: 5) {
-                    Image(systemName: "pencil").font(.system(size: 8))
-                    Text(b.label).font(.system(size: 10, weight: .medium)).tracking(0.5)
+                HStack(spacing: 6) {
+                    Text(b.label).font(SanctusPageFont.cn(10.5)).tracking(0.5)
                     Spacer(minLength: 0)
-                    Text("\(edits[b.key]?.count ?? 0) 字")
-                        .font(.system(size: 9, design: .monospaced))
+                    Text("\(edits[b.key]?.count ?? 0) 字").font(SanctusPageFont.corm(11))
                 }
-                .foregroundColor(palette.acc)
+                .foregroundColor(ink.link)
                 TextEditor(text: Binding(
                     get: { edits[b.key] ?? "" },
                     set: { edits[b.key] = $0 }))
-                    .font(.system(size: 12.5))
-                    .foregroundColor(palette.ink)
+                    .font(SanctusPageFont.cn(13.5))
+                    .foregroundColor(ink.body)
+                    .lineSpacing(4)
                     .scrollContentBackground(.hidden)
                     .background(Color.clear)
                     .frame(minHeight: 92, maxHeight: 260)
-                    .padding(.horizontal, 6)
                 if !b.note.isEmpty {
-                    Text(b.note).font(.system(size: 9.5)).foregroundColor(palette.ink3)
+                    Text(b.note).font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub)
                 }
             }
-            .padding(11)
+            .padding(.horizontal, 13).padding(.vertical, 10)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .glassCard(palette, radius: 13)
-            .padding(.bottom, 9)
+            .background(ink.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ink.rowFrame, lineWidth: 0.6))
+            .padding(.bottom, 8)
         }
     }
 
-    private var bottomBar: some View {
+    private func bottomBar(_ ink: SanctusPageInk) -> some View {
         HStack(spacing: 10) {
-            if !note.isEmpty {
-                Text(note).font(.system(size: 10.5)).foregroundColor(palette.gold).lineLimit(2)
-            }
+            Text(note.isEmpty ? (dirty ? "改了还没存" : "没改动") : note)
+                .font(SanctusPageFont.cn(11)).foregroundColor(note.isEmpty ? ink.sub : ink.body).lineLimit(2)
             Spacer(minLength: 0)
             Button { Task { await save() } } label: {
-                Text(saving ? "存着…" : (dirty ? "存下来" : "没改动"))
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(dirty ? palette.ink : palette.ink3)
-                    .padding(.horizontal, 20).padding(.vertical, 9)
-                    .background(Capsule().fill(dirty ? palette.glass : Color.clear))
-                    .overlay(Capsule().strokeBorder(
-                        dirty ? palette.line : palette.ink3.opacity(0.25), lineWidth: 0.8))
+                Text(saving ? "存着…" : "存下来")
+                    .font(SanctusPageFont.cn(13, .medium)).tracking(2)
+                    .foregroundColor(dirty ? ink.page : ink.sub)
+                    .padding(.horizontal, 24).padding(.vertical, 9)
+                    .background(Capsule().fill(dirty ? ink.on : Color.clear))
+                    .overlay(Capsule().stroke(dirty ? Color.clear : ink.sub.opacity(0.6), lineWidth: 0.7))
             }
             .buttonStyle(.plain)
             .disabled(!dirty || saving)
         }
         .padding(.horizontal, 18)
         .padding(.vertical, 12)
+        .background(ink.page)
     }
 
     private func load() async {
