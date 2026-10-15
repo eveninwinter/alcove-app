@@ -33,6 +33,7 @@
 		9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */; };
 		9A11C0DE09244F8CA3D60A11 /* KakaoTheme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE09244F8CA3D60A22 /* KakaoTheme.swift */; };
 		CB00000000000000101501A1 /* Peregrinatio.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101501A2 /* Peregrinatio.swift */; };
+		CB00000000000000101502A1 /* PeregrinatioGlobe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101502A2 /* PeregrinatioGlobe.swift */; };
 		9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */; };
 		9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */; };
 		9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */; };
@@ -168,6 +169,7 @@
 		9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = NurseryRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE09244F8CA3D60A22 /* KakaoTheme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KakaoTheme.swift; sourceTree = "<group>"; };
 		CB00000000000000101501A2 /* Peregrinatio.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Peregrinatio.swift; sourceTree = "<group>"; };
+		CB00000000000000101502A2 /* PeregrinatioGlobe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeregrinatioGlobe.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuyCardView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEffects.swift; sourceTree = "<group>"; };
@@ -320,6 +322,7 @@
 				9A11C0DE00114F8CA3D60C22 /* NurseryRoomView.swift */,
 				9A11C0DE09244F8CA3D60A22 /* KakaoTheme.swift */,
 				CB00000000000000101501A2 /* Peregrinatio.swift */,
+				CB00000000000000101502A2 /* PeregrinatioGlobe.swift */,
 				9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */,
 				9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */,
 				9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */,
@@ -554,6 +557,7 @@
 				9A11C0DE00114F8CA3D60C11 /* NurseryRoomView.swift in Sources */,
 				9A11C0DE09244F8CA3D60A11 /* KakaoTheme.swift in Sources */,
 				CB00000000000000101501A1 /* Peregrinatio.swift in Sources */,
+				CB00000000000000101502A1 /* PeregrinatioGlobe.swift in Sources */,
 				9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */,
 				9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */,

@@ -11,6 +11,7 @@ import CoreText
 // - 手写字体（她给的「萌味小猫慵懒手书」100 版）只用在明信片背面和旅行日记正文；走字体架下载注册，不进包。
 // - 底色是水彩纸的颜色 #F1F2F4（材质不要），黑夜 Sanctus 炭灰；日夜跟全屋按钮。
 // 数据：前门 /api/nowhere/peregrinatio/trips|linger|img/<名>（乌有乡 web 口上挂的 /root/rhysel/peregrinatio_api.py）。
+// 地球在 PeregrinatioGlobe.swift，入口是标题右下「在地球上看 ›」。
 
 enum PGDeepLink { static var tripID: Int? }
 
@@ -254,6 +255,7 @@ struct PeregrinatioRoom: View {
     @State private var pulled: PGTrip?
     @State private var flipped = false
     @State private var diary: PGTrip?
+    @State private var showGlobe = false
 
     private var ink: PGInk { _ = houseAppearance; return PGInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -326,6 +328,30 @@ struct PeregrinatioRoom: View {
         .padding(.bottom, 14)
         .frame(maxWidth: .infinity)
         .overlay(alignment: .bottom) { PGHair(ink: ink).padding(.horizontal, 30) }
+        // 效果图 album_top.html：右边、细线正上方
+        .overlay(alignment: .bottomTrailing) {
+            if !trips.isEmpty {
+                Button { showGlobe = true } label: {
+                    Text("在地球上看 ›").font(.system(size: 8.5, design: .serif)).tracking(1.5).foregroundColor(ink.link)
+                        .padding(.vertical, 8).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 30)
+                .padding(.bottom, -3)
+            }
+        }
+        .fullScreenCover(isPresented: $showGlobe) {
+            PGGlobePage { id in
+                // 地球上点了一个地方：等地球收起来，翻到那一页把那枚抽出来
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.45) { pull(id) }
+            }
+        }
+    }
+
+    private func pull(_ id: Int) {
+        guard let t = trips.first(where: { $0.id == id }), let idx = trips.firstIndex(of: t) else { return }
+        page = idx / 9
+        withAnimation(.spring(response: 0.42, dampingFraction: 0.86)) { pulled = t; flipped = false }
     }
 
     /// 一页 3×3：每排邮票下半截插在透明插袋里，地名写在插袋上
