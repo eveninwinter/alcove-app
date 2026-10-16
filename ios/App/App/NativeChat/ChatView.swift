@@ -7781,13 +7781,19 @@ struct FrostedWallLens: View {
 
     var body: some View {
         GeometryReader { g in
-            let me = g.frame(in: .global)
             ZStack(alignment: .topLeading) {
                 if let wall = wallFrame, wall.width > 1, let art = wallArt(wall) {
+                    // 1016 #3972 她：「发送的时候就是会闪一下 壁纸和气泡对不上 虽然就一秒」——发出去那一秒列表连着几次
+                    // 带动画滚到底（还有键盘落下、打字框变矮）。原来按 GeometryReader 量的位置算 offset：量到的是滚完的终点，
+                    // 气泡本身还在半路滑，垫的那块壁纸先到了终点，一错就是那一秒。改成 visualEffect 在画的那一刻按气泡
+                    // 眼下真在的位置对位，滑到哪对到哪
                     art
                         .frame(width: wall.width, height: wall.height)
                         .clipped()
-                        .offset(x: wall.minX - me.minX, y: wall.minY - me.minY)
+                        .visualEffect { content, proxy in
+                            let me = proxy.frame(in: .global)
+                            return content.offset(x: wall.minX - me.minX, y: wall.minY - me.minY)
+                        }
                 } else {
                     Rectangle().fill(.ultraThinMaterial)
                         .environment(\.colorScheme, night ? .dark : .light)
