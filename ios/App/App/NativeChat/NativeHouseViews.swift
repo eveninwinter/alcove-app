@@ -2388,6 +2388,8 @@ struct MusicSong: Identifiable, Equatable, Codable {
     let artist: String
     let cover: String
     var message: String = ""
+    /// 1016 播客的一期：节目 id（文稿按它拿，跟音频 id 不是一个）；普通歌没有
+    var programID: String?
 
     init(_ json: [String: Any]) {
         id = json.string("id", "song_id")
@@ -2576,8 +2578,10 @@ final class MusicModel: ObservableObject {
             let main = p.object("mainSong")
             let id = main.string("id")
             guard !id.isEmpty else { return nil }
-            return MusicSong(id: id, name: p.string("name"), artist: podcast.name,
-                             cover: p.string("coverUrl").isEmpty ? podcast.cover : p.string("coverUrl"))
+            var song = MusicSong(id: id, name: p.string("name"), artist: podcast.name,
+                                 cover: p.string("coverUrl").isEmpty ? podcast.cover : p.string("coverUrl"))
+            song.programID = p.string("id")
+            return song
         }
         songs = playlistSongs
         prefetchArtwork(for: playlistSongs)
@@ -2689,7 +2693,7 @@ final class MusicModel: ObservableObject {
                 self?.handleTrackEnded()
             }
         }
-        await loadLyrics(song.id)
+        await loadLyrics(song.id, programID: song.programID)
         publishNowPlaying(loadArtwork: true)
         await reportNowPlaying()
         prefetchNextStream()
@@ -2905,9 +2909,15 @@ final class MusicModel: ObservableObject {
         return true
     }
 
-    func loadLyrics(_ songID: String) async {
+    func loadLyrics(_ songID: String, programID: String? = nil) async {
         lyricsLoading = true
         defer { lyricsLoading = false }
+        // 1016 她：「网易云播客的文稿能不能抓到 在 alcove 里放播客显示无歌词」——播客没有歌词，有 AI 转的文稿（带每句的起止毫秒），
+        // 当歌词一样一句句排
+        if let programID, !programID.isEmpty {
+            lyrics = await Self.podcastTranscript(programID)
+            return
+        }
         guard let obj = try? await NativeHouseAPI.object("/api/music/lyric?id=\(songID)") else {
             lyrics = []; return
         }
@@ -2916,6 +2926,28 @@ final class MusicModel: ObservableObject {
             .reduce(into: [Int: String]()) { $0[$1.timeKey] = $1.text }
         lyrics = base.map { MusicLyric(time: $0.time, text: $0.text,
                                        translation: translated[$0.timeKey]) }
+    }
+
+    /// 播客文稿：先问 voice/lyric 要文稿文件的地址，再去下那份 JSON（sents：beg 毫秒、name 一句话）。
+    /// 那个文件只给网易云 App 下（别的一律 403，1016 在服务器上试过），所以下载时带网易云 App 的 UA
+    private static func podcastTranscript(_ programID: String) async -> [MusicLyric] {
+        guard let obj = try? await NativeHouseAPI.object("/api/music/voice/lyric?id=\(programID)") else { return [] }
+        var raw = obj.object("data").string("lyricUrl")
+        guard !raw.isEmpty else { return [] }
+        if raw.hasPrefix("http://") { raw = "https://" + raw.dropFirst("http://".count) }
+        guard let url = URL(string: raw) else { return [] }
+        var req = URLRequest(url: url, timeoutInterval: 20)
+        req.setValue("NeteaseMusic/9.0.0 (iPhone; iOS 17.0)", forHTTPHeaderField: "User-Agent")
+        guard let got = try? await URLSession.shared.data(for: req),
+              (got.1 as? HTTPURLResponse)?.statusCode == 200,
+              let json = try? JSONSerialization.jsonObject(with: got.0) as? [String: Any],
+              let sents = json["sents"] as? [[String: Any]] else { return [] }
+        return sents.compactMap { s -> MusicLyric? in
+            let text = s.string("name").trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !text.isEmpty else { return nil }
+            let beg = (s["beg"] as? NSNumber)?.doubleValue ?? 0
+            return MusicLyric(time: beg / 1000, text: text, translation: nil)
+        }
     }
 
     private struct ParsedLyric { let time: Double; let text: String; let timeKey: Int }
