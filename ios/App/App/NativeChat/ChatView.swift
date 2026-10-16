@@ -4145,6 +4145,8 @@ struct MessageRow: View {
     // 0924 她报的「气泡间距有的贴在一起」：一条消息里图 / 语音 / 正文 / 链接卡之间原来是 0，
     // 脚印那行又是另一个数。现在一律用设置里那个「气泡间距」，跟列表里气泡和气泡之间同一个数。
     @AppStorage("chatBubbleGap") private var chatBubbleGap = 6.0
+    /// 1016 #4002 她要的「气泡上下高度」：文字气泡上下内边距在各主题原来那个数上加减（Sanctus 9、信息/纸页 10），0＝原样
+    @AppStorage(BubblePadV.key) private var bubblePadV = 0.0
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0   // 1011 #3661 思绪框颜色在调色盘里一改就重画
     @AppStorage(KakaoPackStore.showAvatarKey) private var kakaoShowAvatar = true   // 0924 她要的：Kakao 下他的消息带不带头像
     @State private var openedToolDetail: ActivityItem? = nil
@@ -4828,7 +4830,7 @@ struct MessageRow: View {
                 Color.clear
                     // 时间行已移入树屋气泡：长按透明层只覆盖正文，不拦底部按钮。
                     .frame(height: max(0, geo.size.height -
-                        (theme.isTreehouse && shouldShowMetaRow ? treehouseMetaHeight + 12 : 0)))
+                        (theme.isTreehouse && shouldShowMetaRow ? treehouseMetaHeight + 12 + BubblePadV.extra(bubblePadV) : 0)))
                     .contentShape(Rectangle())
                     .onTapGesture {}
                     .onLongPressGesture(minimumDuration: ReactFeel.hold, maximumDistance: 12, perform: {
@@ -4961,13 +4963,13 @@ struct MessageRow: View {
                         }
                     }
                         .padding(.horizontal, 14)
-                        .padding(.vertical, 9)
+                        .padding(.vertical, BubblePadV.apply(9, bubblePadV))
                         .modifier(TreehouseBubbleFill(isUser: isUser, fill: isUser ? theme.bubbleUser : theme.bubbleAI,
                                                       glass: MessagesPalette.thGlass))
                 } else {
                     bubbleContents
                         .padding(.horizontal, 14)
-                        .padding(.vertical, theme.isPaper && isUser ? 11 : 10)
+                        .padding(.vertical, BubblePadV.apply(theme.isPaper && isUser ? 11 : 10, bubblePadV))
                         // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
                         // 1001 她要试的：信息主题换成跟打字框同一种系统玻璃（纸页照旧实心），大小排版一点不动
                         .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
@@ -7531,6 +7533,15 @@ final class TailNearBox { var near = true }
 
 /// 1009 晚 她：「在调整颜色那边加一个切换气泡（分段／整个），仅限树屋这个主题」
 /// 「这个气泡仅限你的，我的不包含」——所以只并他的，她的气泡一个都不动。
+/// 1016 #4002 气泡上下高度：存的是在主题原来内边距上加减多少 pt。Kakao 的气泡是主题包的九宫格图，字离四边按包里写的，不吃这个
+enum BubblePadV {
+    static let key = "chatBubblePadV"
+    static let range: ClosedRange<Double> = -6...12
+    static func apply(_ base: CGFloat, _ delta: Double) -> CGFloat { max(2, base + CGFloat(delta)) }
+    /// 树屋长按层要让开时间那行：内边距变了多少，让开的也跟着变（原来那个 12 是按 9 量的）
+    static func extra(_ delta: Double) -> CGFloat { apply(9, delta) - 9 }
+}
+
 enum TreehouseBubbleMode {
     static let key = "treehouseWholeBubble"
     static var whole: Bool { UserDefaults.standard.bool(forKey: key) }

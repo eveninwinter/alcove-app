@@ -2045,6 +2045,7 @@ private struct BubbleAppearanceSettingsView: View {
     @AppStorage("chatFontSize") private var fontSize = 14
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
     @AppStorage("chatTurnGap") private var turnGap = 22.0   // 0929：他连着两轮之间（中间没时间胶囊）多留的空
+    @AppStorage(BubblePadV.key) private var bubblePadV = 0.0   // 1016 #4002 气泡上下高度
     @AppStorage("msgGlassFrost") private var glassFrost = 0.3
     @AppStorage("msgGlassKind") private var glassKind = "clear"   // 1011：透玻璃 / 雾玻璃
     @AppStorage("msgGlassFog2") private var glassFog = 0.5   // 1001：信息主题玻璃气泡透明 ↔ 色调（ChatView MessagesBubbleFill）
@@ -2067,6 +2068,7 @@ private struct BubbleAppearanceSettingsView: View {
         case .text:
             VStack(spacing: 12) {
                 fontSizeSlider
+                if !chatTheme.isKakao { bubblePadSlider }
                 bubbleGapSlider
                 turnGapSlider
                 if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassKindControls }
@@ -2116,6 +2118,7 @@ private struct BubbleAppearanceSettingsView: View {
                 section("文字") {
                     VStack(spacing: 12) {
                         fontSizeSlider
+                        if !chatTheme.isKakao { bubblePadSlider }
                         bubbleGapSlider
                         turnGapSlider
                         if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) { glassKindControls }
@@ -2212,6 +2215,23 @@ private struct BubbleAppearanceSettingsView: View {
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isDefault ? panelTheme.textLight : panelTheme.fyAccent)
                 .disabled(isDefault)
+        }
+    }
+
+    /// 1016 #4002 她要的：气泡上下高度（文字离气泡上下边多远）。中间 0 是原样，往左扁、往右高；上面钉着的预览跟着动
+    private var bubblePadSlider: some View {
+        HStack(spacing: 9) {
+            Text("气泡高度")
+                .font(.system(size: 12))
+                .frame(width: 100, alignment: .leading)
+
+            Slider(value: $bubblePadV, in: BubblePadV.range, step: 1)
+                .tint(panelTheme.fyAccent)
+
+            Text(bubblePadV == 0 ? "原样" : String(format: "%+d pt", Int(bubblePadV)))
+                .font(.system(size: 10, design: .monospaced))
+                .foregroundColor(panelTheme.textDim)
+                .frame(width: 45, alignment: .trailing)
         }
     }
 
