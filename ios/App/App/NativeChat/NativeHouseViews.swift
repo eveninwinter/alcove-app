@@ -7915,7 +7915,7 @@ private struct NativeStudioView: View {
             }
             inputBar
         }
-        .background(studioBackground.ignoresSafeArea().measuresFrostedWall($frostedWall))
+        .background(studioBackground.measuresFrostedWall($frostedWall).ignoresSafeArea())
         // 1016 毛玻璃气泡自己磨壁纸：告诉气泡壁纸是哪张、在屏幕哪儿
         .environment(\.chatWallpaperDescriptor, chatWall.descriptor)
         .environment(\.frostedWallFrame, frostedWall)

@@ -143,9 +143,11 @@ struct ChatView: View {
             ZStack {
                 // The visible wall and every bubble lens share this same
                 // prepared image and coordinate system.
+                // 1016 #3938 她：「主聊天的气泡跟壁纸变形了 工作室没有」——量要量在铺满之前那层（ignoresSafeArea 里面），
+                // 量在外面拿到的是不含状态栏和底部横条的小框，毛玻璃按小框对位就放大错开了
                 ChatWallpaperRenderer(descriptor: wallpaperStore.descriptor)
-                    .ignoresSafeArea()
                     .measuresFrostedWall($frostedWall)
+                    .ignoresSafeArea()
 
                 if store.loading {
                     ProgressView("回家中…")
