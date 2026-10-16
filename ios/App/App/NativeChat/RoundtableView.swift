@@ -869,6 +869,7 @@ struct RoundtableView: View {
         }
 
         let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+        focused = false   // 1016 她：发完消息键盘自己落下去
         let outgoingText: String
         if let quotedText {
             outgoingText = "「\(quotedText.prefix(60))」\n\(text)"

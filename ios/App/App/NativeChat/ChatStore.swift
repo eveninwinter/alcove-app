@@ -981,7 +981,9 @@ final class ChatStore: ObservableObject {
                 if var confirmed = rec {
                     confirmed.asleepAtSend = asleep || confirmed.asleepAtSend
                     if let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
-                        messages[idx] = confirmed
+                        // 1016 本地那条换成服务器那条：不带动画，免得淡出淡入（毛玻璃会闪）
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { messages[idx] = confirmed }
                     }
                 }
                 if let h = try? await AlcoveAPI.heldCount() { heldCount = h }

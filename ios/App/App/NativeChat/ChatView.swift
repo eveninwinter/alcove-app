@@ -131,6 +131,13 @@ struct ChatView: View {
     // 实测变化；音乐条固定 62pt，再留 10pt 呼吸缝。
     /// 0902：打字框上方的迷你播放条退休了（小唱片浮在屏幕边上替它），不再占地方
     private var musicBarClearance: CGFloat { 0 }
+
+    /// 眼下气泡是不是毛玻璃（玻璃气泡＋毛玻璃）
+    private var frostedBubbles: Bool {
+        guard theme.isMessages, !theme.isKakao else { return false }
+        let glass = theme.isTreehouse ? MessagesPalette.thGlass : MessagesPalette.glass
+        return glass && UserDefaults.standard.string(forKey: "msgGlassKind") == "fog"
+    }
     private var bottomChromeHeight: CGFloat { inputBarHeight + musicBarClearance }
 
     /// 该不该跟着滚到最新：人在底部，或者这次打字框是在底部时点开的。
@@ -344,6 +351,9 @@ struct ChatView: View {
                                         .animation(.easeInOut(duration: 0.42), value: flashTS))
                                 // 1016 贴纸打码：贴纸认在消息上跟着滚，每条报自己在屏幕上的位置（只有贴纸层盯着）
                                 .modifier(StickerMaskAnchor(id: msg.id))
+                                // 1016 #3957 她：「发消息出去一瞬间 气泡和壁纸会一起闪一下」（普通气泡不闪）——
+                                // 本地那条换成服务器那条时是淡出淡入，毛玻璃半透明那一下后面没磨的壁纸透出来就是闪。毛玻璃时直接换
+                                .transition(frostedBubbles ? .identity : .opacity)
                                 .onAppear {
                                     guard idx == 0, olderPagingArmed else { return }
                                     olderPagingArmed = false
@@ -2290,12 +2300,16 @@ struct ChatView: View {
             return
         }
         if store.pendingVoice != nil, store.voiceAnalyzing { return }   // 字还没出来，等一下
+        // 1016 她：「发送消息之后都改成键盘自己下落 主聊天只有按 app 里面的发送按钮才是发送 才会下落 攒气泡不下落」——
+        // 这个函数只挂在发送键上（回车走 holdCurrentDraft 攒气泡，那边照旧留着键盘），真发出去的几条路各收一次
         if store.pendingVoice != nil, !canSend {
+            inputFocused = false
             store.sendPendingVoice(followedByText: false)
             return
         }
         guard canSend else {
             if store.heldCount > 0 && store.room != "api" {   // 攒着的是 tmux 那边的，API 房间别去放
+                inputFocused = false
                 store.flushHeld()
                 return
             }
@@ -2304,6 +2318,7 @@ struct ChatView: View {
         }
         var text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
         draft = ""
+        inputFocused = false
         if let link = pendingLink {
             // 她说的话在前、链接另起一行在后：气泡里是话，卡片长在下面
             pendingLink = nil
