@@ -1,5 +1,6 @@
 import SwiftUI
 import CryptoKit
+import ImageIO
 
 /// 0821 她要的「微信那样」的图片缓存：看过的图存进手机自己的存储
 /// （Caches/alcove-images），下次直接从本地开，不再去服务器拉；
@@ -129,6 +130,30 @@ final class ImageDiskCache {
         await prefetch(raw.map { AlcoveAPI.attachmentThumbnailURL($0) })
     }
 
+    // MARK: - 动图
+
+    /// 1016 她：「gif 动图在 app 里还是不会动」——UIImage(data:) 只解第一帧，SwiftUI 的 Image 也不会播。
+    /// 这里不拆帧（75 帧全解开一张就几十 MB），只认出是不是动图、把原文件交给 AnimatedImageView 边播边解。
+    private var animatedFlag: [URL: Bool] = [:]
+
+    /// 磁盘上那份是动图就返回原文件，不是就 nil。先 await image(for:) 再调，文件才在盘上
+    func animatedData(for url: URL) async -> Data? {
+        lock.lock(); let known = animatedFlag[url]; lock.unlock()
+        if known == false { return nil }
+        let f = fileURL(for: url)
+        return await Task.detached(priority: .utility) { [self] in
+            guard let data = try? Data(contentsOf: f) else { return nil }
+            let multi = Self.isAnimated(data)
+            lock.lock(); animatedFlag[url] = multi; lock.unlock()
+            return multi ? data : nil
+        }.value
+    }
+
+    static func isAnimated(_ data: Data) -> Bool {
+        guard let src = CGImageSourceCreateWithData(data as CFData, nil) else { return false }
+        return CGImageSourceGetCount(src) > 1
+    }
+
     // MARK: - 算账 / 清理
 
     private func entries() -> [(url: URL, size: Int64, date: Date)] {
@@ -181,13 +206,18 @@ enum CachedImagePhase {
 /// `AsyncImage(url:) { img in } placeholder: { }` 的替身
 struct CachedImage<Content: View, Placeholder: View>: View {
     let url: URL?
+    /// 1016：true 的地方（表情包）遇到动图换成会动的 AnimatedImageView，按比例塞进框里（等于 scaledToFit）；
+    /// 别处照旧只显示第一帧
+    var animates = false
     @ViewBuilder var content: (Image) -> Content
     @ViewBuilder var placeholder: () -> Placeholder
     @State private var ui: UIImage?
+    @State private var anim: (url: URL, data: Data)?
 
-    init(url: URL?, @ViewBuilder content: @escaping (Image) -> Content,
+    init(url: URL?, animates: Bool = false, @ViewBuilder content: @escaping (Image) -> Content,
          @ViewBuilder placeholder: @escaping () -> Placeholder) {
         self.url = url
+        self.animates = animates
         self.content = content
         self.placeholder = placeholder
         // init 跑在主线程：只摸内存缓存；磁盘/网络都交给 .task 在后台干
@@ -196,15 +226,20 @@ struct CachedImage<Content: View, Placeholder: View>: View {
 
     var body: some View {
         Group {
-            if let ui { content(Image(uiImage: ui)) } else { placeholder() }
+            if let ui, let anim, anim.url == url {
+                AnimatedImageView(data: anim.data)
+                    .aspectRatio(ui.size, contentMode: .fit)
+            } else if let ui { content(Image(uiImage: ui)) } else { placeholder() }
         }
         // 0827：原来这里写的是 `guard let url, ui == nil`，
         // 于是 URL 换了、手里还攥着上一张图时就直接 return，图永远不换。
         // 信封的白天/黑夜两张就栽在这儿：她把开关掰过去，字色翻了，图还是黑的。
         .task(id: url) {
-            guard let url else { ui = nil; return }
-            if let hit = ImageDiskCache.shared.memCached(url) { ui = hit; return }
-            ui = await ImageDiskCache.shared.image(for: url)
+            guard let url else { ui = nil; anim = nil; return }
+            if let hit = ImageDiskCache.shared.memCached(url) { ui = hit }
+            else { ui = await ImageDiskCache.shared.image(for: url) }
+            guard animates, ui != nil, anim?.url != url else { return }
+            anim = await ImageDiskCache.shared.animatedData(for: url).map { (url: url, data: $0) }
         }
     }
 }
@@ -240,5 +275,66 @@ struct CachedPhaseImage<Content: View>: View {
                     phase = .failure
                 }
             }
+    }
+}
+
+/// 动图边播边解：ImageIO 按每帧自己的时长回调，手里永远只有当前一帧，几十帧的表情包也不吃内存。
+/// 外面套一层容器、里层不顶尺寸，跟 GifView 一样，免得图片原尺寸把 SwiftUI 给的框撑破。
+struct AnimatedImageView: UIViewRepresentable {
+    let data: Data
+
+    func makeUIView(context: Context) -> UIView {
+        let container = UIView()
+        container.clipsToBounds = true
+        let iv = UIImageView()
+        iv.contentMode = .scaleAspectFit
+        iv.clipsToBounds = true
+        iv.translatesAutoresizingMaskIntoConstraints = false
+        iv.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        iv.setContentHuggingPriority(.defaultLow, for: .vertical)
+        iv.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        iv.setContentCompressionResistancePriority(.defaultLow, for: .vertical)
+        container.addSubview(iv)
+        NSLayoutConstraint.activate([
+            iv.topAnchor.constraint(equalTo: container.topAnchor),
+            iv.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            iv.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            iv.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+        ])
+        context.coordinator.imageView = iv
+        context.coordinator.play(data)
+        return container
+    }
+
+    func updateUIView(_ view: UIView, context: Context) {
+        if context.coordinator.data != data { context.coordinator.play(data) }
+    }
+
+    static func dismantleUIView(_ view: UIView, coordinator: Coordinator) {
+        coordinator.stop()
+    }
+
+    func makeCoordinator() -> Coordinator { Coordinator() }
+
+    final class Coordinator {
+        weak var imageView: UIImageView?
+        var data: Data?
+        /// 换图或视图拆掉时加一，旧那条播放在下一帧回调里看到对不上就自己停
+        private var token = 0
+
+        func play(_ data: Data) {
+            self.data = data
+            token += 1
+            let mine = token
+            CGAnimateImageDataWithBlock(data as CFData, nil) { [weak self] _, frame, stop in
+                guard let self, self.token == mine, let iv = self.imageView else {
+                    stop.pointee = true
+                    return
+                }
+                iv.image = UIImage(cgImage: frame)
+            }
+        }
+
+        func stop() { token += 1 }
     }
 }

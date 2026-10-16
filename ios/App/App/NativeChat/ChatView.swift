@@ -1728,7 +1728,7 @@ struct ChatView: View {
                 // 待发表情：一张就够，再点一次面板会换掉它
                 if let stk = pendingSticker {
                     HStack(spacing: 8) {
-                        CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                        CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
                             img.resizable().scaledToFit()
                         } placeholder: { Color(.systemGray6) }
                         .frame(width: 54, height: 54)
@@ -5513,7 +5513,7 @@ struct MessageRow: View {
     private var stickerBody: some View {
         Group {
             if let stk = sticker {
-                CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
                     img.resizable().scaledToFit()
                 } placeholder: { Color(.tertiarySystemFill) }
                 .frame(width: 110, height: 110)

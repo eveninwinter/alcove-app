@@ -63,7 +63,7 @@ struct StickerSheet: View {
                             HStack(spacing: 10) {
                                 ForEach(recent) { stk in
                                     Button { onPick(stk) } label: {
-                                        CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                                        CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
                                             img.resizable().scaledToFit()
                                         } placeholder: {
                                             Color(.systemGray6)
@@ -89,7 +89,7 @@ struct StickerSheet: View {
                         // 点一下选中；长按进编辑——以前传的那些没法补描述，她 0818 要的
                         Button { onPick(stk) } label: {
                             VStack(spacing: 4) {
-                                CachedImage(url: AlcoveAPI.stickerURL(stk.url)) { img in
+                                CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
                                     img.resizable().scaledToFit()
                                 } placeholder: {
                                     Color(.systemGray6)
@@ -118,7 +118,7 @@ struct StickerSheet: View {
         .padding(.horizontal, 18)
         .onAppear { store.loadStickerUsage() }
         .sheet(item: $draft) { item in
-            StickerDescribeSheet(preview: .local(item.image), mime: item.mime,
+            StickerDescribeSheet(preview: .local(item.image, item.data), mime: item.mime,
                                  initialName: "", initialDescription: "", initialTags: []) { name, description, tags in
                 store.uploadSticker(data: item.data, mime: item.mime, owner: item.owner,
                                     name: name, description: description, emotionTags: tags)
@@ -196,7 +196,7 @@ struct StickerDraft: Identifiable {
 
 private struct StickerDescribeSheet: View {
     enum Preview {
-        case local(UIImage?)
+        case local(UIImage?, Data?)
         case remote(URL)
     }
     let preview: Preview
@@ -244,14 +244,19 @@ private struct StickerDescribeSheet: View {
                     HStack {
                         Spacer()
                         switch preview {
-                        case .local(let image):
-                            if let image {
+                        case .local(let image, let data):
+                            if let image, let data, ImageDiskCache.isAnimated(data) {
+                                AnimatedImageView(data: data)
+                                    .aspectRatio(image.size, contentMode: .fit)
+                                    .frame(maxHeight: 150)
+                                    .clipShape(RoundedRectangle(cornerRadius: 12))
+                            } else if let image {
                                 Image(uiImage: image).resizable().scaledToFit()
                                     .frame(maxHeight: 150)
                                     .clipShape(RoundedRectangle(cornerRadius: 12))
                             }
                         case .remote(let url):
-                            CachedImage(url: url) { img in
+                            CachedImage(url: url, animates: true) { img in
                                 img.resizable().scaledToFit()
                             } placeholder: { Color(.systemGray6) }
                             .frame(maxHeight: 150)
