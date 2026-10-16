@@ -6,6 +6,7 @@ import Photos
 import AVFoundation
 import UniformTypeIdentifiers
 import UIKit
+import CoreImage
 
 struct ChatView: View {
     @Binding var thinkingEnabled: Bool
@@ -66,6 +67,7 @@ struct ChatView: View {
     @State private var showDocPicker = false
     @State private var showEmbroidery = false
     @State private var showLocationPicker = false   // 1008 加号里的「位置」
+    @State private var frostedWall: CGRect?   // 1016 毛玻璃气泡对位用：壁纸在屏幕上的位置
     @State private var showPhotoPicker = false
     @Namespace private var photoTransition
     @State private var previewImage: UIImage?
@@ -143,6 +145,7 @@ struct ChatView: View {
                 // prepared image and coordinate system.
                 ChatWallpaperRenderer(descriptor: wallpaperStore.descriptor)
                     .ignoresSafeArea()
+                    .measuresFrostedWall($frostedWall)
 
                 if store.loading {
                     ProgressView("回家中…")
@@ -157,6 +160,7 @@ struct ChatView: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaperStore.descriptor)
             .environment(\.chatWallpaperViewportSize, root.size)
+            .environment(\.frostedWallFrame, frostedWall)
         }
         .overlay {
             if showEmbroidery { EmbroideryView(isPresented: $showEmbroidery) }
@@ -7288,6 +7292,7 @@ struct ChatLookPreview: View {
     @ObservedObject private var packs = KakaoPackStore.shared
     @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage("chatFontSize") private var fontSize = 14
+    @State private var frostedWall: CGRect?
     @AppStorage("chatBubbleGap") private var bubbleGap = 6.0
     @AppStorage("chatTurnGap") private var turnGap = 22.0
     @AppStorage("wallStamp") private var wallStamp = 0.0
@@ -7318,6 +7323,7 @@ struct ChatLookPreview: View {
         GeometryReader { proxy in
             ZStack(alignment: .bottom) {
                 ChatWallpaperRenderer(descriptor: wallpaper.descriptor)
+                    .measuresFrostedWall($frostedWall)
                 VStack(alignment: .leading, spacing: CGFloat(bubbleGap)) {
                     if t.isKakao {
                         KakaoDateDivider(date: Date())
@@ -7354,6 +7360,7 @@ struct ChatLookPreview: View {
             .coordinateSpace(name: "alcoveChatRoot")
             .environment(\.chatWallpaperDescriptor, wallpaper.descriptor)
             .environment(\.chatWallpaperViewportSize, proxy.size)
+            .environment(\.frostedWallFrame, frostedWall)
         }
         .allowsHitTesting(false)
         .onAppear { refresh() }
@@ -7683,104 +7690,143 @@ struct TreehouseBubbleFill: ViewModifier {
 }
 
 /// 1011 她：「玻璃气泡能不能也做一个切换 现在的透玻璃和雾玻璃？雾玻璃也能调节程度」——
-/// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：原来把系统磨砂层调成半透明，底下透着没糊的壁纸，看着是淡雾 → 磨砂层改成不透明。
-/// 1015 #3907/#3910/#3912 她：「我喜欢越往左滑的感觉」「谁要你把我现在的放最右边了 你就不能折中吗」——
-/// 她喜欢的那个（完整的最薄磨砂、上面不垫白 / 黑）放在滑条正中间：
-/// 往左＝同一种磨砂卡在半路，糊得轻、更透；往右＝上面再叠一层最薄磨砂，糊得更深，但不垫黑所以不会变全黑
+/// 1015 她：「你做的那个雾玻璃根本不是毛玻璃」：磨砂层改成不透明（后面的壁纸整块磨糊，不是半透明的淡雾）。
+/// 1015 #3912 她：「谁要你把我现在的放最右边了 你就不能折中吗」——她喜欢的那样（系统最薄磨砂）放滑条正中间，往左轻、往右深。
+/// 1016 #3928/#3933：原来往左那截靠「停在半路的动画」卡出更薄的磨砂，系统会把动画放完、退出去一会就跳回默认。
+/// 改成自己磨：气泡后面露出来的就是聊天页那张壁纸，先把壁纸整张磨糊（FrostedWallCache，后台算、按糊几点缓存），
+/// 每个气泡按自己在屏幕上的位置把那一块垫在后面（FrostedWallLens），上面再盖一层很薄的白（夜里黑）。
+/// 滑条：0 ≈ 糊 3 点、0.5 ≈ 糊 20 点（对着系统最薄磨砂那一档）、1 ≈ 糊 37 点。
+/// 壁纸量不到位置（别的页面）、或者新糊的还没算好那一下，退回系统最薄磨砂，不留空
 struct FogGlassBubble<S: Shape>: ViewModifier {
     let shape: S
     let fog: Double
     let night: Bool
     func body(content: Content) -> some View {
-        let f = min(1, max(0, fog))
         content
             .background {
-                ZStack {
-                    AdjustableBlurView(amount: f < 0.5 ? 0.3 + 1.4 * f : 1, dark: night)
-                    if f > 0.5 {
-                        AdjustableBlurView(amount: (f - 0.5) * 2 * 0.8, dark: night)
-                    }
-                }
-                .clipShape(shape)
-                .allowsHitTesting(false)
+                FrostedWallLens(fog: min(1, max(0, fog)), night: night)
+                    .clipShape(shape)
+                    .allowsHitTesting(false)
             }
             .overlay(shape.stroke(Color.white.opacity(night ? 0.10 : 0.45), lineWidth: 0.6).allowsHitTesting(false))
     }
 }
 
-/// 深浅能调的毛玻璃：系统最薄磨砂（ultraThin）做终点，用一个停住的动画把它卡在中间——
-/// amount 1＝完整的最薄磨砂，越小糊得越轻、那层灰白也越淡。
-/// 停住的动画切后台再回来会被系统冲掉，所以进窗口、回前台都重新卡一次；视图销毁前把动画停掉（不停会崩）
-struct AdjustableBlurView: UIViewRepresentable {
-    let amount: Double
-    let dark: Bool
+/// 气泡后面那块磨糊的壁纸：按气泡在屏幕上的位置，从磨好的整张壁纸里对位垫进来
+struct FrostedWallLens: View {
+    let fog: Double
+    let night: Bool
+    @Environment(\.chatWallpaperDescriptor) private var descriptor
+    @Environment(\.frostedWallFrame) private var wallFrame
+    @ObservedObject private var cache = FrostedWallCache.shared
 
-    final class BlurView: UIVisualEffectView {
-        private var animator: UIViewPropertyAnimator?
-        private var amount: Double = 1
-        private var dark = false
-        private var built = false
+    private var radius: Int { Int((3 + fog * 34).rounded()) }
+    private var tint: Double { night ? 0.10 + fog * 0.34 : 0.06 + fog * 0.30 }
 
-        override init(effect: UIVisualEffect?) {
-            super.init(effect: effect)
-            NotificationCenter.default.addObserver(self, selector: #selector(rebuild),
-                                                   name: UIApplication.willEnterForegroundNotification, object: nil)
-            NotificationCenter.default.addObserver(self, selector: #selector(rebuild),
-                                                   name: UIApplication.didBecomeActiveNotification, object: nil)
-        }
-
-        /// 1016 #3928 她：「调到最左边退出去过一会他又变回默认了」——系统会在退后台、页面收起时把停住的动画直接放完，
-        /// 磨砂跳回最厚（＝滑条正中那个样子）。只靠回前台那一下补不全：每次排版都看一眼，动画不在停住的状态就重新卡回去
-        override func layoutSubviews() {
-            super.layoutSubviews()
-            if built, window != nil, animator?.state != .active { rebuild() }
-        }
-
-        override func traitCollectionDidChange(_ previous: UITraitCollection?) {
-            super.traitCollectionDidChange(previous)
-            if built { rebuild() }
-        }
-        required init?(coder: NSCoder) { fatalError() }
-
-        func apply(amount: Double, dark: Bool) {
-            if built && amount == self.amount && dark == self.dark { return }
-            self.amount = amount
-            self.dark = dark
-            rebuild()
-        }
-
-        override func didMoveToWindow() {
-            super.didMoveToWindow()
-            if window != nil { rebuild() }
-        }
-
-        @objc func rebuild() {
-            if let old = animator, old.state == .active { old.stopAnimation(true) }
-            effect = nil
-            let style: UIBlurEffect.Style = dark ? .systemUltraThinMaterialDark : .systemUltraThinMaterialLight
-            let a = UIViewPropertyAnimator(duration: 1, curve: .linear) { [weak self] in
-                self?.effect = UIBlurEffect(style: style)
+    var body: some View {
+        GeometryReader { g in
+            let me = g.frame(in: .global)
+            ZStack(alignment: .topLeading) {
+                if let wall = wallFrame, wall.width > 1, let art = wallArt(wall) {
+                    art
+                        .frame(width: wall.width, height: wall.height)
+                        .clipped()
+                        .offset(x: wall.minX - me.minX, y: wall.minY - me.minY)
+                } else {
+                    Rectangle().fill(.ultraThinMaterial)
+                        .environment(\.colorScheme, night ? .dark : .light)
+                        .frame(width: g.size.width, height: g.size.height)
+                }
             }
-            a.pausesOnCompletion = true
-            a.fractionComplete = CGFloat(amount)
-            animator = a
-            built = true
-        }
-
-        deinit {
-            NotificationCenter.default.removeObserver(self)
-            if let old = animator, old.state == .active { old.stopAnimation(true) }
+            .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
+            .clipped()
+            .overlay((night ? Color.black : Color.white).opacity(tint))
         }
     }
 
-    func makeUIView(context: Context) -> BlurView {
-        let v = BlurView(effect: nil)
-        v.isUserInteractionEnabled = false
-        return v
+    /// 磨好的壁纸（还没算好就 nil → 上面退回系统磨砂）；渐变底不用磨，原样铺
+    private func wallArt(_ wall: CGRect) -> AnyView? {
+        _ = cache.stamp
+        switch descriptor.source {
+        case .gradient(let colors):
+            return AnyView(LinearGradient(colors: colors, startPoint: .top, endPoint: .bottom))
+        case .image(let image):
+            return blurred(image, key: "img\(ObjectIdentifier(image).hashValue)", wall: wall)
+        case .asset(let name):
+            guard let image = UIImage(named: name) else { return nil }
+            return blurred(image, key: "asset:\(name)", wall: wall)
+        case .layeredPanel(let prepared, let asset, _, _):
+            guard let image = prepared ?? UIImage(named: asset) else { return nil }
+            return blurred(image, key: "panel:\(asset)", wall: wall)
+        }
     }
 
-    func updateUIView(_ uiView: BlurView, context: Context) {
-        uiView.apply(amount: amount, dark: dark)
+    private func blurred(_ image: UIImage, key: String, wall: CGRect) -> AnyView? {
+        guard let out = cache.image(source: image, sourceKey: key, radiusPt: radius, wall: wall.size) else { return nil }
+        return AnyView(Image(uiImage: out).resizable().scaledToFill())
+    }
+}
+
+/// 磨好的壁纸缓存：同一张壁纸、同样糊几点只算一次；后台算，算好了戳一下让气泡重画
+@MainActor
+final class FrostedWallCache: ObservableObject {
+    static let shared = FrostedWallCache()
+    @Published private(set) var stamp = 0
+    private var cache: [String: UIImage] = [:]
+    private var order: [String] = []
+    private var pending: Set<String> = []
+    nonisolated(unsafe) private static let context = CIContext(options: nil)
+
+    func image(source: UIImage, sourceKey: String, radiusPt: Int, wall: CGSize) -> UIImage? {
+        let key = "\(sourceKey)|\(radiusPt)|\(Int(wall.width))x\(Int(wall.height))"
+        if let hit = cache[key] { return hit }
+        guard !pending.contains(key) else { return nil }
+        pending.insert(key)
+        Task.detached(priority: .userInitiated) { [weak self] in
+            let out = FrostedWallCache.blur(source, radiusPt: Double(radiusPt), wall: wall)
+            await MainActor.run {
+                guard let self else { return }
+                self.pending.remove(key)
+                guard let out else { return }
+                self.cache[key] = out
+                self.order.append(key)
+                // 只留最近几张（拖滑条时一路算出来的旧档扔掉），一张整屏壁纸好几兆
+                while self.order.count > 4 { self.cache[self.order.removeFirst()] = nil }
+                self.stamp &+= 1
+            }
+        }
+        return nil
+    }
+
+    /// 糊的程度按屏幕上的点算：图是 scaledToFill 铺满壁纸框的，换算成图上的像素再糊；边缘先往外延，免得四边发灰
+    nonisolated static func blur(_ image: UIImage, radiusPt: Double, wall: CGSize) -> UIImage? {
+        guard let cg = image.cgImage ?? image.ciImageCGImage() else { return nil }
+        let px = CGSize(width: cg.width, height: cg.height)
+        guard px.width > 0, px.height > 0, wall.width > 0, wall.height > 0 else { return nil }
+        // 屏幕上 1 点 = 图上几像素
+        let pxPerPt = 1 / max(wall.width / px.width, wall.height / px.height)
+        let input = CIImage(cgImage: cg)
+        let blur = CIFilter(name: "CIGaussianBlur")
+        blur?.setValue(input.clampedToExtent(), forKey: kCIInputImageKey)
+        blur?.setValue(radiusPt * pxPerPt * 0.5, forKey: kCIInputRadiusKey)
+        guard var out = blur?.outputImage else { return nil }
+        // 系统磨砂会把颜色提一点饱和，跟着提一点
+        if let color = CIFilter(name: "CIColorControls") {
+            color.setValue(out, forKey: kCIInputImageKey)
+            color.setValue(1.15, forKey: kCIInputSaturationKey)
+            out = color.outputImage ?? out
+        }
+        guard let rendered = context.createCGImage(out.cropped(to: input.extent), from: input.extent) else { return nil }
+        return UIImage(cgImage: rendered, scale: image.scale, orientation: image.imageOrientation)
+    }
+}
+
+private extension UIImage {
+    /// 没有 cgImage 的图（少见）先画一遍拿到位图
+    func ciImageCGImage() -> CGImage? {
+        let format = UIGraphicsImageRendererFormat()
+        format.scale = scale
+        return UIGraphicsImageRenderer(size: size, format: format).image { _ in draw(at: .zero) }.cgImage
     }
 }
 

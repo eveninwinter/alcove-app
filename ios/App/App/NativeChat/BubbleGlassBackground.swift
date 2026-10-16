@@ -212,6 +212,11 @@ private struct ChatWallpaperViewportSizeKey: EnvironmentKey {
     static let defaultValue = CGSize(width: 1, height: 1)
 }
 
+/// 1016 #3933 毛玻璃气泡自己磨壁纸：壁纸在屏幕上的位置（全局坐标）。量不到就是 nil，气泡退回系统磨砂
+private struct FrostedWallFrameKey: EnvironmentKey {
+    static let defaultValue: CGRect? = nil
+}
+
 private struct ChatWallpaperViewportInsetKey: EnvironmentKey {
     static let defaultValue = CGSize.zero
 }
@@ -228,8 +233,20 @@ extension EnvironmentValues {
     }
 
 
+    var frostedWallFrame: CGRect? {
+        get { self[FrostedWallFrameKey.self] }
+        set { self[FrostedWallFrameKey.self] = newValue }
+    }
+
     var chatWallpaperViewportInset: CGSize {
         get { self[ChatWallpaperViewportInsetKey.self] }
         set { self[ChatWallpaperViewportInsetKey.self] = newValue }
+    }
+}
+
+extension View {
+    /// 量这张壁纸在屏幕上的位置（毛玻璃气泡按它对位，见 FrostedWallLens）
+    func measuresFrostedWall(_ frame: Binding<CGRect?>) -> some View {
+        onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame.wrappedValue = $0 }
     }
 }

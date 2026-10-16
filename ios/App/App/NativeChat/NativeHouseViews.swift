@@ -7711,6 +7711,7 @@ private struct NativeStudioView: View {
     @ObservedObject private var chatWall = ChatWallpaperStore.shared
     @AppStorage("wallStamp") private var wallStamp = 0.0
     @AppStorage(TreehouseWallBlur.stampKey) private var wallBlurStamp = 0.0
+    @State private var frostedWall: CGRect?
     @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var chatTheme: AlcoveTheme { _ = paletteStamp; _ = houseAppearance; return .named(themeName) }
@@ -7874,7 +7875,10 @@ private struct NativeStudioView: View {
             }
             inputBar
         }
-        .background(studioBackground.ignoresSafeArea())
+        .background(studioBackground.ignoresSafeArea().measuresFrostedWall($frostedWall))
+        // 1016 毛玻璃气泡自己磨壁纸：告诉气泡壁纸是哪张、在屏幕哪儿
+        .environment(\.chatWallpaperDescriptor, chatWall.descriptor)
+        .environment(\.frostedWallFrame, frostedWall)
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
