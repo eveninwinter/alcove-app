@@ -2454,12 +2454,15 @@ struct MusicPlaylist: Identifiable, Equatable {
     /// 1016 她要搜播客：网易云的播客（电台）也当一张「歌单」走，点进去是一期期节目
     var isPodcast = false
     var host = ""
+    /// 1016 加到歌单：只列她自己建的（收藏别人的那些加不进去）
+    var owned = true
 
     init(_ json: [String: Any]) {
         id = json.string("id")
         name = json.string("name")
         cover = MusicSong.secureURL(json.string("coverImgUrl", "picUrl"))
         count = json.int("trackCount")
+        owned = !((json["subscribed"] as? Bool) ?? false)
     }
 
     /// cloudsearch type=1009 搜出来的一个播客
@@ -2549,6 +2552,40 @@ final class MusicModel: ObservableObject {
         songs = obj.object("result").array("songs").map(MusicSong.init)
         prefetchArtwork(for: songs)
         if songs.isEmpty { message = "没搜到  换个词试试" }
+    }
+
+    /// 1016 她：加到歌单 / 新建歌单（会真的改她网易云账号里的歌单）。
+    /// 网易云接口回来的样子不太统一：有的是 {code:200}，加歌是 {status:200, body:{code:200}}，两种都认
+    private static func neteaseOK(_ obj: [String: Any]) -> Bool {
+        obj.int("code") == 200 || obj.object("body").int("code") == 200
+    }
+
+    func addToPlaylist(_ song: MusicSong, playlist: MusicPlaylist) async -> Bool {
+        guard let obj = try? await NativeHouseAPI.object(
+            "/api/music/playlist/tracks?op=add&pid=\(playlist.id)&tracks=\(song.id)&timestamp=\(Int(Date().timeIntervalSince1970 * 1000))"),
+              Self.neteaseOK(obj) else { return false }
+        await reloadPlaylists()
+        return true
+    }
+
+    /// 新建歌单，回来新歌单（失败 nil）
+    func createPlaylist(named name: String) async -> MusicPlaylist? {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, let q = trimmed.addingPercentEncoding(withAllowedCharacters: .alphanumerics),
+              let obj = try? await NativeHouseAPI.object("/api/music/playlist/create?name=\(q)&timestamp=\(Int(Date().timeIntervalSince1970 * 1000))"),
+              Self.neteaseOK(obj) else { return nil }
+        let pl = obj.object("playlist")
+        let fallback: [String: Any] = ["id": obj.string("id"), "name": trimmed]
+        var created = MusicPlaylist(pl.isEmpty ? fallback : pl)
+        if created.id.isEmpty { created = MusicPlaylist(fallback) }
+        await reloadPlaylists()
+        return created.id.isEmpty ? nil : created
+    }
+
+    func reloadPlaylists() async {
+        guard let obj = try? await NativeHouseAPI.object("/api/music/user/playlist?uid=1441382791&limit=50&timestamp=\(Int(Date().timeIntervalSince1970 * 1000))") else { return }
+        let list = (obj["playlist"] as? [[String: Any]] ?? []).map { MusicPlaylist($0) }
+        if !list.isEmpty { playlists = list }
     }
 
     /// 1016 她：「播客的歌能不能搜到」——搜网易云的播客（电台，type=1009）。点进去走 loadPlaylist 的播客分支
@@ -2785,7 +2822,8 @@ final class MusicModel: ObservableObject {
     }
 
     func seek(to seconds: Double) {
-        player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600))
+        // 1016 #3946：不给误差，免得跳到前一点、高亮停在上一句
+        player?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         progress = seconds
         publishNowPlaying()
     }
@@ -3218,6 +3256,7 @@ private struct NativeMusicView: View {
     @State private var listenPage = false
     @State private var lastPlayingID: String?
     @State private var searchPodcast = false   // 1016：搜索框下面「单曲 / 播客」
+    @State private var showQueue = false
     @Environment(\.dismiss) private var dismiss
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
@@ -3295,6 +3334,7 @@ private struct NativeMusicView: View {
                 .presentationDragIndicator(.visible)
                 .presentationBackground(.ultraThinMaterial)
         }
+        .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
     }
 
     private func goBack() {
@@ -3343,6 +3383,20 @@ private struct NativeMusicView: View {
         HStack(spacing: 26) {
             kindTab("单曲", podcast: false)
             kindTab("播客", podcast: true)
+        }
+        .frame(maxWidth: .infinity)
+        // 1016 她：「这一行右边加一个列表 是当下播放的歌曲列表」
+        .overlay(alignment: .trailing) {
+            if !model.queue.isEmpty {
+                Button { showQueue = true } label: {
+                    Image(systemName: "list.bullet").font(.system(size: 16, weight: .light))
+                        .foregroundColor(ink.base.link)
+                        .frame(width: 40, height: 32).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 12)
+                .accessibilityLabel("正在播放的列表")
+            }
         }
         .padding(.top, 12).padding(.bottom, 2)
         .onChange(of: searchPodcast) { _ in if hasQuery { runSearch() } }
@@ -4900,6 +4954,10 @@ struct MusicPlayerSheet: View {
     @State private var followLyric = true
     /// 1006 她要的：发歌词搬到这儿。点一句选中（可以选几句），再点取消
     @State private var pickedLines: Set<Int> = []
+    /// 1016 #3946：长按才进多选；平时点一句只出「从这句放」
+    @State private var multiSelect = false
+    @State private var focusedLine: Int?
+    @State private var addSong: MusicSong?
 
     var body: some View {
         let ink = self.ink
@@ -4932,6 +4990,11 @@ struct MusicPlayerSheet: View {
         .ignoresSafeArea(edges: .bottom)
         .foregroundColor(ink.base.title)
         .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
+        .sheet(item: $addSong) { song in
+            MusicAddToPlaylistSheet(model: model, song: song)
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+        }
         .sheet(isPresented: $showInsight) {
             if let song = model.nowPlaying {
                 SongInsightSheet(song: song)
@@ -4943,6 +5006,9 @@ struct MusicPlayerSheet: View {
 
     // MARK: 歌词页（第一页）
 
+    /// 1016 #3943–#3946 她定的（全屏预览 lyric-serif-1016j）：歌词从进度条下面直接开始、一直排到按钮上面不留空，宋体；
+    /// 那串花体英文放大、很淡，垫在左上角歌词底下（不跟着滚）；上下渐隐。
+    /// 点一句只在右边出「从这句放」；长按才进多选（点了打勾），纸飞机发完自动退出多选
     private var lyricPage: some View {
         VStack(spacing: 0) {
             if let song = model.nowPlaying {
@@ -4953,31 +5019,33 @@ struct MusicPlayerSheet: View {
                 MusicTimes(progress: model.progress, duration: model.duration, ink: ink)
             }
             .padding(.horizontal, 22).padding(.top, 12)
-            // 她 1016：标题下面那两个小图案换成这串花体英文
-            Image("MusicScriptWords").resizable().scaledToFit()
-                .frame(width: 104)
-                .opacity(0.72 * ink.imgDim)
-                .padding(.top, 4)
-                .allowsHitTesting(false)
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(alignment: .center, spacing: 0) {
-                        Color.clear.frame(height: 30)
+                        Color.clear.frame(height: 14)
                         if model.lyricsLoading { ProgressView().tint(ink.rose).frame(maxWidth: .infinity) }
                         else if model.lyrics.isEmpty {
-                            Text("这首没有歌词").font(SanctusPageFont.cn(13)).foregroundColor(ink.base.sub).frame(maxWidth: .infinity)
+                            Text("这首没有歌词").font(WindowFont.swiftUI(13)).foregroundColor(ink.base.sub).frame(maxWidth: .infinity)
                         } else {
                             ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
-                                lyricRow(index, line).id(index)
+                                lyricRow(index, line, proxy: proxy).id(index)
                             }
                         }
-                        Color.clear.frame(height: 60)
+                        Color.clear.frame(height: 50)
                     }
                     .frame(maxWidth: .infinity).padding(.horizontal, 24)
                 }
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.08),
-                                             .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
+                // 上下渐隐（她 1016：「上下做一点渐隐啊」）
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.1),
+                                             .init(color: .black, location: 0.84), .init(color: .clear, location: 1)],
                                      startPoint: .top, endPoint: .bottom))
+                .background(alignment: .topLeading) {
+                    Image("MusicScriptWords").resizable().scaledToFit()
+                        .frame(width: 196)
+                        .opacity(0.3 * ink.imgDim)
+                        .padding(.leading, 26).padding(.top, 6)
+                        .allowsHitTesting(false)
+                }
                 .onScrollPhaseChange { _, phase in
                     if phase == .interacting { followLyric = false }
                 }
@@ -4986,15 +5054,29 @@ struct MusicPlayerSheet: View {
                     withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) }
                 }
                 .onAppear {
+                    WindowFont.requestSongti()
                     let idx = activeLyric
                     if idx >= 0 { proxy.scrollTo(idx, anchor: .center) }
                 }
                 .onChange(of: model.nowPlaying?.id) { _ in
                     followLyric = true
                     pickedLines = []
+                    multiSelect = false
+                    focusedLine = nil
                 }
                 .overlay(alignment: .bottom) {
-                    if !followLyric {
+                    if multiSelect {
+                        Button {
+                            withAnimation(.easeOut(duration: 0.15)) { multiSelect = false; pickedLines = [] }
+                        } label: {
+                            Text("取消多选").font(SanctusPageFont.cn(12)).tracking(1.2).foregroundColor(ink.roseText)
+                                .padding(.horizontal, 14).padding(.vertical, 6)
+                                .background(ink.paperWhite.opacity(0.9), in: Capsule())
+                                .overlay(Capsule().stroke(ink.roseLine, lineWidth: 0.7))
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 8)
+                    } else if !followLyric {
                         Button {
                             followLyric = true
                             let idx = activeLyric
@@ -5017,23 +5099,26 @@ struct MusicPlayerSheet: View {
         }
     }
 
-    /// 一句歌词：正在唱的大一号深墨、配一行斜体译文；点了选中（灰粉细框、左边打勾、右边「从这句放」）
-    private func lyricRow(_ index: Int, _ line: MusicLyric) -> some View {
+    /// 一句歌词：正在唱的大一号深墨；点一下右边出「从这句放」（再点收起）；
+    /// 长按进多选，多选时点一下打勾 / 取消，勾的那几句灰粉细框
+    private func lyricRow(_ index: Int, _ line: MusicLyric, proxy: ScrollViewProxy) -> some View {
         let now = index == activeLyric
-        let picked = pickedLines.contains(index)
+        let picked = multiSelect && pickedLines.contains(index)
+        let showPlay = multiSelect ? picked : focusedLine == index
         return VStack(alignment: .center, spacing: 4) {
             Text(line.text)
-                .font(SanctusPageFont.cn(now ? 19 : 14))
+                .font(WindowFont.swiftUI(now ? 19 : 14))
                 .tracking(now ? 0.4 : 0.6)
+                .lineSpacing(3)
                 .multilineTextAlignment(.center)
-                .foregroundColor(now || picked ? ink.base.title : ink.lyricDim)
+                .foregroundColor(now || picked || focusedLine == index ? ink.base.title : ink.lyricDim)
             if let trans = line.translation, !trans.isEmpty {
                 Text(trans).font(SanctusPageFont.ital(now ? 12.5 : 11.5)).foregroundColor(ink.base.sub)
                     .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)
-        .padding(.horizontal, picked ? 34 : 0)
+        .padding(.horizontal, showPlay || picked ? 34 : 0)
         .padding(.vertical, 7)
         .background {
             if picked {
@@ -5049,21 +5134,40 @@ struct MusicPlayerSheet: View {
             }
         }
         .overlay(alignment: .trailing) {
-            if picked {
-                Button { model.seek(to: line.time) } label: {
+            if showPlay {
+                Button {
+                    // 从这句放：准确跳到这一秒，高亮和滚动一起跟过去
+                    model.seek(to: line.time)
+                    followLyric = true
+                    focusedLine = nil
+                    withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(index, anchor: .center) }
+                } label: {
                     Image(systemName: "play.fill").font(.system(size: 8)).foregroundColor(ink.roseText)
-                        .frame(width: 22, height: 22)
+                        .frame(width: 24, height: 24)
                         .overlay(Circle().stroke(ink.roseLine, lineWidth: 0.7))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
-                .padding(.trailing, 10)
+                .padding(.trailing, 8)
+                .transition(.opacity)
             }
         }
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.easeOut(duration: 0.15)) {
-                if picked { pickedLines.remove(index) } else { pickedLines.insert(index) }
+                if multiSelect {
+                    if pickedLines.contains(index) { pickedLines.remove(index) } else { pickedLines.insert(index) }
+                    if pickedLines.isEmpty { multiSelect = false }
+                } else {
+                    focusedLine = focusedLine == index ? nil : index
+                }
+            }
+        }
+        .onLongPressGesture(minimumDuration: 0.4) {
+            withAnimation(.easeOut(duration: 0.15)) {
+                multiSelect = true
+                focusedLine = nil
+                pickedLines.insert(index)
             }
         }
     }
@@ -5149,6 +5253,16 @@ struct MusicPlayerSheet: View {
                 Text(song.artist).font(SanctusPageFont.ital(13.5)).foregroundColor(ink.base.sub).lineLimit(1)
             }
             Spacer(minLength: 6)
+            // 1016 她：加到歌单 / 新建歌单。播客的节目加不进普通歌单，不显示
+            if song.programID == nil {
+                Button { addSong = song } label: {
+                    Image(systemName: "plus.circle").font(.system(size: 21, weight: .light))
+                        .foregroundColor(ink.rose)
+                        .frame(width: 40, height: 42).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("加到歌单")
+            }
             likeButton
         }
     }
@@ -5213,10 +5327,11 @@ struct MusicPlayerSheet: View {
     /// 纸飞机：没选就发正在唱的那句，选了就发选中的几句；发完清掉选中、闪一下对勾
     private var sendLyricButton: some View {
         Button {
-            let lines = pickedLines.isEmpty ? [activeLyric] : Array(pickedLines)
+            let lines = multiSelect && !pickedLines.isEmpty ? Array(pickedLines).sorted() : [activeLyric]
             Task {
                 if await model.sendLyrics(lines) {
-                    withAnimation(.easeOut(duration: 0.15)) { pickedLines = [] }
+                    // 发完直接退出多选（她 #3946）
+                    withAnimation(.easeOut(duration: 0.15)) { pickedLines = []; multiSelect = false }
                 }
             }
         } label: {
@@ -5230,7 +5345,7 @@ struct MusicPlayerSheet: View {
                     }
                 }
                 .frame(width: 40, height: 44)
-                if pickedLines.count > 1 {
+                if multiSelect && pickedLines.count > 1 {
                     Text("\(pickedLines.count)").font(SanctusPageFont.corm(10)).foregroundColor(ink.paperWhite)
                         .frame(width: 15, height: 15).background(ink.rose, in: Circle())
                         .offset(x: 2, y: 4)
@@ -5238,9 +5353,9 @@ struct MusicPlayerSheet: View {
             }
             .contentShape(Rectangle())
         }
-        .disabled(model.lyrics.isEmpty || model.lineSending || (pickedLines.isEmpty && activeLyric < 0))
+        .disabled(model.lyrics.isEmpty || model.lineSending || (!(multiSelect && !pickedLines.isEmpty) && activeLyric < 0))
         .opacity(model.lyrics.isEmpty ? 0.35 : 1)
-        .accessibilityLabel(pickedLines.count > 1 ? "把这 \(pickedLines.count) 句发给他" : "把这句发给他")
+        .accessibilityLabel(multiSelect && pickedLines.count > 1 ? "把这 \(pickedLines.count) 句发给他" : "把这句发给他")
     }
 
     private var pageDots: some View {
@@ -5253,6 +5368,125 @@ struct MusicPlayerSheet: View {
 
     private var activeLyric: Int {
         model.lyrics.lastIndex(where: { $0.time <= model.progress }) ?? -1
+    }
+}
+
+/// 1016 她：「再加一个添加到歌单 / 创建歌单的按钮」——播放页爱心左边的 ＋ 点开：最上面「新建歌单」，下面是她自己建的歌单，
+/// 点哪个就把正在放的这首加进哪个；新建先起名字，建好直接把这首放进去
+private struct MusicAddToPlaylistSheet: View {
+    @ObservedObject var model: MusicModel
+    let song: MusicSong
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var creating = false
+    @State private var newName = ""
+    @State private var busy = false
+    @State private var note = ""
+    private var ink: MusicInk { _ = houseAppearance; return MusicInk() }
+    /// 她自己建的歌单，「我喜欢的音乐」那张不列（爱心就是它）
+    private var mine: [MusicPlaylist] { Array(model.playlists.filter(\.owned).dropFirst()) }
+
+    var body: some View {
+        let ink = self.ink
+        VStack(alignment: .leading, spacing: 0) {
+            Text("加到歌单").font(SanctusPageFont.cn(17)).foregroundColor(ink.base.title)
+                .padding(.top, 24).padding(.bottom, 4)
+            Text(song.name).font(SanctusPageFont.ital(13)).foregroundColor(ink.base.sub).lineLimit(1)
+                .padding(.bottom, 12)
+            if creating {
+                HStack(spacing: 10) {
+                    TextField("歌单名字", text: $newName)
+                        .font(SanctusPageFont.cn(14))
+                        .submitLabel(.done)
+                        .onSubmit { create() }
+                    Button(action: create) {
+                        Text("建好并加入").font(SanctusPageFont.cn(12)).tracking(1).foregroundColor(ink.roseText)
+                            .padding(.horizontal, 12).padding(.vertical, 6)
+                            .overlay(Capsule().stroke(ink.roseLine, lineWidth: 0.7))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(newName.trimmingCharacters(in: .whitespaces).isEmpty || busy)
+                }
+                .padding(.vertical, 12)
+            } else {
+                Button { withAnimation(.easeOut(duration: 0.15)) { creating = true } } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: "plus").font(.system(size: 14, weight: .light))
+                        Text("新建歌单").font(SanctusPageFont.cn(14))
+                        Spacer()
+                    }
+                    .foregroundColor(ink.roseText)
+                    .padding(.vertical, 14).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            Rectangle().fill(ink.base.hair).frame(height: 0.6)
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 0) {
+                    ForEach(mine) { pl in
+                        Button { add(to: pl) } label: {
+                            HStack(spacing: 12) {
+                                AsyncImage(url: URL(string: pl.cover)) { $0.resizable().scaledToFill() }
+                                    placeholder: { ink.base.hair }
+                                    .frame(width: 40, height: 40)
+                                    .clipShape(RoundedRectangle(cornerRadius: 7, style: .continuous))
+                                Text(pl.name).font(SanctusPageFont.cn(14)).foregroundColor(ink.base.body).lineLimit(1)
+                                Spacer()
+                                (Text("\(pl.count)").font(SanctusPageFont.corm(12)) + Text(" 首").font(SanctusPageFont.cn(10.5)))
+                                    .foregroundColor(ink.base.sub)
+                            }
+                            .padding(.vertical, 10).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(busy)
+                        Rectangle().fill(ink.base.hair.opacity(0.6)).frame(height: 0.5)
+                    }
+                }
+            }
+            if !note.isEmpty {
+                Text(note).font(SanctusPageFont.cn(12)).foregroundColor(ink.roseText)
+                    .frame(maxWidth: .infinity).padding(.vertical, 10)
+            }
+        }
+        .padding(.horizontal, 24)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .background(ink.base.page.ignoresSafeArea())
+        .overlay { if busy { ProgressView().tint(ink.rose) } }
+        .task { if model.playlists.isEmpty { await model.reloadPlaylists() } }
+    }
+
+    private func add(to pl: MusicPlaylist) {
+        busy = true; note = ""
+        Task {
+            let ok = await model.addToPlaylist(song, playlist: pl)
+            busy = false
+            note = ok ? "加到「\(pl.name)」了" : "没加上，可能已经在里面了，或者网易云没回话"
+            if ok {
+                try? await Task.sleep(nanoseconds: 800_000_000)
+                dismiss()
+            }
+        }
+    }
+
+    private func create() {
+        let name = newName
+        guard !name.trimmingCharacters(in: .whitespaces).isEmpty, !busy else { return }
+        busy = true; note = ""
+        Task {
+            if let pl = await model.createPlaylist(named: name) {
+                let ok = await model.addToPlaylist(song, playlist: pl)
+                busy = false
+                note = ok ? "建好了「\(pl.name)」，这首放进去了" : "歌单建好了，这首没加上，再点一下它试试"
+                creating = false; newName = ""
+                if ok {
+                    try? await Task.sleep(nanoseconds: 900_000_000)
+                    dismiss()
+                }
+            } else {
+                busy = false
+                note = "没建成，网易云没回话，再试一次"
+            }
+        }
     }
 }
 
