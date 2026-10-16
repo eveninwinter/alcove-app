@@ -9446,7 +9446,6 @@ private struct NativeThinkingSheet: View {
     @State private var showTranslation = false
     @State private var translating = false
     @State private var errorText: String?
-    private let translationSource = "iOS 翻译"
 
     private func translateIOS() {
         translating = true
@@ -9497,9 +9496,6 @@ private struct NativeThinkingSheet: View {
             }
             ScrollView {
                 VStack(alignment: .leading, spacing: 12) {
-                    if showTranslation {
-                        Text("中文译文 · \(translationSource)").font(.caption).foregroundStyle(.secondary)
-                    }
                     Text(showTranslation ? (translated ?? text) : text)
                         .font(.system(size: 16)).lineSpacing(8)
                         .textSelection(.enabled)
