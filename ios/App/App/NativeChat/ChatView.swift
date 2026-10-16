@@ -4917,7 +4917,7 @@ struct MessageRow: View {
                         // 0822 她定的：信息主题不要尾巴（怎么画都像拼上去的），和纸页一样实心大圆角
                         // 1001 她要试的：信息主题换成跟打字框同一种系统玻璃（纸页照旧实心），大小排版一点不动
                         .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
-                                                     glass: theme.isMessages && MessagesPalette.glass))
+                                                     glass: theme.isMessages && MessagesPalette.glass, isUser: isUser))
                 }
             }
         }
@@ -7668,7 +7668,7 @@ struct TreehouseBubbleFill: ViewModifier {
                                            bottomTrailingRadius: isUser ? 5 : 18,
                                            topTrailingRadius: 18, style: .continuous)
         if glass && kind == "fog" {
-            content.modifier(FogGlassBubble(shape: shape, fog: fog, night: TreehouseInk.night))
+            content.modifier(FogGlassBubble(shape: shape, fog: fog, night: TreehouseInk.night, isUser: isUser))
         } else if glass {
             if #available(iOS 26.0, *) {
                 content
@@ -7701,10 +7701,11 @@ struct FogGlassBubble<S: Shape>: ViewModifier {
     let shape: S
     let fog: Double
     let night: Bool
+    var isUser = false
     func body(content: Content) -> some View {
         content
             .background {
-                FrostedWallLens(fog: min(1, max(0, fog)), night: night)
+                FrostedWallLens(fog: min(1, max(0, fog)), night: night, isUser: isUser)
                     .clipShape(shape)
                     .allowsHitTesting(false)
             }
@@ -7716,6 +7717,8 @@ struct FogGlassBubble<S: Shape>: ViewModifier {
 struct FrostedWallLens: View {
     let fog: Double
     let night: Bool
+    var isUser = false
+    @AppStorage(MessagesPalette.stampKey) private var paletteStamp = 0.0
     @Environment(\.chatWallpaperDescriptor) private var descriptor
     @Environment(\.frostedWallFrame) private var wallFrame
     @ObservedObject private var cache = FrostedWallCache.shared
@@ -7740,7 +7743,8 @@ struct FrostedWallLens: View {
             }
             .frame(width: g.size.width, height: g.size.height, alignment: .topLeading)
             .clipped()
-            .overlay((night ? Color.black : Color.white).opacity(tint))
+            // 1016 #3935 她：毛玻璃能调颜色，她和他各一个，默认就是原来这层白（夜里黑）；浓淡还跟滑条走
+            .overlay(FrostTint.current(user: isUser, dark: night, stamp: paletteStamp).opacity(tint))
         }
     }
 
@@ -7764,6 +7768,27 @@ struct FrostedWallLens: View {
     private func blurred(_ image: UIImage, key: String, wall: CGRect) -> AnyView? {
         guard let out = cache.image(source: image, sourceKey: key, radiusPt: radius, wall: wall.size) else { return nil }
         return AnyView(Image(uiImage: out).resizable().scaledToFill())
+    }
+}
+
+/// 1016 #3935 毛玻璃的颜色：她和他各一个，白天黑夜各一套；没调过＝白（夜里黑），就是原来的样子
+enum FrostTint {
+    static func key(user: Bool, dark: Bool) -> String { "frostTint." + (dark ? "night." : "day.") + (user ? "user" : "ai") }
+    static func stored(user: Bool, dark: Bool) -> Color? {
+        guard let hex = UserDefaults.standard.string(forKey: key(user: user, dark: dark)), !hex.isEmpty else { return nil }
+        return Color(hexString: hex)
+    }
+    static func current(user: Bool, dark: Bool, stamp: Double = 0) -> Color {
+        _ = stamp
+        return stored(user: user, dark: dark) ?? (dark ? .black : .white)
+    }
+    static func set(_ color: Color?, user: Bool, dark: Bool) {
+        if let color, let hex = color.hexString {
+            UserDefaults.standard.set(hex, forKey: key(user: user, dark: dark))
+        } else {
+            UserDefaults.standard.removeObject(forKey: key(user: user, dark: dark))
+        }
+        MessagesPalette.bump()
     }
 }
 
@@ -8428,7 +8453,7 @@ struct AudioBubble: View {
                 // 1001 她抓的「语音的气泡呢」：跟正文气泡同一个开关，信息主题选玻璃就是玻璃
                 card(kakao: false)
                     .modifier(MessagesBubbleFill(fill: isUser ? theme.bubbleUser : theme.bubbleAI,
-                                                 glass: theme.isMessages && MessagesPalette.glass))
+                                                 glass: theme.isMessages && MessagesPalette.glass, isUser: isUser))
             }
         }
         .animation(.easeInOut(duration: 0.18), value: transcriptShown)
@@ -9018,6 +9043,7 @@ private struct TailPillGlassModifier: ViewModifier {
 struct MessagesBubbleFill: ViewModifier {   // 1014 工作室半屏也借它
     let fill: Color
     let glass: Bool
+    var isUser = false   // 1016 毛玻璃你们俩各一个颜色
     @AppStorage("msgGlassFrost") private var frost = 0.3
     @AppStorage("msgGlassKind") private var kind = "clear"   // 1011 她：玻璃气泡分透玻璃 / 毛玻璃（存的值还叫 fog）
     @AppStorage("msgGlassFog2") private var fog = 0.5   // 1015 换新名：重新从正中间（她喜欢的那样）开始
@@ -9029,7 +9055,7 @@ struct MessagesBubbleFill: ViewModifier {   // 1014 工作室半屏也借它
         if !glass {
             content.background(fill, in: shape)
         } else if kind == "fog" {
-            content.modifier(FogGlassBubble(shape: shape, fog: fog, night: scheme == .dark))
+            content.modifier(FogGlassBubble(shape: shape, fog: fog, night: scheme == .dark, isUser: isUser))
         } else if #available(iOS 26.0, *) {
             content
                 .background((scheme == .dark ? Color.black : Color.white).opacity(frost * 0.6), in: shape)

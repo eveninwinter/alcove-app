@@ -288,6 +288,16 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// 1016 删表情：先从面板上拿掉（马上看得到），再叫后端删、拉一遍整库对齐
+    func deleteSticker(_ stk: Sticker) {
+        stickers.removeAll { $0.id == stk.id }
+        saveStickerCache()
+        Task {
+            try? await AlcoveAPI.deleteSticker(id: stk.id)
+            if let list = try? await AlcoveAPI.stickers() { stickers = list; saveStickerCache() }
+        }
+    }
+
     // 多张图微信式一起发，caption 挂第一张；ext 跟着数据走，透明图是 png
     func sendImages(_ datas: [(data: Data, ext: String)], caption: String) {
         guard !datas.isEmpty, !stagingImages else { return }

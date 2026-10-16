@@ -2043,6 +2043,7 @@ private struct BubbleAppearanceSettingsView: View {
             VStack(spacing: 12) {
                 if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                 ForEach(paletteItems) { item in colorRow(item) }
+                            frostTintRows
             }
             Text(chatTheme.isTreehouse
                  ? "Sanctus 的气泡与颜色跟信息主题分开存；白天、黑夜各一套，跟全屋的日夜开关走；每项的默认只恢复该项。"
@@ -2069,6 +2070,7 @@ private struct BubbleAppearanceSettingsView: View {
                             // 树屋：普通 / 玻璃（#3519）＋「他的气泡分段还是整个」
                             if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                             ForEach(paletteItems) { item in colorRow(item) }
+                            frostTintRows
                         }
                         Text(chatTheme.isTreehouse
                              ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。Sanctus 跟信息主题那套分开存，各调各的；白天、黑夜各一套，跟全屋的日夜开关走。现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套"
@@ -2135,6 +2137,46 @@ private struct BubbleAppearanceSettingsView: View {
                 .labelsHidden()
                 .frame(width: 30)
             Button("默认") { th ? MessagesPalette.thSet(item, nil, dark: dark) : MessagesPalette.set(item, nil, dark: dark) }
+                .font(.system(size: 11, weight: .medium))
+                .foregroundColor(isDefault ? panelTheme.textLight : panelTheme.fyAccent)
+                .disabled(isDefault)
+        }
+    }
+
+    /// 1016 #3935 她：「调色盘 我俩分开调节 默认就是现在的颜色」——毛玻璃上面那层的颜色，只在玻璃气泡＋毛玻璃时出现
+    @ViewBuilder private var frostTintRows: some View {
+        if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) && glassKind == "fog" {
+            frostTintRow(user: true)
+            frostTintRow(user: false)
+        }
+    }
+
+    private func frostTintRow(user: Bool) -> some View {
+        let dark = chatTheme.isDark
+        let binding = Binding<Color>(
+            get: { FrostTint.current(user: user, dark: dark) },
+            set: { FrostTint.set($0, user: user, dark: dark) })
+        let isDefault = FrostTint.stored(user: user, dark: dark) == nil
+        return HStack(spacing: 8) {
+            Text(user ? "我的毛玻璃" : "他的毛玻璃")
+                .font(.system(size: 12))
+                .frame(width: 84, alignment: .leading)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 7) {
+                    ForEach(Array(MessagesPalette.presets.enumerated()), id: \.offset) { _, c in
+                        Button { FrostTint.set(c, user: user, dark: dark) } label: {
+                            Circle().fill(c)
+                                .frame(width: 22, height: 22)
+                                .overlay(Circle().stroke(panelTheme.fyBorder, lineWidth: 1))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            ColorPicker("", selection: binding, supportsOpacity: false)
+                .labelsHidden()
+                .frame(width: 30)
+            Button("默认") { FrostTint.set(nil, user: user, dark: dark) }
                 .font(.system(size: 11, weight: .medium))
                 .foregroundColor(isDefault ? panelTheme.textLight : panelTheme.fyAccent)
                 .disabled(isDefault)
@@ -2661,8 +2703,8 @@ final class MusicModel: ObservableObject {
         async let recs = try? NativeHouseAPI.object("/api/music/recommend/resource")
         async let likes = try? NativeHouseAPI.object("/api/music/likelist")
         let (myObject, recObject, likeObject) = await (mine, recs, likes)
-        playlists = (myObject?["playlist"] as? [[String: Any]] ?? []).map(MusicPlaylist.init)
-        recommended = (recObject?["recommend"] as? [[String: Any]] ?? []).map(MusicPlaylist.init)
+        playlists = (myObject?["playlist"] as? [[String: Any]] ?? []).map { MusicPlaylist($0) }   // 1016 多了 init(podcast:)，写 .init 会分不清
+        recommended = (recObject?["recommend"] as? [[String: Any]] ?? []).map { MusicPlaylist($0) }
         likedSongIDs = Set((likeObject?["ids"] as? [Any] ?? []).compactMap {
             if let n = $0 as? NSNumber { return n.stringValue }
             return $0 as? String
@@ -3358,18 +3400,16 @@ private struct NativeMusicView: View {
         let h = total / 3600, m = total % 3600 / 60
         let ital = SanctusPageFont.ital(12.5), num = SanctusPageFont.corm(16)
         let sub = ink.base.sub, inkColor = ink.base.title
+        let lead: Text = Text("for ").font(ital).foregroundColor(sub)
+        let mins: Text = Text("\(m)").font(num).foregroundColor(inkColor)
+        let minWord: Text = Text(" minutes").font(ital).foregroundColor(sub)
         if h > 0 {
-            return Text("for ").font(ital).foregroundColor(sub)
-                + Text("\(h)").font(num).foregroundColor(inkColor)
-                + Text(h == 1 ? " hour " : " hours ").font(ital).foregroundColor(sub)
-                + Text("\(m)").font(num).foregroundColor(inkColor)
-                + Text(" minutes").font(ital).foregroundColor(sub)
+            let hours: Text = Text("\(h)").font(num).foregroundColor(inkColor)
+            let hourWord: Text = Text(h == 1 ? " hour " : " hours ").font(ital).foregroundColor(sub)
+            let head: Text = lead + hours + hourWord
+            return head + mins + minWord
         }
-        if m > 0 {
-            return Text("for ").font(ital).foregroundColor(sub)
-                + Text("\(m)").font(num).foregroundColor(inkColor)
-                + Text(" minutes").font(ital).foregroundColor(sub)
-        }
+        if m > 0 { return lead + mins + minWord }
         return Text("just started").font(ital).foregroundColor(sub)
     }
 
@@ -8347,7 +8387,7 @@ private struct StudioChatBubble: ViewModifier {
         if theme.isTreehouse {
             content.modifier(TreehouseBubbleFill(isUser: mine, fill: fill, glass: MessagesPalette.thGlass))
         } else if theme.isMessages {
-            content.modifier(MessagesBubbleFill(fill: fill, glass: MessagesPalette.glass))
+            content.modifier(MessagesBubbleFill(fill: fill, glass: MessagesPalette.glass, isUser: mine))
         } else {
             content.background(fill, in: RoundedRectangle(cornerRadius: 18))
         }

@@ -535,6 +535,11 @@ enum AlcoveAPI {
         ])
     }
 
+    /// 1016 #3935 她：「表情包系统加一个删除按钮」——后端是软删（status 标 deleted，图还在，删错了能捞回来）
+    static func deleteSticker(id: String) async throws {
+        _ = try await postJSON("/api/stickers/delete", body: ["id": id])
+    }
+
     /// 0924 她要的「重来」：撤掉他最后一轮回复，claude 回退到她上一句之前重答。返回被藏掉那几条的 ts。
     static func rerollLastReply() async throws -> [String] {
         let obj = try await postJSON("/api/chat/reroll", body: [:])

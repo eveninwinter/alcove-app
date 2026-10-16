@@ -131,7 +131,10 @@ struct StickerSheet: View {
                                  initialDescription: stk.description, initialTags: stk.emotionTags) { name, description, tags in
                 store.updateSticker(stk, name: name, description: description, emotionTags: tags)
                 editing = nil
-            } onCancel: { editing = nil }
+            } onCancel: { editing = nil } onDelete: {
+                store.deleteSticker(stk)
+                editing = nil
+            }
         }
         .onChange(of: uploadItem) { item in
             guard let item else { return }
@@ -200,6 +203,9 @@ private struct StickerDescribeSheet: View {
     let mime: String
     var onSave: (String, String, [String]) -> Void
     var onCancel: () -> Void
+    /// 1016 她要的删除：只有长按已有表情进来时有（新传的那张还没进库，没得删）
+    var onDelete: (() -> Void)? = nil
+    @State private var confirmDelete = false
 
     @State private var name: String
     @State private var description: String
@@ -208,11 +214,13 @@ private struct StickerDescribeSheet: View {
     init(preview: Preview, mime: String,
          initialName: String, initialDescription: String, initialTags: [String],
          onSave: @escaping (String, String, [String]) -> Void,
-         onCancel: @escaping () -> Void) {
+         onCancel: @escaping () -> Void,
+         onDelete: (() -> Void)? = nil) {
         self.preview = preview
         self.mime = mime
         self.onSave = onSave
         self.onCancel = onCancel
+        self.onDelete = onDelete
         _name = State(initialValue: initialName)
         _description = State(initialValue: initialDescription)
         _tagText = State(initialValue: initialTags.joined(separator: "、"))
@@ -269,6 +277,19 @@ private struct StickerDescribeSheet: View {
                 Section("情绪标签") {
                     TextField("困、睡前、软乎乎（逗号分隔）", text: $tagText)
                 }
+                if onDelete != nil {
+                    Section {
+                        Button(role: .destructive) { confirmDelete = true } label: {
+                            Text("删除这张表情").frame(maxWidth: .infinity)
+                        }
+                    }
+                }
+            }
+            .confirmationDialog("删除这张表情？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("删除", role: .destructive) { onDelete?() }
+                Button("取消", role: .cancel) {}
+            } message: {
+                Text("你和他的表情库里都会少掉这一张")
             }
             .navigationTitle("描述这张表情")
             .navigationBarTitleDisplayMode(.inline)
