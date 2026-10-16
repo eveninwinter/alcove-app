@@ -154,11 +154,12 @@ struct WindowPaper {
                           inkSoft: Color(red: 0xA9/255, green: 0xA8/255, blue: 0xB3/255),
                           rubric: Color(red: 0xC9/255, green: 0xB4/255, blue: 0xEC/255),
                           rule: Color(red: 0xEF/255, green: 0xEE/255, blue: 0xF2/255).opacity(0.18))
-            // 1016 她：「颜色太黄了」——象牙纸 / 棕墨 / 牛血红换成 Sanctus 的冷白纸、墨色、灰粉（预览 window-cool-1016b 她说按我的改）
-            : WindowPaper(paper: Color(red: 0xF1/255, green: 0xF2/255, blue: 0xF4/255),
-                          paperDeep: Color(red: 0xE6/255, green: 0xE8/255, blue: 0xEC/255),
+            // 1016 她：「颜色太黄了」——象牙纸 / 棕墨 / 牛血红换成墨色、灰粉；纸她嫌冷白「太白了」，
+            // 选了跟聊天壁纸一样的中性灰（壁纸平均亮度 ≈ 228，不带蓝，预览 window-gray-1016）
+            : WindowPaper(paper: Color(red: 0xE4/255, green: 0xE4/255, blue: 0xE5/255),
+                          paperDeep: Color(red: 0xD9/255, green: 0xD9/255, blue: 0xDB/255),
                           ink: Color(red: 0x2A/255, green: 0x2A/255, blue: 0x2E/255),
-                          inkSoft: Color(red: 0x86/255, green: 0x8A/255, blue: 0x94/255),
+                          inkSoft: Color(red: 0x84/255, green: 0x86/255, blue: 0x8C/255),
                           rubric: Color(red: 0x9C/255, green: 0x7E/255, blue: 0x87/255),
                           rule: Color(red: 0x2A/255, green: 0x2A/255, blue: 0x2E/255).opacity(0.16))
     }
