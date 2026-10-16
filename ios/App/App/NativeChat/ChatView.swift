@@ -1140,7 +1140,7 @@ struct ChatView: View {
                       prev.role != message.role,
                       prev.role == "user" || prev.role == "assistant",
                       message.role == "user" || message.role == "assistant" else { return 0 }
-                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error"]
+                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error", "notice"]
                 if quiet.contains(prev.msgType ?? "") || quiet.contains(message.msgType ?? "") { return 0 }
                 if theme.isKakao {
                     return 12 + 2 + ((message.role == "assistant" && listKakaoShowAvatar) ? 6 : 0)
@@ -1165,7 +1165,8 @@ struct ChatView: View {
                                        && (message.role == "user" || message.role == "assistant")
                                        && thStampHere(index)) ? message.date : nil
             Group {
-            if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" {
+            // 1016 #3978 notice：他给她改备注落的那行「…将你的备注改成了“…”」，跟拍一拍一样居中小字
+            if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" || message.msgType == "notice" {
                 // 0827 拍一拍：居中一行小字。她拍我常规、我拍她加粗，黑底白底各一套灰
                 PatLine(text: message.text,
                         strong: message.msgType == "pat_incoming",
@@ -1406,7 +1407,7 @@ struct ChatView: View {
     }
 
     /// 这几种行后面那条算新一串的开头（分隔线、拍一拍、报错行）
-    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error"]
+    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error", "notice"]
 
     /// 跟 kakaoHead 同一个认法：b 是不是接着 a 那一串
     private func thSameGroup(_ a: ChatMessage, _ b: ChatMessage) -> Bool {
@@ -1514,7 +1515,7 @@ struct ChatView: View {
     /// 跟消息行里那一长串 if / else 对齐：这些卡片、贴纸、语音、音乐都不画九宫格气泡
     static func kakaoDrawsBubble(_ m: ChatMessage) -> Bool {
         let t = m.msgType ?? "text"
-        if t == "pat_incoming" || t == "pat_outgoing" || t == "divider" || t == "api_error"
+        if t == "pat_incoming" || t == "pat_outgoing" || t == "divider" || t == "api_error" || t == "notice"
             || t == "tarot_answer" || t == "choice_answer" { return false }
         if m.morningPaperDate != nil || m.insideText != nil || m.ghostCard != nil || m.playCard != nil
             || m.favoriteForward != nil || m.readingCard != nil || m.tarotCard != nil || m.tarotOffer != nil
