@@ -2916,7 +2916,9 @@ final class MusicModel: ObservableObject {
             "command": "report",
             "now_playing": ["id": song.id, "name": song.name, "artist": song.artist,
                             "paused": !isPlaying, "time": Int(progress), "duration": Int(duration),
-                            "together": togetherOn]
+                            "together": togetherOn,
+                            // 1016 她：「播客的歌词陈璟看不见吗」——播客文稿按节目编号拿，带过去服务器才拿得到
+                            "program_id": song.programID ?? ""]
         ])
     }
 
