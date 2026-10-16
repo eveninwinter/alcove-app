@@ -70,13 +70,18 @@ private struct LabProvider: TimelineProvider {
         ) ?? now.addingTimeInterval(86_400)
         // 底图换了要尽快跟上：最多六个钟头重取一次（天数还是零点换）
         let refresh = min(nextMidnight, now.addingTimeInterval(6 * 3600))
-        guard context.family == .systemMedium else {
+        // 1016 她：「右上角小组件也做成透明」——小号也走假透明，底图另裁一张 widget-bg-small[-dark].jpg
+        let size: String
+        switch context.family {
+        case .systemSmall: size = "small"
+        case .systemMedium: size = "medium"
+        default:
             completion(Timeline(entries: [LabEntry(date: now)], policy: .after(refresh)))
             return
         }
         Task {
-            async let light = WidgetWall.fetch("widget-bg-medium.jpg")
-            async let dark = WidgetWall.fetch("widget-bg-medium-dark.jpg")
+            async let light = WidgetWall.fetch("widget-bg-\(size).jpg")
+            async let dark = WidgetWall.fetch("widget-bg-\(size)-dark.jpg")
             let entry = LabEntry(date: now, wallLight: await light, wallDark: await dark)
             completion(Timeline(entries: [entry], policy: .after(refresh)))
         }
@@ -111,13 +116,10 @@ private struct AlcoveWidgetView: View {
     @ViewBuilder
     var body: some View {
         switch family {
-        case .systemSmall:
-            // 1015 #3834–3837 她：换成吊坠图、纯白底；黑夜（跟手机深色模式走，小组件读不到 App 的日夜按钮）深炭灰底、吊坠压暗一点。
-            // 效果图 /root/workroom/mock/island/widgets.jpg（白天）、widgets-dark.jpg（黑夜）
-            widgetContent
-                .containerBackground(for: .widget) { sp.card }
-        case .systemMedium:
+        case .systemSmall, .systemMedium:
+            // 1015 #3834–3837 她：小号换成吊坠图、纯白底；黑夜（跟手机深色模式走，小组件读不到 App 的日夜按钮）深炭灰底、吊坠压暗一点。
             // 1015 #3896：中号用她桌面壁纸裁出来的那块当底（假透明），取不到就照旧纯白 / 炭灰
+            // 1016 她：「右上角小组件也做成透明」——小号同样
             widgetContent
                 .containerBackground(for: .widget) {
                     if let wall {
@@ -134,7 +136,7 @@ private struct AlcoveWidgetView: View {
 
     /// 中号用了壁纸底：字和吊坠按底图亮暗挑（她的壁纸是浅灰，深色模式下也得用深色的字，不然看不见）；没有底图照旧跟手机深浅走
     private var wall: UIImage? {
-        guard family == .systemMedium else { return nil }
+        guard family == .systemSmall || family == .systemMedium else { return nil }
         return scheme == .dark ? entry.wallDark : entry.wallLight
     }
     private var sp: SPal { SPal(dark: wall.map { !WidgetWall.isLight($0) } ?? (scheme == .dark)) }
