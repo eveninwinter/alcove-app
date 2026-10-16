@@ -852,6 +852,10 @@ private struct NativeSettingsView: View {
     @AppStorage("houseInterfaceAppearance") private var houseAppearance = "dark"
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("showClawdPet") private var showClawdPet = true   // 1009 聊天页小螃蟹开关
+    // 1016 #3998–3999 互相改备注：她给他的（这里改，改完聊天页马上出一行、马上告诉他）／他给她的（只看）
+    @State private var nickHim = ""
+    @State private var nickHimSaved = ""
+    @State private var nickHer = ""
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
     @AppStorage("userAvatarDataURL") private var userAvatar = ""
@@ -1204,6 +1208,19 @@ private struct NativeSettingsView: View {
                             // 后台拍一拍那句要等她改后缀或者拍他一下才跟着改，这期间他拍她用的还是旧名字。改名就一起存过去
                             .onChange(of: assistantName) { _ in schedulePatSave() }
                     }
+                    Divider().opacity(0.25)
+                    // 1016 #3998 她：「这个是陈璟的名字 不能改的 我说的是单独做一个备注」——备注跟名字分开
+                    settingRow("给他的备注", "改完按完成，聊天页马上出一行，他也马上知道") {
+                        TextField("没起", text: $nickHim).multilineTextAlignment(.trailing).frame(width: 105)
+                            .submitLabel(.done)
+                            .onSubmit { saveNickHim() }
+                    }
+                    Divider().opacity(0.25)
+                    settingRow("他给你的备注", nickHer.isEmpty ? "他还没给你起" : "他改了你这边聊天页会出一行") {
+                        Text(nickHer.isEmpty ? "—" : nickHer).font(.system(size: 14)).foregroundColor(.secondary)
+                    }
+                    .task { await loadNick() }
+                    .onDisappear { saveNickHim() }
                     Divider().opacity(0.25)
                     settingRow("我的头像", "点击更换") {
                         PhotosPicker(selection: $userPhoto, matching: .images) {
@@ -1684,6 +1701,21 @@ private struct NativeSettingsView: View {
     }
 
     // 后缀连同当前设置的名字一起存，这样他在别处拍她时叫的也是她刚改的那个名字
+    private func loadNick() async {
+        guard let o = try? await AlcoveAPI.getRaw("/api/pat/nickname"), o["ok"] as? Bool == true else { return }
+        let him = o["him"] as? String ?? ""
+        nickHer = o["her"] as? String ?? ""
+        if nickHim == nickHimSaved { nickHim = him }
+        nickHimSaved = him
+    }
+
+    private func saveNickHim() {
+        let name = nickHim.split(whereSeparator: { $0.isWhitespace }).joined(separator: " ")
+        guard name != nickHimSaved else { return }
+        nickHimSaved = name
+        Task { _ = try? await AlcoveAPI.postRaw("/api/pat/nickname", body: ["name": name]) }
+    }
+
     private func schedulePatSave() {
         guard patLoaded else { return }
         patSaveTask?.cancel()
