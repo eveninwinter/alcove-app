@@ -336,6 +336,8 @@ struct ChatView: View {
                                         .padding(.horizontal, -7)
                                         .padding(.vertical, -3)
                                         .animation(.easeInOut(duration: 0.42), value: flashTS))
+                                // 1016 贴纸打码：贴纸认在消息上跟着滚，每条报自己在屏幕上的位置（只有贴纸层盯着）
+                                .modifier(StickerMaskAnchor(id: msg.id))
                                 .onAppear {
                                     guard idx == 0, olderPagingArmed else { return }
                                     olderPagingArmed = false
@@ -491,7 +493,11 @@ struct ChatView: View {
                 .scrollEdgeEffectStyle(theme.isMessages ? .soft : .automatic, for: .bottom)
                 .scrollEdgeEffectHidden(theme.isMessages, for: .top)   // 顶部不用系统效果，走上面纸页式渐隐
                 .scrollDismissesKeyboard(.interactively)
-                .onTapGesture { inputFocused = false }
+                .onTapGesture {
+                    inputFocused = false
+                    // 贴纸打码：点空白处取消选中（原作一样）
+                    if StickerMaskStore.shared.selected != nil { StickerMaskStore.shared.selected = nil }
+                }
                 .simultaneousGesture(
                     DragGesture(minimumDistance: 4).onChanged { _ in
                         // 0927 任务#2982：API 房间的流式不走 store.live（走 apiLive），原来这里认不出来，
@@ -1825,6 +1831,10 @@ struct ChatView: View {
         Menu {
             Button { inputFocused = false; showEmbroidery = true } label: {
                 Label("刺绣", systemImage: "pencil.and.outline")
+            }
+            // 1016 她：贴纸打码（照 miya-tonya/sticker-mask），只在主聊天，入口放加号里
+            Button { inputFocused = false; StickerMaskStore.shared.enter() } label: {
+                Label("贴纸打码", systemImage: "eye.slash")
             }
             Button { showStickers = true } label: {
                 Label("表情", systemImage: "face.smiling")

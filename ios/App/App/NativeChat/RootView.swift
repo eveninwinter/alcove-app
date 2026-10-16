@@ -4,6 +4,7 @@ import UserNotifications
 // App 根视图：原生聊天页 + 原生小屋页面。
 struct RootView: View {
     @State private var housePage: HouseDestination?
+    @ObservedObject private var stickerMask = StickerMaskStore.shared   // 1016 贴纸打码
     @State private var activeCall: CallKind?
     /// 0902 一起听大卡缩成小唱片。故意不持久化：每次新开一起听都是展开的
     @State private var listenMinimized = false
@@ -102,6 +103,11 @@ struct RootView: View {
                 topBar
                     .blur(radius: showHouseDrawer ? 5.0 : 0)
                     .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
+            }
+            // 1016 贴纸打码：盖在聊天页和顶栏上面（落在顶栏上的贴纸钉住不动）；开了别的房间 / 抽屉就先藏起来，回来还在
+            if stickerMask.active && !showTerminal && !showRoundtable && !showHouseDrawer && housePage == nil {
+                StickerMaskLayer(topBarHeight: theme.isTreehouse ? 84 : (theme.isKakao ? 44 : (theme.isMessages ? 52 : 60)))
+                    .zIndex(7)
             }
             // 1006 她要的：一起听开着且在放歌 → 陈璟名字下面一条玻璃胶囊（原来的白瓷大卡撤了）。
             // 72 = 信息顶栏头像 45 + 名字胶囊 32 − 叠 15，再空 10；Kakao / 旧顶栏只有一行，往上提
