@@ -7725,6 +7725,20 @@ struct AdjustableBlurView: UIViewRepresentable {
             super.init(effect: effect)
             NotificationCenter.default.addObserver(self, selector: #selector(rebuild),
                                                    name: UIApplication.willEnterForegroundNotification, object: nil)
+            NotificationCenter.default.addObserver(self, selector: #selector(rebuild),
+                                                   name: UIApplication.didBecomeActiveNotification, object: nil)
+        }
+
+        /// 1016 #3928 她：「调到最左边退出去过一会他又变回默认了」——系统会在退后台、页面收起时把停住的动画直接放完，
+        /// 磨砂跳回最厚（＝滑条正中那个样子）。只靠回前台那一下补不全：每次排版都看一眼，动画不在停住的状态就重新卡回去
+        override func layoutSubviews() {
+            super.layoutSubviews()
+            if built, window != nil, animator?.state != .active { rebuild() }
+        }
+
+        override func traitCollectionDidChange(_ previous: UITraitCollection?) {
+            super.traitCollectionDidChange(previous)
+            if built { rebuild() }
         }
         required init?(coder: NSCoder) { fatalError() }
 
