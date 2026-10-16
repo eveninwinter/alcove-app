@@ -154,9 +154,13 @@ struct WindowPaper {
                           inkSoft: Color(red: 0xA9/255, green: 0xA8/255, blue: 0xB3/255),
                           rubric: Color(red: 0xC9/255, green: 0xB4/255, blue: 0xEC/255),
                           rule: Color(red: 0xEF/255, green: 0xEE/255, blue: 0xF2/255).opacity(0.18))
-            : WindowPaper(paper: Color(red: 0.96, green: 0.94, blue: 0.90), paperDeep: Color(red: 0.92, green: 0.89, blue: 0.84),
-                          ink: Color(red: 0.17, green: 0.15, blue: 0.13), inkSoft: Color(red: 0.49, green: 0.45, blue: 0.40),
-                          rubric: Color(red: 0.49, green: 0.18, blue: 0.16), rule: Color(red: 0.17, green: 0.15, blue: 0.13).opacity(0.16))
+            // 1016 她：「颜色太黄了」——象牙纸 / 棕墨 / 牛血红换成 Sanctus 的冷白纸、墨色、灰粉（预览 window-cool-1016b 她说按我的改）
+            : WindowPaper(paper: Color(red: 0xF1/255, green: 0xF2/255, blue: 0xF4/255),
+                          paperDeep: Color(red: 0xE6/255, green: 0xE8/255, blue: 0xEC/255),
+                          ink: Color(red: 0x2A/255, green: 0x2A/255, blue: 0x2E/255),
+                          inkSoft: Color(red: 0x86/255, green: 0x8A/255, blue: 0x94/255),
+                          rubric: Color(red: 0x9C/255, green: 0x7E/255, blue: 0x87/255),
+                          rule: Color(red: 0x2A/255, green: 0x2A/255, blue: 0x2E/255).opacity(0.16))
     }
 
     var uiInk: UIColor { UIColor(ink) }
@@ -492,7 +496,8 @@ struct NativeWindowView: View {
             Text(readingMode ? "\(Self.cn(reading.items.count))条待读" : aestheticMode ? (aesthetic.day.isEmpty ? "" : cnDay(aesthetic.day))
                  : (store.day.isEmpty ? "" : "\(cnDay(store.day)) · 今天\(Self.cn(store.cards.count))幅"))
                 .font(WindowFont.swiftUI(12)).tracking(1.5).foregroundColor(paper.inkSoft)
-            Spacer()
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Spacer(minLength: 8)
             HStack(spacing: 0) {
                 modeButton("一幅一屏", on: !gridMode && !aestheticMode && !readingMode) { gridMode = false; aestheticMode = false; readingMode = false }
                 modeButton("目录", on: gridMode && !aestheticMode && !readingMode) { gridMode = true; aestheticMode = false; readingMode = false }
@@ -511,8 +516,10 @@ struct NativeWindowView: View {
         Button {
             withAnimation(.easeInOut(duration: 0.3)) { action() }
         } label: {
-            Text(title).font(WindowFont.swiftUI(11))
-                .padding(.horizontal, 10).padding(.vertical, 4)
+            // 1016：原来「一幅一屏」「审美积累」挤成两行字，改成一行
+            Text(title).font(WindowFont.swiftUI(10.5))
+                .lineLimit(1).fixedSize()
+                .padding(.horizontal, 8).padding(.vertical, 5)
                 .foregroundColor(on ? paper.paper : paper.inkSoft)
                 .background(on ? paper.ink : Color.clear)
         }
@@ -783,6 +790,19 @@ private struct WindowPlate: View {
     let card: WindowCard
     let paper: WindowPaper
 
+    /// 讲解的头一两句（到第二个句号为止，最多 90 字）
+    static func lead(_ body: String) -> String {
+        let flat = body.replacingOccurrences(of: "\n", with: " ").trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !flat.isEmpty else { return "" }
+        var out = "", stops = 0
+        for ch in flat {
+            out.append(ch)
+            if "。！？.!?".contains(ch) { stops += 1; if stops == 2 { break } }
+            if out.count >= 90 { out += "…"; break }
+        }
+        return out
+    }
+
     var body: some View {
         GeometryReader { geo in
             VStack(alignment: .leading, spacing: 0) {
@@ -814,6 +834,12 @@ private struct WindowPlate: View {
                     Text(card.displayTitle)
                         .font(WindowFont.swiftUI(24, bold: true)).foregroundColor(paper.ink)
                         .lineLimit(2).minimumScaleFactor(0.75).lineSpacing(3)
+                    // 1016：标题下面原来空一大块，放讲解的头一两句，点进去看全文
+                    if !Self.lead(card.displayBody).isEmpty {
+                        Text(Self.lead(card.displayBody))
+                            .font(WindowFont.swiftUI(13)).foregroundColor(paper.inkSoft)
+                            .lineSpacing(5).lineLimit(3)
+                    }
                     HStack(spacing: 6) {
                         Text(card.categoryZh).font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft)
                         if !card.comments.isEmpty {
@@ -899,6 +925,8 @@ private struct WindowCardPage: View {
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
+                // 1016 她：「上面不留空 图片直接下来 那个 x 的位置别动」——列表顶到状态栏底下，✕ 还按安全区摆
+                .ignoresSafeArea(edges: .top)
                 .safeAreaInset(edge: .bottom, spacing: 0) { commentBar(card) }
             }
             Button { dismiss() } label: {
@@ -1221,6 +1249,7 @@ private struct AestheticPinPage: View {
                     }
                 }
                 .scrollDismissesKeyboard(.interactively)
+                .ignoresSafeArea(edges: .top)   // 1016 跟图录页一样：图直接顶上去，✕ 不动
                 .safeAreaInset(edge: .bottom, spacing: 0) { commentBar(pin) }
             }
             Button { dismiss() } label: {
