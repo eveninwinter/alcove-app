@@ -2406,12 +2406,25 @@ struct MusicPlaylist: Identifiable, Equatable {
     let name: String
     let cover: String
     let count: Int
+    /// 1016 她要搜播客：网易云的播客（电台）也当一张「歌单」走，点进去是一期期节目
+    var isPodcast = false
+    var host = ""
 
     init(_ json: [String: Any]) {
         id = json.string("id")
         name = json.string("name")
         cover = MusicSong.secureURL(json.string("coverImgUrl", "picUrl"))
         count = json.int("trackCount")
+    }
+
+    /// cloudsearch type=1009 搜出来的一个播客
+    init(podcast json: [String: Any]) {
+        id = json.string("id")
+        name = json.string("name")
+        cover = MusicSong.secureURL(json.string("picUrl", "intervenePicUrl"))
+        count = json.int("programCount")
+        isPodcast = true
+        host = json.object("dj").string("nickname")
     }
 }
 
@@ -2451,6 +2464,7 @@ final class MusicModel: ObservableObject {
     @Published var playlists: [MusicPlaylist] = []
     @Published var recommended: [MusicPlaylist] = []
     @Published var playlistSongs: [MusicSong] = []
+    @Published var podcasts: [MusicPlaylist] = []   // 1016 搜播客的结果
     @Published var homeLoading = false
     @Published var likedSongIDs: Set<String> = []
     @Published var queue: [MusicSong] = []
@@ -2490,6 +2504,41 @@ final class MusicModel: ObservableObject {
         songs = obj.object("result").array("songs").map(MusicSong.init)
         prefetchArtwork(for: songs)
         if songs.isEmpty { message = "没搜到  换个词试试" }
+    }
+
+    /// 1016 她：「播客的歌能不能搜到」——搜网易云的播客（电台，type=1009）。点进去走 loadPlaylist 的播客分支
+    func searchPodcasts(_ query: String) async {
+        let term = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let q = term.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+              !q.isEmpty else { return }
+        loading = true
+        message = ""
+        defer { loading = false }
+        guard let obj = try? await NativeHouseAPI.object("/api/music/cloudsearch?keywords=\(q)&type=1009&limit=30") else {
+            podcasts = []
+            message = "没连上音乐服务"
+            return
+        }
+        podcasts = obj.object("result").array("djRadios").map { MusicPlaylist(podcast: $0) }
+        if podcasts.isEmpty { message = "没搜到播客  换个词试试" }
+    }
+
+    /// 一个播客的节目：每期的音频在网易云里就是一首「歌」（mainSong），拿它的 id 跟放歌一模一样地放
+    private func loadPodcastPrograms(_ podcast: MusicPlaylist) async {
+        guard let obj = try? await NativeHouseAPI.object(
+            "/api/music/dj/program?rid=\(podcast.id)&limit=100&asc=false") else {
+            playlistSongs = []; message = "节目没拉下来"; return
+        }
+        playlistSongs = obj.array("programs").compactMap { p -> MusicSong? in
+            let main = p.object("mainSong")
+            let id = main.string("id")
+            guard !id.isEmpty else { return nil }
+            return MusicSong(id: id, name: p.string("name"), artist: podcast.name,
+                             cover: p.string("coverUrl").isEmpty ? podcast.cover : p.string("coverUrl"))
+        }
+        songs = playlistSongs
+        prefetchArtwork(for: playlistSongs)
+        if playlistSongs.isEmpty { message = "这个播客还没有能放的节目" }
     }
 
     /// 一起听累计时长：先拉总数，之后每 30 秒在播就往后端记 30 秒
@@ -2638,6 +2687,7 @@ final class MusicModel: ObservableObject {
     func loadPlaylist(_ playlist: MusicPlaylist) async {
         loading = true
         defer { loading = false }
+        if playlist.isPodcast { await loadPodcastPrograms(playlist); return }
         guard let obj = try? await NativeHouseAPI.object(
             "/api/music/playlist/track/all?id=\(playlist.id)&limit=500") else {
             playlistSongs = []; message = "歌单没拉下来"; return
@@ -2958,8 +3008,10 @@ private struct NativeMusicView: View {
     @State private var giftSong: MusicSong?
     @State private var listenPage = false
     @State private var lastPlayingID: String?
+    @State private var searchPodcast = false   // 1016：搜索框下面「单曲 / 播客」
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
+    private var hasQuery: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -2968,8 +3020,11 @@ private struct NativeMusicView: View {
             } else {
                 FoyerPanelTitle(title: selectedPlaylist?.name ?? "音乐", theme: theme)
                 searchBar
+                if selectedPlaylist == nil { searchKindPicker }
                 if let selectedPlaylist { playlistPage(selectedPlaylist) }
-                else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty && !model.songs.isEmpty {
+                else if searchPodcast && hasQuery && !model.podcasts.isEmpty {
+                    podcastList(model.podcasts)
+                } else if !searchPodcast && hasQuery && !model.songs.isEmpty {
                     songList(model.songs)
                 } else { homePage }
                 if model.nowPlaying != nil {
@@ -3016,16 +3071,59 @@ private struct NativeMusicView: View {
                 }.buttonStyle(.plain)
             }
             Image(systemName: "magnifyingglass").foregroundColor(theme.textLight)
-            TextField("搜索歌名或歌手", text: $query)
+            TextField(searchPodcast ? "搜索播客" : "搜索歌名或歌手", text: $query)
                 .submitLabel(.search)
-                .onSubmit { selectedPlaylist = nil; Task { await model.search(query) } }
+                .onSubmit { runSearch() }
             if model.loading { ProgressView().controlSize(.small).tint(theme.fyAccent) }
             else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button { selectedPlaylist = nil; Task { await model.search(query) } } label: {
+                Button { runSearch() } label: {
                     Image(systemName: "arrow.right.circle.fill").font(.system(size: 19))
                 }.buttonStyle(.plain)
             }
         }.padding(11).foyerCard(theme).padding(.horizontal, 16).padding(.top, 10)
+    }
+
+    private func runSearch() {
+        selectedPlaylist = nil
+        Task { if searchPodcast { await model.searchPodcasts(query) } else { await model.search(query) } }
+    }
+
+    /// 1016：单曲 / 播客。切过去时框里有字就直接按新的那种再搜一次
+    private var searchKindPicker: some View {
+        Picker("搜什么", selection: $searchPodcast) {
+            Text("单曲").tag(false)
+            Text("播客").tag(true)
+        }
+        .pickerStyle(.segmented)
+        .padding(.horizontal, 16).padding(.top, 8)
+        .onChange(of: searchPodcast) { _ in if hasQuery { runSearch() } }
+    }
+
+    /// 搜出来的播客：封面、名字、主播 · 多少期；点进去是节目列表（跟歌单同一页）
+    private func podcastList(_ items: [MusicPlaylist]) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 5) {
+                ForEach(items) { podcast in
+                    Button { open(podcast) } label: {
+                        HStack(spacing: 11) {
+                            AsyncImage(url: URL(string: podcast.cover)) { $0.resizable().scaledToFill() }
+                                placeholder: { theme.fyCardSub }
+                                .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 9))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(podcast.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
+                                Text([podcast.host, "\(podcast.count) 期"].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(theme.textDim)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                }
+            }.padding(.horizontal, 14).padding(.vertical, 8)
+        }
     }
 
     // MARK: 一起听
@@ -3186,7 +3284,7 @@ private struct NativeMusicView: View {
                     .frame(width: 82, height: 82).clipShape(RoundedRectangle(cornerRadius: 13))
                 VStack(alignment: .leading, spacing: 7) {
                     Text(playlist.name).font(.system(size: 17, weight: .semibold)).lineLimit(2)
-                    Text("\(playlist.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
+                    Text(playlist.isPodcast ? "\(playlist.count) 期" : "\(playlist.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
                     Button { if let first = model.playlistSongs.first { Task { await model.play(first, queue: model.playlistSongs) } } } label: {
                         Label("播放全部", systemImage: "play.fill").font(.system(size: 11, weight: .medium))
                     }.buttonStyle(.borderedProminent).tint(theme.fyAccent)
