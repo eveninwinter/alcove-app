@@ -1439,6 +1439,31 @@ struct ChatView: View {
             j += 1
         }
         let s = stamp ?? head
+        // 1016 她：「一轮不要有两个 trace」——他一轮拆成几个气泡、好几条各带思绪 / 动作时，原来只借第一条，
+        // 后面那几条还各挂一行 trace。改成整串带过程的那几条按先后合成一份，全挂在时间那一行；其余各条一律不画自己那行
+        let procs = (head..<j).filter { thHasProc($0) && !thIsCard(msgs[$0]) }
+        if procs.count > 1 || (procs.count == 1 && procs[0] != s) {
+            if index == s {
+                var merged = msgs[s]
+                merged.segments = procs.flatMap { msgs[$0].segments }
+                merged.activity = procs.flatMap { msgs[$0].activity }
+                merged.thinking = procs.compactMap { msgs[$0].thinking?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }.joined(separator: "\n\n")
+                merged.nativeThinking = procs.compactMap { msgs[$0].nativeThinking?.trimmingCharacters(in: .whitespacesAndNewlines) }
+                    .filter { !$0.isEmpty }.joined(separator: "\n\n")
+                if merged.thinking?.isEmpty == true { merged.thinking = nil }
+                if merged.nativeThinking?.isEmpty == true { merged.nativeThinking = nil }
+                var cardR: RecallItem?
+                for k in head..<j where k != s && thIsCard(msgs[k]) {
+                    if let r = recallFor(index: k) { cardR = r; break }
+                }
+                let r = recallFor(index: s) ?? procs.lazy.compactMap { self.recallFor(index: $0) }.first ?? cardR
+                return (merged, r, false)
+            }
+            if procs.contains(index) { return (nil, nil, true) }
+            if stamp != nil, thIsCard(msgs[index]) { return (nil, nil, true) }
+            return (nil, nil, false)
+        }
         // 1011 她：「这个memory怎么又跑到卡片上面去了？？时间戳这一行 是永远绑死的」——一轮打头是卡片、卡片上挂着召回，
         // 挂时间那条自己又有思绪，原来就「不借」，卡片自己顶着一行 memory。改成：有不是卡片的挂时间那条时，
         // 卡片一律不画自己那一行，召回并进时间那一行（挂时间那条自己没召回才并）
