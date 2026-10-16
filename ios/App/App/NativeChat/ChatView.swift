@@ -341,7 +341,9 @@ struct ChatView: View {
             ZStack(alignment: .bottom) {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: chatBubbleGap) {
-                        ForEach(Array(store.messages.enumerated()), id: \.element.id) { idx, msg in
+                        let rows = listedRows
+                        let firstIdx = rows.first?.offset ?? 0
+                        ForEach(rows, id: \.element.id) { idx, msg in
                             chatMessageRow(at: idx, message: msg)
                                 .background(
                                     RoundedRectangle(cornerRadius: 15, style: .continuous)
@@ -355,12 +357,12 @@ struct ChatView: View {
                                 // 本地那条换成服务器那条时是淡出淡入，毛玻璃半透明那一下后面没磨的壁纸透出来就是闪。毛玻璃时直接换
                                 .transition(frostedBubbles ? .identity : .opacity)
                                 .onAppear {
-                                    guard idx == 0, olderPagingArmed else { return }
+                                    guard idx == firstIdx, olderPagingArmed else { return }
                                     olderPagingArmed = false
                                     store.loadOlder()
                                 }
                                 .onDisappear {
-                                    guard idx == 0 else { return }
+                                    guard idx == firstIdx else { return }
                                     DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { olderPagingArmed = true }
                                 }
                         }
@@ -1061,6 +1063,15 @@ struct ChatView: View {
         let m = store.messages[index]
         guard thIsShell(m), m.trace.isEmpty, !thEmptyShell(at: index) else { return 0 }
         return -CGFloat(chatBubbleGap)
+    }
+
+    /// 1016 她：「一个轮次里我发送两次……中间间隔就变成这样了」——她一次发 4 张图，后 3 张并进第一张那行画，
+    /// 那 3 行虽然是空的（EmptyView），LazyVStack 照样每行给一份气泡间距，图组后面就空出一大截。
+    /// 被前面吃进去的行（图组后几张、「整个」模式并走的、空壳）干脆不进 ForEach
+    private var listedRows: [(offset: Int, element: ChatMessage)] {
+        store.messages.enumerated().filter { e in
+            !(isPhotoGroupContinuation(at: e.offset) || thMergedAway(at: e.offset) || thEmptyShell(at: e.offset))
+        }
     }
 
     @ViewBuilder
