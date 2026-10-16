@@ -2433,7 +2433,15 @@ struct MusicSong: Identifiable, Equatable, Codable {
         var copy = self
         copy.message = message.trimmingCharacters(in: .whitespacesAndNewlines)
         guard let data = try? JSONEncoder().encode(copy),
-              let json = String(data: data, encoding: .utf8) else { return nil }
+              var dict = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any] else { return nil }
+        // 1016 她：送歌给他时卡里顺手带一句只有他看的提示——怎么看这首的歌词 / 这期播客的文稿（App 画卡片时不看这个字段）
+        if let pid = programID, !pid.isEmpty {
+            dict["hint"] = "这是一期播客，没有歌词。看文稿：python3 /root/rhysel/podcast_text.py text \(pid)"
+        } else {
+            dict["hint"] = "看歌词：curl -s \"http://127.0.0.1:18003/api/music/lyric?id=\(id)\""
+        }
+        guard let out = try? JSONSerialization.data(withJSONObject: dict),
+              let json = String(data: out, encoding: .utf8) else { return nil }
         return "[MUSIC_CARD]\(json)[/MUSIC_CARD]"
     }
 }
