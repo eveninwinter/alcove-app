@@ -64,7 +64,10 @@ final class StickerMaskStore: ObservableObject {
     static let minEdge: CGFloat = 16        // 单独拉宽 / 拉高最窄到这
     static let stretchHandleMinEdge: CGFloat = 56   // 边比这短就藏起边上的小胶囊（会和角把手叠在一起）
 
-    private static let builtins = ["MaskTapePink", "MaskTapeBlue", "MaskStarPink", "MaskStarBlue"]
+    // 1016 #3919 她：「先把我们有的那几张放进去吧」——Sanctus 素材库里能盖得住东西的六张（透明边裁掉了）；
+    // 数字星星、seen this Angel 那两张太淡太透，盖不住字，没放
+    private static let builtins = ["MaskTapePink", "MaskTapeBlue", "MaskStarPink", "MaskStarBlue",
+                                   "MaskLocket", "MaskRabbit", "MaskFairies", "MaskNotes", "MaskWing", "MaskButterfly"]
     private static let userKey = "maskStickerUserAssets"        // 她加的素材文件名，按加进来的顺序
     private static let hiddenKey = "maskStickerHiddenBuiltins"  // 她删掉的内置素材
 
