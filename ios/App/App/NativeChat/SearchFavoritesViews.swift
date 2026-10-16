@@ -1,20 +1,182 @@
 import SwiftUI
+import AVFoundation
 
 // 搜索与收藏（2026-08-19 她要的四件）：
 //   · 收藏分单条和整段聊天记录——聊天页多选几条就收成一段，选一条还是单条
 //   · 语音、链接也能搜能收——类型筛选下沉到服务端，不打关键词只点"语音"也能捞
 //   · 搜索框下面加选项
-//   · 样式跟檐下一样（GlassKit 那套冷蓝玻璃），全屏自己铺，壁纸不动
+//
+// 1016 #3981–3994 她：两页换成 Sanctus，照「只给你听」那页的做法（效果图 /root/workroom/mock/search-fav/fav2/）：
+//   · 顶上标题就是切换：「kept | search」两个花体字跟返回键一行，当前那页大、深，另一页小、淡，点淡的切过去
+//   · 下面一行眉标；左边是「我收藏的 / 他收藏的」＋一排筛选（搜索页是搜索框＋一排筛选），右边并排一张淡淡斜着的狼兔吊坠
+//   · 收藏分「我的 / 他的」两栏，不混；卡片底下是收的时候写的那句话（她的能写能改，他的只看）
+//   · 搜索页月历平时只露一周，点「整月 ›」才铺开；结果按时间并成一张卡，名字和时间只出一次
 //
 // 跳转高亮走的还是老路子：.alcoveJumpToMessage 带 ts 发出去，ChatView 收到后
 // loadAround + 滚过去 + 闪一下。这条链是她点名要守的，换皮不许撞断。
+
+// MARK: - 两页共用的 Sanctus 零件
+
+@MainActor
+private enum SF {
+    static func script(_ s: CGFloat) -> Font { .custom("PinyonScript-Regular", size: s) }
+    static func corm(_ s: CGFloat) -> Font { .custom("CormorantGaramond-Medium", size: s) }
+    static func ital(_ s: CGFloat) -> Font { .custom("CormorantGaramondItalic-MediumItalic", size: s) }
+    static func song(_ s: CGFloat) -> Font { .system(size: s, design: .serif) }
+    static var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    static var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+}
+
+/// 跟「只给你听」同一种磨砂白卡（黑夜深炭灰）
+private struct SFGlass: ViewModifier {
+    let ink: SanctusCardInk
+    var radius: CGFloat = 12.5
+    func body(content: Content) -> some View {
+        content
+            .background(LinearGradient(colors: [ink.fillTop, ink.fillBottom], startPoint: .top, endPoint: .bottom))
+            .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: radius - 4, style: .continuous).stroke(ink.frame, lineWidth: 0.6).padding(5))
+            .overlay(RoundedRectangle(cornerRadius: radius, style: .continuous).stroke(ink.edge, lineWidth: 0.8))
+    }
+}
+
+/// 底：聊天壁纸糊一下、压一层冷白（跟「只给你听」一样）
+private struct SFBackdrop: View {
+    let ink: SanctusCardInk
+    @ObservedObject private var wall = ChatWallpaperStore.shared
+    var body: some View {
+        ZStack {
+            (ink.dark ? Color(red: 0.10, green: 0.105, blue: 0.125) : Color(red: 0.95, green: 0.953, blue: 0.96))
+            ChatWallpaperRenderer(descriptor: wall.descriptor).blur(radius: 14)
+            (ink.dark ? Color.black.opacity(0.62) : Color(red: 0.965, green: 0.97, blue: 0.976).opacity(0.5))
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)
+    }
+}
+
+/// 发丝线：两头淡出
+private struct SFHair: View {
+    let ink: SanctusCardInk
+    var body: some View {
+        LinearGradient(stops: [.init(color: ink.hair.opacity(0), location: 0), .init(color: ink.hair, location: 0.12),
+                               .init(color: ink.hair, location: 0.88), .init(color: ink.hair.opacity(0), location: 1)],
+                       startPoint: .leading, endPoint: .trailing)
+            .frame(height: 0.6)
+    }
+}
+
+/// 顶栏：返回键｜「kept | search」切换｜多选
+private struct SFHeader: View {
+    let ink: SanctusCardInk
+    let onKept: Bool
+    let onBack: () -> Void
+    let onSwitch: () -> Void
+    let picking: Bool
+    let onPick: () -> Void
+
+    var body: some View {
+        ZStack {
+            HStack(alignment: .center, spacing: 19) {
+                word("kept", on: onKept)
+                Rectangle().fill(ink.hair.opacity(0.9)).frame(width: 0.6, height: 17)
+                word("search", on: !onKept)
+            }
+            HStack {
+                Button(action: onBack) {
+                    Image(systemName: "chevron.left").font(.system(size: 13, weight: .light)).foregroundColor(ink.script)
+                        .frame(width: 29, height: 29)
+                        .background((ink.dark ? Color.white.opacity(0.08) : Color.white.opacity(0.6)), in: Circle())
+                        .overlay(Circle().stroke(ink.edge, lineWidth: 0.7))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                Button(action: onPick) {
+                    Image(systemName: picking ? "checkmark.circle.fill" : "checkmark.circle")
+                        .font(.system(size: 15, weight: .light))
+                        .foregroundColor(picking ? ink.body : ink.link)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel("多选")
+            }
+            .padding(.horizontal, 14)
+        }
+        .frame(height: 44)
+    }
+
+    @ViewBuilder private func word(_ w: String, on: Bool) -> some View {
+        if on {
+            Text(w).font(SF.script(31)).foregroundColor(ink.dark ? ink.script : Color(red: 0.31, green: 0.325, blue: 0.37))
+                .offset(y: 2)
+        } else {
+            Button(action: onSwitch) {
+                Text(w).font(SF.script(19)).foregroundColor(ink.sub.opacity(0.8))
+                    .padding(.vertical, 8).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .offset(y: 4)
+        }
+    }
+}
+
+/// 右边那张淡淡斜着的狼兔吊坠
+private struct SFLocket: View {
+    let ink: SanctusCardInk
+    var body: some View {
+        Image("MaskLocket").resizable().scaledToFit()
+            .frame(width: 137)
+            .colorMultiply(ink.dark ? Color(white: 0.82) : .white)
+            .opacity(0.42)
+            .rotationEffect(.degrees(-8))
+            .mask(LinearGradient(colors: [.black, .black, .clear], startPoint: .topTrailing, endPoint: .bottomLeading))
+            .allowsHitTesting(false)
+    }
+}
+
+/// 一排淡淡的小字筛选：选中的深一点，中间小圆点隔开；spread＝铺满整行
+private struct SFFilterRow: View {
+    let ink: SanctusCardInk
+    let options: [(String, String)]
+    @Binding var selection: String
+    var spread = false
+    var onChange: (String) -> Void = { _ in }
+
+    var body: some View {
+        HStack(spacing: spread ? 0 : 6) {
+            ForEach(Array(options.enumerated()), id: \.offset) { i, opt in
+                if i > 0 {
+                    if spread { Spacer(minLength: 2) }
+                    Text("·").font(SF.song(8.7)).foregroundColor(ink.sub.opacity(0.6))
+                    if spread { Spacer(minLength: 2) }
+                }
+                Button {
+                    selection = opt.0
+                    onChange(opt.0)
+                } label: {
+                    Text(opt.1).font(SF.song(8.7)).tracking(1.2)
+                        .foregroundColor(selection == opt.0 ? ink.script : ink.sub.opacity(0.85))
+                        .padding(.vertical, 6).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+    }
+}
+
+private func sfStamp(_ raw: String) -> String {
+    // 「10.15 · 13:01」
+    guard raw.count >= 16 else { return raw }
+    return "\(raw.dropFirst(5).prefix(2)).\(raw.dropFirst(8).prefix(2)) · \(raw.dropFirst(11).prefix(5))"
+}
 
 // MARK: - 搜索
 
 struct GlassSearchView: View {
     var openFavorites: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantName") private var assistantName = "陈璟"
 
@@ -25,269 +187,262 @@ struct GlassSearchView: View {
     @State private var searched = false
     @State private var selectedDay = ""
     @State private var month = Date()
+    @State private var focus = Date()          // 收起来时露的那一周按它算
+    @State private var showMonth = false
     @State private var dayCounts: [String: Int] = [:]
+    @State private var loadedMonths: Set<String> = []
     @State private var picking = false
     @State private var picked: Set<UUID> = []
     @State private var toast = ""
 
-    private var palette: GlassPalette { .named(themeName) }
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
     private let types: [(String, String)] = [
         ("all", "全部"), ("text", "文字"), ("image", "图片"), ("audio", "语音"), ("link", "链接")
     ]
     private let calendar = Calendar(identifier: .gregorian)
-    private let weekColumns = Array(repeating: GridItem(.flexible(), spacing: 3), count: 7)
+    private let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
 
     var body: some View {
+        let ink = self.ink
         ZStack(alignment: .bottom) {
-            GlassBackdrop(palette: palette)
+            SFBackdrop(ink: ink)
             VStack(spacing: 0) {
-                GlassHeader(title: "Search", palette: palette, onBack: { dismiss() },
-                            switchTitle: "Favorites", onSwitch: openFavorites,
-                            trailing: AnyView(pickToggle))
-                searchField
-                GlassChips(options: types, selection: $filterType, palette: palette) { _ in
-                    Task { await search() }
+                SFHeader(ink: ink, onKept: false, onBack: { dismiss() }, onSwitch: openFavorites,
+                         picking: picking, onPick: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        picking.toggle()
+                        if !picking { picked.removeAll() }
+                    }
+                })
+                .padding(.top, SF.safeTop + 14)
+                Text("SEARCH · 搜索").font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
+                    .padding(.top, 8)
+                ZStack(alignment: .topTrailing) {
+                    SFLocket(ink: ink).offset(x: 6, y: 2)
+                    VStack(alignment: .leading, spacing: 4) {
+                        searchField(ink)
+                        SFFilterRow(ink: ink, options: types, selection: $filterType, spread: true) { _ in
+                            Task { await search() }
+                        }
+                        .padding(.horizontal, 9)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 130)
+                    .padding(.top, 34)
                 }
-                .padding(.top, 9)
-                list
+                .padding(.horizontal, 18)
+                list(ink)
             }
-            if picking && !picked.isEmpty { pickBar }
-            if !toast.isEmpty { toastBar }
+            if picking && !picked.isEmpty { pickBar(ink) }
+            if !toast.isEmpty { toastBar(ink) }
         }
-        .task { await loadMonth() }
+        .task { await loadMonth(Date()) }
     }
 
-    private var pickToggle: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                picking.toggle()
-                if !picking { picked.removeAll() }
-            }
-        } label: {
-            Image(systemName: picking ? "checkmark.circle.fill" : "checkmark.circle")
-                .font(.system(size: 15, weight: .light))
-                .foregroundColor(picking ? palette.acc : palette.ink3)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityLabel("挑几条收起来")
-    }
-
-    private var searchField: some View {
-        HStack(spacing: 9) {
-            Image(systemName: "magnifyingglass")
-                .font(.system(size: 13, weight: .light))
-                .foregroundColor(palette.ink3)
-            TextField("", text: $query, prompt: Text("搜聊天记录")
-                .foregroundColor(palette.ink3))
-                .font(.system(size: 14, design: .serif))
-                .foregroundColor(palette.ink)
+    private func searchField(_ ink: SanctusCardInk) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .light)).foregroundColor(ink.sub)
+            TextField("", text: $query, prompt: Text("搜聊天记录").foregroundColor(ink.sub))
+                .font(SF.song(11.5)).tracking(1.2)
+                .foregroundColor(ink.body)
                 .submitLabel(.search)
                 .onSubmit { Task { await search() } }
             if searching {
-                ProgressView().scaleEffect(0.7).tint(palette.ink3)
+                ProgressView().scaleEffect(0.6).tint(ink.sub)
             } else if !query.isEmpty {
-                Button {
-                    query = ""; results = []; searched = false
-                } label: {
-                    Image(systemName: "xmark.circle.fill")
-                        .font(.system(size: 13))
-                        .foregroundColor(palette.ink3)
+                Button { query = ""; results = []; searched = false } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundColor(ink.sub)
                 }
                 .buttonStyle(.plain)
             }
         }
-        .padding(.horizontal, 13)
-        .padding(.vertical, 11)
-        .glassCard(palette, radius: 14)
-        .padding(.horizontal, 16)
-        .padding(.top, 4)
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .background((ink.dark ? Color.white.opacity(0.06) : Color.white.opacity(0.62)), in: Capsule())
+        .overlay(Capsule().stroke(ink.edge, lineWidth: 0.7))
+        .overlay(Capsule().stroke(ink.frame, lineWidth: 0.5).padding(-0.6))
     }
 
-    private var list: some View {
-        ScrollView {
-            LazyVStack(spacing: 10) {
-                if !searched || !selectedDay.isEmpty { calendarCard }
+    private func list(_ ink: SanctusCardInk) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 12) {
+                if !searched || !selectedDay.isEmpty { calendarCard(ink) }
                 if !selectedDay.isEmpty {
-                    Text("\(selectedDay) · \(results.count) 条")
-                        .font(.system(size: 11.5, design: .monospaced))
-                        .foregroundColor(palette.ink3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(.horizontal, 4)
+                    HStack(alignment: .firstTextBaseline) {
+                        (Text(dayDots(selectedDay)).font(SF.corm(13)).tracking(1.2)
+                         + Text(" · " + weekdayName(selectedDay)).font(SF.song(11)).tracking(1.6))
+                            .foregroundColor(ink.body)
+                        Spacer()
+                        Text("\(results.count) messages").font(SF.ital(10.4)).foregroundColor(ink.sub)
+                    }
+                    .padding(.horizontal, 4).padding(.top, 6)
                 }
-                ForEach(results) { message in
-                    row(message)
-                }
+                ForEach(groups) { g in group(g, ink: ink) }
                 if searched && results.isEmpty && !searching {
                     Text(query.isEmpty ? "这一类还没有" : "没有找到")
-                        .font(.system(size: 12.5, design: .serif))
-                        .foregroundColor(palette.ink3)
+                        .font(SF.song(11)).tracking(1.2).foregroundColor(ink.sub)
                         .padding(.top, 40)
                 }
-                Color.clear.frame(height: 70)
+                Color.clear.frame(height: SF.safeBottom + 70)
             }
-            .padding(.horizontal, 14)
-            .padding(.top, 11)
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
         }
     }
 
-    private func row(_ message: ChatMessage) -> some View {
-        let isPicked = picked.contains(message.uid)
+    // —— 结果并成卡：同一个人、隔不到五分钟、同一天的连着放 ——
+    private struct ResultGroup: Identifiable {
+        let id: UUID
+        let items: [ChatMessage]
+    }
+
+    private var groups: [ResultGroup] {
+        var out: [[ChatMessage]] = []
+        for m in results {
+            if let last = out.last?.last, last.role == m.role,
+               abs(m.date.timeIntervalSince(last.date)) < 300,
+               calendar.isDate(m.date, inSameDayAs: last.date) {
+                out[out.count - 1].append(m)
+            } else {
+                out.append([m])
+            }
+        }
+        return out.map { ResultGroup(id: $0[0].uid, items: $0) }
+    }
+
+    private func group(_ g: ResultGroup, ink: SanctusCardInk) -> some View {
+        let first = g.items[0]
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(first.role == "user" ? userName : assistantName).font(SF.ital(12.4)).foregroundColor(ink.script)
+                Spacer()
+                Text(selectedDay.isEmpty ? sfStamp(first.ts) : String(first.ts.dropFirst(11).prefix(5)))
+                    .font(SF.corm(8.3)).tracking(1.6).foregroundColor(ink.sub)
+            }
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(g.items) { m in line(m, ink: ink) }
+            }
+            .padding(.top, 9)
+        }
+        .padding(.horizontal, 18).padding(.top, 15).padding(.bottom, 15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(SFGlass(ink: ink))
+    }
+
+    private func line(_ m: ChatMessage, ink: SanctusCardInk) -> some View {
+        let isPicked = picked.contains(m.uid)
         return Button {
             if picking {
-                if isPicked { picked.remove(message.uid) } else { picked.insert(message.uid) }
+                if isPicked { picked.remove(m.uid) } else { picked.insert(m.uid) }
             } else {
-                NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: message.ts)
+                NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: m.ts)
             }
         } label: {
-            HStack(alignment: .top, spacing: 11) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
                 if picking {
                     Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16, weight: .light))
-                        .foregroundColor(isPicked ? palette.acc : palette.ink3)
-                        .padding(.top, 9)
-                } else {
-                    GlassBead(isHers: message.role == "user", size: 30).padding(.top, 2)
+                        .font(.system(size: 12, weight: .light))
+                        .foregroundColor(isPicked ? ink.body : ink.sub)
                 }
-                VStack(alignment: .leading, spacing: 6) {
-                    HStack(spacing: 7) {
-                        Text(message.role == "user" ? userName : assistantName)
-                            .font(.system(size: 11.5, weight: .medium, design: .serif))
-                            .tracking(0.8)
-                            .foregroundColor(palette.ink2)
-                        if let kind = badge(message) {
-                            Text(kind)
-                                .font(.system(size: 9, design: .monospaced))
-                                .tracking(0.8)
-                                .foregroundColor(palette.ink3)
-                                .padding(.horizontal, 6).padding(.vertical, 2)
-                                .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
-                        }
-                        Spacer()
-                        Text(message.date, format: .dateTime.month().day().hour().minute())
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundColor(palette.ink3)
+                VStack(alignment: .leading, spacing: 3) {
+                    if let kind = badge(m) {
+                        Text(kind).font(SF.corm(6.6)).tracking(1.6).foregroundColor(ink.link)
+                            .padding(.horizontal, 5).padding(.vertical, 0.5)
+                            .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
                     }
-                    if !message.text.isEmpty {
-                        Text(message.text)
-                            .font(.system(size: 13.5, design: .serif))
-                            .foregroundColor(palette.ink)
-                            .lineSpacing(3)
-                            .lineLimit(5)
+                    if !m.displayText.isEmpty {
+                        Text(m.displayText).font(SF.song(12)).tracking(0.6).foregroundColor(ink.body)
+                            .lineSpacing(5).lineLimit(6)
                             .frame(maxWidth: .infinity, alignment: .leading)
                     }
                 }
             }
-            .padding(12)
-            .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .glassCard(palette)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(isPicked ? palette.acc.opacity(0.55) : .clear, lineWidth: 1.2))
     }
 
     private func badge(_ message: ChatMessage) -> String? {
-        if message.attachmentType == "audio" { return "语音" }
-        if message.attachmentType == "image" { return "图片" }
-        if message.text.contains("http://") || message.text.contains("https://") { return "链接" }
+        if message.attachmentType == "audio" { return "VOICE" }
+        if message.attachmentType == "image" { return "IMAGE" }
+        if message.text.contains("http://") || message.text.contains("https://") { return "LINK" }
         return nil
     }
 
-    // 挑几条收起来：多于一条就收成一段聊天记录
-    private var pickBar: some View {
-        HStack(spacing: 14) {
-            Text("已挑 \(picked.count) 条")
-                .font(.system(size: 12.5, design: .serif))
-                .foregroundColor(palette.ink2)
-            Spacer()
-            Button("取消") {
-                withAnimation { picking = false; picked.removeAll() }
-            }
-            .font(.system(size: 12.5, design: .serif))
-            .foregroundColor(palette.ink3)
-            Button(picked.count > 1 ? "收成一段" : "收起来") {
-                Task { await keep() }
-            }
-            .font(.system(size: 12.5, weight: .medium, design: .serif))
-            .foregroundColor(palette.acc)
-        }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 13)
-        .glassCard(palette, radius: 16)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 22)
-    }
-
-    private var toastBar: some View {
-        Text(toast)
-            .font(.system(size: 12, design: .serif))
-            .foregroundColor(palette.ink)
-            .padding(.horizontal, 18).padding(.vertical, 11)
-            .glassCard(palette, radius: 14)
-            .padding(.bottom, 90)
-            .transition(.opacity)
-    }
-
-    private var calendarCard: some View {
-        VStack(spacing: 9) {
+    // —— 月历：平时一周，「整月 ›」铺开 ——
+    private func calendarCard(_ ink: SanctusCardInk) -> some View {
+        VStack(spacing: 0) {
             HStack {
-                Button { changeMonth(-1) } label: {
-                    Image(systemName: "chevron.left")
-                        .font(.system(size: 12, weight: .light))
-                        .frame(width: 34, height: 34).contentShape(Rectangle())
+                if showMonth {
+                    Button { changeMonth(-1) } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 10, weight: .light)).foregroundColor(ink.link)
+                            .frame(width: 26, height: 26).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
                 }
-                .buttonStyle(.plain)
+                Text(monthTitle(showMonth ? month : focus)).font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
+                if showMonth {
+                    Button { changeMonth(1) } label: {
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .light)).foregroundColor(ink.link)
+                            .frame(width: 26, height: 26).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
                 Spacer()
-                Text(month, format: .dateTime.year().month(.wide))
-                    .font(.system(size: 14, weight: .medium, design: .serif))
-                    .tracking(2)
-                Spacer()
-                Button { changeMonth(1) } label: {
-                    Image(systemName: "chevron.right")
-                        .font(.system(size: 12, weight: .light))
-                        .frame(width: 34, height: 34).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-            }
-            .foregroundColor(palette.ink2)
-            LazyVGrid(columns: weekColumns, spacing: 5) {
-                ForEach(["日", "一", "二", "三", "四", "五", "六"], id: \.self) {
-                    Text($0).font(.system(size: 9, design: .monospaced))
-                        .foregroundColor(palette.ink3)
-                }
-                ForEach(Array(monthCells.enumerated()), id: \.offset) { _, date in
-                    if let date {
-                        let key = dayKey(date)
-                        let count = dayCounts[key]
-                        Button { Task { await showDay(key) } } label: {
-                            VStack(spacing: 1) {
-                                Text("\(calendar.component(.day, from: date))")
-                                    .font(.system(size: 12, design: .serif))
-                                    .foregroundColor(count == nil ? palette.ink3 : palette.ink)
-                                Text(count.map { "\($0)" } ?? " ")
-                                    .font(.system(size: 7.5, design: .monospaced))
-                                    .foregroundColor(palette.ink3)
-                            }
-                            .frame(maxWidth: .infinity, minHeight: 34)
-                            .background(
-                                RoundedRectangle(cornerRadius: 8, style: .continuous)
-                                    .fill(key == selectedDay ? palette.acc.opacity(0.24) :
-                                          count == nil ? Color.clear : palette.acc.opacity(0.11)))
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(count == nil)
-                    } else {
-                        Color.clear.frame(height: 34)
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showMonth.toggle()
+                        if showMonth { month = focus }
                     }
+                } label: {
+                    Text(showMonth ? "收起 ›" : "整月 ›").font(SF.song(8.7)).tracking(1.6).foregroundColor(ink.link)
+                        .padding(.vertical, 6).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: 26)
+            HStack(spacing: 0) {
+                ForEach(weekdays, id: \.self) { w in
+                    Text(w).font(SF.song(7.9)).tracking(0.8).foregroundColor(ink.sub).frame(maxWidth: .infinity)
                 }
             }
+            .padding(.top, 8)
+            let cells = showMonth ? monthCells : weekCells
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
+                ForEach(Array(cells.enumerated()), id: \.offset) { _, date in
+                    if let date { dayCell(date, ink: ink) } else { Color.clear.frame(height: 46) }
+                }
+            }
+            .padding(.top, 2)
         }
-        .padding(13)
-        .glassCard(palette)
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+        .modifier(SFGlass(ink: ink))
+    }
+
+    private func dayCell(_ date: Date, ink: SanctusCardInk) -> some View {
+        let key = dayKey(date)
+        let count = dayCounts[key]
+        let on = key == selectedDay
+        return Button {
+            focus = date
+            Task { await showDay(key) }
+        } label: {
+            VStack(spacing: 0) {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(SF.corm(19))
+                    .foregroundColor(count == nil ? ink.sub.opacity(0.6) : ink.body)
+                    .frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(on ? ink.script.opacity(0.7) : .clear, lineWidth: 0.7))
+                Text(count.map { "\($0)" } ?? " ").font(SF.ital(7.9)).foregroundColor(ink.sub)
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(count == nil)
+    }
+
+    private var weekCells: [Date?] {
+        let start = calendar.date(byAdding: .day, value: -(calendar.component(.weekday, from: focus) - 1), to: focus) ?? focus
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }.map(Optional.some)
     }
 
     private var monthCells: [Date?] {
@@ -297,6 +452,11 @@ struct GlassSearchView: View {
         return Array(repeating: nil, count: offset)
             + days.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: interval.start) }
                   .map(Optional.some)
+    }
+
+    private func monthTitle(_ d: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "MMMM · yyyy"
+        return f.string(from: d).uppercased()
     }
 
     private func dayKey(_ date: Date) -> String {
@@ -309,15 +469,34 @@ struct GlassSearchView: View {
         return f.string(from: date)
     }
 
+    private func dayDots(_ key: String) -> String {
+        // 2026-10-01 → 10.01
+        guard key.count >= 10 else { return key }
+        return "\(key.dropFirst(5).prefix(2)).\(key.dropFirst(8).prefix(2))"
+    }
+
+    private func weekdayName(_ key: String) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        guard let d = f.date(from: key) else { return "" }
+        return "周" + weekdays[calendar.component(.weekday, from: d) - 1]
+    }
+
     private func changeMonth(_ delta: Int) {
         if let d = calendar.date(byAdding: .month, value: delta, to: month) {
             month = d
-            Task { await loadMonth() }
+            Task { await loadMonth(d) }
         }
     }
 
-    @MainActor private func loadMonth() async {
-        dayCounts = (try? await AlcoveAPI.calendarCounts(month: monthKey(month))) ?? [:]
+    /// 一周可能跨两个月：两个月的条数都要
+    @MainActor private func loadMonth(_ d: Date) async {
+        var keys = [monthKey(d)]
+        for c in weekCells.compactMap({ $0 }) where !keys.contains(monthKey(c)) { keys.append(monthKey(c)) }
+        for k in keys where !loadedMonths.contains(k) {
+            let got = (try? await AlcoveAPI.calendarCounts(month: k)) ?? [:]
+            dayCounts.merge(got) { _, new in new }
+            loadedMonths.insert(k)
+        }
     }
 
     @MainActor private func search() async {
@@ -342,6 +521,7 @@ struct GlassSearchView: View {
         results = (try? await AlcoveAPI.searchHistory(day: day, limit: 2000)) ?? []
         selectedDay = day
         searched = true
+        await loadMonth(focus)
     }
 
     @MainActor private func keep() async {
@@ -356,6 +536,30 @@ struct GlassSearchView: View {
         }
         try? await Task.sleep(nanoseconds: 1_600_000_000)
         withAnimation { toast = "" }
+    }
+
+    // 挑几条收起来：多于一条就收成一段聊天记录
+    private func pickBar(_ ink: SanctusCardInk) -> some View {
+        HStack(spacing: 16) {
+            Text("已挑 \(picked.count) 条").font(SF.song(11)).tracking(1.2).foregroundColor(ink.body)
+            Spacer()
+            Button("取消") { withAnimation { picking = false; picked.removeAll() } }
+                .font(SF.song(11)).foregroundColor(ink.sub)
+            Button(picked.count > 1 ? "收成一段" : "收起来") { Task { await keep() } }
+                .font(SF.song(11)).foregroundColor(ink.script)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 13)
+        .modifier(SFGlass(ink: ink))
+        .padding(.horizontal, 18)
+        .padding(.bottom, SF.safeBottom + 12)
+    }
+
+    private func toastBar(_ ink: SanctusCardInk) -> some View {
+        Text(toast).font(SF.song(11)).tracking(1.2).foregroundColor(ink.body)
+            .padding(.horizontal, 18).padding(.vertical, 11)
+            .modifier(SFGlass(ink: ink))
+            .padding(.bottom, SF.safeBottom + 80)
+            .transition(.opacity)
     }
 }
 
@@ -391,6 +595,9 @@ private struct FavoriteEntry: Identifiable {
     let created: String
     /// 0912：语音收藏带上他自己写的中文翻译（后端按 ts 从原消息里捞）
     let audioZh: String
+    /// 1016：谁收的（user＝她 / assistant＝他）、收的时候写的那句话
+    let byWho: String
+    let note: String
 
     var isThread: Bool { kind == "thread" }
     var isPlayableAudio: Bool { !isThread && atype == "audio" && !attURL.isEmpty }
@@ -407,19 +614,54 @@ private struct FavoriteEntry: Identifiable {
         members = raw.array("members").map(FavoriteMember.init)
         created = raw.string("created")
         audioZh = raw.string("audio_zh")
+        byWho = raw.string("by_who").isEmpty ? "user" : raw.string("by_who")
+        note = raw.string("note")
+    }
+}
+
+/// 收藏页的语音：点圆键直接放，同一时间只放一条
+@MainActor
+private final class FavAudio: ObservableObject {
+    static let shared = FavAudio()
+    @Published var playingID: Int?
+    private var player: AVPlayer?
+    private var endObserver: NSObjectProtocol?
+
+    func toggle(_ id: Int, url: URL) {
+        if playingID == id { stop(); return }
+        stop()
+        try? AVAudioSession.sharedInstance().setCategory(.playback)
+        let p = AVPlayer(url: url)
+        player = p
+        playingID = id
+        endObserver = NotificationCenter.default.addObserver(forName: .AVPlayerItemDidPlayToEndTime,
+                                                             object: p.currentItem, queue: .main) { [weak self] _ in
+            Task { @MainActor in self?.stop() }
+        }
+        p.play()
+    }
+
+    func stop() {
+        player?.pause()
+        player = nil
+        if let e = endObserver { NotificationCenter.default.removeObserver(e) }
+        endObserver = nil
+        playingID = nil
     }
 }
 
 struct GlassFavoritesView: View {
     var openSearch: () -> Void = {}
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("userName") private var userName = "Luna"
     @AppStorage("assistantName") private var assistantName = "陈璟"
+    @StateObject private var audio = FavAudio.shared
 
     @State private var entries: [FavoriteEntry] = []
-    @State private var kindFilter = "all"
-    @State private var typeFilter = "all"
+    @State private var by = "user"
+    @State private var filter = "all"
+    @State private var hisCount = 0
     @State private var loading = true
     @State private var opened: FavoriteEntry?
     @State private var picking = false
@@ -428,205 +670,283 @@ struct GlassFavoritesView: View {
     @State private var sending = false
     @State private var sendError: String?
     @State private var forwardRequest: (ids: [Int], key: String)?
+    @State private var noteFor: FavoriteEntry?
+    @State private var noteDraft = ""
 
-    private var palette: GlassPalette { .named(themeName) }
-    private let kinds: [(String, String)] = [
-        ("all", "全部"), ("single", "单条"), ("thread", "聊天记录")
-    ]
-    private let types: [(String, String)] = [
-        ("all", "不限"), ("text", "文字"), ("audio", "语音"), ("link", "链接"), ("image", "图片")
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private let filters: [(String, String)] = [
+        ("all", "全部"), ("text", "文字"), ("audio", "语音"), ("image", "图片"), ("thread", "聊天记录")
     ]
 
     var body: some View {
+        let ink = self.ink
         ZStack(alignment: .bottom) {
-            GlassBackdrop(palette: palette)
+            SFBackdrop(ink: ink)
             VStack(spacing: 0) {
-                GlassHeader(title: "Favorites", palette: palette, onBack: { dismiss() },
-                            switchTitle: "Search", onSwitch: openSearch,
-                            trailing: AnyView(deleteToggle))
-                GlassChips(options: kinds, selection: $kindFilter, palette: palette) { _ in
-                    Task { await load() }
+                SFHeader(ink: ink, onKept: true, onBack: { dismiss() }, onSwitch: openSearch,
+                         picking: picking, onPick: {
+                    withAnimation(.easeInOut(duration: 0.16)) {
+                        picking.toggle()
+                        if !picking { picked.removeAll() }
+                    }
+                })
+                .padding(.top, SF.safeTop + 14)
+                Text("KEPT · 收藏").font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
+                    .padding(.top, 8)
+                Text(countLine).font(SF.ital(10)).foregroundColor(ink.sub).padding(.top, 4)
+                ZStack(alignment: .topTrailing) {
+                    SFLocket(ink: ink).offset(x: 6, y: -6)
+                    VStack(alignment: .leading, spacing: 10) {
+                        HStack(spacing: 26) {
+                            seg("我收藏的", "user", ink)
+                            seg("他收藏的", "assistant", ink)
+                        }
+                        SFFilterRow(ink: ink, options: filters, selection: $filter) { _ in Task { await load() } }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.leading, 9)
+                    .padding(.top, 34)
                 }
-                .padding(.top, 2)
-                GlassChips(options: types, selection: $typeFilter, palette: palette) { _ in
-                    Task { await load() }
-                }
-                .padding(.top, 7)
-                content
+                .padding(.horizontal, 18)
+                content(ink)
             }
-            if picking && !picked.isEmpty { deleteBar }
+            if picking && !picked.isEmpty { deleteBar(ink) }
         }
         .task { await load() }
+        .onDisappear { audio.stop() }
         .alert("发送收藏", isPresented: Binding(get: { sendError != nil }, set: { if !$0 { sendError = nil } })) {
             Button("知道了", role: .cancel) {}
         } message: { Text(sendError ?? "") }
+        .alert("为什么收它", isPresented: Binding(get: { noteFor != nil }, set: { if !$0 { noteFor = nil } })) {
+            TextField("写一句", text: $noteDraft)
+            Button("取消", role: .cancel) {}
+            Button("好") { Task { await saveNote() } }
+        }
         .sheet(item: $opened) { entry in
-            FavoriteThreadSheet(entry: entry, palette: palette,
-                                userName: userName, assistantName: assistantName)
+            FavoriteThreadSheet(entry: entry, userName: userName, assistantName: assistantName)
         }
     }
 
-    private var deleteToggle: some View {
+    private var countLine: String {
+        guard !loading else { return " " }
+        let mine = by == "user" ? entries.count : 0
+        return by == "user" ? "\(mine) kept · \(hisCount) by him" : "\(entries.count) kept by him"
+    }
+
+    private func seg(_ title: String, _ value: String, _ ink: SanctusCardInk) -> some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.16)) {
-                picking.toggle()
-                if !picking { picked.removeAll() }
-            }
+            guard by != value else { return }
+            by = value
+            picked.removeAll(); picking = false
+            Task { await load() }
         } label: {
-            Image(systemName: picking ? "checkmark.circle.fill" : "checkmark.circle")
-                .font(.system(size: 15, weight: .light))
-                .foregroundColor(picking ? palette.acc : palette.ink3)
-                .frame(width: 44, height: 44)
-                .contentShape(Rectangle())
+            Text(title).font(SF.song(12)).tracking(2.9)
+                .foregroundColor(by == value ? ink.body : ink.sub.opacity(0.85))
+                .overlay(alignment: .bottom) {
+                    if by == value {
+                        Rectangle().fill(ink.script.opacity(0.6)).frame(height: 0.6).padding(.horizontal, 6).offset(y: 6)
+                    }
+                }
+                .padding(.vertical, 4).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("多选收藏")
     }
 
-    private var content: some View {
-        Group {
-            if loading {
-                Spacer(); ProgressView().tint(palette.ink3); Spacer()
-            } else if entries.isEmpty {
-                Spacer()
-                Text(kindFilter == "thread" ? "还没收过整段的\n在搜索里挑几条就能收成一段" : "还没有收藏")
-                    .font(.system(size: 12.5, design: .serif))
-                    .foregroundColor(palette.ink3)
-                    .multilineTextAlignment(.center)
-                    .lineSpacing(4)
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 10) {
-                        ForEach(entries) { entry in
-                            if entry.isPlayableAudio {
-                                FavoriteAudioCard(
-                                    entry: entry, palette: palette,
-                                    name: entry.role == "user" ? userName : assistantName,
-                                    picking: picking, isPicked: picked.contains(entry.id),
-                                    onPick: {
-                                        if picked.contains(entry.id) { picked.remove(entry.id) }
-                                        else { picked.insert(entry.id) }
-                                    },
-                                    onRemove: { Task { await remove(entry) } },
-                                    onForward: { Task { await forward([entry.id]) } })
-                            } else {
-                                card(entry)
-                            }
-                        }
-                        Color.clear.frame(height: 40)
+    @ViewBuilder private func content(_ ink: SanctusCardInk) -> some View {
+        if loading {
+            Spacer(); ProgressView().tint(ink.sub); Spacer()
+        } else if entries.isEmpty {
+            Spacer()
+            Text(emptyText).font(SF.song(11)).tracking(1.2).foregroundColor(ink.sub)
+                .multilineTextAlignment(.center).lineSpacing(5)
+            Spacer()
+        } else {
+            ScrollView(showsIndicators: false) {
+                LazyVStack(spacing: 12) {
+                    ForEach(Array(entries.enumerated()), id: \.element.id) { i, entry in
+                        card(entry, no: entries.count - i, ink: ink)
                     }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 12)
+                    Color.clear.frame(height: SF.safeBottom + 40)
                 }
+                .padding(.horizontal, 18)
+                .padding(.top, 16)
             }
         }
     }
 
-    private func card(_ entry: FavoriteEntry) -> some View {
-        Button {
+    private var emptyText: String {
+        if by == "assistant" { return "他还没收过东西" }
+        return filter == "thread" ? "还没收过整段的\n在搜索里挑几条就能收成一段" : "还没有收藏"
+    }
+
+    private func kindLabel(_ e: FavoriteEntry) -> String {
+        if e.isThread { return "THREAD" }
+        switch e.atype {
+        case "audio": return "VOICE"
+        case "image": return "IMAGE"
+        case "link": return "LINK"
+        default: return "WORDS"
+        }
+    }
+
+    private func card(_ entry: FavoriteEntry, no: Int, ink: SanctusCardInk) -> some View {
+        let isPicked = picked.contains(entry.id)
+        let transcript = ChatMessage.stripVoiceTags(entry.text)
+        let (en1, en2) = splitFirst(transcript)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                if picking {
+                    Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 13, weight: .light)).foregroundColor(isPicked ? ink.body : ink.sub)
+                }
+                Text("No. \(no)").font(SF.ital(11.6)).foregroundColor(ink.sub)
+                Text(kindLabel(entry)).font(SF.corm(6.6)).tracking(1.6).foregroundColor(ink.link)
+                    .padding(.horizontal, 5).padding(.vertical, 0.5)
+                    .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
+                Spacer()
+                Text(sfStamp(entry.ts)).font(SF.corm(8.3)).tracking(1.6).foregroundColor(ink.sub)
+                    .padding(.trailing, entry.isPlayableAudio ? 40 : 0)
+            }
+            Group {
+                if entry.isThread {
+                    Text(entry.title.isEmpty ? "聊天记录" : entry.title).font(SF.song(12.8)).tracking(1.2).foregroundColor(ink.body)
+                        .padding(.top, 8)
+                    Text(entry.text).font(SF.song(10.4)).tracking(0.6).foregroundColor(ink.sub)
+                        .lineSpacing(4).lineLimit(3).padding(.top, 5)
+                    Text("\(entry.members.count) messages").font(SF.ital(10)).foregroundColor(ink.sub).padding(.top, 4)
+                } else if entry.isPlayableAudio {
+                    Text(en1.isEmpty ? "a voice note" : en1).font(SF.ital(16.6)).foregroundColor(ink.body)
+                        .lineLimit(2).padding(.top, 5).padding(.trailing, 46)
+                    let second = entry.audioZh.isEmpty ? en2 : entry.audioZh
+                    if !second.isEmpty {
+                        Text(second).font(entry.audioZh.isEmpty ? SF.ital(10.4) : SF.song(9.6))
+                            .tracking(entry.audioZh.isEmpty ? 0 : 1).foregroundColor(ink.sub)
+                            .lineLimit(1).padding(.top, 3).padding(.trailing, 46)
+                    }
+                } else {
+                    if entry.atype == "image", !entry.attURL.isEmpty {
+                        AsyncImage(url: AlcoveAPI.attachmentURL(entry.attURL)) { phase in
+                            if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+                            else { Rectangle().fill(ink.frame) }
+                        }
+                        .frame(maxWidth: .infinity).frame(height: 150).clipped()
+                        .clipShape(RoundedRectangle(cornerRadius: 8.5, style: .continuous))
+                        .padding(.top, 9)
+                    }
+                    if !entry.text.isEmpty {
+                        Text(entry.text).font(SF.song(12.8)).tracking(0.8).foregroundColor(ink.body)
+                            .lineSpacing(6).lineLimit(5).padding(.top, 8)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+            }
+            if !entry.note.isEmpty {
+                (Text("—  ").foregroundColor(ink.sub.opacity(0.7)) + Text(entry.note).foregroundColor(ink.script))
+                    .font(SF.song(10)).tracking(0.8).lineSpacing(4)
+                    .padding(.top, 11)
+            }
+            SFHair(ink: ink).padding(.top, 13).padding(.horizontal, -6)
+            HStack {
+                Text(entry.byWho == "assistant" ? "kept by him" : "kept by you").font(SF.ital(10.4)).foregroundColor(ink.sub)
+                Spacer()
+                if entry.byWho == "user" && !picking {
+                    Button {
+                        noteDraft = entry.note
+                        noteFor = entry
+                    } label: {
+                        Text(entry.note.isEmpty ? "写一句为什么 ›" : "改一改 ›").font(SF.song(8.7)).tracking(1.6).foregroundColor(ink.link)
+                            .padding(.vertical, 6).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 4)
+        }
+        .padding(.horizontal, 18).padding(.top, 15).padding(.bottom, 6)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topTrailing) {
+            if entry.isPlayableAudio && !picking {
+                Button {
+                    audio.toggle(entry.id, url: AlcoveAPI.attachmentURL(entry.attURL))
+                } label: {
+                    Image(systemName: audio.playingID == entry.id ? "pause.fill" : "play.fill")
+                        .font(.system(size: 10)).foregroundColor(ink.script)
+                        .frame(width: 30, height: 30)
+                        .overlay(Circle().stroke(ink.dark ? Color.white.opacity(0.28) : Color(red: 0.47, green: 0.49, blue: 0.53).opacity(0.5), lineWidth: 0.7))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 9).padding(.top, 22)
+            }
+        }
+        .modifier(SFGlass(ink: ink))
+        .overlay(RoundedRectangle(cornerRadius: 12.5, style: .continuous)
+            .stroke(isPicked ? ink.script.opacity(0.55) : .clear, lineWidth: 1))
+        .contentShape(Rectangle())
+        .onTapGesture {
             if picking {
-                if picked.contains(entry.id) { picked.remove(entry.id) }
-                else { picked.insert(entry.id) }
+                if isPicked { picked.remove(entry.id) } else { picked.insert(entry.id) }
             } else if entry.isThread {
                 opened = entry
             } else {
                 NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: entry.ts)
             }
-        } label: {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(spacing: 7) {
-                    if picking {
-                        Image(systemName: picked.contains(entry.id) ? "checkmark.circle.fill" : "circle")
-                            .font(.system(size: 16, weight: .light))
-                            .foregroundColor(picked.contains(entry.id) ? palette.acc : palette.ink3)
-                    }
-                    if entry.isThread {
-                        Text(entry.title.isEmpty ? "聊天记录" : entry.title)
-                            .font(.system(size: 14, weight: .medium, design: .serif))
-                            .foregroundColor(palette.ink)
-                    } else {
-                        GlassBead(isHers: entry.role == "user", size: 22)
-                        Text(entry.role == "user" ? userName : assistantName)
-                            .font(.system(size: 11.5, weight: .medium, design: .serif))
-                            .tracking(0.8)
-                            .foregroundColor(palette.ink2)
-                    }
-                    if entry.atype != "text" {
-                        Text(typeLabel(entry.atype))
-                            .font(.system(size: 9, design: .monospaced))
-                            .tracking(0.8)
-                            .foregroundColor(palette.ink3)
-                            .padding(.horizontal, 6).padding(.vertical, 2)
-                            .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
-                    }
-                    Spacer()
-                }
-                Text(entry.text)
-                    .font(.system(size: 13, design: .serif))
-                    .foregroundColor(entry.isThread ? palette.ink2 : palette.ink)
-                    .lineSpacing(3)
-                    .lineLimit(entry.isThread ? 3 : 6)
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                Divider().overlay(palette.line)
-                HStack {
-                    Text(entry.isThread ? "\(entry.members.count) 条" : stamp(entry.ts))
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .foregroundColor(palette.ink3)
-                    Spacer()
-                    if entry.isThread {
-                        Text(stamp(entry.ts))
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundColor(palette.ink3)
-                    }
-                }
-            }
-            .padding(13)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
-        .glassCard(palette)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(picked.contains(entry.id) ? palette.acc.opacity(0.55) : .clear,
-                              lineWidth: 1.2))
         .contextMenu {
             Button { Task { await forward([entry.id]) } } label: {
                 Label("发送到聊天", systemImage: "paperplane")
             }.disabled(sending)
-            Button(role: .destructive) {
-                Task { await remove(entry) }
-            } label: {
-                Label("不收了", systemImage: "trash")
+            if entry.byWho == "user" {
+                Button(role: .destructive) { Task { await remove(entry) } } label: {
+                    Label("不收了", systemImage: "trash")
+                }
             }
         }
     }
 
-    private var deleteBar: some View {
-        HStack(spacing: 14) {
-            Text("已选 \(picked.count) 条")
-                .font(.system(size: 12.5, design: .serif))
-                .foregroundColor(palette.ink2)
-            Spacer()
-            Button("取消") {
-                withAnimation { picking = false; picked.removeAll() }
+    /// 语音转文字拆成「第一句（大号斜体）＋后面（小一行）」
+    private func splitFirst(_ s: String) -> (String, String) {
+        let t = s.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !t.isEmpty else { return ("", "") }
+        let enders: Set<Character> = [".", "!", "?", "。", "！", "？", "…"]
+        var idx = t.startIndex
+        var cut: String.Index?
+        while idx < t.endIndex {
+            if enders.contains(t[idx]) {
+                var j = t.index(after: idx)
+                while j < t.endIndex, enders.contains(t[j]) { j = t.index(after: j) }
+                if t.distance(from: t.startIndex, to: j) >= 8 { cut = j; break }
+                idx = j
+                continue
             }
-            .foregroundColor(palette.ink3)
+            idx = t.index(after: idx)
+        }
+        guard let c = cut else { return (t, "") }
+        return (String(t[..<c]).trimmingCharacters(in: .whitespaces),
+                String(t[c...]).trimmingCharacters(in: .whitespacesAndNewlines))
+    }
+
+    private func deleteBar(_ ink: SanctusCardInk) -> some View {
+        HStack(spacing: 16) {
+            Text("已选 \(picked.count) 条").font(SF.song(11)).tracking(1.2).foregroundColor(ink.body)
+            Spacer()
+            Button("取消") { withAnimation { picking = false; picked.removeAll() } }
+                .foregroundColor(ink.sub)
             Button(sending ? "发送中" : "发送到聊天") {
                 Task { await forward(entries.filter { picked.contains($0.id) }.sorted { $0.ts < $1.ts }.map(\.id)) }
-            }.disabled(sending || deleting)
-            Button(deleting ? "删除中" : "删除", role: .destructive) {
-                Task { await removePicked() }
             }
-            .disabled(deleting)
+            .foregroundColor(ink.script)
+            .disabled(sending || deleting)
+            if by == "user" {
+                Button(deleting ? "删除中" : "删除", role: .destructive) { Task { await removePicked() } }
+                    .disabled(deleting)
+            }
         }
-        .font(.system(size: 12.5, design: .serif))
+        .font(SF.song(11))
+        .padding(.horizontal, 20).padding(.vertical, 13)
+        .modifier(SFGlass(ink: ink))
         .padding(.horizontal, 18)
-        .padding(.vertical, 13)
-        .glassCard(palette, radius: 16)
-        .padding(.horizontal, 16)
-        .padding(.bottom, 22)
+        .padding(.bottom, SF.safeBottom + 12)
     }
 
     @MainActor private func forward(_ ids: [Int]) async {
@@ -646,25 +966,24 @@ struct GlassFavoritesView: View {
         } catch { sendError = "发送未确认，请先查看主聊天。\n" + error.localizedDescription }
     }
 
-    private func typeLabel(_ t: String) -> String {
-        switch t {
-        case "audio": return "语音"
-        case "image": return "图片"
-        case "link": return "链接"
-        default: return "文字"
-        }
-    }
-
-    private func stamp(_ raw: String) -> String {
-        guard raw.count >= 16 else { return raw }
-        return "\(raw.dropFirst(5).prefix(5)) \(raw.dropFirst(11).prefix(5))"
-    }
-
     @MainActor private func load() async {
         loading = true
-        let raw = (try? await AlcoveAPI.favorites(kind: kindFilter, type: typeFilter)) ?? []
+        let kind = filter == "thread" ? "thread" : "all"
+        let type = (filter == "thread" || filter == "all") ? "all" : filter
+        let raw = (try? await AlcoveAPI.favorites(kind: kind, type: type, by: by)) ?? []
         entries = raw.map(FavoriteEntry.init)
+        if by == "user" {
+            hisCount = ((try? await AlcoveAPI.favorites(by: "assistant")) ?? []).count
+        }
         loading = false
+    }
+
+    @MainActor private func saveNote() async {
+        guard let e = noteFor else { return }
+        let text = noteDraft.trimmingCharacters(in: .whitespacesAndNewlines)
+        noteFor = nil
+        try? await AlcoveAPI.favoriteNote(id: e.id, note: text)
+        await load()
     }
 
     @MainActor private func remove(_ entry: FavoriteEntry) async {
@@ -683,128 +1002,31 @@ struct GlassFavoritesView: View {
     }
 }
 
-// MARK: - 收藏的语音：这一页直接放
-
-/// 0912 她要的：收藏的语音条在收藏页直接放——语音条（能拖进度）＋转文字＋「译」，跟聊天里一样。
-/// 点卡片不跳转；最右边那个跳转键才跳回聊天里那一条。多选删除时点卡片是勾选。
-private struct FavoriteAudioCard: View {
-    let entry: FavoriteEntry
-    let palette: GlassPalette
-    let name: String
-    let picking: Bool
-    let isPicked: Bool
-    let onPick: () -> Void
-    let onRemove: () -> Void
-    var onForward: () -> Void = {}
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    @State private var showTranscript = true
-
-    private var transcript: String { ChatMessage.stripVoiceTags(entry.text) }
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            HStack(spacing: 7) {
-                if picking {
-                    Image(systemName: isPicked ? "checkmark.circle.fill" : "circle")
-                        .font(.system(size: 16, weight: .light))
-                        .foregroundColor(isPicked ? palette.acc : palette.ink3)
-                }
-                GlassBead(isHers: entry.role == "user", size: 22)
-                Text(name)
-                    .font(.system(size: 11.5, weight: .medium, design: .serif))
-                    .tracking(0.8)
-                    .foregroundColor(palette.ink2)
-                Text("语音")
-                    .font(.system(size: 9, design: .monospaced))
-                    .tracking(0.8)
-                    .foregroundColor(palette.ink3)
-                    .padding(.horizontal, 6).padding(.vertical, 2)
-                    .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
-                Spacer()
-                if !picking {
-                    Button {
-                        NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: entry.ts)
-                    } label: {
-                        Image(systemName: "arrow.up.right")
-                            .font(.system(size: 13, weight: .light))
-                            .foregroundColor(palette.ink2)
-                            .frame(width: 34, height: 28)
-                            .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel("跳到聊天里这一条")
-                }
-            }
-            AudioBubble(url: AlcoveAPI.attachmentURL(entry.attURL),
-                        isUser: entry.role == "user",
-                        theme: .named(themeName),
-                        fontSize: 13,
-                        hasTranscript: !transcript.isEmpty,
-                        transcript: transcript,
-                        transcriptShown: showTranscript,
-                        onToggleTranscript: {
-                            withAnimation(.easeInOut(duration: 0.18)) { showTranscript.toggle() }
-                        },
-                        translation: entry.audioZh)
-                .allowsHitTesting(!picking)
-            Divider().overlay(palette.line)
-            Text(stamp(entry.ts))
-                .font(.system(size: 9.5, design: .monospaced))
-                .foregroundColor(palette.ink3)
-        }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .contentShape(Rectangle())
-        .onTapGesture { if picking { onPick() } }
-        .glassCard(palette)
-        .overlay(
-            RoundedRectangle(cornerRadius: 18, style: .continuous)
-                .strokeBorder(isPicked ? palette.acc.opacity(0.55) : .clear, lineWidth: 1.2))
-        .contextMenu {
-            Button(action: onForward) { Label("发送到聊天", systemImage: "paperplane") }
-            Button(role: .destructive) { onRemove() } label: {
-                Label("不收了", systemImage: "trash")
-            }
-        }
-    }
-
-    private func stamp(_ raw: String) -> String {
-        guard raw.count >= 16 else { return raw }
-        return "\(raw.dropFirst(5).prefix(5)) \(raw.dropFirst(11).prefix(5))"
-    }
-}
-
 // MARK: - 收藏的整段聊天记录，点开逐条排
 
 private struct FavoriteThreadSheet: View {
     let entry: FavoriteEntry
-    let palette: GlassPalette
     let userName: String
     let assistantName: String
     @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
 
     var body: some View {
+        let ink = self.ink
         ZStack {
-            GlassBackdrop(palette: palette)
+            SFBackdrop(ink: ink)
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     Button { dismiss() } label: {
-                        Image(systemName: "xmark")
-                            .font(.system(size: 14, weight: .light))
-                            .foregroundColor(palette.ink2)
-                            .frame(width: 44, height: 44)
-                            .contentShape(Rectangle())
+                        Image(systemName: "xmark").font(.system(size: 13, weight: .light)).foregroundColor(ink.script)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
                     Spacer()
-                    VStack(spacing: 3) {
-                        Text(entry.title.isEmpty ? "聊天记录" : entry.title)
-                            .font(.system(size: 15, weight: .medium, design: .serif))
-                            .tracking(3)
-                            .foregroundColor(palette.ink)
-                        Text("\(entry.members.count) 条")
-                            .font(.system(size: 9.5, design: .monospaced))
-                            .foregroundColor(palette.ink3)
+                    VStack(spacing: 4) {
+                        Text(entry.title.isEmpty ? "聊天记录" : entry.title).font(SF.song(13)).tracking(3).foregroundColor(ink.body)
+                        Text("\(entry.members.count) messages").font(SF.ital(10)).foregroundColor(ink.sub)
                     }
                     Spacer()
                     Color.clear.frame(width: 44, height: 44)
@@ -816,58 +1038,38 @@ private struct FavoriteThreadSheet: View {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(entry.members.enumerated()), id: \.element.id) { index, m in
                             VStack(alignment: .leading, spacing: 7) {
-                                HStack(spacing: 8) {
-                                    GlassBead(isHers: m.role == "user", size: 26)
-                                    Text(m.role == "user" ? userName : assistantName)
-                                        .font(.system(size: 11.5, weight: .medium, design: .serif))
-                                        .tracking(0.8)
-                                        .foregroundColor(palette.ink2)
+                                HStack(alignment: .firstTextBaseline) {
+                                    Text(m.role == "user" ? userName : assistantName).font(SF.ital(12.4)).foregroundColor(ink.script)
                                     Spacer()
-                                    Text(stamp(m.ts))
-                                        .font(.system(size: 9.5, design: .monospaced))
-                                        .foregroundColor(palette.ink3)
+                                    Text(sfStamp(m.ts)).font(SF.corm(8.3)).tracking(1.6).foregroundColor(ink.sub)
                                 }
                                 if m.attachmentType == "image", !m.attachmentURL.isEmpty {
                                     AsyncImage(url: AlcoveAPI.attachmentURL(m.attachmentURL)) { phase in
-                                        if let image = phase.image {
-                                            image.resizable().aspectRatio(contentMode: .fill)
-                                        } else {
-                                            Rectangle().fill(palette.glass)
-                                        }
+                                        if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+                                        else { Rectangle().fill(ink.frame) }
                                     }
-                                    .frame(maxWidth: .infinity)
-                                    .frame(height: 168)
-                                    .clipped()
-                                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
+                                    .frame(maxWidth: .infinity).frame(height: 168).clipped()
+                                    .clipShape(RoundedRectangle(cornerRadius: 8.5, style: .continuous))
                                 } else if m.attachmentType == "audio" {
-                                    Label("语音", systemImage: "waveform")
-                                        .font(.system(size: 12, design: .serif))
-                                        .foregroundColor(palette.ink2)
+                                    Text("VOICE").font(SF.corm(6.6)).tracking(1.6).foregroundColor(ink.link)
+                                        .padding(.horizontal, 5).padding(.vertical, 0.5)
+                                        .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
                                 }
                                 if !m.text.isEmpty {
-                                    Text(m.text)
-                                        .font(.system(size: 14, design: .serif))
-                                        .foregroundColor(palette.ink)
-                                        .lineSpacing(4)
+                                    Text(m.text).font(SF.song(12.8)).tracking(0.6).foregroundColor(ink.body)
+                                        .lineSpacing(5)
                                         .frame(maxWidth: .infinity, alignment: .leading)
                                         .textSelection(.enabled)
                                 }
                             }
                             .padding(.vertical, 13)
-                            if index < entry.members.count - 1 {
-                                Rectangle().fill(palette.line).frame(height: 0.7)
-                            }
+                            if index < entry.members.count - 1 { SFHair(ink: ink) }
                         }
                     }
-                    .padding(.horizontal, 15)
+                    .padding(.horizontal, 22)
                     .padding(.bottom, 24)
                 }
             }
         }
-    }
-
-    private func stamp(_ raw: String) -> String {
-        guard raw.count >= 16 else { return raw }
-        return "\(raw.dropFirst(5).prefix(5)) \(raw.dropFirst(11).prefix(5))"
     }
 }

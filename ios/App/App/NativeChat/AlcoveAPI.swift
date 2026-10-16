@@ -570,11 +570,17 @@ enum AlcoveAPI {
         _ = try await postJSON("/api/favorites/add", body: ["ts": ts, "text": text, "role": role])
     }
 
-    static func favorites(kind: String = "", type: String = "") async throws -> [[String: Any]] {
+    /// 1016：by＝user（她收的）/ assistant（他收的）；不带＝全部（老行为）
+    static func favorites(kind: String = "", type: String = "", by: String = "") async throws -> [[String: Any]] {
         let k = kind == "all" ? "" : kind
         let t = type == "all" ? "" : type
-        let obj = try await getJSON("/api/favorites?kind=\(k)&type=\(t)")
+        let obj = try await getJSON("/api/favorites?kind=\(k)&type=\(t)&by=\(by)")
         return obj["items"] as? [[String: Any]] ?? []
+    }
+
+    /// 1016 #3982：收藏底下那句「为什么收它」（只能改她自己收的）
+    static func favoriteNote(id: Int, note: String) async throws {
+        _ = try await postJSON("/api/favorites/note", body: ["id": id, "note": note, "by": "user"])
     }
 
     /// 0819 她要的：多选几条就收成一段聊天记录，选一条还是单条
