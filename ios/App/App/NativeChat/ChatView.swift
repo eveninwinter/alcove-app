@@ -7802,12 +7802,17 @@ final class FrostedWallCache: ObservableObject {
     private var cache: [String: UIImage] = [:]
     private var order: [String] = []
     private var pending: Set<String> = []
+    /// 1016 #3957 她：「发消息出去一瞬间 气泡和壁纸会一起闪一下」（普通气泡不闪）——发消息那下页面动一下，
+    /// 量到的壁纸大小差了几点就被当成新的一张、扔掉重磨，重磨那一下退回系统磨砂，颜色一跳就是闪。
+    /// 改：大小按 16 点取整，小抖动不算变；真要重磨时先接着用这张壁纸上一次磨好的，不退回系统磨砂
+    private var lastForSource: [String: UIImage] = [:]
     nonisolated(unsafe) private static let context = CIContext(options: nil)
 
     func image(source: UIImage, sourceKey: String, radiusPt: Int, wall: CGSize) -> UIImage? {
-        let key = "\(sourceKey)|\(radiusPt)|\(Int(wall.width))x\(Int(wall.height))"
+        let qw = Int((wall.width / 16).rounded()) * 16, qh = Int((wall.height / 16).rounded()) * 16
+        let key = "\(sourceKey)|\(radiusPt)|\(qw)x\(qh)"
         if let hit = cache[key] { return hit }
-        guard !pending.contains(key) else { return nil }
+        guard !pending.contains(key) else { return lastForSource[sourceKey] }
         pending.insert(key)
         Task.detached(priority: .userInitiated) { [weak self] in
             let out = FrostedWallCache.blur(source, radiusPt: Double(radiusPt), wall: wall)
@@ -7816,13 +7821,15 @@ final class FrostedWallCache: ObservableObject {
                 self.pending.remove(key)
                 guard let out else { return }
                 self.cache[key] = out
+                self.lastForSource[sourceKey] = out
+                if self.lastForSource.count > 4 { self.lastForSource = [sourceKey: out] }
                 self.order.append(key)
                 // 只留最近几张（拖滑条时一路算出来的旧档扔掉），一张整屏壁纸好几兆
                 while self.order.count > 4 { self.cache[self.order.removeFirst()] = nil }
                 self.stamp &+= 1
             }
         }
-        return nil
+        return lastForSource[sourceKey]
     }
 
     /// 糊的程度按屏幕上的点算：图是 scaledToFill 铺满壁纸框的，换算成图上的像素再糊；边缘先往外延，免得四边发灰
