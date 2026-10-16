@@ -98,6 +98,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .embroidery, .studio, .pond, .roof, .memory, .digest, .factory, .search, .favorites, .surf,
              .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window, .ears,
              .calendar, .dreams,
+             .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -3000,6 +3001,140 @@ final class MusicModel: ObservableObject {
     }
 }
 
+// MARK: - 1016 听歌页 Sanctus 版（她点头的第五版效果图 music-mock-1016e，一比一）
+// 冷白纸、银灰墨，颜色只用灰粉一种（她：「不要有电光蓝 可以有灰粉」）。素材全是她 1016 发的那九张里抠的：
+// 狼耳 / 兔耳（方头像上面那一格，照「猫猫验证」那张：耳朵一格、细缝、脸一格；他左她右）、点点小花、蝴蝶、笑脸星星、
+// Fragile 点点字、珍珠耳机兔子、打结闪光、do what you love 十字绣、螺旋花、花体英文（播放页标题下面，她说替掉那两个小图案）。
+// 黑夜跟全屋按钮：底冷炭灰，素材只压暗不变色。
+
+struct MusicInk {
+    let base: SanctusPageInk
+    init() { base = SanctusPageInk() }
+    var dark: Bool { base.dark }
+    /// 灰粉：进度线、爱心、开着的小圆点
+    var rose: Color { dark ? Color(red: 0xC9 / 255, green: 0xAE / 255, blue: 0xB6 / 255) : Color(red: 0xB4 / 255, green: 0x97 / 255, blue: 0x9F / 255) }
+    var roseSoft: Color { rose.opacity(dark ? 0.22 : 0.3) }
+    var roseLine: Color { rose.opacity(0.55) }
+    var roseText: Color { dark ? Color(red: 0xD6 / 255, green: 0xC0 / 255, blue: 0xC6 / 255) : Color(red: 0x8E / 255, green: 0x73 / 255, blue: 0x7B / 255) }
+    /// 歌词里没在唱的那些行
+    var lyricDim: Color { dark ? Color(red: 0x7E / 255, green: 0x82 / 255, blue: 0x8C / 255) : Color(red: 0xA9 / 255, green: 0xAD / 255, blue: 0xB5 / 255) }
+    var paperWhite: Color { dark ? Color(red: 0x2C / 255, green: 0x2D / 255, blue: 0x33 / 255) : .white }
+    var imgDim: Double { dark ? 0.7 : 1 }
+}
+
+/// 耳朵格子底下那层灰粉小圆点（「猫猫验证」那张的点点底）
+private struct MusicDotGrid: View {
+    let color: Color
+    var body: some View {
+        Canvas { ctx, size in
+            var y: CGFloat = 3.5
+            while y < size.height {
+                var x: CGFloat = 3.5
+                while x < size.width {
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - 1, y: y - 1, width: 2, height: 2)), with: .color(color))
+                    x += 7
+                }
+                y += 7
+            }
+        }
+    }
+}
+
+/// 方头像戴耳朵：上面一格耳朵（点点底）、中间一条细缝、下面一格脸。他狼耳、她兔耳
+private struct MusicEarAvatar: View {
+    let wolf: Bool
+    let dataURL: String
+    let fallback: String
+    let width: CGFloat
+    let ink: MusicInk
+
+    var body: some View {
+        VStack(spacing: 3) {
+            ZStack {
+                (ink.dark ? Color.white.opacity(0.06) : Color.white)
+                MusicDotGrid(color: ink.rose.opacity(0.5))
+                Image(wolf ? "MusicEarWolf" : "MusicEarRabbit")
+                    .resizable().scaledToFill()
+                    .frame(width: width, height: width * 0.46, alignment: wolf ? .bottom : .center)
+                    .opacity(ink.imgDim)
+            }
+            .frame(width: width, height: width * 0.46)
+            .clipped()
+            .overlay(Rectangle().stroke(ink.roseLine, lineWidth: 0.7))
+            Group {
+                if let image = Self.decode(dataURL) {
+                    Image(uiImage: image).resizable().scaledToFill()
+                } else {
+                    ZStack {
+                        LinearGradient(colors: ink.dark ? [Color(white: 0.2), Color(white: 0.16)]
+                                                        : [Color(red: 0.97, green: 0.973, blue: 0.98), Color(red: 0.906, green: 0.914, blue: 0.933)],
+                                       startPoint: .top, endPoint: .bottom)
+                        Text(fallback).font(SanctusPageFont.cn(width * 0.3)).foregroundColor(ink.base.script)
+                    }
+                }
+            }
+            .frame(width: width, height: width)
+            .clipped()
+            .overlay(Rectangle().stroke(ink.roseLine, lineWidth: 0.7))
+        }
+    }
+
+    static func decode(_ dataURL: String) -> UIImage? {
+        guard !dataURL.isEmpty else { return nil }
+        let parts = dataURL.split(separator: ",", maxSplits: 1)
+        guard let data = Data(base64Encoded: parts.count == 2 ? String(parts[1]) : dataURL) else { return nil }
+        return UIImage(data: data)
+    }
+}
+
+/// 一根发丝进度线：灰粉走过的那截、白色小圆钮；点 / 拖到哪放到哪
+struct MusicHairProgress: View {
+    let value: Double
+    let total: Double
+    let ink: MusicInk
+    var knob = true
+    var seek: ((Double) -> Void)? = nil
+
+    var body: some View {
+        GeometryReader { g in
+            let f = total > 0 ? min(1, max(0, value / total)) : 0
+            ZStack(alignment: .leading) {
+                Rectangle().fill(ink.base.hair).frame(height: 1)
+                Rectangle().fill(ink.rose).frame(width: g.size.width * f, height: 2)
+                if knob {
+                    Circle().fill(ink.paperWhite)
+                        .overlay(Circle().stroke(ink.rose, lineWidth: 0.9))
+                        .frame(width: 9, height: 9)
+                        .offset(x: g.size.width * f - 4.5)
+                }
+            }
+            .frame(width: g.size.width, height: g.size.height)
+            .contentShape(Rectangle())
+            .gesture(DragGesture(minimumDistance: 0).onEnded { v in
+                guard let seek, total > 0, g.size.width > 0 else { return }
+                seek(total * min(1, max(0, v.location.x / g.size.width)))
+            })
+        }
+        .frame(height: knob ? 16 : 2)
+    }
+}
+
+private struct MusicTimes: View {
+    let progress: Double
+    let duration: Double
+    let ink: MusicInk
+    var body: some View {
+        HStack {
+            Text(Self.time(progress)); Spacer(); Text(Self.time(duration))
+        }
+        .font(SanctusPageFont.corm(11)).foregroundColor(ink.base.sub)
+    }
+    static func time(_ seconds: Double) -> String {
+        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
+        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
+    }
+}
+
 private struct NativeMusicView: View {
     @ObservedObject private var model = MusicModel.shared
     @State private var query = ""
@@ -3009,33 +3144,58 @@ private struct NativeMusicView: View {
     @State private var listenPage = false
     @State private var lastPlayingID: String?
     @State private var searchPodcast = false   // 1016：搜索框下面「单曲 / 播客」
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
+    private var ink: MusicInk { _ = houseAppearance; return MusicInk() }
     private var hasQuery: Bool { !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    // 这间屋 ownsFullScreen，安全区问 app 主窗
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 54 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 30 }
 
     var body: some View {
-        VStack(spacing: 0) {
-            if listenPage {
-                listenTogetherPage
-            } else {
-                FoyerPanelTitle(title: selectedPlaylist?.name ?? "音乐", theme: theme)
-                searchBar
-                if selectedPlaylist == nil { searchKindPicker }
-                if let selectedPlaylist { playlistPage(selectedPlaylist) }
-                else if searchPodcast && hasQuery && !model.podcasts.isEmpty {
-                    podcastList(model.podcasts)
-                } else if !searchPodcast && hasQuery && !model.songs.isEmpty {
-                    songList(model.songs)
-                } else { homePage }
-                if model.nowPlaying != nil {
-                    MusicMiniPlayer(model: model) { showPlayer = true }
-                        .padding(.horizontal, 14).padding(.bottom, 12)
+        let ink = self.ink
+        ZStack(alignment: .top) {
+            ink.base.page.ignoresSafeArea()
+            if !listenPage && selectedPlaylist == nil {
+                // 右上角那朵点点小花：很淡，露半朵
+                Image("MusicFlowerDots").resizable().scaledToFit()
+                    .frame(width: 230)
+                    .opacity(0.32 * ink.imgDim)
+                    .frame(maxWidth: .infinity, alignment: .topTrailing)
+                    .offset(x: 70, y: safeTop - 17)
+                    .allowsHitTesting(false)
+            }
+            VStack(spacing: 0) {
+                if listenPage {
+                    listenTogetherPage
+                } else {
+                    SanctusTopBar(title: selectedPlaylist?.name ?? "音乐", onBack: goBack) { EmptyView() }
+                        .padding(.top, safeTop)
+                    if selectedPlaylist == nil {
+                        searchBar
+                        searchKindPicker
+                    }
+                    if let selectedPlaylist { playlistPage(selectedPlaylist) }
+                    else if searchPodcast && hasQuery && !model.podcasts.isEmpty {
+                        podcastList(model.podcasts)
+                    } else if !searchPodcast && hasQuery && !model.songs.isEmpty {
+                        songList(model.songs)
+                    } else { homePage }
                 }
             }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
         }
-        .foregroundColor(theme.text)
-        .foyerPanel(theme)
-        .padding(.horizontal, 12).padding(.top, 8)
+        .overlay(alignment: .bottom) {
+            if !listenPage && model.nowPlaying != nil {
+                miniCapsule
+                    .padding(.horizontal, 14)
+                    .padding(.bottom, safeBottom + 4)
+            }
+        }
+        .foregroundColor(ink.base.title)
+        .environment(\.sanctusInk, ink.base)
         .task {
             lastPlayingID = model.nowPlaying?.id
             model.startListenClock()
@@ -3051,9 +3211,9 @@ private struct NativeMusicView: View {
         }
         .sheet(isPresented: $showPlayer) {
             MusicPlayerSheet(model: model)
-                .presentationDetents([.fraction(0.75)])
+                .presentationDetents([.fraction(0.9)])
                 .presentationDragIndicator(.visible)
-                .presentationBackground(.ultraThinMaterial)
+                .presentationBackground(ink.base.page)
         }
         .sheet(item: $giftSong) { song in
             MusicGiftSheet(song: song) { giftSong = nil }
@@ -3063,24 +3223,40 @@ private struct NativeMusicView: View {
         }
     }
 
-    private var searchBar: some View {
-        HStack {
+    private func goBack() {
+        withAnimation(.easeOut(duration: 0.2)) {
             if selectedPlaylist != nil {
-                Button { selectedPlaylist = nil; model.playlistSongs = [] } label: {
-                    Image(systemName: "chevron.left")
-                }.buttonStyle(.plain)
+                selectedPlaylist = nil
+                model.playlistSongs = []
+            } else {
+                dismiss()
             }
-            Image(systemName: "magnifyingglass").foregroundColor(theme.textLight)
+        }
+    }
+
+    // MARK: 搜索
+
+    private var searchBar: some View {
+        HStack(spacing: 9) {
+            Image(systemName: "magnifyingglass").font(.system(size: 14, weight: .light)).foregroundColor(ink.base.sub)
             TextField(searchPodcast ? "搜索播客" : "搜索歌名或歌手", text: $query)
+                .font(SanctusPageFont.cn(13))
+                .foregroundColor(ink.base.body)
                 .submitLabel(.search)
                 .onSubmit { runSearch() }
-            if model.loading { ProgressView().controlSize(.small).tint(theme.fyAccent) }
-            else if !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-                Button { runSearch() } label: {
-                    Image(systemName: "arrow.right.circle.fill").font(.system(size: 19))
+            if model.loading {
+                ProgressView().controlSize(.small).tint(ink.rose)
+            } else if hasQuery {
+                Button { query = "" } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 14)).foregroundColor(ink.base.sub.opacity(0.6))
                 }.buttonStyle(.plain)
             }
-        }.padding(11).foyerCard(theme).padding(.horizontal, 16).padding(.top, 10)
+        }
+        .padding(.horizontal, 15)
+        .frame(height: 38)
+        .background(ink.dark ? Color.white.opacity(0.05) : Color.white.opacity(0.55), in: Capsule())
+        .overlay(Capsule().stroke(ink.base.hair, lineWidth: 0.7))
+        .padding(.horizontal, 18).padding(.top, 6)
     }
 
     private func runSearch() {
@@ -3090,213 +3266,256 @@ private struct NativeMusicView: View {
 
     /// 1016：单曲 / 播客。切过去时框里有字就直接按新的那种再搜一次
     private var searchKindPicker: some View {
-        Picker("搜什么", selection: $searchPodcast) {
-            Text("单曲").tag(false)
-            Text("播客").tag(true)
+        HStack(spacing: 26) {
+            kindTab("单曲", podcast: false)
+            kindTab("播客", podcast: true)
         }
-        .pickerStyle(.segmented)
-        .padding(.horizontal, 16).padding(.top, 8)
+        .padding(.top, 12).padding(.bottom, 2)
         .onChange(of: searchPodcast) { _ in if hasQuery { runSearch() } }
     }
 
-    /// 搜出来的播客：封面、名字、主播 · 多少期；点进去是节目列表（跟歌单同一页）
-    private func podcastList(_ items: [MusicPlaylist]) -> some View {
-        ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: 5) {
-                ForEach(items) { podcast in
-                    Button { open(podcast) } label: {
-                        HStack(spacing: 11) {
-                            AsyncImage(url: URL(string: podcast.cover)) { $0.resizable().scaledToFill() }
-                                placeholder: { theme.fyCardSub }
-                                .frame(width: 52, height: 52).clipShape(RoundedRectangle(cornerRadius: 9))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(podcast.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                Text([podcast.host, "\(podcast.count) 期"].filter { !$0.isEmpty }.joined(separator: " · "))
-                                    .font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.system(size: 12)).foregroundColor(theme.textDim)
-                        }
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .padding(.horizontal, 10).padding(.vertical, 6)
+    private func kindTab(_ title: String, podcast: Bool) -> some View {
+        let on = searchPodcast == podcast
+        return Button { if !on { searchPodcast = podcast } } label: {
+            Text(title)
+                .font(SanctusPageFont.cn(13)).tracking(2.6)
+                .foregroundColor(on ? ink.base.title : ink.base.sub)
+                .padding(.bottom, 5)
+                .overlay(alignment: .bottom) {
+                    if on { Rectangle().fill(ink.rose).frame(height: 1).padding(.horizontal, 3) }
                 }
-            }.padding(.horizontal, 14).padding(.vertical, 8)
+                .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
     }
 
-    // MARK: 一起听
-    private var listenTogetherPage: some View {
-        VStack(spacing: 0) {
-            HStack {
-                Button { withAnimation(.easeOut(duration: 0.25)) { listenPage = false } } label: {
-                    Image(systemName: "chevron.left").font(.system(size: 16, weight: .semibold))
-                        .frame(width: 32, height: 32).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-                Spacer()
-                Text("一起听").font(.system(size: 16, weight: .semibold))
-                Spacer()
-                Color.clear.frame(width: 32, height: 32)
-            }.padding(.horizontal, 12).padding(.top, 10)
-            ScrollView(showsIndicators: false) {
-                VStack(spacing: 16) {
-                    // 任务#1310：一起听是开关。开着他才"听见"，关着就是自己听
-                    Button { withAnimation(.easeOut(duration: 0.2)) { model.togetherOn.toggle() } } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: model.togetherOn ? "person.2.wave.2.fill" : "person.2")
-                                .font(.system(size: 16))
-                                .foregroundColor(model.togetherOn ? theme.fyAccent : theme.textDim)
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(model.togetherOn ? "一起听中" : "开始一起听")
-                                    .font(.system(size: 14, weight: .semibold))
-                                Text(model.togetherOn
-                                     ? "他能收到切歌、查到放到哪句，点这里结束"
-                                     : "开了他才听得见；不开就是你自己安静听")
-                                    .font(.system(size: 10)).foregroundColor(theme.textDim)
-                            }
-                            Spacer()
-                            Circle()
-                                .fill(model.togetherOn ? Color.green.opacity(0.75) : theme.textDim.opacity(0.35))
-                                .frame(width: 9, height: 9)
-                        }.padding(13).foyerCard(theme)
-                    }.buttonStyle(.plain)
-                    ListenTogetherCard(model: model, theme: theme) { showPlayer = true }
-                    if model.nowPlaying == nil {
-                        VStack(spacing: 6) {
-                            Image(systemName: "music.note.list").font(.system(size: 22))
-                                .foregroundColor(theme.textDim)
-                            Text("还没在放歌").font(.system(size: 13, weight: .medium))
-                            Text("回上一页点一首，这里就热闹了")
-                                .font(.system(size: 11)).foregroundColor(theme.textDim)
-                        }
-                        .frame(maxWidth: .infinity).padding(.vertical, 26)
-                    }
-                    if model.queue.count > 1 {
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("接下来").font(.system(size: 14, weight: .semibold))
-                            ForEach(Array(model.queue.enumerated()), id: \.element.id) { index, song in
-                                Button {
-                                    let source = model.queue
-                                    Task { await model.play(song, queue: source) }
-                                } label: {
-                                    HStack(spacing: 11) {
-                                        Image(systemName: index == model.queueIndex ? "waveform" : "music.note")
-                                            .font(.system(size: 13))
-                                            .foregroundColor(index == model.queueIndex ? theme.fyAccent : theme.textDim)
-                                            .frame(width: 20)
-                                        VStack(alignment: .leading, spacing: 2) {
-                                            Text(song.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                            Text(song.artist).font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(1)
-                                        }
-                                        Spacer()
-                                    }.contentShape(Rectangle())
-                                }.buttonStyle(.plain)
-                            }
-                        }.padding(14).foyerCard(theme)
-                    }
-                }.padding(.horizontal, 16).padding(.vertical, 12)
-            }
-        }
-    }
+    // MARK: 首页
 
     private var homePage: some View {
         ScrollView(showsIndicators: false) {
-            VStack(alignment: .leading, spacing: 22) {
-                HStack(spacing: 13) {
-                    AsyncImage(url: URL(string: "https://p1.music.126.net/_D-Yb1jPhcxPfnp66P1uYA==/109951170625651054.jpg")) { image in
-                        image.resizable().scaledToFill()
-                    } placeholder: { theme.fyCardSub }
-                    .frame(width: 58, height: 58).clipShape(Circle())
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("hxhxhxxxxn").font(.system(size: 19, weight: .semibold))
-                        Text("网易云音乐 · 已连接").font(.system(size: 11)).foregroundColor(theme.textDim)
-                    }
-                    Spacer()
-                }.padding(14).foyerCard(theme)
-
-                Button { withAnimation(.easeOut(duration: 0.25)) { listenPage = true } } label: {
-                    HStack(spacing: 13) {
-                        ZStack {
-                            theme.fyAccent.opacity(0.16)
-                            Image(systemName: "person.2.wave.2.fill")
-                                .font(.system(size: 20)).foregroundColor(theme.fyAccent)
-                        }
-                        .frame(width: 58, height: 58).clipShape(RoundedRectangle(cornerRadius: 12))
-                        VStack(alignment: .leading, spacing: 5) {
-                            Text("一起听").font(.system(size: 17, weight: .semibold))
-                            Text(model.listenTimeText)
-                                .font(.system(size: 11)).foregroundColor(theme.textDim)
-                        }
-                        Spacer()
-                        Image(systemName: "chevron.right").font(.system(size: 13))
-                            .foregroundColor(theme.textDim)
-                    }.padding(12).foyerCard(theme)
-                }.buttonStyle(.plain)
-
+            VStack(alignment: .leading, spacing: 0) {
+                togetherCard.padding(.top, 14)
                 if let liked = model.playlists.first {
-                    Button { open(liked) } label: {
-                        HStack(spacing: 13) {
-                            AsyncImage(url: URL(string: liked.cover)) { $0.resizable().scaledToFill() }
-                                placeholder: { theme.fyCardSub }
-                                .frame(width: 68, height: 68).clipShape(RoundedRectangle(cornerRadius: 12))
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text("我喜欢的音乐").font(.system(size: 17, weight: .semibold))
-                                Text("\(liked.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
-                            }
-                            Spacer(); Image(systemName: "heart.fill").foregroundColor(theme.fyAccent)
-                        }.padding(12).foyerCard(theme)
-                    }.buttonStyle(.plain)
+                    likedRow(liked).padding(.top, 12)
                 }
-
-                playlistSection("我的歌单", items: Array(model.playlists.dropFirst()))
-                playlistSection("为你推荐", items: model.recommended)
-            }.padding(.horizontal, 16).padding(.vertical, 14)
+                section("我的歌单", "my playlists", deco: "MusicFragile")
+                playlistGrid(Array(model.playlists.dropFirst()))
+                if !model.recommended.isEmpty {
+                    section("为你推荐", "for you", deco: nil)
+                    playlistGrid(model.recommended)
+                }
+                // 歌单下面那块空处：螺旋花
+                HStack {
+                    Spacer()
+                    Image("MusicSwirl").resizable().scaledToFit().frame(width: 62).opacity(0.55 * ink.imgDim)
+                }
+                .padding(.top, 18)
+            }
+            .padding(.horizontal, 18)
+            .padding(.bottom, 110)
         }
-        .overlay { if model.homeLoading { ProgressView().tint(theme.fyAccent) } }
+        .overlay { if model.homeLoading { ProgressView().tint(ink.rose) } }
     }
 
-    private func playlistSection(_ title: String, items: [MusicPlaylist]) -> some View {
-        VStack(alignment: .leading, spacing: 11) {
-            Text(title).font(.system(size: 17, weight: .semibold))
-            LazyVGrid(columns: [GridItem(.flexible()), GridItem(.flexible()), GridItem(.flexible())], spacing: 14) {
-                ForEach(items) { playlist in
-                    Button { open(playlist) } label: {
-                        VStack(alignment: .leading, spacing: 6) {
-                            AsyncImage(url: URL(string: playlist.cover)) { $0.resizable().scaledToFill() }
-                                placeholder: { theme.fyCardSub }
-                                .aspectRatio(1, contentMode: .fit)
-                                .clipShape(RoundedRectangle(cornerRadius: 11))
-                            Text(playlist.name).font(.system(size: 11, weight: .medium)).lineLimit(2)
-                            Text("\(playlist.count) 首").font(.system(size: 9)).foregroundColor(theme.textDim)
-                        }
-                    }.buttonStyle(.plain)
+    /// 一起听卡：花体标题＋眉标、右上蝴蝶；他（狼耳）在左、她（兔耳）在右，中间一起听了多久
+    private var togetherCard: some View {
+        Button { withAnimation(.easeOut(duration: 0.25)) { listenPage = true } } label: {
+            ZStack(alignment: .topLeading) {
+                VStack(alignment: .leading, spacing: 5) {
+                    Text("listening, together").font(SanctusPageFont.script(22)).foregroundColor(ink.base.script)
+                    Text("TOGETHER · 一起听").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(ink.base.sub)
                 }
+                .padding(.leading, 18).padding(.top, 14)
+                Image("MusicButterfly").resizable().scaledToFit().frame(width: 56)
+                    .opacity(0.7 * ink.imgDim)
+                    .frame(maxWidth: .infinity, alignment: .topTrailing)
+                    .padding(.trailing, 18).padding(.top, 12)
+                HStack(alignment: .bottom, spacing: 6) {
+                    MusicEarAvatar(wolf: true, dataURL: assistantAvatar, fallback: "璟", width: 74, ink: ink)
+                    Spacer(minLength: 0)
+                    VStack(spacing: 4) {
+                        listenTimeEnglish
+                        Text(model.listenTimeText)
+                            .font(SanctusPageFont.cn(11)).tracking(1.1).foregroundColor(ink.base.sub)
+                    }
+                    .multilineTextAlignment(.center)
+                    .padding(.bottom, 30)
+                    Spacer(minLength: 0)
+                    MusicEarAvatar(wolf: false, dataURL: userAvatar, fallback: "霁", width: 74, ink: ink)
+                }
+                .padding(.horizontal, 18).padding(.top, 64).padding(.bottom, 18)
+            }
+            .frame(maxWidth: .infinity)
+            .sanctusCard(ink.base, radius: 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// for 2 hours 17 minutes：数字用 Cormorant 老式数字，别的斜体
+    private var listenTimeEnglish: Text {
+        let total = model.listenTotalSeconds
+        let h = total / 3600, m = total % 3600 / 60
+        let ital = SanctusPageFont.ital(12.5), num = SanctusPageFont.corm(16)
+        let sub = ink.base.sub, inkColor = ink.base.title
+        if h > 0 {
+            return Text("for ").font(ital).foregroundColor(sub)
+                + Text("\(h)").font(num).foregroundColor(inkColor)
+                + Text(h == 1 ? " hour " : " hours ").font(ital).foregroundColor(sub)
+                + Text("\(m)").font(num).foregroundColor(inkColor)
+                + Text(" minutes").font(ital).foregroundColor(sub)
+        }
+        if m > 0 {
+            return Text("for ").font(ital).foregroundColor(sub)
+                + Text("\(m)").font(num).foregroundColor(inkColor)
+                + Text(" minutes").font(ital).foregroundColor(sub)
+        }
+        return Text("just started").font(ital).foregroundColor(sub)
+    }
+
+    private func likedRow(_ liked: MusicPlaylist) -> some View {
+        Button { open(liked) } label: {
+            HStack(spacing: 12) {
+                AsyncImage(url: URL(string: liked.cover)) { $0.resizable().scaledToFill() }
+                    placeholder: { ink.base.hair }
+                    .frame(width: 50, height: 50)
+                    .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.base.hair, lineWidth: 0.6))
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("我喜欢的音乐").font(SanctusPageFont.cn(14)).foregroundColor(ink.base.title)
+                    (Text("\(liked.count)").font(SanctusPageFont.corm(12)) + Text(" 首").font(SanctusPageFont.cn(10.5)))
+                        .foregroundColor(ink.base.sub)
+                }
+                Spacer(minLength: 6)
+                Image("MusicStarSmile").resizable().scaledToFit().frame(width: 54).opacity(0.85 * ink.imgDim)
+                Image(systemName: "heart.fill").font(.system(size: 16)).foregroundColor(ink.rose)
+            }
+            .padding(.horizontal, 14).padding(.vertical, 12)
+            .sanctusCard(ink.base, radius: 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func section(_ zh: String, _ en: String, deco: String?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(zh).font(SanctusPageFont.cn(14)).tracking(1.7).foregroundColor(ink.base.title)
+            Text(en).font(SanctusPageFont.ital(12)).foregroundColor(ink.base.sub)
+            Spacer(minLength: 0)
+        }
+        .overlay(alignment: .trailing) {
+            if let deco {
+                Image(deco).resizable().scaledToFit().frame(width: 118).opacity(0.75 * ink.imgDim)
+                    .offset(y: -8)
+                    .allowsHitTesting(false)
+            }
+        }
+        .padding(.top, 22).padding(.bottom, 10).padding(.horizontal, 2)
+    }
+
+    private func playlistGrid(_ items: [MusicPlaylist]) -> some View {
+        LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)],
+                  alignment: .leading, spacing: 14) {
+            ForEach(items) { playlist in
+                Button { open(playlist) } label: {
+                    VStack(alignment: .leading, spacing: 0) {
+                        Color.clear.aspectRatio(1, contentMode: .fit)
+                            .overlay {
+                                AsyncImage(url: URL(string: playlist.cover)) { $0.resizable().scaledToFill() }
+                                    placeholder: { ink.base.hair }
+                            }
+                            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.base.hair, lineWidth: 0.6))
+                        Text(playlist.name).font(SanctusPageFont.cn(11)).foregroundColor(ink.base.body)
+                            .lineLimit(1).padding(.top, 6)
+                        (Text("\(playlist.count)").font(SanctusPageFont.corm(11)) + Text(" 首").font(SanctusPageFont.cn(10)))
+                            .foregroundColor(ink.base.sub)
+                    }
+                }
+                .buttonStyle(.plain)
             }
         }
     }
+
+    /// 底下的小播放条：圆封面、歌名歌手、暂停、下一首、一根灰粉进度线；点开是播放页，长按能停
+    private var miniCapsule: some View {
+        HStack(spacing: 10) {
+            if let song = model.nowPlaying {
+                AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                    placeholder: { ink.base.hair }
+                    .frame(width: 42, height: 42).clipShape(Circle())
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(song.name).font(SanctusPageFont.cn(13)).foregroundColor(ink.base.title).lineLimit(1)
+                    Text(song.artist).font(SanctusPageFont.cn(10.5)).foregroundColor(ink.base.sub).lineLimit(1)
+                }
+                Spacer(minLength: 6)
+                Button { model.toggle() } label: {
+                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 17))
+                        .frame(width: 34, height: 40).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+                Button { model.next() } label: {
+                    Image(systemName: "forward.end.fill").font(.system(size: 15))
+                        .frame(width: 30, height: 40).contentShape(Rectangle())
+                }.buttonStyle(.plain)
+            }
+        }
+        .foregroundColor(ink.base.title)
+        .padding(.leading, 8).padding(.trailing, 12)
+        .frame(height: 58)
+        .background(ink.dark ? Color(red: 0.16, green: 0.165, blue: 0.19).opacity(0.94) : Color.white.opacity(0.9), in: Capsule())
+        .overlay(Capsule().stroke(ink.base.hair, lineWidth: 0.6))
+        .overlay(alignment: .bottom) {
+            MusicHairProgress(value: model.progress, total: model.duration, ink: ink, knob: false)
+                .padding(.horizontal, 28).padding(.bottom, 6)
+                .allowsHitTesting(false)
+        }
+        .shadow(color: .black.opacity(ink.dark ? 0.25 : 0.06), radius: 9, y: 4)
+        .contentShape(Capsule())
+        .onTapGesture { showPlayer = true }
+        .contextMenu {
+            Button(role: .destructive) { model.stopAndClear() } label: { Label("停止播放", systemImage: "stop.fill") }
+        }
+    }
+
+    // MARK: 歌单 / 搜索结果 / 播客
 
     private func playlistPage(_ playlist: MusicPlaylist) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 13) {
                 AsyncImage(url: URL(string: playlist.cover)) { $0.resizable().scaledToFill() }
-                    placeholder: { theme.fyCardSub }
-                    .frame(width: 82, height: 82).clipShape(RoundedRectangle(cornerRadius: 13))
+                    placeholder: { ink.base.hair }
+                    .frame(width: 82, height: 82)
+                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ink.base.hair, lineWidth: 0.6))
                 VStack(alignment: .leading, spacing: 7) {
-                    Text(playlist.name).font(.system(size: 17, weight: .semibold)).lineLimit(2)
-                    Text(playlist.isPodcast ? "\(playlist.count) 期" : "\(playlist.count) 首").font(.system(size: 11)).foregroundColor(theme.textDim)
-                    Button { if let first = model.playlistSongs.first { Task { await model.play(first, queue: model.playlistSongs) } } } label: {
-                        Label("播放全部", systemImage: "play.fill").font(.system(size: 11, weight: .medium))
-                    }.buttonStyle(.borderedProminent).tint(theme.fyAccent)
-                }; Spacer()
-            }.padding(14)
+                    Text(playlist.name).font(SanctusPageFont.cn(17)).foregroundColor(ink.base.title).lineLimit(2)
+                    (Text("\(playlist.count)").font(SanctusPageFont.corm(12)) + Text(playlist.isPodcast ? " 期" : " 首").font(SanctusPageFont.cn(11)))
+                        .foregroundColor(ink.base.sub)
+                    Button {
+                        if let first = model.playlistSongs.first { Task { await model.play(first, queue: model.playlistSongs) } }
+                    } label: {
+                        HStack(spacing: 6) {
+                            Image(systemName: "play.fill").font(.system(size: 10))
+                            Text("播放全部").font(SanctusPageFont.cn(11.5)).tracking(1.4)
+                        }
+                        .foregroundColor(ink.roseText)
+                        .padding(.horizontal, 13).padding(.vertical, 6)
+                        .background(ink.dark ? Color.white.opacity(0.04) : Color.white.opacity(0.6), in: Capsule())
+                        .overlay(Capsule().stroke(ink.roseLine, lineWidth: 0.7))
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
             songList(model.playlistSongs)
-        }.overlay { if model.loading { ProgressView().tint(theme.fyAccent) } }
+        }
+        .overlay { if model.loading { ProgressView().tint(ink.rose) } }
     }
 
     private func songList(_ songs: [MusicSong]) -> some View {
         ScrollView(showsIndicators: false) {
-            LazyVStack(spacing: 5) {
+            LazyVStack(spacing: 2) {
                 ForEach(Array(songs.enumerated()), id: \.element.id) { index, song in
                     HStack(spacing: 11) {
                         Button {
@@ -3305,32 +3524,65 @@ private struct NativeMusicView: View {
                             Task { await model.play(song, queue: songs) }
                         } label: {
                             HStack(spacing: 11) {
-                            Text("\(index + 1)").font(.system(size: 11, design: .monospaced))
-                                .foregroundColor(theme.textLight).frame(width: 24)
-                            AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
-                                placeholder: { theme.fyCardSub }
-                                .frame(width: 42, height: 42).clipShape(RoundedRectangle(cornerRadius: 8))
-                            VStack(alignment: .leading, spacing: 3) {
-                                Text(song.name).font(.system(size: 13, weight: .medium)).lineLimit(1)
-                                Text(song.artist).font(.system(size: 10)).foregroundColor(theme.textDim).lineLimit(1)
+                                Text("\(index + 1)").font(SanctusPageFont.corm(12))
+                                    .foregroundColor(ink.base.sub).frame(width: 24)
+                                AsyncImage(url: URL(string: song.cover)) { $0.resizable().scaledToFill() }
+                                    placeholder: { ink.base.hair }
+                                    .frame(width: 42, height: 42)
+                                    .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(song.name).font(SanctusPageFont.cn(13)).foregroundColor(ink.base.title).lineLimit(1)
+                                    Text(song.artist).font(SanctusPageFont.cn(10)).foregroundColor(ink.base.sub).lineLimit(1)
+                                }
+                                Spacer()
+                                Image(systemName: model.nowPlaying?.id == song.id && model.isPlaying ? "waveform" : "play.fill")
+                                    .font(.system(size: 12))
+                                    .foregroundColor(ink.rose)
                             }
-                            Spacer()
-                            Image(systemName: model.nowPlaying?.id == song.id && model.isPlaying ? "waveform" : "play.fill")
-                                .foregroundColor(theme.fyAccent)
-                            }
+                            .contentShape(Rectangle())
                         }
-                        .contentShape(Rectangle())
                         .buttonStyle(.plain)
                         Button { giftSong = song } label: {
                             Image(systemName: "paperplane")
-                                .font(.system(size: 14, weight: .medium))
-                                .foregroundColor(theme.fyAccent)
-                                .frame(width: 34, height: 34)
-                                .background(theme.fyCardSub.opacity(0.72), in: Circle())
+                                .font(.system(size: 13, weight: .light))
+                                .foregroundColor(ink.roseText)
+                                .frame(width: 32, height: 32)
+                                .overlay(Circle().stroke(ink.base.hair, lineWidth: 0.6))
                         }.buttonStyle(.plain)
-                    }.padding(.horizontal, 10).padding(.vertical, 6)
+                    }
+                    .padding(.horizontal, 8).padding(.vertical, 6)
                 }
-            }.padding(.horizontal, 14).padding(.vertical, 8)
+            }
+            .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 110)
+        }
+    }
+
+    /// 搜出来的播客：封面、名字、主播 · 多少期；点进去是节目列表（跟歌单同一页）
+    private func podcastList(_ items: [MusicPlaylist]) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 2) {
+                ForEach(items) { podcast in
+                    Button { open(podcast) } label: {
+                        HStack(spacing: 11) {
+                            AsyncImage(url: URL(string: podcast.cover)) { $0.resizable().scaledToFill() }
+                                placeholder: { ink.base.hair }
+                                .frame(width: 52, height: 52)
+                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(podcast.name).font(SanctusPageFont.cn(13)).foregroundColor(ink.base.title).lineLimit(1)
+                                Text([podcast.host, "\(podcast.count) 期"].filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(SanctusPageFont.cn(10)).foregroundColor(ink.base.sub).lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.system(size: 12, weight: .light)).foregroundColor(ink.base.sub)
+                        }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .padding(.horizontal, 8).padding(.vertical, 6)
+                }
+            }
+            .padding(.horizontal, 14).padding(.top, 6).padding(.bottom, 110)
         }
     }
 
@@ -3338,6 +3590,222 @@ private struct NativeMusicView: View {
         query = ""
         selectedPlaylist = playlist
         Task { await model.loadPlaylist(playlist) }
+    }
+
+    // MARK: 一起听
+
+    private var listenTogetherPage: some View {
+        VStack(spacing: 0) {
+            SanctusTopBar(title: "一起听", onBack: { withAnimation(.easeOut(duration: 0.25)) { listenPage = false } }) { EmptyView() }
+                .padding(.top, safeTop)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 14) {
+                    togetherToggle
+                    playerShell
+                    if model.queue.count > 1 { upNext }
+                }
+                .padding(.horizontal, 18).padding(.top, 4).padding(.bottom, safeBottom + 24)
+            }
+        }
+    }
+
+    // 任务#1310：一起听是开关。开着他才"听见"，关着就是自己听
+    private var togetherToggle: some View {
+        Button { withAnimation(.easeOut(duration: 0.2)) { model.togetherOn.toggle() } } label: {
+            HStack(spacing: 11) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(model.togetherOn ? "一起听中" : "开始一起听").font(SanctusPageFont.cn(14)).foregroundColor(ink.base.title)
+                    Text(model.togetherOn ? "他能收到切歌、查到放到哪句，点这里结束" : "开了他才听得见；不开就是你自己安静听")
+                        .font(SanctusPageFont.cn(10.5)).foregroundColor(ink.base.sub)
+                }
+                Spacer()
+                Circle().fill(model.togetherOn ? ink.rose : ink.base.hair)
+                    .frame(width: 8, height: 8)
+                    .background(Circle().fill(model.togetherOn ? ink.roseSoft : .clear).frame(width: 14, height: 14))
+            }
+            .padding(.horizontal, 15).padding(.vertical, 12)
+            .sanctusCard(ink.base, radius: 14)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    /// 白色的播放器：上面坐着两个戴耳朵的头像夹着珍珠耳机兔子和 now playing；小屏幕；转盘
+    private var playerShell: some View {
+        VStack(spacing: 0) {
+            HStack(alignment: .bottom) {
+                MusicEarAvatar(wolf: true, dataURL: assistantAvatar, fallback: "璟", width: 52, ink: ink)
+                Spacer(minLength: 4)
+                VStack(spacing: 5) {
+                    Image("MusicRabbitPhones").resizable().scaledToFill()
+                        .frame(width: 58, height: 58).clipShape(Circle())
+                        .opacity(ink.imgDim)
+                        .overlay(Circle().stroke(Color.white.opacity(ink.dark ? 0.15 : 1), lineWidth: 0.8))
+                        .overlay(Circle().stroke(ink.base.hair, lineWidth: 0.6).padding(-1.2))
+                    Text("now playing").font(SanctusPageFont.script(20)).foregroundColor(ink.base.script)
+                    Text("NOW · 正在听").font(SanctusPageFont.corm(7.5)).tracking(2.4).foregroundColor(ink.base.sub)
+                }
+                .padding(.bottom, 2)
+                Spacer(minLength: 4)
+                MusicEarAvatar(wolf: false, dataURL: userAvatar, fallback: "霁", width: 52, ink: ink)
+            }
+            .padding(.horizontal, 8).padding(.top, 10).padding(.bottom, 12)
+            playerScreen
+                .overlay(alignment: .topTrailing) {
+                    Image("MusicSparkle").resizable().scaledToFit().frame(width: 34)
+                        .opacity(0.8 * ink.imgDim)
+                        .offset(x: 12, y: -16)
+                        .allowsHitTesting(false)
+                }
+            playerWheel.padding(.top, 10)
+        }
+        .padding(.horizontal, 16).padding(.top, 16).padding(.bottom, 22)
+        .background(
+            RoundedRectangle(cornerRadius: 30, style: .continuous)
+                .fill(LinearGradient(colors: ink.dark ? [Color(red: 0.16, green: 0.165, blue: 0.19), Color(red: 0.14, green: 0.145, blue: 0.165)]
+                                                      : [.white, Color(red: 0.97, green: 0.973, blue: 0.98)],
+                                     startPoint: .top, endPoint: .bottom))
+        )
+        .overlay(RoundedRectangle(cornerRadius: 30, style: .continuous).stroke(ink.base.hair, lineWidth: 0.6))
+        .shadow(color: .black.opacity(ink.dark ? 0.25 : 0.05), radius: 13, y: 5)
+    }
+
+    /// 小屏幕：三个小点的标题栏＋封面、歌名、歌手、进度；点它打开播放页
+    private var playerScreen: some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 5) {
+                ForEach(0..<3, id: \.self) { _ in
+                    Circle().fill(ink.base.hair).frame(width: 5, height: 5)
+                }
+                Spacer(minLength: 4)
+                Text((model.nowPlaying?.name ?? "now playing").uppercased())
+                    .font(SanctusPageFont.corm(9)).tracking(2.9).foregroundColor(ink.base.sub).lineLimit(1)
+                Spacer(minLength: 4)
+                Color.clear.frame(width: 25, height: 1)
+            }
+            .padding(.horizontal, 10).frame(height: 22)
+            Rectangle().fill(ink.base.hair.opacity(0.6)).frame(height: 0.6)
+            if let song = model.nowPlaying {
+                HStack(spacing: 12) {
+                    AsyncImage(url: MusicModel.artworkURL(song.cover)) { $0.resizable().scaledToFill() }
+                        placeholder: { ink.base.hair }
+                        .frame(width: 92, height: 92)
+                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                    VStack(alignment: .leading, spacing: 0) {
+                        Text(song.name).font(SanctusPageFont.cn(17)).foregroundColor(ink.base.title).lineLimit(1)
+                        Text(song.artist).font(SanctusPageFont.ital(13)).foregroundColor(ink.base.sub).lineLimit(1).padding(.top, 4)
+                        MusicHairProgress(value: model.progress, total: model.duration, ink: ink, seek: { model.seek(to: $0) })
+                            .padding(.top, 8)
+                        MusicTimes(progress: model.progress, duration: model.duration, ink: ink).padding(.top, 2)
+                    }
+                }
+                .padding(12)
+            } else {
+                VStack(spacing: 5) {
+                    Text("还没在放歌").font(SanctusPageFont.cn(13)).foregroundColor(ink.base.title)
+                    Text("回上一页点一首，这里就热闹了").font(SanctusPageFont.cn(10.5)).foregroundColor(ink.base.sub)
+                }
+                .frame(maxWidth: .infinity).padding(.vertical, 38)
+            }
+        }
+        .background(ink.dark ? Color.white.opacity(0.04) : Color.white, in: RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(ink.base.hair, lineWidth: 0.6))
+        .contentShape(Rectangle())
+        .onTapGesture { if model.nowPlaying != nil { showPlayer = true } }
+    }
+
+    /// 转盘：上爱心、左右切歌、下播放模式、中间暂停（从她给的 iPod 那张借的意思）
+    private var playerWheel: some View {
+        ZStack {
+            Circle()
+                .fill(RadialGradient(colors: ink.dark ? [Color(red: 0.18, green: 0.185, blue: 0.21), Color(red: 0.14, green: 0.145, blue: 0.165)]
+                                                      : [.white, Color(red: 0.949, green: 0.953, blue: 0.965)],
+                                     center: UnitPoint(x: 0.5, y: 0.4), startRadius: 0, endRadius: 90))
+                .overlay(Circle().stroke(ink.base.hair, lineWidth: 0.7))
+            VStack {
+                Button { Task { await model.toggleLike() } } label: {
+                    Image(systemName: model.currentIsLiked ? "heart.fill" : "heart").font(.system(size: 15, weight: .light))
+                        .foregroundColor(ink.rose).frame(width: 40, height: 34).contentShape(Rectangle())
+                }
+                Spacer()
+                Button { model.cyclePlayMode() } label: {
+                    Image(systemName: model.playMode.icon).font(.system(size: 14, weight: .light))
+                        .foregroundColor(ink.base.link).frame(width: 40, height: 34).contentShape(Rectangle())
+                }
+                .accessibilityLabel(model.playMode.title)
+            }
+            .padding(.vertical, 6)
+            HStack {
+                Button { model.prev() } label: {
+                    Image(systemName: "backward.end.fill").font(.system(size: 15))
+                        .foregroundColor(ink.base.link).frame(width: 38, height: 44).contentShape(Rectangle())
+                }
+                Spacer()
+                Button { model.next() } label: {
+                    Image(systemName: "forward.end.fill").font(.system(size: 15))
+                        .foregroundColor(ink.base.link).frame(width: 38, height: 44).contentShape(Rectangle())
+                }
+            }
+            .padding(.horizontal, 6)
+            Button { model.toggle() } label: {
+                ZStack {
+                    Circle().fill(ink.paperWhite)
+                        .overlay(Circle().stroke(ink.base.hair, lineWidth: 0.6))
+                        .shadow(color: .black.opacity(ink.dark ? 0.2 : 0.06), radius: 3, y: 2)
+                    if model.playbackLoading { ProgressView().tint(ink.rose) }
+                    else {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 18))
+                            .foregroundColor(ink.base.title)
+                    }
+                }
+                .frame(width: 56, height: 56)
+            }
+        }
+        .buttonStyle(.plain)
+        .frame(width: 156, height: 156)
+    }
+
+    /// 接下来：右上角 do what you love 十字绣字
+    private var upNext: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("接下来").font(SanctusPageFont.cn(14)).tracking(1.7).foregroundColor(ink.base.title)
+                Text("up next").font(SanctusPageFont.ital(12)).foregroundColor(ink.base.sub)
+            }
+            .padding(.top, 4).padding(.bottom, 4)
+            LazyVStack(alignment: .leading, spacing: 0) {
+                ForEach(Array(model.queue.enumerated()), id: \.element.id) { index, song in
+                    Button {
+                        let source = model.queue
+                        Task { await model.play(song, queue: source) }
+                    } label: {
+                        HStack(spacing: 12) {
+                            Text(index == model.queueIndex ? "♪" : "\(index + 1)")
+                                .font(SanctusPageFont.corm(13))
+                                .foregroundColor(index == model.queueIndex ? ink.rose : ink.base.sub)
+                                .frame(width: 18)
+                            VStack(alignment: .leading, spacing: 3) {
+                                Text(song.name).font(SanctusPageFont.cn(13)).foregroundColor(ink.base.title).lineLimit(1)
+                                Text(song.artist).font(SanctusPageFont.cn(10.5)).foregroundColor(ink.base.sub).lineLimit(1)
+                            }
+                            Spacer(minLength: 96)
+                        }
+                        .padding(.vertical, 8)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topTrailing) {
+            Image("MusicDoWhatYouLove").resizable().scaledToFit().frame(width: 86)
+                .opacity(0.6 * ink.imgDim)
+                .padding(.top, 14).padding(.trailing, 14)
+                .allowsHitTesting(false)
+        }
+        .sanctusCard(ink.base, radius: 14)
     }
 }
 
@@ -4346,10 +4814,13 @@ struct MusicMiniPlayer: View {
     }
 }
 
+/// 1016 播放页 Sanctus 版（第五版效果图）：一张冷白纸。第一页是歌词（她点头的那张）：封面歌名＋灰粉爱心 → 进度 →
+/// 那串花体英文（她：「把这串英文替换这两个图案」）→ 歌词铺满 → 底下一排 模式 / 上一首 / 暂停 / 下一首 / 纸飞机（发正在唱的这句）。
+/// 往左滑是原来的黑胶那页（换成同一张纸的颜色），右下角是播放列表。点一句歌词选中（能选几句），纸飞机就发选中的
 struct MusicPlayerSheet: View {
     @ObservedObject var model: MusicModel
-    @AppStorage("alcoveTheme") private var themeName = "haven"
-    private var theme: AlcoveTheme { .panelNamed(themeName) }
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: MusicInk { _ = houseAppearance; return MusicInk() }
     @State private var page = 0
     @State private var showQueue = false
     @State private var showInsight = false
@@ -4359,27 +4830,13 @@ struct MusicPlayerSheet: View {
     @State private var pickedLines: Set<Int> = []
 
     var body: some View {
+        let ink = self.ink
         GeometryReader { bounds in
             ZStack {
-                if let cover = model.nowPlaying?.cover {
-                    AsyncImage(url: MusicModel.artworkURL(cover)) { image in
-                        image.resizable().scaledToFill()
-                            .frame(width: bounds.size.width, height: bounds.size.height)
-                            .clipped()
-                    } placeholder: {
-                        LinearGradient(colors: theme.splashBg, startPoint: .top, endPoint: .bottom)
-                            .frame(width: bounds.size.width, height: bounds.size.height)
-                    }
-                    .frame(width: bounds.size.width, height: bounds.size.height)
-                    .clipped()
-                    .blur(radius: 48).opacity(0.42)
-                }
-                LinearGradient(colors: [.black.opacity(0.22), .black.opacity(0.7)],
-                               startPoint: .top, endPoint: .bottom)
-                    .frame(width: bounds.size.width, height: bounds.size.height)
+                ink.base.page
                 Group {
-                    if page == 0 { playerPage }
-                    else { lyricPage }
+                    if page == 0 { lyricPage }
+                    else { recordPage }
                 }
                 .frame(width: bounds.size.width, height: bounds.size.height)
                 .clipped()
@@ -4399,8 +4856,9 @@ struct MusicPlayerSheet: View {
             .frame(width: bounds.size.width, height: bounds.size.height)
             .clipped()
         }
+        .background(ink.base.page.ignoresSafeArea())
         .ignoresSafeArea(edges: .bottom)
-        .foregroundColor(.white)
+        .foregroundColor(ink.base.title)
         .sheet(isPresented: $showQueue) { MusicQueueSheet(model: model) }
         .sheet(isPresented: $showInsight) {
             if let song = model.nowPlaying {
@@ -4411,54 +4869,53 @@ struct MusicPlayerSheet: View {
         }
     }
 
-    private var playerPage: some View {
-        VStack(spacing: 0) {
-            if let song = model.nowPlaying {
-                playerHeader(song)
-                Spacer(minLength: 4)
-                record(song, size: 190)
-                Spacer(minLength: 8)
-                HStack(alignment: .center, spacing: 12) {
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text(song.name).font(.system(size: 21, weight: .semibold)).lineLimit(1)
-                        Text(song.artist).font(.system(size: 13)).foregroundColor(.white.opacity(0.62)).lineLimit(1)
-                    }
-                    Spacer()
-                    likeButton
-                }.padding(.horizontal, 28)
-                progressControls
-                playbackControls
-                pageDots
-            }
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .clipped()
-    }
+    // MARK: 歌词页（第一页）
 
     private var lyricPage: some View {
         VStack(spacing: 0) {
-            if let song = model.nowPlaying { playerHeader(song) }
+            if let song = model.nowPlaying {
+                header(song).padding(.horizontal, 22).padding(.top, 26)
+            }
+            VStack(spacing: 2) {
+                MusicHairProgress(value: model.progress, total: model.duration, ink: ink, seek: { model.seek(to: $0) })
+                MusicTimes(progress: model.progress, duration: model.duration, ink: ink)
+            }
+            .padding(.horizontal, 22).padding(.top, 12)
+            // 她 1016：标题下面那两个小图案换成这串花体英文
+            Image("MusicScriptWords").resizable().scaledToFit()
+                .frame(width: 104)
+                .opacity(0.72 * ink.imgDim)
+                .padding(.top, 4)
+                .allowsHitTesting(false)
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
-                    LazyVStack(alignment: .center, spacing: 4) {
-                    Color.clear.frame(height: 70)
-                    if model.lyricsLoading { ProgressView().frame(maxWidth: .infinity) }
-                    else if model.lyrics.isEmpty {
-                        Text("这首没有歌词").foregroundColor(theme.textDim).frame(maxWidth: .infinity)
-                    } else {
-                        ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
-                            lyricRow(index, line).id(index)
+                    LazyVStack(alignment: .center, spacing: 0) {
+                        Color.clear.frame(height: 30)
+                        if model.lyricsLoading { ProgressView().tint(ink.rose).frame(maxWidth: .infinity) }
+                        else if model.lyrics.isEmpty {
+                            Text("这首没有歌词").font(SanctusPageFont.cn(13)).foregroundColor(ink.base.sub).frame(maxWidth: .infinity)
+                        } else {
+                            ForEach(Array(model.lyrics.enumerated()), id: \.element.id) { index, line in
+                                lyricRow(index, line).id(index)
+                            }
                         }
+                        Color.clear.frame(height: 60)
                     }
-                    Color.clear.frame(height: 110)
-                }.frame(maxWidth: .infinity).padding(.horizontal, 26)
+                    .frame(maxWidth: .infinity).padding(.horizontal, 24)
                 }
+                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.08),
+                                             .init(color: .black, location: 0.9), .init(color: .clear, location: 1)],
+                                     startPoint: .top, endPoint: .bottom))
                 .onScrollPhaseChange { _, phase in
                     if phase == .interacting { followLyric = false }
                 }
                 .onChange(of: activeLyric) { idx in
                     guard followLyric, idx >= 0 else { return }
                     withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) }
+                }
+                .onAppear {
+                    let idx = activeLyric
+                    if idx >= 0 { proxy.scrollTo(idx, anchor: .center) }
                 }
                 .onChange(of: model.nowPlaying?.id) { _ in
                     followLyric = true
@@ -4471,71 +4928,66 @@ struct MusicPlayerSheet: View {
                             let idx = activeLyric
                             if idx >= 0 { withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(idx, anchor: .center) } }
                         } label: {
-                            Text("回到正在唱 ↓").font(.system(size: 12, weight: .medium))
+                            Text("回到正在唱 ↓").font(SanctusPageFont.cn(12)).tracking(1.2).foregroundColor(ink.roseText)
                                 .padding(.horizontal, 14).padding(.vertical, 6)
-                                .glassEffect(.regular.interactive(), in: Capsule())
+                                .background(ink.paperWhite.opacity(0.9), in: Capsule())
+                                .overlay(Capsule().stroke(ink.roseLine, lineWidth: 0.7))
                         }
                         .buttonStyle(.plain)
-                        .padding(.bottom, 10)
+                        .padding(.bottom, 8)
                         .transition(.opacity)
                     }
                 }
                 .animation(.easeOut(duration: 0.2), value: followLyric)
             }
-            HStack {
-                likeButton
-                Spacer()
-                sendLyricButton
-            }
-                .padding(.horizontal, 30).padding(.top, 8)
-            progressControls
-            playbackControls
+            controls(trailing: .send)
             pageDots
         }
     }
 
-    /// 一句歌词：点了选中（左边打勾、套一层浅玻璃框），选中的右边一颗小播放键＝从这句放
+    /// 一句歌词：正在唱的大一号深墨、配一行斜体译文；点了选中（灰粉细框、左边打勾、右边「从这句放」）
     private func lyricRow(_ index: Int, _ line: MusicLyric) -> some View {
         let now = index == activeLyric
         let picked = pickedLines.contains(index)
-        return VStack(alignment: .center, spacing: 5) {
-            Text(line.text).font(.system(size: now ? 19 : 15, weight: now ? .semibold : .regular))
+        return VStack(alignment: .center, spacing: 4) {
+            Text(line.text)
+                .font(SanctusPageFont.cn(now ? 19 : 14))
+                .tracking(now ? 0.4 : 0.6)
                 .multilineTextAlignment(.center)
-                .foregroundColor(now || picked ? .white : .white.opacity(0.68))
+                .foregroundColor(now || picked ? ink.base.title : ink.lyricDim)
             if let trans = line.translation, !trans.isEmpty {
-                Text(trans).font(.system(size: 11)).foregroundColor(.white.opacity(0.62))
+                Text(trans).font(SanctusPageFont.ital(now ? 12.5 : 11.5)).foregroundColor(ink.base.sub)
                     .multilineTextAlignment(.center)
             }
         }
         .frame(maxWidth: .infinity, alignment: .center)
         .padding(.horizontal, picked ? 34 : 0)
-        .padding(.vertical, 9)
+        .padding(.vertical, 7)
         .background {
             if picked {
-                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(.white.opacity(0.14))
-                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(.white.opacity(0.45), lineWidth: 1))
+                RoundedRectangle(cornerRadius: 14, style: .continuous).fill(ink.roseSoft.opacity(0.5))
+                    .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(ink.roseLine, lineWidth: 0.7))
             }
         }
         .overlay(alignment: .leading) {
             if picked {
-                Image(systemName: "checkmark").font(.system(size: 9, weight: .heavy)).foregroundColor(.black.opacity(0.8))
-                    .frame(width: 18, height: 18).background(.white, in: Circle())
+                Image(systemName: "checkmark").font(.system(size: 8, weight: .bold)).foregroundColor(ink.paperWhite)
+                    .frame(width: 17, height: 17).background(ink.rose, in: Circle())
                     .padding(.leading, 12)
             }
         }
         .overlay(alignment: .trailing) {
             if picked {
                 Button { model.seek(to: line.time) } label: {
-                    Image(systemName: "play.fill").font(.system(size: 8))
+                    Image(systemName: "play.fill").font(.system(size: 8)).foregroundColor(ink.roseText)
                         .frame(width: 22, height: 22)
-                        .overlay(Circle().stroke(.white.opacity(0.6), lineWidth: 1))
+                        .overlay(Circle().stroke(ink.roseLine, lineWidth: 0.7))
                         .contentShape(Circle())
                 }
                 .buttonStyle(.plain)
                 .padding(.trailing, 10)
             }
         }
-        .opacity(now || picked ? 1 : 0.86)
         .contentShape(Rectangle())
         .onTapGesture {
             withAnimation(.easeOut(duration: 0.15)) {
@@ -4544,11 +4996,151 @@ struct MusicPlayerSheet: View {
         }
     }
 
-    /// 右下角：没选就发正在唱的那句，选了就发选中的几句；发完清掉选中
+    // MARK: 黑胶页（往左滑）
+
+    private var recordPage: some View {
+        VStack(spacing: 0) {
+            if let song = model.nowPlaying {
+                Spacer(minLength: 20)
+                record(song, size: 196)
+                Spacer(minLength: 12)
+                HStack(alignment: .center, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text(song.name).font(SanctusPageFont.cn(21)).foregroundColor(ink.base.title).lineLimit(1)
+                        Text(song.artist).font(SanctusPageFont.ital(14)).foregroundColor(ink.base.sub).lineLimit(1)
+                    }
+                    Spacer()
+                    likeButton
+                }
+                .padding(.horizontal, 26)
+                HStack(spacing: 12) {
+                    VStack(spacing: 2) {
+                        MusicHairProgress(value: model.progress, total: model.duration, ink: ink, seek: { model.seek(to: $0) })
+                        MusicTimes(progress: model.progress, duration: model.duration, ink: ink)
+                    }
+                    Button { showInsight = true } label: {
+                        Image(systemName: "waveform.badge.magnifyingglass")
+                            .font(.system(size: 16, weight: .light))
+                            .foregroundColor(ink.base.link)
+                            .frame(width: 30, height: 30).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+                .padding(.horizontal, 26).padding(.top, 10)
+                controls(trailing: .queue)
+                pageDots
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    private func record(_ song: MusicSong, size: CGFloat) -> some View {
+        ZStack(alignment: .topTrailing) {
+            ZStack {
+                Circle().fill(Color(red: 0.11, green: 0.115, blue: 0.13))
+                ForEach(1..<7) { ring in
+                    Circle().stroke(.white.opacity(0.04), lineWidth: 1)
+                        .padding(CGFloat(ring) * 11)
+                }
+                AsyncImage(url: MusicModel.artworkURL(song.cover)) { $0.resizable().scaledToFill() }
+                    placeholder: { Color.white.opacity(0.08) }
+                    .frame(width: size * 0.57, height: size * 0.57).clipShape(Circle())
+                Circle().fill(ink.base.page).frame(width: 10, height: 10)
+            }
+            .frame(width: size, height: size)
+            .shadow(color: .black.opacity(ink.dark ? 0.4 : 0.16), radius: 18, y: 10)
+            // 唱针：银灰细杆
+            ZStack(alignment: .top) {
+                Circle().fill(ink.paperWhite).frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(ink.base.hair, lineWidth: 0.8))
+                Capsule().fill(ink.base.link.opacity(0.75)).frame(width: 5, height: size * 0.48)
+                    .overlay(alignment: .bottom) { Capsule().fill(ink.base.title.opacity(0.8)).frame(width: 14, height: 30).offset(y: 16) }
+                    .offset(y: 16)
+            }
+            .rotationEffect(.degrees(model.isPlaying ? 22 : 8), anchor: .top)
+            .animation(.easeInOut(duration: 0.45), value: model.isPlaying)
+            .offset(x: 12, y: -15)
+        }
+        .frame(width: size + 35, height: size)
+    }
+
+    // MARK: 共用
+
+    private func header(_ song: MusicSong) -> some View {
+        HStack(spacing: 14) {
+            AsyncImage(url: MusicModel.artworkURL(song.cover)) { $0.resizable().scaledToFill() }
+                placeholder: { ink.base.hair }
+                .frame(width: 66, height: 66)
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.base.hair, lineWidth: 0.6))
+            VStack(alignment: .leading, spacing: 3) {
+                Text(song.name).font(SanctusPageFont.cn(19)).foregroundColor(ink.base.title).lineLimit(1)
+                Text(song.artist).font(SanctusPageFont.ital(13.5)).foregroundColor(ink.base.sub).lineLimit(1)
+            }
+            Spacer(minLength: 6)
+            likeButton
+        }
+    }
+
+    private var likeButton: some View {
+        Button { Task { await model.toggleLike() } } label: {
+            Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
+                .font(.system(size: 21, weight: .light))
+                .foregroundColor(ink.rose)
+                .frame(width: 42, height: 42)
+                .contentShape(Rectangle())
+        }.buttonStyle(.plain)
+    }
+
+    private enum Trailing { case send, queue }
+
+    /// 底下一排：模式 / 上一首 / 暂停（白色大圆钮）/ 下一首 / 最右（歌词页＝纸飞机发这句，黑胶页＝播放列表）
+    private func controls(trailing: Trailing) -> some View {
+        HStack {
+            Button { model.cyclePlayMode() } label: {
+                Image(systemName: model.playMode.icon).font(.system(size: 18, weight: .light))
+                    .foregroundColor(ink.base.link).frame(width: 40, height: 44).contentShape(Rectangle())
+            }.accessibilityLabel(model.playMode.title)
+            Spacer()
+            Button { model.prev() } label: {
+                Image(systemName: "backward.end.fill").font(.system(size: 20))
+                    .foregroundColor(ink.base.body).frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            Spacer()
+            Button { model.toggle() } label: {
+                ZStack {
+                    Circle().fill(ink.paperWhite)
+                        .overlay(Circle().stroke(ink.base.hair, lineWidth: 0.7))
+                        .shadow(color: .black.opacity(ink.dark ? 0.25 : 0.07), radius: 6, y: 4)
+                    if model.playbackLoading { ProgressView().tint(ink.rose) }
+                    else {
+                        Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 22))
+                            .foregroundColor(ink.base.title)
+                    }
+                }
+                .frame(width: 62, height: 62)
+            }
+            Spacer()
+            Button { model.next() } label: {
+                Image(systemName: "forward.end.fill").font(.system(size: 20))
+                    .foregroundColor(ink.base.body).frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            Spacer()
+            switch trailing {
+            case .send: sendLyricButton
+            case .queue:
+                Button { showQueue = true } label: {
+                    Image(systemName: "list.bullet").font(.system(size: 18, weight: .light))
+                        .foregroundColor(ink.base.link).frame(width: 40, height: 44).contentShape(Rectangle())
+                }
+            }
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 24).padding(.top, 8).padding(.bottom, 4)
+    }
+
+    /// 纸飞机：没选就发正在唱的那句，选了就发选中的几句；发完清掉选中、闪一下对勾
     private var sendLyricButton: some View {
-        let count = pickedLines.count
-        let title = model.lineSentFlash ? "发好了" : (count > 1 ? "把这 \(count) 句发给他" : "把这句发给他")
-        return Button {
+        Button {
             let lines = pickedLines.isEmpty ? [activeLyric] : Array(pickedLines)
             Task {
                 if await model.sendLyrics(lines) {
@@ -4556,121 +5148,40 @@ struct MusicPlayerSheet: View {
                 }
             }
         } label: {
-            HStack(spacing: 6) {
-                if model.lineSending { ProgressView().controlSize(.mini).tint(.white) }
-                else { Image(systemName: model.lineSentFlash ? "checkmark" : "paperplane.fill").font(.system(size: 12, weight: .semibold)) }
-                Text(title).font(.system(size: 13, weight: .medium))
+            ZStack(alignment: .topTrailing) {
+                Group {
+                    if model.lineSending { ProgressView().controlSize(.small).tint(ink.rose) }
+                    else {
+                        Image(systemName: model.lineSentFlash ? "checkmark" : "paperplane")
+                            .font(.system(size: 19, weight: .light))
+                            .foregroundColor(ink.roseText)
+                    }
+                }
+                .frame(width: 40, height: 44)
+                if pickedLines.count > 1 {
+                    Text("\(pickedLines.count)").font(SanctusPageFont.corm(10)).foregroundColor(ink.paperWhite)
+                        .frame(width: 15, height: 15).background(ink.rose, in: Circle())
+                        .offset(x: 2, y: 4)
+                }
             }
-            .padding(.horizontal, 15).padding(.vertical, 7)
-            .background(.white.opacity(0.18), in: Capsule())
-            .overlay(Capsule().stroke(.white.opacity(0.5), lineWidth: 1))
+            .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
         .disabled(model.lyrics.isEmpty || model.lineSending || (pickedLines.isEmpty && activeLyric < 0))
         .opacity(model.lyrics.isEmpty ? 0.35 : 1)
-    }
-
-    private func playerHeader(_ song: MusicSong) -> some View {
-        VStack(spacing: 2) {
-            Text(song.name).font(.system(size: 15, weight: .semibold)).lineLimit(1)
-            Text(song.artist).font(.system(size: 10)).foregroundColor(.white.opacity(0.55)).lineLimit(1)
-        }.frame(maxWidth: .infinity).padding(.horizontal, 48).padding(.top, 16).padding(.bottom, 8)
-    }
-
-    private func record(_ song: MusicSong, size: CGFloat) -> some View {
-        ZStack(alignment: .topTrailing) {
-            ZStack {
-                Circle().fill(.black.opacity(0.82))
-                ForEach(1..<7) { ring in
-                    Circle().stroke(.white.opacity(0.035), lineWidth: 1)
-                        .padding(CGFloat(ring) * 11)
-                }
-                AsyncImage(url: MusicModel.artworkURL(song.cover)) { $0.resizable().scaledToFill() }
-                    placeholder: { Color.white.opacity(0.08) }
-                    .frame(width: size * 0.57, height: size * 0.57).clipShape(Circle())
-                Circle().fill(.black.opacity(0.7)).frame(width: 12, height: 12)
-            }
-            .frame(width: size, height: size)
-            .shadow(color: .black.opacity(0.45), radius: 22, y: 12)
-            ZStack(alignment: .top) {
-                Circle().fill(.black.opacity(0.7)).frame(width: 34, height: 34)
-                    .overlay(Circle().stroke(.white.opacity(0.2), lineWidth: 2))
-                Capsule().fill(.white.opacity(0.72)).frame(width: 8, height: size * 0.48)
-                    .overlay(alignment: .bottom) { Capsule().fill(.black.opacity(0.78)).frame(width: 18, height: 35).offset(y: 18) }
-                    .offset(y: 18)
-            }
-            .rotationEffect(.degrees(model.isPlaying ? 22 : 8), anchor: .top)
-            .animation(.easeInOut(duration: 0.45), value: model.isPlaying)
-            .offset(x: 12, y: -17)
-        }.frame(width: size + 35, height: size)
-    }
-
-    private var likeButton: some View {
-        Button { Task { await model.toggleLike() } } label: {
-            Image(systemName: model.currentIsLiked ? "heart.fill" : "heart")
-                .font(.system(size: 23))
-                .foregroundColor(model.currentIsLiked ? .red : .white)
-                .frame(width: 42, height: 42)
-        }.buttonStyle(.plain)
-    }
-
-    private var progressControls: some View {
-        VStack(spacing: 2) {
-            HStack(spacing: 12) {
-                Slider(value: Binding(get: { model.progress }, set: { model.seek(to: $0) }),
-                       in: 0...max(model.duration, 1)).tint(.white)
-                Button { showInsight = true } label: {
-                    Image(systemName: "waveform.badge.magnifyingglass")
-                        .font(.system(size: 17))
-                        .foregroundColor(.white.opacity(0.85))
-                        .frame(width: 30, height: 30).contentShape(Rectangle())
-                }.buttonStyle(.plain)
-            }
-            HStack {
-                Text(Self.time(model.progress)); Spacer(); Text(Self.time(model.duration))
-            }.font(.system(size: 9, design: .monospaced)).foregroundColor(.white.opacity(0.52))
-        }.padding(.horizontal, 30).padding(.top, 6)
-    }
-
-    private var playbackControls: some View {
-        HStack {
-            Button { model.cyclePlayMode() } label: {
-                Image(systemName: model.playMode.icon).frame(width: 38)
-            }.accessibilityLabel(model.playMode.title)
-            Spacer()
-            Button { model.prev() } label: { Image(systemName: "backward.fill") }
-            Spacer()
-            Button { model.toggle() } label: {
-                ZStack {
-                    Circle().fill(.white).frame(width: 58, height: 58)
-                    if model.playbackLoading { ProgressView().tint(.black) }
-                    else { Image(systemName: model.isPlaying ? "pause.fill" : "play.fill").font(.system(size: 24)) }
-                }.foregroundColor(.black)
-            }
-            Spacer()
-            Button { model.next() } label: { Image(systemName: "forward.fill") }
-            Spacer()
-            Button { showQueue = true } label: { Image(systemName: "list.bullet") }.frame(width: 38)
-        }
-        .font(.system(size: 20)).buttonStyle(.plain)
-        .padding(.horizontal, 27).padding(.vertical, 5)
+        .accessibilityLabel(pickedLines.count > 1 ? "把这 \(pickedLines.count) 句发给他" : "把这句发给他")
     }
 
     private var pageDots: some View {
         HStack(spacing: 6) {
-            Circle().fill(.white.opacity(page == 0 ? 0.9 : 0.28)).frame(width: 5, height: 5)
-            Circle().fill(.white.opacity(page == 1 ? 0.9 : 0.28)).frame(width: 5, height: 5)
-        }.padding(.bottom, 10)
+            Circle().fill(page == 0 ? ink.rose : ink.base.hair).frame(width: 5, height: 5)
+            Circle().fill(page == 1 ? ink.rose : ink.base.hair).frame(width: 5, height: 5)
+        }
+        .padding(.top, 6).padding(.bottom, 16)
     }
 
     private var activeLyric: Int {
         model.lyrics.lastIndex(where: { $0.time <= model.progress }) ?? -1
     }
-    private static func time(_ seconds: Double) -> String {
-        guard seconds.isFinite, seconds >= 0 else { return "0:00" }
-        return String(format: "%d:%02d", Int(seconds) / 60, Int(seconds) % 60)
-    }
-
 }
 
 private struct MusicQueueSheet: View {
