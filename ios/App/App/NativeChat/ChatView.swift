@@ -63,6 +63,8 @@ struct ChatView: View {
     // screen can no longer drag an old-message jump back to the latest chat.
     @State private var tailScrollGeneration = 0
     @State private var olderPagingArmed = false
+    /// 1018：最老那条的 ts。条数变了但它也变了＝往上翻把更早的接到了头上，不是来了新消息
+    @State private var headTS: String?
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showEmbroidery = false
@@ -432,6 +434,17 @@ struct ChatView: View {
                     }
                     if near && (store.live?.active == true || store.isTyping) { followLiveOutput = true }
                 }
+                // 1018 她：「往上滑到头加载记录、或者点顶部一键上滑，一秒又掉回底部」——
+                // 上面那条「离开底部只认手指」把点状态栏回顶（系统自己滚，不算手指）漏了，atBottom 一直是 true，
+                // 旧记录一接上条数一变就被拽回底；在底的话 appendNew 还会把刚接上的老记录扔掉。
+                // 补一条：页面本身往上走（offset 变小）、离底超过 120，不管谁滚的都算离开底部。
+                // 他长消息落下来只是内容变高、offset 不动，不会误判
+                .onScrollGeometryChange(for: CGPoint.self) { g in
+                    CGPoint(x: g.contentSize.height - (g.contentOffset.y + g.containerSize.height + g.contentInsets.top),
+                            y: g.contentOffset.y)
+                } action: { old, new in
+                    if atBottom, new.y < old.y - 1, new.x > 120 { atBottom = false }
+                }
                 .onScrollPhaseChange { old, phase in
                     let isUser = { (p: ScrollPhase) in p == .interacting || p == .decelerating || p == .tracking }
                     let on = isUser(phase)
@@ -649,6 +662,10 @@ struct ChatView: View {
                 scrollToTail(proxy, delays: [0.05, 0.4], animated: false)
             }
             .onChange(of: store.messages.count) { _ in
+                // 1018：头上那条换了＝loadOlder 往前接了一页，她在顶上看老记录，不跟到底
+                let head = store.messages.first?.ts
+                defer { headTS = head }
+                if let old = headTS, let head, head < old { return }
                 // loadAround replaces the latest page with an old 240-row window.
                 // At that instant `atBottom` can still be stale-true, so the normal
                 // auto-follow used to queue tail scrolls at 0/0.15/0.4s and race the
