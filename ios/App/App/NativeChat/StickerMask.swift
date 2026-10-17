@@ -161,6 +161,13 @@ final class StickerMaskStore: ObservableObject {
         }
     }
 
+    /// 缩放倍数夹在最小 / 最大尺寸之间（贴纸自己捏、空白处捏、角把手共用）
+    static func clampScale(_ k: CGFloat, w: CGFloat, h: CGFloat) -> CGFloat {
+        let lo = max(minWidth / max(w, 1), minEdge / max(min(w, h), 1))
+        let hi = maxWidth / max(w, 1)
+        return min(max(k, lo), max(hi, lo))
+    }
+
     func update(_ id: UUID, _ change: (inout MaskSticker) -> Void) {
         guard let i = stickers.firstIndex(where: { $0.id == id }) else { return }
         change(&stickers[i])
@@ -255,6 +262,9 @@ struct StickerMaskLayer: View {
     var topBarHeight: CGFloat = 84
     @State private var showPicker = false
     @State private var confirmClear = false
+    /// 1017 #4031 她：「缩到很小的话很难调整」——选中一张以后，空白处单指拖＝挪它、两指捏＝缩放它（不转，转只用角上把手），点空白＝取消选中
+    @State private var bgDragStart: CGPoint?
+    @State private var bgPinchBase: (w: CGFloat, h: CGFloat)?
 
     private static let accent = Color(red: 0x0B / 255, green: 0x1B / 255, blue: 0xFF / 255)
 
@@ -262,13 +272,27 @@ struct StickerMaskLayer: View {
         GeometryReader { geo in
             let origin = geo.frame(in: .global).origin
             ZStack(alignment: .topLeading) {
-                ForEach(store.stickers) { s in
-                    if let c = store.center(of: s, layerOrigin: origin), let img = store.image(for: s.assetID) {
-                        StickerMaskItem(sticker: s, image: img, center: c,
-                                        editing: store.editing, selected: store.selected == s.id,
-                                        accent: Self.accent)
-                    }
+                // 选中了才铺：没选中时空白处照常滑聊天（她 #4032「2 可以」：选中时聊天滑不动，先点空白取消）
+                if store.editing, let sel = store.selected {
+                    Color.clear
+                        .contentShape(Rectangle())
+                        .gesture(backgroundMove(sel, origin: origin))
+                        .simultaneousGesture(backgroundPinch(sel))
+                        .onTapGesture { store.selected = nil }
                 }
+                // 1017 她截图：「这个贴纸打码怎么在打字框上面」——认在消息上的贴纸跟着消息滚到输入栏 / 顶栏后面时
+                // 原来照样画在最上层。现在认消息的这批只在消息区（pinTop～pinBottom）里露出来，滑出去就像压在栏下面；
+                // 钉在屏幕上的、正在拖的（拖的时候 anchor 是 nil）不裁
+                ZStack(alignment: .topLeading) {
+                    ForEach(store.stickers.filter { $0.anchor != nil }) { s in item(s, origin: origin) }
+                }
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+                .mask(alignment: .topLeading) {
+                    Rectangle()
+                        .frame(width: geo.size.width, height: max(0, store.pinBottom - store.pinTop))
+                        .offset(y: store.pinTop)
+                }
+                ForEach(store.stickers.filter { $0.anchor == nil }) { s in item(s, origin: origin) }
                 if store.editing {
                     palette(geo)
                         .transition(.move(edge: .trailing).combined(with: .opacity))
@@ -283,6 +307,58 @@ struct StickerMaskLayer: View {
         .animation(.easeOut(duration: 0.2), value: store.editing)
         .sheet(isPresented: $showPicker) {
             PhotoLibraryPicker(maxCount: 9) { images in store.addFromLibrary(images) }
+        }
+    }
+
+    private func backgroundMove(_ id: UUID, origin: CGPoint) -> some Gesture {
+        DragGesture(minimumDistance: 2, coordinateSpace: .named("stickerMask"))
+            .onChanged { v in
+                guard bgPinchBase == nil else { return }   // 两指捏的时候不跟着挪
+                if bgDragStart == nil {
+                    guard let s = store.stickers.first(where: { $0.id == id }),
+                          let c = store.center(of: s, layerOrigin: origin) else { return }
+                    bgDragStart = c
+                }
+                guard let start = bgDragStart else { return }
+                let c = CGPoint(x: start.x + v.translation.width, y: start.y + v.translation.height)
+                store.update(id) { $0.anchor = nil; $0.offset = c }
+            }
+            .onEnded { _ in
+                bgDragStart = nil
+                settleSticker(id, origin: origin)
+            }
+    }
+
+    private func backgroundPinch(_ id: UUID) -> some Gesture {
+        MagnifyGesture()
+            .onChanged { v in
+                if bgPinchBase == nil {
+                    guard let s = store.stickers.first(where: { $0.id == id }) else { return }
+                    bgPinchBase = (s.w, s.h)
+                    // 两指落下前第一根手指可能已经带着它挪了一点：退回原处
+                    if let start = bgDragStart { store.update(id) { $0.anchor = nil; $0.offset = start } }
+                }
+                guard let b = bgPinchBase else { return }
+                let k = StickerMaskStore.clampScale(v.magnification, w: b.w, h: b.h)
+                store.update(id) { $0.w = b.w * k; $0.h = b.h * k }
+            }
+            .onEnded { _ in
+                bgPinchBase = nil
+                if bgDragStart != nil { bgDragStart = nil; settleSticker(id, origin: store.layerOrigin) }
+            }
+    }
+
+    private func settleSticker(_ id: UUID, origin: CGPoint) {
+        guard let s = store.stickers.first(where: { $0.id == id }),
+              let c = store.center(of: s, layerOrigin: origin) else { return }
+        store.update(id) { store.settle(&$0, screenCenter: c) }
+    }
+
+    @ViewBuilder private func item(_ s: MaskSticker, origin: CGPoint) -> some View {
+        if let c = store.center(of: s, layerOrigin: origin), let img = store.image(for: s.assetID) {
+            StickerMaskItem(sticker: s, image: img, center: c,
+                            editing: store.editing, selected: store.selected == s.id,
+                            accent: Self.accent)
         }
     }
 
@@ -411,7 +487,7 @@ private struct StickerMaskItem: View {
         .contentShape(Rectangle())
         .gesture(moveGesture)
         .simultaneousGesture(pinchGesture)
-        .onTapGesture { if editing { store.selected = selected ? nil : sticker.id; store.lift(sticker.id) } }
+        .onTapGesture { if editing { store.selected = sticker.id; store.lift(sticker.id) } }   // 1017 #4031：点贴纸＝选中，取消靠点空白
         .overlay { if editing && selected { handles } }
         .rotationEffect(.radians(sticker.r))
         .position(center)
@@ -486,20 +562,19 @@ private struct StickerMaskItem: View {
             }
     }
 
+    /// 1017 #4032 她：「只缩放不旋转 旋转只有那个小按钮」
     private var pinchGesture: some Gesture {
-        SimultaneousGesture(MagnifyGesture(), RotateGesture())
+        MagnifyGesture()
             .onChanged { v in
                 if pinchBase == nil {
                     pinchBase = (sticker.w, sticker.h, sticker.r)
                     store.selected = sticker.id
                 }
                 guard let base = pinchBase else { return }
-                let k = clampScale(v.first?.magnification ?? 1, w: base.w, h: base.h)
-                let rot = v.second?.rotation.radians ?? 0
+                let k = clampScale(v.magnification, w: base.w, h: base.h)
                 store.update(sticker.id) {
                     $0.w = base.w * k
                     $0.h = base.h * k
-                    $0.r = base.r + rot
                 }
             }
             .onEnded { _ in pinchBase = nil }
@@ -561,9 +636,7 @@ private struct StickerMaskItem: View {
     }
 
     private func clampScale(_ k: CGFloat, w: CGFloat, h: CGFloat) -> CGFloat {
-        let lo = max(StickerMaskStore.minWidth / max(w, 1), StickerMaskStore.minEdge / max(min(w, h), 1))
-        let hi = StickerMaskStore.maxWidth / max(w, 1)
-        return min(max(k, lo), max(hi, lo))
+        StickerMaskStore.clampScale(k, w: w, h: h)
     }
 
     /// 放手：按此刻在屏幕上的位置重新认消息（或者钉住）
