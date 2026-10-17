@@ -1396,6 +1396,7 @@ struct ReadingNote: Identifiable, Equatable {
 
 struct ReadingItem: Identifiable, Equatable {
     let id: String
+    let source: String
     let sourceName: String
     let title: String
     let summary: String
@@ -1404,10 +1405,14 @@ struct ReadingItem: Identifiable, Equatable {
     let trackQuery: String
     let fetchedAt: String
     let notes: [ReadingNote]
+    /// 1017 #4007：后端抓的正文——ok 有整篇中文 / long 太长没翻 / none 没抓到 / 空＝还在排队
+    let bodyState: String
+    let bodyChars: Int
 
     init?(json: [String: Any]) {
         guard let id = json["item_id"] as? String else { return nil }
         self.id = id
+        source = json["source"] as? String ?? ""
         sourceName = json["source_name"] as? String ?? ""
         let zh = json["title_zh"] as? String ?? ""
         title = zh.isEmpty ? (json["title"] as? String ?? "") : zh
@@ -1417,11 +1422,55 @@ struct ReadingItem: Identifiable, Equatable {
         readState = json["read_state"] as? String ?? "unread"
         trackQuery = json["track_query"] as? String ?? ""
         fetchedAt = json["fetched_at"] as? String ?? ""
+        bodyState = json["body_state"] as? String ?? ""
+        bodyChars = json["body_chars"] as? Int ?? 0
         notes = (json["notes"] as? [[String: Any]] ?? []).compactMap {
             guard let nid = $0["note_id"] as? String else { return nil }
             return ReadingNote(id: nid, author: $0["author"] as? String ?? "", text: $0["text"] as? String ?? "",
                                createdAt: $0["created_at"] as? String ?? "")
         }
+    }
+}
+
+extension ReadingItem {
+    /// 1017 她：「一眼看过去我不知道看什么」——英文来源名后面跟一个中文门类
+    var topic: String {
+        switch source {
+        case "anthropic", "openai": return "AI 公司"
+        case "arxiv": return "论文"
+        case "pdr": return "老书老画"
+        case "mongabay": return "环境新闻"
+        case "gnews": return "新闻"
+        case "wiki": return "维基"
+        default: return ""
+        }
+    }
+    var hasBody: Bool { bodyState == "ok" }
+    /// 正文按百位取整「约 1,900 字」；摘要是准数
+    var badgeCount: String {
+        let f = NumberFormatter()
+        f.numberStyle = .decimal
+        if hasBody {
+            let n = max(100, Int((Double(bodyChars) / 100).rounded()) * 100)
+            return "约 \(f.string(from: NSNumber(value: n)) ?? "\(n)") 字"
+        }
+        return "\(summary.count) 字"
+    }
+}
+
+/// 1017 #4007 每行右上角的小胶囊：实线「正文 约 X 字」、虚线「只有摘要 X 字」
+private struct ReadingBadge: View {
+    let full: Bool
+    var count: String? = nil
+    let paper: WindowPaper
+    var body: some View {
+        (Text(full ? "正文" : "只有摘要") + Text(count.map { " " + $0 } ?? ""))
+            .font(WindowFont.swiftUI(10))
+            .foregroundColor(full ? paper.ink : paper.inkSoft)
+            .lineLimit(1)
+            .padding(.horizontal, 7).padding(.vertical, 1.5)
+            .overlay(Capsule().stroke(full ? paper.ink.opacity(0.55) : paper.inkSoft.opacity(0.6),
+                                      style: StrokeStyle(lineWidth: 0.8, dash: full ? [] : [2, 2])))
     }
 }
 
@@ -1482,6 +1531,20 @@ private struct ReadingBoard: View {
                          : "文字的东西放这里，留七天，不用当场读完。")
                         .font(WindowFont.swiftUI(12)).foregroundColor(paper.inkSoft).lineSpacing(5)
                         .padding(.top, 4)
+                    if !store.items.isEmpty {
+                        HStack(spacing: 14) {
+                            HStack(spacing: 5) {
+                                ReadingBadge(full: true, paper: paper)
+                                Text("点开能读整篇中文")
+                            }
+                            HStack(spacing: 5) {
+                                ReadingBadge(full: false, paper: paper)
+                                Text("原文太长或没抓到")
+                            }
+                        }
+                        .font(WindowFont.swiftUI(10.5)).foregroundColor(paper.inkSoft)
+                        .padding(.top, 4)
+                    }
                 }
                 .padding(.horizontal, 22).padding(.top, 14)
                 if !store.tracks.isEmpty {
@@ -1519,13 +1582,22 @@ private struct ReadingBoard: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 Text(it.sourceName).font(WindowFont.smallCaps(9)).tracking(1.6).foregroundColor(paper.rubric)
+                    .lineLimit(1)
+                if !it.topic.isEmpty {
+                    Text("· \(it.topic)").font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft).lineLimit(1)
+                }
                 if !it.trackQuery.isEmpty {
                     Text("· 他留的「\(it.trackQuery)」").font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft)
+                        .lineLimit(1)
                 }
                 Spacer(minLength: 4)
                 if it.readState != "unread" {
                     Text(it.readState == "full" ? "他读了全文" : "他读了摘要")
-                        .font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft)
+                        .font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft).lineLimit(1)
+                }
+                // 还在排队抓的先不标，抓完（几分钟到几小时）自己长出来
+                if !it.bodyState.isEmpty {
+                    ReadingBadge(full: it.hasBody, count: it.badgeCount, paper: paper).layoutPriority(1)
                 }
             }
             Text(it.title).font(WindowFont.swiftUI(16, bold: true)).foregroundColor(paper.ink)
@@ -1551,7 +1623,26 @@ private struct ReadingItemPage: View {
     @Environment(\.openURL) private var openURL
     @State private var draft = ""
     @State private var sending = false
+    @State private var bodyText: String?   // 1017 整篇中文：列表里不带（60 篇太大），点开才单独拿
     private var item: ReadingItem? { store.items.first { $0.id == itemId } }
+
+    /// 后端存的是「段落之间空一行、小标题以 ## 开头」
+    @ViewBuilder private func bodyView(_ text: String) -> some View {
+        let paras = text.components(separatedBy: "\n\n")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        VStack(alignment: .leading, spacing: 14) {
+            ForEach(Array(paras.enumerated()), id: \.offset) { _, p in
+                if p.hasPrefix("## ") {
+                    Text(String(p.dropFirst(3))).font(WindowFont.swiftUI(17, bold: true)).foregroundColor(paper.ink)
+                        .padding(.top, 6)
+                        .fixedSize(horizontal: false, vertical: true)
+                } else {
+                    Text(p).font(WindowFont.swiftUI(15)).foregroundColor(paper.ink).lineSpacing(7)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+        }
+    }
 
     var body: some View {
         ZStack {
@@ -1565,9 +1656,22 @@ private struct ReadingItemPage: View {
                         if !it.trackQuery.isEmpty {
                             Text("他留的词「\(it.trackQuery)」找到的").font(WindowFont.swiftUI(11)).foregroundColor(paper.inkSoft)
                         }
+                        if !it.bodyState.isEmpty {
+                            ReadingBadge(full: it.hasBody, count: it.badgeCount, paper: paper)
+                        }
+                        // 有正文时摘要退成一段灰的导语，下面接整篇
                         Text(it.summary.isEmpty ? "（没有摘要）" : it.summary)
-                            .font(WindowFont.swiftUI(15)).foregroundColor(paper.ink).lineSpacing(7)
+                            .font(WindowFont.swiftUI(it.hasBody ? 13 : 15))
+                            .foregroundColor(it.hasBody ? paper.inkSoft : paper.ink).lineSpacing(it.hasBody ? 5 : 7)
                             .fixedSize(horizontal: false, vertical: true)
+                        if it.hasBody {
+                            Text("❦").font(.system(size: 13)).foregroundColor(paper.rubric).frame(maxWidth: .infinity)
+                            if let bodyText, !bodyText.isEmpty {
+                                bodyView(bodyText)
+                            } else {
+                                ProgressView().frame(maxWidth: .infinity).padding(.vertical, 20)
+                            }
+                        }
                         if let u = URL(string: it.url) {
                             Button { openURL(u) } label: {
                                 Text("看原文 ›").font(WindowFont.swiftUI(13)).foregroundColor(paper.rubric)
@@ -1606,5 +1710,12 @@ private struct ReadingItemPage: View {
             }
         }
         .presentationDetents([.large])
+        .task(id: itemId) {
+            guard item?.hasBody == true, bodyText == nil,
+                  let q = itemId.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed),
+                  let d = try? await NativeHouseAPI.object("/api/window/reading/item?id=\(q)"),
+                  let one = d["item"] as? [String: Any] else { return }
+            bodyText = one["body_zh"] as? String ?? ""
+        }
     }
 }
