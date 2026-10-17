@@ -149,7 +149,7 @@ private struct QueueItem: Identifiable {
 // 0927 她挑的效果图：不忘先是一间大厅——大数字、起伏线、三组小入口；
 // 「记忆」进原来那页列表，「五条线」是一排文件夹，「带图的」只看图片记忆，
 // 今天的脑子 / 夜里那趟 / 巡逻 / 快照 点开是同一张运转面板。
-private enum BrainPage { case hub, memories, threads, volumes, surface, stopwords, wrongbook, trash }
+private enum BrainPage { case hub, memories, threads, volumes, surface, stopwords, wrongbook, trash, names }
 
 /// 0929：聊天页「不忘」小卡点「打开这条记忆」→ 先记下要找的标题，再开不忘；不忘一进门就按它搜
 enum BuwangDeepLink {
@@ -193,7 +193,7 @@ struct NativeBrainView: View {
 
     private var pageTitle: String {
         switch page {
-        case .hub, .surface, .stopwords, .wrongbook, .trash: return ""      // 0928 这几页的手写标题画在页面里
+        case .hub, .surface, .stopwords, .wrongbook, .trash, .names: return ""      // 0928 这几页的手写标题画在页面里
         case .threads: return threads.count == 5 ? "五条线" : "\(threads.count) 条线"
         case .volumes: return "叙事卷"
         case .memories: return imagesOnly ? "带图的" : (picked == "全部" ? "记忆" : picked)
@@ -233,6 +233,8 @@ struct NativeBrainView: View {
                     BuwangWrongbookView(ink: ink)
                 case .trash:
                     BuwangTrashView(ink: ink) { showHubToast($0) }
+                case .names:
+                    BuwangNamesView(ink: ink)
                 }
             }
             if let d = deleting {
@@ -534,7 +536,7 @@ struct NativeBrainView: View {
             hubTile(s, "water.waves", "浮现") { withAnimation(.easeInOut(duration: 0.25)) { page = .surface } }
             hubTile(s, "text.magnifyingglass", "召回") { withAnimation(.easeInOut(duration: 0.25)) { page = .stopwords } }
             hubTile(s, "xmark.square", "错题本", badge: wrongOpen) { withAnimation(.easeInOut(duration: 0.25)) { page = .wrongbook } }
-            hubTile(s, "character.book.closed", "专名库") { showHubToast("专名库等你写好表格，我再开这一页") }
+            hubTile(s, "character.book.closed", "专名库") { withAnimation(.easeInOut(duration: 0.25)) { page = .names } }
         }
         .padding(.top, 16)
     }
@@ -3486,6 +3488,284 @@ struct BuwangTrashView: View {
                 toast(done)
             } else {
                 toast(r.string("error").isEmpty ? "没成，网不好再试一次" : r.string("error"))
+            }
+        }
+    }
+}
+
+
+// ── 1017 专名库（她 #4016–4035）：人 / 地方 / 东西 / 梗 / 词义 一个库。她话里出现这些词，他那一轮先看到写的意思；
+// 同一窗口一个词只提一次；意思空着的不提（别名表导进来的 28 条开始都是空的）。后端 /api/lmc5/recall/names → /root/lmc5/names.json
+
+struct BWName: Identifiable, Equatable {
+    var id: String
+    var name: String
+    var aliases: [String]
+    var type: String
+    var usage: String
+    var origin: String
+    init(_ d: [String: Any]) {
+        id = d.string("id")
+        name = d.string("name")
+        aliases = (d["aliases"] as? [String]) ?? []
+        type = d.string("type")
+        usage = d.string("usage")
+        origin = d.string("origin")
+    }
+    init() { id = ""; name = ""; aliases = []; type = ""; usage = ""; origin = "" }
+    var body: [String: Any] {
+        ["id": id, "name": name, "aliases": aliases, "type": type, "usage": usage, "origin": origin]
+    }
+}
+
+struct BuwangNamesView: View {
+    let ink: BuwangInk
+    static let types = ["人", "地方", "东西", "梗", "词义"]
+    @State private var items: [BWName] = []
+    @State private var filter = "全部"
+    @State private var editing: BWName?
+    @State private var loaded = false
+    @State private var err: String?
+    @ObservedObject private var fontStore = KakaoPackStore.shared
+
+    private var shown: [BWName] {
+        switch filter {
+        case "全部": return items
+        case "没分类": return items.filter { $0.type.isEmpty }
+        default: return items.filter { $0.type == filter }
+        }
+    }
+
+    var body: some View {
+        List {
+            VStack(alignment: .leading, spacing: 10) {
+                BuwangTitle(ink: ink, zh: "专名库", en: "names & words")
+                    .padding(.top, -6)
+                Text("她话里出现这些词，他那一轮会先看到这里写的意思。同一个窗口里一个词只提一次；意思空着的不会提醒他。")
+                    .font(.system(size: 11.5))
+                    .foregroundColor(ink.ink3)
+                    .lineSpacing(4)
+                FlowLayout(spacing: 6, lineSpacing: 6) {
+                    ForEach(["全部"] + Self.types + (items.contains { $0.type.isEmpty } ? ["没分类"] : []), id: \.self) { t in
+                        filterChip(t)
+                    }
+                }
+                .padding(.top, 4)
+                Button { editing = BWName() } label: {
+                    Text("＋ 加一条")
+                        .font(BuwangFont.hand(15))
+                        .foregroundColor(ink.ink3)
+                        .padding(.horizontal, 11).padding(.vertical, 4)
+                        .overlay(Capsule().stroke(ink.ink3.opacity(0.5), style: StrokeStyle(lineWidth: 1.2, dash: [3, 3])))
+                }
+                .buttonStyle(BuwangPress())
+                .padding(.top, 2)
+            }
+            .listRowBackground(Color.clear)
+            .listRowSeparator(.hidden)
+            .listRowInsets(EdgeInsets(top: 0, leading: 18, bottom: 6, trailing: 18))
+
+            ForEach(shown) { n in
+                card(n)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                    .listRowInsets(EdgeInsets(top: 5, leading: 18, bottom: 5, trailing: 18))
+                    .swipeActions(edge: .trailing, allowsFullSwipe: false) {
+                        Button(role: .destructive) { Task { await delete(n) } } label: { Label("删", systemImage: "trash") }
+                    }
+            }
+            if loaded && shown.isEmpty {
+                Text(filter == "全部" ? "还没有，点「＋ 加一条」" : "这一类还没有")
+                    .font(BuwangFont.hand(15)).foregroundColor(ink.ink3)
+                    .frame(maxWidth: .infinity).padding(.top, 20)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+            }
+            Color.clear.frame(height: 30)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .scrollIndicators(.hidden)
+        .task { await load() }
+        .sheet(item: $editing) { n in
+            BuwangNameEditor(ink: ink, item: n) { saved in
+                Task { await save(saved) }
+            } onDelete: {
+                Task { await delete(n) }
+            }
+            .alert(err ?? "", isPresented: Binding(get: { err != nil }, set: { if !$0 { err = nil } })) {
+                Button("好", role: .cancel) {}
+            }
+        }
+    }
+
+    private func count(_ t: String) -> Int {
+        switch t {
+        case "全部": return items.count
+        case "没分类": return items.filter { $0.type.isEmpty }.count
+        default: return items.filter { $0.type == t }.count
+        }
+    }
+
+    private func filterChip(_ t: String) -> some View {
+        let on = filter == t
+        return (Text(t).font(BuwangFont.hand(15)) + Text(" \(count(t))").font(.system(size: 10)))
+            .foregroundColor(on ? .white : ink.ink2)
+            .padding(.horizontal, 11).padding(.vertical, 3)
+            .background(Capsule().fill(on ? ink.ink : ink.faint))
+            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { filter = t } }
+    }
+
+    static func tagColor(_ t: String, _ ink: BuwangInk) -> Color {
+        switch t {
+        case "人": return ink.pink
+        case "地方": return ink.blue
+        case "东西": return ink.mint
+        case "梗": return ink.lilac
+        default: return ink.faint
+        }
+    }
+
+    private func card(_ n: BWName) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 8) {
+                Text(n.name).font(BuwangFont.hand(21)).foregroundColor(ink.ink)
+                if !n.type.isEmpty {
+                    Text(n.type).font(.system(size: 10.5)).foregroundColor(ink.ink)
+                        .padding(.horizontal, 8).padding(.vertical, 1)
+                        .background(Capsule().fill(Self.tagColor(n.type, ink)))
+                }
+                Spacer(minLength: 4)
+                Button("改") { editing = n }
+                    .font(.system(size: 11)).foregroundColor(ink.ink3)
+                    .buttonStyle(.plain)
+            }
+            if !n.aliases.isEmpty {
+                Text("也叫：" + n.aliases.joined(separator: "、")).font(.system(size: 11.5)).foregroundColor(ink.ink3)
+            }
+            if n.usage.isEmpty {
+                Text("还没写意思 · 不会提醒他").font(.system(size: 11)).foregroundColor(ink.ink3.opacity(0.8))
+            } else {
+                Text(n.usage).font(.system(size: 13.5)).foregroundColor(ink.ink).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if !n.origin.isEmpty {
+                Text("出处：" + n.origin).font(.system(size: 11)).foregroundColor(ink.ink3)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 13)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(ink.card)
+            .shadow(color: ink.shadow, radius: 6, x: 0, y: 2))
+        .contentShape(Rectangle())
+        .onTapGesture { editing = n }
+    }
+
+    private func apply(_ d: [String: Any]) {
+        let list = (d["names"] as? [[String: Any]] ?? []).map { BWName($0) }
+        withAnimation(.easeInOut(duration: 0.2)) { items = list.reversed() }   // 新加的在上面
+    }
+
+    private func load() async {
+        let d = (try? await NativeHouseAPI.object("/api/lmc5/recall/names")) ?? [:]
+        await MainActor.run { apply(d); loaded = true }
+    }
+
+    /// 重名之类后端回 400：object() 会抛错，换成带错误的那个接口把那句话拿回来给她看
+    private func save(_ n: BWName) async {
+        guard let d = try? await NativeHouseAPI.objectIncludingHTTPError("/api/lmc5/recall/names", method: "POST",
+                                                                         body: ["op": "save", "item": n.body]) else {
+            await MainActor.run { err = "没存上，网络不太对，过一会儿再试" }
+            return
+        }
+        await MainActor.run {
+            if d["ok"] as? Bool == true { apply(d); editing = nil } else { err = d.string("error").isEmpty ? "没存上" : d.string("error") }
+        }
+    }
+
+    private func delete(_ n: BWName) async {
+        guard !n.id.isEmpty,
+              let d = try? await NativeHouseAPI.object("/api/lmc5/recall/names", method: "POST",
+                                                        body: ["op": "delete", "id": n.id]) else { return }
+        await MainActor.run { apply(d); editing = nil }
+    }
+}
+
+/// 加一条 / 改一条：词、类型、也叫、意思、出处
+private struct BuwangNameEditor: View {
+    let ink: BuwangInk
+    @State var item: BWName
+    var onSave: (BWName) -> Void
+    var onDelete: () -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var aliasText = ""
+    @State private var confirmDelete = false
+
+    init(ink: BuwangInk, item: BWName, onSave: @escaping (BWName) -> Void, onDelete: @escaping () -> Void) {
+        self.ink = ink
+        _item = State(initialValue: item)
+        _aliasText = State(initialValue: item.aliases.joined(separator: "、"))
+        self.onSave = onSave
+        self.onDelete = onDelete
+    }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("词") {
+                    TextField("比如：邮戳", text: $item.name)
+                }
+                Section("类型") {
+                    FlowLayout(spacing: 6, lineSpacing: 6) {
+                        ForEach([""] + BuwangNamesView.types, id: \.self) { t in
+                            let on = item.type == t
+                            Text(t.isEmpty ? "不分" : t)
+                                .font(.system(size: 13))
+                                .foregroundColor(ink.ink)
+                                .padding(.horizontal, 11).padding(.vertical, 4)
+                                .background(Capsule().fill(t.isEmpty ? ink.faint : BuwangNamesView.tagColor(t, ink)))
+                                .overlay(Capsule().stroke(on ? ink.ink : .clear, lineWidth: 1.2))
+                                .onTapGesture { item.type = t }
+                        }
+                    }
+                    .padding(.vertical, 4)
+                }
+                Section("也叫（顿号或逗号隔开）") {
+                    TextField("别的叫法", text: $aliasText)
+                }
+                Section {
+                    TextField("这个词在你们这儿是什么意思、指谁、什么时候会说", text: $item.usage, axis: .vertical)
+                        .lineLimit(3...8)
+                } header: { Text("意思") } footer: { Text("空着的不会提醒他") }
+                Section("出处") {
+                    TextField("哪天、哪件事来的（可以不写）", text: $item.origin)
+                }
+                if !item.id.isEmpty {
+                    Section {
+                        Button("删掉这一条", role: .destructive) { confirmDelete = true }
+                            .frame(maxWidth: .infinity)
+                    }
+                }
+            }
+            .navigationTitle(item.id.isEmpty ? "加一条" : "改一条")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("取消") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("存") {
+                        item.aliases = aliasText.split(whereSeparator: { "、,，;； ".contains($0) })
+                            .map { String($0).trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+                        item.name = item.name.trimmingCharacters(in: .whitespacesAndNewlines)
+                        onSave(item)
+                    }
+                    .disabled(item.name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                }
+            }
+            .confirmationDialog("删掉「\(item.name)」？", isPresented: $confirmDelete, titleVisibility: .visible) {
+                Button("删掉", role: .destructive) { onDelete() }
+                Button("取消", role: .cancel) {}
             }
         }
     }
