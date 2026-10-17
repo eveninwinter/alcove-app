@@ -20,6 +20,8 @@ struct MaskSticker: Identifiable, Equatable {
     var h: CGFloat
     /// 弧度
     var r: Double
+    /// 1017 她要的换颜色：nil＝原色
+    var tint: UIColor? = nil
 }
 
 /// 右边那列里的一张素材：内置的（素材库图名）或她从相册加的（Documents/MaskStickers 里的 png）
@@ -115,13 +117,110 @@ final class StickerMaskStore: ObservableObject {
         assets.first { $0.id == assetID }?.image ?? Self.loadImage(assetID)
     }
 
+    // MARK: 换颜色（1017 她：「贴纸我想可以选颜色……在选贴纸上方加一个小调色盘」）
+
+    /// 调色盘上点中的颜色：有选中的贴纸就染它，没有就给接下来放的贴纸用；nil＝原色
+    @Published var pickColor: UIColor?
+    private var tintCache: [String: UIImage] = [:]
+
+    /// 六个色点（不要黄 / 米 / 棕，她的规矩）；白也能染，浅色胶带变成白纸胶带
+    static let swatches: [UIColor] = [
+        UIColor(red: 240 / 255, green: 176 / 255, blue: 188 / 255, alpha: 1),
+        UIColor(red: 159 / 255, green: 190 / 255, blue: 232 / 255, alpha: 1),
+        UIColor(red: 196 / 255, green: 180 / 255, blue: 234 / 255, alpha: 1),
+        UIColor(red: 160 / 255, green: 214 / 255, blue: 196 / 255, alpha: 1),
+        UIColor(red: 92 / 255, green: 94 / 255, blue: 104 / 255, alpha: 1),
+        UIColor(white: 1, alpha: 1),
+    ]
+
+    func image(for s: MaskSticker) -> UIImage? {
+        guard let base = image(for: s.assetID) else { return nil }
+        guard let c = s.tint else { return base }
+        let key = s.assetID + "|" + Self.hex(c)
+        if let hit = tintCache[key] { return hit }
+        let out = Self.tinted(base, c)
+        tintCache[key] = out
+        return out
+    }
+
+    func choose(_ c: UIColor?) {
+        pickColor = c
+        if let sel = selected { update(sel) { $0.tint = c } }
+    }
+
+    /// 眼下该亮哪个色点：选中了看那张自己的颜色，没选中看调色盘上点的
+    var shownColor: UIColor? {
+        if let sel = selected, let s = stickers.first(where: { $0.id == sel }) { return s.tint }
+        return pickColor
+    }
+
+    static func hex(_ c: UIColor) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        c.getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "%02x%02x%02x", Int(r * 255), Int(g * 255), Int(b * 255))
+    }
+
+    /// 先去色、再按深浅上色：素材最亮那一截（第 95 百分位）≈ 目标色，纸纹和锯齿边的明暗都留着；
+    /// 比最亮还亮的地方往白里提一点。透明度原样
+    static func tinted(_ img: UIImage, _ color: UIColor) -> UIImage {
+        guard let cg = img.cgImage else { return img }
+        let w = cg.width, h = cg.height
+        guard let ctx = CGContext(data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+                                  space: CGColorSpaceCreateDeviceRGB(),
+                                  bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue),
+              let data = ctx.data else { return img }
+        ctx.draw(cg, in: CGRect(x: 0, y: 0, width: w, height: h))
+        let row = ctx.bytesPerRow
+        let px = data.bindMemory(to: UInt8.self, capacity: row * h)
+        var tr: CGFloat = 0, tg: CGFloat = 0, tb: CGFloat = 0, ta: CGFloat = 0
+        color.getRed(&tr, green: &tg, blue: &tb, alpha: &ta)
+        func lum(_ i: Int) -> Double {
+            let a = Double(px[i + 3]) / 255
+            guard a > 0 else { return 0 }
+            return (0.299 * Double(px[i]) + 0.587 * Double(px[i + 1]) + 0.114 * Double(px[i + 2])) / 255 / a
+        }
+        var hist = [Int](repeating: 0, count: 256)
+        var n = 0
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * row + x * 4
+                guard px[i + 3] > 128 else { continue }
+                hist[min(255, Int(lum(i) * 255))] += 1
+                n += 1
+            }
+        }
+        var hi = 1.0
+        if n > 0 {
+            var acc = 0
+            for v in 0..<256 {
+                acc += hist[v]
+                if Double(acc) >= Double(n) * 0.95 { hi = max(Double(v) / 255, 0.05); break }
+            }
+        }
+        for y in 0..<h {
+            for x in 0..<w {
+                let i = y * row + x * 4
+                let a8 = px[i + 3]
+                guard a8 > 0 else { continue }
+                let a = Double(a8) / 255
+                let l = min(lum(i) / hi, 1.15)
+                let lift = max(l - 1, 0)
+                px[i] = UInt8(min(1, l * Double(tr) + lift) * a * 255)
+                px[i + 1] = UInt8(min(1, l * Double(tg) + lift) * a * 255)
+                px[i + 2] = UInt8(min(1, l * Double(tb) + lift) * a * 255)
+            }
+        }
+        guard let out = ctx.makeImage() else { return img }
+        return UIImage(cgImage: out, scale: img.scale, orientation: img.imageOrientation)
+    }
+
     /// 点素材：放到屏幕正中（连着放几张错开一点），跟原作一样宽 96、高按图的比例
     func add(_ asset: MaskStickerAsset, center: CGPoint) {
         let n = stickers.count
         let c = CGPoint(x: center.x + CGFloat(n % 3 - 1) * 24, y: center.y + CGFloat((n / 3) % 3 - 1) * 24)
         let ratio = asset.image.size.width > 0 ? asset.image.size.height / asset.image.size.width : 1
         var s = MaskSticker(assetID: asset.id, anchor: nil, offset: c,
-                            w: Self.baseWidth, h: Self.baseWidth * ratio, r: 0)
+                            w: Self.baseWidth, h: Self.baseWidth * ratio, r: 0, tint: pickColor)
         settle(&s, screenCenter: c)
         stickers.append(s)
         selected = s.id
@@ -355,7 +454,7 @@ struct StickerMaskLayer: View {
     }
 
     @ViewBuilder private func item(_ s: MaskSticker, origin: CGPoint) -> some View {
-        if let c = store.center(of: s, layerOrigin: origin), let img = store.image(for: s.assetID) {
+        if let c = store.center(of: s, layerOrigin: origin), let img = store.image(for: s) {
             StickerMaskItem(sticker: s, image: img, center: c,
                             editing: store.editing, selected: store.selected == s.id,
                             accent: Self.accent)
@@ -373,12 +472,48 @@ struct StickerMaskLayer: View {
     }
 
     /// 右边那列：素材（点＝放一张，长按＝删）、从相册加、全清、完成
+    /// 1017 效果图（mask-color-preview）：两列小色点——原色（斜线）、粉、蓝、紫、薄荷、炭灰、白、自定义色轮
+    private var colorPalette: some View {
+        let shown = store.shownColor.map(StickerMaskStore.hex)
+        let cols = [GridItem(.fixed(20), spacing: 6), GridItem(.fixed(20), spacing: 6)]
+        return LazyVGrid(columns: cols, spacing: 6) {
+            swatch(on: shown == nil) {
+                Circle().fill(Color.white)
+                    .overlay(Rectangle().fill(Color.red.opacity(0.8)).frame(width: 1.2, height: 20).rotationEffect(.degrees(45)))
+                    .clipShape(Circle())
+            } tap: { store.choose(nil) }
+            ForEach(StickerMaskStore.swatches, id: \.self) { c in
+                swatch(on: shown == StickerMaskStore.hex(c)) { Circle().fill(Color(c)) } tap: { store.choose(c) }
+            }
+            ColorPicker("", selection: Binding(
+                get: { Color(store.shownColor ?? .white) },
+                set: { store.choose(UIColor($0)) }), supportsOpacity: false)
+                .labelsHidden()
+                .scaleEffect(0.72)
+                .frame(width: 20, height: 20)
+        }
+        .frame(width: 46)
+        .padding(.top, 2)
+    }
+
+    private func swatch<V: View>(on: Bool, @ViewBuilder _ dot: () -> V, tap: @escaping () -> Void) -> some View {
+        dot()
+            .frame(width: 18, height: 18)
+            .overlay(Circle().stroke(Color.black.opacity(0.1), lineWidth: 1))
+            .overlay(Circle().stroke(on ? Self.accent : .clear, lineWidth: 1.5).padding(-3))
+            .frame(width: 20, height: 20)
+            .contentShape(Circle())
+            .onTapGesture(perform: tap)
+    }
+
     @ViewBuilder private func palette(_ geo: GeometryProxy) -> some View {
         let top = safeTop + topBarHeight + 8
         let bottom = safeBottom + 90
         let height = max(160, geo.size.height - top - bottom)
         let center = CGPoint(x: geo.size.width / 2 - 20, y: geo.size.height / 2)
         VStack(spacing: 10) {
+            colorPalette
+            Divider().frame(width: 30)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 10) {
                     ForEach(store.assets) { a in
