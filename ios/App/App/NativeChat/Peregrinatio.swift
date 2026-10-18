@@ -8,7 +8,7 @@ import CoreText
 //   有没看够的那趟别一根别针；页底只放最近一条意犹未尽。翻页只留小圆点。
 // - 点邮票：抽出来放大；再点：翻面（他寄的明信片＋邮戳＋右下「去看看他的旅程…」）；再点翻回；点邮票外面任意处插回去。
 // - 旅行日记：顶上一张图下沿淡出，下面图文混排，图一右一左、字绕图（TextKit exclusionPaths）。
-// - 手写字体（她给的「萌味小猫慵懒手书」100 版）只用在明信片背面和旅行日记正文；走字体架下载注册，不进包。
+// - 手写字体（她给的「萌味小猫慵懒手书」100 版）只用在明信片背面（旅行日记正文 1018 起换霞鹜新致宋）；走字体架下载注册，不进包。
 // - 底色是水彩纸的颜色 #F1F2F4（材质不要），黑夜 Sanctus 炭灰；日夜跟全屋按钮。
 // 数据：前门 /api/nowhere/peregrinatio/trips|linger|img/<名>（乌有乡 web 口上挂的 /root/rhysel/peregrinatio_api.py）。
 // 地球在 PeregrinatioGlobe.swift，入口是标题右下「在地球上看 ›」。
@@ -132,6 +132,10 @@ enum PGFont {
         return base.fontDescriptor.withDesign(.serif).map { UIFont(descriptor: $0, size: s) } ?? base
     }
     static func ensureHand() { PGHandFont.shared.ensure() }
+    /// 1018 她：旅行日记正文「字体换成衬线体」——用包里的霞鹜新致宋，没有就系统宋体
+    static func serifUI(_ s: CGFloat) -> UIFont {
+        UIFont(name: "LXGWNeoZhiSong", size: s) ?? UIFont(name: "STSongti-SC-Regular", size: s) ?? .systemFont(ofSize: s)
+    }
 }
 
 /// 1015 她：「手写字体咋没有」——原来借设置里那套字体名单，名单还没拿到就放弃了、之后不再试。
@@ -927,17 +931,19 @@ final class PGFlowView: UIView {
     required init?(coder: NSCoder) { fatalError() }
 
     func configure(text: String, stops: [PGStop], ink: PGInk) {
-        let k = text + "|" + stops.map(\.image).joined(separator: ",") + "|\(ink.dark)|\(PGFont.handName() ?? "")"
+        let k = text + "|" + stops.map(\.image).joined(separator: ",") + "|\(ink.dark)"
         guard k != key else { return }
         key = k
         let ps = NSMutableParagraphStyle()
         ps.lineSpacing = 9
         ps.paragraphSpacing = 16
-        ps.firstLineHeadIndent = 34   // 每段开头空两个字（17 号字 × 2）
         ps.alignment = .justified
         let bodyColor = UIColor(ink.body)
-        tv.attributedText = NSAttributedString(string: Self.paragraphs(text).joined(separator: "\n"), attributes: [
-            .font: PGFont.handUI(17), .foregroundColor: bodyColor, .paragraphStyle: ps])
+        // 1018 她截图「图片会遮住字、右边的字也是」：原来段首缩进用 firstLineHeadIndent，
+        // 绕图排版时每段第一行算断行没算缩进、画的时候又往右挪了 34，第一行就钻进图底下／冲出右边。
+        // 改成每段前面垫两个全角空格，缩进就是字本身，断行和画对得上
+        tv.attributedText = NSAttributedString(string: Self.paragraphs(text).map { "\u{3000}\u{3000}" + $0 }.joined(separator: "\n"), attributes: [
+            .font: PGFont.serifUI(17), .foregroundColor: bodyColor, .paragraphStyle: ps])
         figs.forEach { $0.0.removeFromSuperview(); $0.1.removeFromSuperview() }
         figs = stops.map { s in
             let iv = UIImageView()
