@@ -636,7 +636,13 @@ struct ChatView: View {
                 // 0922 任务#2572：原来 0/0.12/0.3 秒连滚三次，整张表跟着重排三回；只留键盘快到位的那一次
                 scrollToTail(proxy, delays: [0.12], animated: true)
             }
-            .onChange(of: atBottom) { store.viewerAtBottom = $0 }   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
+            .onChange(of: atBottom) { at in
+                store.viewerAtBottom = at   // 0922：给 appendNew 的封顶看，她在底下才扔老消息
+                // 1018 #4063 她装了 173 还是「上翻到顶一秒掉回底」：两次都是他正在说话。他每冒一段字，
+                // liveLayoutKey 那条只看 followLiveOutput 就滚到底；关掉它的只有列表上那个 DragGesture，
+                // 点状态栏回顶根本没拖，手指拖在新系统上那个手势也常常收不到。她一离开底部就别再跟着他滚
+                if !at { followLiveOutput = false }
+            }
             // 0924「重来」没成时说一声为什么（他正忙、回退菜单对不上号、SDK 通道……）
             // 0928 她要的确认弹窗：点重来先问是否，别再误触
             .alert("重来这一轮？", isPresented: $rerollConfirmShown) {
