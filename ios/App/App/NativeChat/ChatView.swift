@@ -6276,6 +6276,243 @@ private struct TarotLaceMat: View {
     }
 }
 
+// MARK: - 1019 #4089–4106 塔罗小卡 Sanctus 版（只在 Sanctus 主题；Kakao 和别的主题照旧像素蕾丝）
+// 她「做」的那张＝/root/rhysel/sanctus-kit/mock-tarot/v1–v3.html（她圈过、定在 #4105 那版）：
+// 冷白颗粒纸、外一圈白边；外框一道银灰实线、里一道虚线（虚线只画在两个角之间）；
+// 四角＝原来那套像素卷草换成银灰，每格跟外框线一样粗，外框线正好接在卷草最外那根线上；
+// 顶上一圈细线光环坐在外框线上，光环底下框线断开、两头收小卷（她 #4100–4105 反复确认要「不闭合」）；
+// 左上角停一只蝴蝶（她给的素材，头朝左、摆正）；现在轮到的牌位放真牌背、描深线，名字深色后面一颗小蓝点（整张卡唯一的颜色）；
+// 底下细线中间一个小菱形两颗圆点。效果图按 2.4 倍画的，下面的数都是效果图像素 ÷ 2.4。
+
+struct TarotSanctusInk {
+    let dark: Bool
+    var paperTop: Color { dark ? cardRGB(0x2A2B30) : cardRGB(0xFCFCFD) }
+    var paperBottom: Color { dark ? cardRGB(0x222327) : cardRGB(0xF4F5F7) }
+    var edge: Color { dark ? Color.white.opacity(0.10) : Color.white.opacity(0.95) }
+    var line: Color { dark ? cardRGB(0x8B8F99) : cardRGB(0x8F939D) }
+    var dash: Color { dark ? Color.white.opacity(0.22) : cardRGB(0x8F939D).opacity(0.65) }
+    var crest: Color { dark ? cardRGB(0x8B8F99) : cardRGB(0x9A9EA8) }
+    var kicker: Color { dark ? cardRGB(0x8B8F99) : cardRGB(0x8F939D) }
+    var ink: Color { dark ? cardRGB(0xE3E4E8) : cardRGB(0x3E4048) }
+    var title: Color { dark ? cardRGB(0xE4E4E7) : cardRGB(0x2A2A2E) }
+    var sub: Color { dark ? cardRGB(0x8B8F99) : cardRGB(0x9A9EA8) }
+    var faint: Color { dark ? cardRGB(0x6E717A) : cardRGB(0xA3A7B0) }
+    var script: Color { dark ? cardRGB(0xC3C6CE) : cardRGB(0x6F7480) }
+    var blue: Color { dark ? cardRGB(0x3A55FF) : cardRGB(0x0B1BFF) }
+    var mat: Color { dark ? cardRGB(0x34353B) : .white }
+    var matEdge: Color { dark ? Color.white.opacity(0.16) : cardRGB(0x969AA4).opacity(0.45) }
+    var pill: Color { dark ? Color.white.opacity(0.22) : cardRGB(0x969AA4).opacity(0.55) }
+    var butterfly: Color { dark ? cardRGB(0xD9DCE2) : cardRGB(0x4E525C) }
+}
+
+private enum TarotSanctusSize {
+    static let width: CGFloat = 295
+    static let lineInset: CGFloat = 2.75      // 外框线离纸边（6.6px）
+    static let lineW: CGFloat = 0.92          // 外框线粗细＝卷草一格（2.2px）
+    static let dashInset: CGFloat = 7.33      // 虚线离纸边（17.6px）
+    static let corner: CGFloat = 53.3         // 四角卷草 58 格画成这么大（128px）
+    static let gap: CGFloat = 37.5            // 光环底下断开的半宽（90px）
+    static var lineMid: CGFloat { lineInset + lineW / 2 }
+}
+
+/// 外框实线：一整圈，只在顶上正中断开一段给光环
+private struct TarotSanctusOutline: Shape {
+    var inset: CGFloat
+    var gap: CGFloat
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let x0 = r.minX + inset, x1 = r.maxX - inset, y0 = r.minY + inset, y1 = r.maxY - inset
+        p.move(to: CGPoint(x: r.midX + gap, y: y0))
+        p.addLine(to: CGPoint(x: x1, y: y0))
+        p.addLine(to: CGPoint(x: x1, y: y1))
+        p.addLine(to: CGPoint(x: x0, y: y1))
+        p.addLine(to: CGPoint(x: x0, y: y0))
+        p.addLine(to: CGPoint(x: r.midX - gap, y: y0))
+        return p
+    }
+}
+
+/// 里面那道虚线：只画在两个角之间，顶上同样给光环让开
+private struct TarotSanctusDashes: Shape {
+    var inset: CGFloat
+    var corner: CGFloat
+    var gap: CGFloat
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        let x0 = r.minX + inset, x1 = r.maxX - inset, y0 = r.minY + inset, y1 = r.maxY - inset
+        let a = r.minX + corner, b = r.maxX - corner, c = r.minY + corner, d = r.maxY - corner
+        if r.midX - gap > a { p.move(to: CGPoint(x: a, y: y0)); p.addLine(to: CGPoint(x: r.midX - gap, y: y0)) }
+        if b > r.midX + gap { p.move(to: CGPoint(x: r.midX + gap, y: y0)); p.addLine(to: CGPoint(x: b, y: y0)) }
+        if b > a { p.move(to: CGPoint(x: a, y: y1)); p.addLine(to: CGPoint(x: b, y: y1)) }
+        if d > c {
+            p.move(to: CGPoint(x: x0, y: c)); p.addLine(to: CGPoint(x: x0, y: d))
+            p.move(to: CGPoint(x: x1, y: c)); p.addLine(to: CGPoint(x: x1, y: d))
+        }
+        return p
+    }
+}
+
+/// 顶上的光环：照效果图的 SVG（260×100 像素）原样画再整体 ÷2.4；底边 y=77.3 落在外框线中线上，两头小卷接外框线
+private struct TarotSanctusCrest: View {
+    let ink: TarotSanctusInk
+    var body: some View {
+        Canvas { ctx, _ in
+            ctx.scaleBy(x: 1 / 2.4, y: 1 / 2.4)
+            let cx: CGFloat = 130, cy: CGFloat = 77.3
+            let arcs = Path { p in
+                p.addArc(center: CGPoint(x: cx, y: cy), radius: 46, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+            }
+            let inner = Path { p in
+                p.addArc(center: CGPoint(x: cx, y: cy), radius: 36, startAngle: .degrees(180), endAngle: .degrees(360), clockwise: false)
+            }
+            let rays = Path { p in
+                for k in 1...15 {
+                    let a = Double.pi * Double(k) / 16
+                    let ca = CGFloat(cos(a)), sa = CGFloat(sin(a))
+                    let r2: CGFloat = k % 2 == 1 ? 62 : 57
+                    p.move(to: CGPoint(x: cx + 50 * ca, y: cy - 50 * sa))
+                    p.addLine(to: CGPoint(x: cx + r2 * ca, y: cy - r2 * sa))
+                }
+            }
+            let curls = Path { p in
+                p.move(to: CGPoint(x: 40, y: cy)); p.addLine(to: CGPoint(x: 72, y: cy))
+                p.addCurve(to: CGPoint(x: 77, y: 68), control1: CGPoint(x: 79, y: cy), control2: CGPoint(x: 81, y: 71))
+                p.addCurve(to: CGPoint(x: 73, y: 71), control1: CGPoint(x: 74, y: 66), control2: CGPoint(x: 71, y: 69))
+                p.move(to: CGPoint(x: 220, y: cy)); p.addLine(to: CGPoint(x: 188, y: cy))
+                p.addCurve(to: CGPoint(x: 183, y: 68), control1: CGPoint(x: 181, y: cy), control2: CGPoint(x: 179, y: 71))
+                p.addCurve(to: CGPoint(x: 187, y: 71), control1: CGPoint(x: 186, y: 66), control2: CGPoint(x: 189, y: 69))
+            }
+            let star = Path { p in
+                p.move(to: CGPoint(x: 130, y: 50)); p.addLine(to: CGPoint(x: 133, y: 59)); p.addLine(to: CGPoint(x: 142, y: 62))
+                p.addLine(to: CGPoint(x: 133, y: 65)); p.addLine(to: CGPoint(x: 130, y: 74)); p.addLine(to: CGPoint(x: 127, y: 65))
+                p.addLine(to: CGPoint(x: 118, y: 62)); p.addLine(to: CGPoint(x: 127, y: 59)); p.closeSubpath()
+            }
+            ctx.stroke(arcs, with: .color(ink.crest), style: StrokeStyle(lineWidth: 1.6, lineCap: .round))
+            ctx.stroke(inner, with: .color(ink.crest), style: StrokeStyle(lineWidth: 1.1, lineCap: .round))
+            ctx.stroke(rays, with: .color(ink.crest), style: StrokeStyle(lineWidth: 1, lineCap: .round))
+            ctx.stroke(curls, with: .color(ink.line), style: StrokeStyle(lineWidth: 2.2, lineCap: .round))
+            ctx.fill(star, with: .color(ink.crest))
+        }
+        .frame(width: 260 / 2.4, height: 100 / 2.4)
+        .allowsHitTesting(false)
+    }
+}
+
+/// Sanctus 版外框：纸、白边、外框线（断口）、虚线、四角像素卷草、光环、左上蝴蝶
+private struct TarotSanctusFramed: ViewModifier {
+    let ink: TarotSanctusInk
+
+    private var corner: some View {
+        CardPixelArt(rows: TarotLacePixels.corner, px: TarotSanctusSize.corner / 58, colors: ["o": ink.line])
+            .allowsHitTesting(false)
+    }
+
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: 2.5, style: .continuous)
+        return content
+            .foregroundColor(ink.ink)
+            .padding(.horizontal, 27.5).padding(.top, 43).padding(.bottom, 16)
+            .frame(width: TarotSanctusSize.width)
+            .background(
+                shape.fill(LinearGradient(colors: [ink.paperTop, ink.paperBottom], startPoint: .top, endPoint: .bottom))
+                    .overlay(Image(ink.dark ? "TarotChatGrainNight" : "TarotChatGrainDay").resizable(resizingMode: .tile)
+                        .saturation(0).opacity(ink.dark ? 0.3 : 0.4).clipShape(shape))
+                    .overlay(shape.stroke(ink.edge, lineWidth: 1.2))
+                    .shadow(color: .black.opacity(ink.dark ? 0.35 : 0.10), radius: 12, y: 4)
+            )
+            .overlay(TarotSanctusOutline(inset: TarotSanctusSize.lineMid, gap: TarotSanctusSize.gap)
+                .stroke(ink.line, lineWidth: TarotSanctusSize.lineW).allowsHitTesting(false))
+            .overlay(TarotSanctusDashes(inset: TarotSanctusSize.dashInset + 0.33, corner: TarotSanctusSize.corner, gap: TarotSanctusSize.gap)
+                .stroke(ink.dash, style: StrokeStyle(lineWidth: 0.67, dash: [2, 2])).allowsHitTesting(false))
+            .overlay(alignment: .topLeading) { corner }
+            .overlay(alignment: .topTrailing) { corner.scaleEffect(x: -1, y: 1) }
+            .overlay(alignment: .bottomLeading) { corner.scaleEffect(x: 1, y: -1) }
+            .overlay(alignment: .bottomTrailing) { corner.scaleEffect(x: -1, y: -1) }
+            .overlay(alignment: .top) {
+                TarotSanctusCrest(ink: ink).offset(y: TarotSanctusSize.lineMid - 77.3 / 2.4)
+            }
+            .overlay(alignment: .topLeading) {
+                // 她给的蝴蝶（健康页同一张，只有透明度）：照效果图头朝左、摆正，停在左上角
+                Image("HealthButterfly").renderingMode(.template).resizable().scaledToFit()
+                    .frame(width: 87.5)
+                    .foregroundColor(ink.butterfly)
+                    .rotationEffect(.degrees(-10))
+                    .scaleEffect(x: -1, y: 1)
+                    .offset(x: -37.5, y: -35)
+                    .allowsHitTesting(false)
+            }
+            .padding(.top, 36).padding(.bottom, 12)   // 光环、蝴蝶伸出去的那截留出位置
+    }
+}
+
+/// 卡头（小号大写牌阵＋时间、谁抽的、问题）和卡尾（细线小菱形、两行小字、just now）
+private enum TarotSanctusBits {
+    static func head(meta: String, who: String, question: String, ink: TarotSanctusInk) -> some View {
+        VStack(spacing: 0) {
+            Text(meta).font(SanctusPageFont.corm(8.75)).tracking(2.8).foregroundColor(ink.kicker)
+                .lineLimit(1).minimumScaleFactor(0.7)
+            Text(who).font(.system(size: 10.4, design: .serif)).foregroundColor(ink.sub).padding(.top, 4)
+            if !question.isEmpty {
+                Text("「\(question)」")
+                    .font(.system(size: 12.5, design: .serif)).lineSpacing(4).foregroundColor(ink.ink)
+                    .multilineTextAlignment(.center)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.top, 10)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.bottom, 14)
+    }
+
+    static func foot(ink: TarotSanctusInk) -> some View {
+        VStack(spacing: 0) {
+            HStack(spacing: 5) {
+                LinearGradient(colors: [ink.line.opacity(0), ink.line], startPoint: .leading, endPoint: .trailing).frame(height: 0.6)
+                Circle().fill(ink.sub).frame(width: 1.8, height: 1.8)
+                Rectangle().stroke(ink.sub, lineWidth: 0.55).frame(width: 4.2, height: 4.2).rotationEffect(.degrees(45))
+                    .padding(.horizontal, 3)
+                Circle().fill(ink.sub).frame(width: 1.8, height: 1.8)
+                LinearGradient(colors: [ink.line, ink.line.opacity(0)], startPoint: .leading, endPoint: .trailing).frame(height: 0.6)
+            }
+            .padding(.top, 12)
+            Text("A CARD DRAWN IN THE ALCOVE\nPLEASE HANDLE GENTLY · THANK YOU")
+                .font(SanctusPageFont.corm(7.5)).tracking(2.4).lineSpacing(2)
+                .multilineTextAlignment(.center).foregroundColor(ink.kicker)
+                .padding(.top, 8)
+            HStack {
+                Text("just now").font(SanctusPageFont.script(15)).foregroundColor(ink.sub)
+                Spacer()
+            }
+            .padding(.leading, 22).padding(.top, 2)
+        }
+    }
+}
+
+/// 抽到的牌：白衬纸＋灰细线，选中的描深线
+private struct TarotSanctusMat: View {
+    let card: TarotAskCard.Card
+    let width: CGFloat
+    let ink: TarotSanctusInk
+    var on = false
+    @ObservedObject private var decor = TarotDecor.shared
+
+    var body: some View {
+        Image("Tarot_" + card.id)
+            .resizable()
+            .scaledToFill()
+            .saturation(decor.saturation)
+            .colorMultiply(decor.multiply)
+            .brightness(ink.dark ? -0.05 : 0)
+            .frame(width: width, height: width * 1.72)
+            .clipped()
+            .rotationEffect(.degrees(card.reversed ? 180 : 0))
+            .padding(3.3)
+            .background(ink.mat)
+            .overlay(Rectangle().stroke(on ? ink.ink : ink.matEdge, lineWidth: 0.6))
+            .shadow(color: .black.opacity(ink.dark ? 0.35 : 0.12), radius: 6, y: 2)
+    }
+}
+
 private struct TarotMessageCard: View {
     let card: TarotAskCard
     let theme: AlcoveTheme
@@ -6283,14 +6520,26 @@ private struct TarotMessageCard: View {
     private var ink: TarotLaceInk { _ = houseAppearance; return TarotLaceInk(dark: AlcoveAppearance.isDark) }
 
     var body: some View {
-        VStack(spacing: 0) {
-            TarotLaceBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
-                               who: card.byHim ? "陈璟抽了牌" : "陈霁抽了牌", question: card.question, ink: ink)
-            TarotSpreadView(cards: card.cards, spread: card.spread, ink: ink)
-            TarotLaceBits.foot(ink: ink)
+        if theme.isTreehouse {
+            // 1019：Sanctus 主题换新框；Kakao 和别的主题照旧下面的像素蕾丝
+            let sink = TarotSanctusInk(dark: ink.dark)
+            VStack(spacing: 0) {
+                TarotSanctusBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
+                                      who: card.byHim ? "陈璟抽了牌" : "陈霁抽了牌", question: card.question, ink: sink)
+                TarotSpreadView(cards: card.cards, spread: card.spread, ink: ink, sanctus: true)
+                TarotSanctusBits.foot(ink: sink)
+            }
+            .modifier(TarotSanctusFramed(ink: sink))
+        } else {
+            VStack(spacing: 0) {
+                TarotLaceBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
+                                   who: card.byHim ? "陈璟抽了牌" : "陈霁抽了牌", question: card.question, ink: ink)
+                TarotSpreadView(cards: card.cards, spread: card.spread, ink: ink)
+                TarotLaceBits.foot(ink: ink)
+            }
+            .modifier(TarotLaceFramed(ink: ink))
+            .onAppear { DiaryFonts.ensure() }
         }
-        .modifier(TarotLaceFramed(ink: ink))
-        .onAppear { DiaryFonts.ensure() }
     }
 }
 
@@ -6301,8 +6550,10 @@ private struct TarotSpreadView: View {
     let cards: [TarotAskCard.Card]
     let spread: String
     let ink: TarotLaceInk
+    var sanctus = false   // 1019：Sanctus 主题的衬纸、字、关键词胶囊
     @ObservedObject private var store = TarotStore.shared
     @State private var selected = 0
+    private var sink: TarotSanctusInk { TarotSanctusInk(dark: ink.dark) }
 
     private var n: Int { cards.count }
     private var faceW: CGFloat { n <= 3 ? 60 : 42 }
@@ -6336,8 +6587,13 @@ private struct TarotSpreadView: View {
                     if cards.indices.contains(selected) {
                         let c = cards[selected]
                         VStack(spacing: 0) {
-                            info(c, align: .center)
-                            tags(c.keywords, columns: c.keywords.allSatisfy { $0.count <= 3 } ? 4 : 2)
+                            if sanctus {
+                                sanctusInfo(c, align: .center)
+                                sanctusTags(c.keywords, columns: c.keywords.allSatisfy { $0.count <= 3 } ? 4 : 2)
+                            } else {
+                                info(c, align: .center)
+                                tags(c.keywords, columns: c.keywords.allSatisfy { $0.count <= 3 } ? 4 : 2)
+                            }
                         }
                         .frame(maxWidth: .infinity)
                     }
@@ -6350,12 +6606,21 @@ private struct TarotSpreadView: View {
     /// 单张：牌左字右
     private func single(_ c: TarotAskCard.Card) -> some View {
         HStack(alignment: .center, spacing: 16) {
-            TarotLaceMat(card: c, width: 92, ink: ink, sparkles: true)
-            VStack(alignment: .leading, spacing: 0) {
-                info(c, align: .leading)
-                tags(c.keywords, columns: 2)
+            if sanctus {
+                TarotSanctusMat(card: c, width: 92, ink: sink)
+                VStack(alignment: .leading, spacing: 0) {
+                    sanctusInfo(c, align: .leading)
+                    sanctusTags(c.keywords, columns: 2)
+                }
+                .frame(width: 128, alignment: .leading)
+            } else {
+                TarotLaceMat(card: c, width: 92, ink: ink, sparkles: true)
+                VStack(alignment: .leading, spacing: 0) {
+                    info(c, align: .leading)
+                    tags(c.keywords, columns: 2)
+                }
+                .frame(width: 128, alignment: .leading)
             }
-            .frame(width: 128, alignment: .leading)
         }
         .frame(maxWidth: .infinity)
     }
@@ -6383,6 +6648,43 @@ private struct TarotSpreadView: View {
         }
     }
 
+    /// Sanctus：花体英文牌名（灰）／宋体中文名＋小号大写正逆位／ARCANA · XIX
+    private func sanctusInfo(_ c: TarotAskCard.Card, align: HorizontalAlignment) -> some View {
+        let meta = store.card(c.id)
+        let line: String? = meta.map {
+            $0.arcana == "major" ? "ARCANA · \(TarotLaceBits.roman($0.number))"
+                                 : "\($0.suit == "pents" ? "PENTACLES" : $0.suit.uppercased()) · \(TarotLaceBits.roman($0.number))"
+        }
+        return VStack(alignment: align, spacing: 0) {
+            if let en = meta?.en, !en.isEmpty {
+                Text(en).font(SanctusPageFont.script(26)).foregroundColor(sink.script)
+                    .lineLimit(1).minimumScaleFactor(0.5)
+            }
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(c.name).font(.system(size: 16, weight: .semibold, design: .serif)).foregroundColor(sink.title)
+                Text(c.reversed ? "REVERSED" : "UPRIGHT").font(SanctusPageFont.corm(8.3)).tracking(2).foregroundColor(sink.kicker)
+            }
+            .padding(.top, 3)
+            if let line {
+                Text(line).font(SanctusPageFont.corm(8.3)).tracking(2.4).foregroundColor(sink.sub).padding(.top, 3)
+            }
+        }
+    }
+
+    /// Sanctus：关键词放灰细线胶囊（原来的粉缺角标签和像素爱心不要）
+    private func sanctusTags(_ words: [String], columns: Int) -> some View {
+        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: columns), spacing: 6) {
+            ForEach(words, id: \.self) { k in
+                Text(k).font(.system(size: 10, design: .serif)).tracking(0.8).foregroundColor(sink.ink)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .padding(.vertical, 3)
+                    .frame(maxWidth: .infinity)
+                    .overlay(Capsule().stroke(sink.pill, lineWidth: 0.6))
+            }
+        }
+        .padding(.top, 10)
+    }
+
     private func tags(_ words: [String], columns: Int) -> some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 7), count: columns), spacing: 7) {
             ForEach(words, id: \.self) { k in
@@ -6405,15 +6707,26 @@ private struct TarotSpreadView: View {
         let c = cards[i]
         let on = i == selected
         return VStack(spacing: 6) {
-            TarotLaceMat(card: c, width: faceW, ink: ink, on: on)
-                .offset(y: on ? -3 : 0)
-            // 0903 她要的：牌位和牌名并一行
-            HStack(spacing: 3) {
-                Text(c.positionName).font(.system(size: 8.5, weight: .semibold))
-                    .foregroundColor(on ? ink.lace : ink.sub)
-                Text(c.name).font(.system(size: 10, weight: .medium, design: .serif)).foregroundColor(ink.ink)
+            if sanctus {
+                TarotSanctusMat(card: c, width: faceW, ink: sink, on: on)
+                    .offset(y: on ? -3 : 0)
+                HStack(spacing: 3) {
+                    Text(c.positionName).font(.system(size: 8.75, design: .serif))
+                        .foregroundColor(on ? sink.title : sink.faint)
+                    Text(c.name).font(.system(size: 9, weight: .medium, design: .serif)).foregroundColor(sink.ink)
+                }
+                .lineLimit(1).minimumScaleFactor(0.6)
+            } else {
+                TarotLaceMat(card: c, width: faceW, ink: ink, on: on)
+                    .offset(y: on ? -3 : 0)
+                // 0903 她要的：牌位和牌名并一行
+                HStack(spacing: 3) {
+                    Text(c.positionName).font(.system(size: 8.5, weight: .semibold))
+                        .foregroundColor(on ? ink.lace : ink.sub)
+                    Text(c.name).font(.system(size: 10, weight: .medium, design: .serif)).foregroundColor(ink.ink)
+                }
+                .lineLimit(1).minimumScaleFactor(0.6)
             }
-            .lineLimit(1).minimumScaleFactor(0.6)
         }
         .frame(width: faceW + 16)
         .contentShape(Rectangle())
@@ -6546,6 +6859,9 @@ private struct TarotOfferMessageCard: View {
     @ObservedObject private var decor = TarotDecor.shared
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: TarotLaceInk { _ = houseAppearance; return TarotLaceInk(dark: AlcoveAppearance.isDark) }
+    /// 1019：Sanctus 主题用新框，别的主题照旧像素蕾丝
+    private var sanctus: Bool { theme.isTreehouse }
+    private var sink: TarotSanctusInk { _ = houseAppearance; return TarotSanctusInk(dark: AlcoveAppearance.isDark) }
 
     private struct Pick { let id: String; let reversed: Bool }
     @State private var deck: [String] = []
@@ -6565,18 +6881,34 @@ private struct TarotOfferMessageCard: View {
     }
 
     var body: some View {
-        // 1004：跟 TarotMessageCard 同一套蕾丝外框；抽满以后只留牌和关键词（解读不进卡）
-        VStack(spacing: 0) {
-            TarotLaceBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
-                               who: done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽", question: card.question, ink: ink)
-            if done {
-                TarotSpreadView(cards: cards, spread: card.spread, ink: ink)
+        // 1004：跟 TarotMessageCard 同一套外框；抽满以后只留牌和关键词（解读不进卡）
+        Group {
+            if sanctus {
+                VStack(spacing: 0) {
+                    TarotSanctusBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
+                                          who: done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽", question: card.question, ink: sink)
+                    if done {
+                        TarotSpreadView(cards: cards, spread: card.spread, ink: ink, sanctus: true)
+                    } else {
+                        drawArea
+                    }
+                    TarotSanctusBits.foot(ink: sink)
+                }
+                .modifier(TarotSanctusFramed(ink: sink))
             } else {
-                drawArea
+                VStack(spacing: 0) {
+                    TarotLaceBits.head(meta: TarotLaceBits.meta(spread: card.spread, question: card.question, ts: card.ts),
+                                       who: done ? "陈璟出的题，抽好了" : "陈璟出了题，你来抽", question: card.question, ink: ink)
+                    if done {
+                        TarotSpreadView(cards: cards, spread: card.spread, ink: ink)
+                    } else {
+                        drawArea
+                    }
+                    TarotLaceBits.foot(ink: ink)
+                }
+                .modifier(TarotLaceFramed(ink: ink))
             }
-            TarotLaceBits.foot(ink: ink)
         }
-        .modifier(TarotLaceFramed(ink: ink))
             .onAppear { DiaryFonts.ensure() }
             .task {
                 await store.loadDeck()
@@ -6597,8 +6929,29 @@ private struct TarotOfferMessageCard: View {
                 ForEach(card.positions) { pos in
                     VStack(spacing: 4) {
                         if let d = cards.first(where: { $0.position == pos.key }) {
-                            TarotLaceMat(card: d, width: slotW, ink: ink)
-                                .transition(.scale(scale: 0.3).combined(with: .opacity))
+                            if sanctus {
+                                TarotSanctusMat(card: d, width: slotW, ink: sink)
+                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                            } else {
+                                TarotLaceMat(card: d, width: slotW, ink: ink)
+                                    .transition(.scale(scale: 0.3).combined(with: .opacity))
+                            }
+                        } else if sanctus {
+                            // 1019 她：轮到的那个牌位放真牌背（跟整副牌背面一样）、描深线；没轮到的只留灰细虚线框
+                            let next = pos.key == nextPosition?.key
+                            ZStack {
+                                if next {
+                                    TarotCardBack(width: slotW)
+                                        .overlay(RoundedRectangle(cornerRadius: slotW * 0.07, style: .continuous)
+                                            .stroke(sink.ink, lineWidth: 0.67))
+                                        .shadow(color: .black.opacity(0.18), radius: 6, y: 2.5)
+                                } else {
+                                    RoundedRectangle(cornerRadius: slotW * 0.07, style: .continuous)
+                                        .stroke(sink.matEdge, style: StrokeStyle(lineWidth: 0.6, dash: [2, 2]))
+                                }
+                            }
+                            .frame(width: slotW, height: slotW * 1.72)
+                            .padding(3.3)   // 跟抽好的牌（TarotSanctusMat 带 3.3pt 衬纸）一样大
                         } else {
                             ZStack {
                                 TarotCardBack(width: slotW).opacity(pos.key == nextPosition?.key ? 0.4 : 0.16)
@@ -6610,8 +6963,19 @@ private struct TarotOfferMessageCard: View {
                             .padding(4)   // 跟抽好的牌（TarotLaceMat 带 4pt 衬纸）一样大
                         }
                         if card.positions.count > 1 {
-                            Text(pos.name).font(.system(size: 9, weight: .medium))
-                                .foregroundColor(pos.key == nextPosition?.key ? ink.lace : ink.sub)
+                            if sanctus {
+                                // 轮到的那个：深色字后面一颗小蓝点（整张卡唯一的颜色）
+                                HStack(spacing: 3) {
+                                    Text(pos.name).font(.system(size: 10.4, design: .serif))
+                                        .foregroundColor(pos.key == nextPosition?.key ? sink.title : sink.faint)
+                                    if pos.key == nextPosition?.key {
+                                        Circle().fill(sink.blue).frame(width: 3.3, height: 3.3)
+                                    }
+                                }
+                            } else {
+                                Text(pos.name).font(.system(size: 9, weight: .medium))
+                                    .foregroundColor(pos.key == nextPosition?.key ? ink.lace : ink.sub)
+                            }
                         }
                     }
                 }
@@ -6626,9 +6990,11 @@ private struct TarotOfferMessageCard: View {
                 VStack(spacing: 6) {
                     if let pos = nextPosition {
                         Text(card.positions.count > 1 ? "为「\(pos.name)」抽一张" : "抽一张")
-                            .font(.system(size: 12, weight: .medium, design: .serif))
+                            .font(.system(size: sanctus ? 14 : 12, weight: sanctus ? .regular : .medium, design: .serif))
+                            .foregroundColor(sanctus ? sink.title : ink.ink)
                         Text(busy ? "记着…" : "左右滑整副牌，中间那张再点一下")
-                            .font(.system(size: 10)).foregroundColor(ink.sub)
+                            .font(sanctus ? .system(size: 10, design: .serif) : .system(size: 10))
+                            .foregroundColor(sanctus ? sink.sub : ink.sub)
                     }
                     if deck.isEmpty {
                         ProgressView().controlSize(.small).frame(height: 130)
