@@ -61,6 +61,8 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
         // 显著位置变化会把已经被划掉的 app 重新拉起来，
         // 那一下必须让 SensorReporter 先活过来把 delegate 挂上，否则回调没人接
         _ = SensorReporter.shared
+        // 1019 苹果健康：被健康的新数据拉起来时也得先把监听挂上
+        HealthReporter.shared.appLaunched()
         if launchOptions?[.location] != nil {
             SensorReporter.shared.appActive()
         }

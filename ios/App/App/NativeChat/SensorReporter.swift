@@ -1,6 +1,7 @@
 import Foundation
 import CoreLocation
 import CoreMotion
+import HealthKit
 import UIKit
 
 // 她把权限给我：app 打开/回前台时上报位置、电量、步数、在走还是在躺，
@@ -54,6 +55,7 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         startStreaming()
         if !bgUpdatesOn { startTicker(fgInterval) }   // 没开成持续定位才靠定时器顶着
         requestNow()
+        HealthReporter.shared.appActive()   // 1019 苹果健康：回前台顺手报一份
     }
 
     // 退到后台什么都不停。持续定位一直开着，它的回调就是心跳，
@@ -229,4 +231,345 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     }
 
     func locationManager(_ manager: CLLocationManager, didFailWithError error: Error) {}
+}
+
+// MARK: - 1019 苹果健康
+
+/// 1019 她：「手表还没有，但是这些能有的都先把功能做好，后面我有手表了直接接数据」。
+/// 只读不写。读到的整理成一份「她今天」快照，报到前门 /api/health/report（跟位置同一把钥匙），陈璟用 /root/rhysel/health.py 看。
+/// 心率、血氧这些现在是空的，等她戴上手表、手表写进健康，这里不用改就有。
+/// 锁屏时苹果把健康数据锁着，读不到的项就没有；一项都没读到就不报，等她解锁回前台再报。
+/// 签名：TestFlight 那条线挂 App.entitlements（带 healthkit）；安装链接那条线的描述文件里没有，读不到也不崩。
+final class HealthReporter {
+    static let shared = HealthReporter()
+    private let store = HKHealthStore()
+    private var askedThisRun = false
+    private var observersOn = false
+    private var reporting = false
+    private var lastReport = Date.distantPast
+    private let minGap: TimeInterval = 300   // 手表心率一会儿一条，五分钟最多报一次
+    private static let askedKey = "healthAsked"
+
+    private var secret: String {
+        Bundle.main.object(forInfoDictionaryKey: "AlcoveLocToken") as? String ?? ""
+    }
+
+    static let iso: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.timeZone = .current
+        return f
+    }()
+
+    private static func q(_ id: HKQuantityTypeIdentifier) -> HKQuantityType? { HKObjectType.quantityType(forIdentifier: id) }
+    private static func c(_ id: HKCategoryTypeIdentifier) -> HKCategoryType? { HKObjectType.categoryType(forIdentifier: id) }
+
+    private static let quantityIDs: [HKQuantityTypeIdentifier] = [
+        .stepCount, .distanceWalkingRunning, .flightsClimbed, .activeEnergyBurned, .appleExerciseTime,
+        .heartRate, .restingHeartRate, .walkingHeartRateAverage, .heartRateVariabilitySDNN,
+        .oxygenSaturation, .respiratoryRate, .bodyMass, .bodyTemperature, .dietaryWater,
+    ]
+    private static let categoryIDs: [HKCategoryTypeIdentifier] = [.sleepAnalysis, .menstrualFlow, .mindfulSession]
+
+    private static var readTypes: Set<HKObjectType> {
+        var s = Set<HKObjectType>()
+        for id in quantityIDs { if let t = q(id) { s.insert(t) } }
+        for id in categoryIDs { if let t = c(id) { s.insert(t) } }
+        s.insert(HKObjectType.workoutType())
+        return s
+    }
+
+    /// 启动时（包括被健康的新数据从后台拉起来）先把监听挂上，不然后台送来的通知没人接
+    func appLaunched() {
+        guard HKHealthStore.isHealthDataAvailable(), UserDefaults.standard.bool(forKey: Self.askedKey) else { return }
+        startObservers()
+    }
+
+    /// 回前台：每次进程第一次先问一遍权限（问过的类型系统不再弹，直接回来），再报
+    func appActive() {
+        guard HKHealthStore.isHealthDataAvailable() else { return }
+        guard askedThisRun else {
+            askedThisRun = true
+            store.requestAuthorization(toShare: nil, read: Self.readTypes) { [weak self] _, _ in
+                DispatchQueue.main.async {
+                    UserDefaults.standard.set(true, forKey: HealthReporter.askedKey)
+                    self?.startObservers()
+                    self?.report(force: true)
+                }
+            }
+            return
+        }
+        report(force: false)
+    }
+
+    private func startObservers() {
+        guard !observersOn else { return }
+        observersOn = true
+        var watched: [(HKSampleType, HKUpdateFrequency)] = []
+        if let t = Self.q(.heartRate) { watched.append((t, .immediate)) }
+        if let t = Self.q(.stepCount) { watched.append((t, .hourly)) }
+        if let t = Self.q(.oxygenSaturation) { watched.append((t, .hourly)) }
+        if let t = Self.c(.sleepAnalysis) { watched.append((t, .hourly)) }
+        if let t = Self.c(.menstrualFlow) { watched.append((t, .hourly)) }
+        watched.append((HKObjectType.workoutType(), .immediate))
+        for (type, freq) in watched {
+            let query = HKObserverQuery(sampleType: type, predicate: nil) { [weak self] _, done, error in
+                guard error == nil, let self = self else { done(); return }
+                DispatchQueue.main.async { self.report(force: false, done: done) }
+            }
+            store.execute(query)
+            store.enableBackgroundDelivery(for: type, frequency: freq) { _, _ in }
+        }
+    }
+
+    private func report(force: Bool, done: (() -> Void)? = nil) {
+        guard !secret.isEmpty, !reporting, force || Date().timeIntervalSince(lastReport) > minGap else {
+            done?()
+            return
+        }
+        reporting = true
+        collect { [weak self] payload in
+            guard let self = self else { done?(); return }
+            self.reporting = false
+            // 只剩 source 一项＝什么都没读到（锁屏、没给权限、没签上 healthkit）
+            guard payload.count > 1 else { done?(); return }
+            self.lastReport = Date()
+            self.send(payload, done: done)
+        }
+    }
+
+    /// 健康的回调在后台线程上一条条回来，攒在这里，等齐了一起发
+    private final class Bag {
+        private var d: [String: Any] = ["source": "app"]
+        private let lock = NSLock()
+        func put(_ k: String, _ v: Any?) {
+            guard let v = v else { return }
+            lock.lock(); d[k] = v; lock.unlock()
+        }
+        func snapshot() -> [String: Any] {
+            lock.lock(); defer { lock.unlock() }
+            return d
+        }
+    }
+
+    private func collect(_ finish: @escaping ([String: Any]) -> Void) {
+        let bag = Bag()
+        let group = DispatchGroup()
+        let now = Date()
+        let today = HKQuery.predicateForSamples(withStart: Calendar.current.startOfDay(for: now), end: now, options: .strictStartDate)
+        let bpm = HKUnit.count().unitDivided(by: HKUnit.minute())
+
+        // 今天累计的：步数、距离、楼层、活动消耗、锻炼分钟、喝水
+        func sum(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, _ key: String) {
+            guard let t = HealthReporter.q(id) else { return }
+            group.enter()
+            let query = HKStatisticsQuery(quantityType: t, quantitySamplePredicate: today, options: .cumulativeSum) { _, s, _ in
+                if let v = s?.sumQuantity()?.doubleValue(for: unit) { bag.put(key, v.rounded()) }
+                group.leave()
+            }
+            store.execute(query)
+        }
+        // 最近一条：心率、静息心率、血氧……（within 天以内的才算）
+        func latest(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, _ key: String, scale: Double = 1, within days: Double) {
+            guard let t = HealthReporter.q(id) else { return }
+            group.enter()
+            let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-days * 86400), end: now, options: [])
+            let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
+            let query = HKSampleQuery(sampleType: t, predicate: pred, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
+                if let s = samples?.first as? HKQuantitySample {
+                    let v = s.quantity.doubleValue(for: unit) * scale
+                    let item: [String: Any] = ["v": (v * 10).rounded() / 10, "at": HealthReporter.iso.string(from: s.endDate)]
+                    bag.put(key, item)
+                }
+                group.leave()
+            }
+            store.execute(query)
+        }
+        // 某类分类样本（睡眠、经期、正念），拿回来交给 make 去整理
+        func samples(_ id: HKCategoryTypeIdentifier, from: Date, _ make: @escaping ([HKCategorySample]) -> Void) {
+            guard let t = HealthReporter.c(id) else { return }
+            group.enter()
+            let pred = HKQuery.predicateForSamples(withStart: from, end: now, options: [])
+            let query = HKSampleQuery(sampleType: t, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, ss, _ in
+                make((ss as? [HKCategorySample]) ?? [])
+                group.leave()
+            }
+            store.execute(query)
+        }
+
+        sum(.stepCount, .count(), "steps")
+        sum(.distanceWalkingRunning, .meter(), "distance_m")
+        sum(.flightsClimbed, .count(), "flights")
+        sum(.activeEnergyBurned, .kilocalorie(), "active_kcal")
+        sum(.appleExerciseTime, .minute(), "exercise_min")
+        sum(.dietaryWater, .literUnit(with: .milli), "water_ml")
+
+        latest(.heartRate, bpm, "hr_latest", within: 1)
+        latest(.restingHeartRate, bpm, "resting_hr", within: 3)
+        latest(.walkingHeartRateAverage, bpm, "walking_hr", within: 3)
+        latest(.heartRateVariabilitySDNN, .secondUnit(with: .milli), "hrv_ms", within: 3)
+        latest(.oxygenSaturation, .percent(), "spo2", scale: 100, within: 3)
+        latest(.respiratoryRate, bpm, "resp_rate", within: 3)
+        latest(.bodyTemperature, .degreeCelsius(), "body_temp_c", within: 7)
+        latest(.bodyMass, .gramUnit(with: .kilo), "body_mass_kg", within: 90)
+
+        // 今天心率的高低和平均
+        if let t = HealthReporter.q(.heartRate) {
+            group.enter()
+            let query = HKStatisticsQuery(quantityType: t, quantitySamplePredicate: today,
+                                          options: [.discreteAverage, .discreteMin, .discreteMax]) { _, s, _ in
+                if let s = s, let avg = s.averageQuantity()?.doubleValue(for: bpm) {
+                    let item: [String: Any] = [
+                        "avg": avg.rounded(),
+                        "min": s.minimumQuantity()?.doubleValue(for: bpm).rounded() ?? avg.rounded(),
+                        "max": s.maximumQuantity()?.doubleValue(for: bpm).rounded() ?? avg.rounded(),
+                    ]
+                    bag.put("hr_today", item)
+                }
+                group.leave()
+            }
+            store.execute(query)
+        }
+
+        samples(.sleepAnalysis, from: now.addingTimeInterval(-30 * 3600)) { ss in
+            bag.put("sleep", HealthReporter.lastNight(ss))
+        }
+        samples(.menstrualFlow, from: now.addingTimeInterval(-75 * 86400)) { ss in
+            bag.put("period", HealthReporter.period(ss))
+        }
+        samples(.mindfulSession, from: Calendar.current.startOfDay(for: now)) { ss in
+            let total = ss.reduce(0.0) { $0 + $1.endDate.timeIntervalSince($1.startDate) }
+            if total > 0 { bag.put("mindful_min", (total / 60).rounded()) }
+        }
+
+        // 今天的运动记录
+        group.enter()
+        let wq = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: today, limit: 20,
+                               sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, ss, _ in
+            let energy = HKQuantityType(.activeEnergyBurned)
+            let list: [[String: Any]] = ((ss as? [HKWorkout]) ?? []).map { w in
+                var x: [String: Any] = [
+                    "type": HealthReporter.workoutName(w.workoutActivityType),
+                    "min": (w.duration / 60).rounded(),
+                    "start": HealthReporter.iso.string(from: w.startDate),
+                ]
+                if let kcal = w.statistics(for: energy)?.sumQuantity()?.doubleValue(for: .kilocalorie()) { x["kcal"] = kcal.rounded() }
+                return x
+            }
+            if !list.isEmpty { bag.put("workouts", list) }
+            group.leave()
+        }
+        store.execute(wq)
+
+        group.notify(queue: .main) { finish(bag.snapshot()) }
+    }
+
+    private static func union(_ spans: [(Date, Date)]) -> TimeInterval {
+        var total: TimeInterval = 0
+        var cur: (Date, Date)?
+        for x in spans.sorted(by: { $0.0 < $1.0 }) {
+            if let c = cur, x.0 <= c.1 {
+                cur = (c.0, max(c.1, x.1))
+            } else {
+                if let c = cur { total += c.1.timeIntervalSince(c.0) }
+                cur = x
+            }
+        }
+        if let c = cur { total += c.1.timeIntervalSince(c.0) }
+        return total
+    }
+
+    /// 最近一觉：相邻两条隔超过 3 小时算另一觉，取最后那段。
+    /// 手机和手表会各写一份，重叠的按并集算，不重复加。
+    /// value：0 在床上 1 睡着（没分段）2 醒着 3 核心 4 深睡 5 快速眼动
+    private static func lastNight(_ all: [HKCategorySample]) -> [String: Any]? {
+        var session: [HKCategorySample] = []
+        var end = Date.distantPast
+        for x in all.sorted(by: { $0.startDate < $1.startDate }) {
+            if session.isEmpty || x.startDate.timeIntervalSince(end) <= 3 * 3600 {
+                session.append(x)
+                end = max(end, x.endDate)
+            } else {
+                session = [x]
+                end = x.endDate
+            }
+        }
+        guard let start = session.map({ $0.startDate }).min() else { return nil }
+        func span(_ values: Set<Int>) -> TimeInterval {
+            union(session.filter { values.contains($0.value) }.map { ($0.startDate, $0.endDate) })
+        }
+        let asleep = span([1, 3, 4, 5])
+        let inBed = span([0])
+        guard asleep > 0 || inBed > 0 else { return nil }
+        var d: [String: Any] = ["start": iso.string(from: start), "end": iso.string(from: end)]
+        if asleep > 0 { d["asleep_min"] = (asleep / 60).rounded() }
+        if inBed > 0 { d["in_bed_min"] = (inBed / 60).rounded() }
+        for (k, v) in [("deep_min", 4), ("core_min", 3), ("rem_min", 5), ("awake_min", 2)] {
+            let t = span([v])
+            if t > 0 { d[k] = (t / 60).rounded() }
+        }
+        return d
+    }
+
+    /// 经期：最后一段（隔不超过 2 天算同一次）从哪天开始、最后一天记的流量。
+    /// value：1 没写多少 2 少 3 中 4 多 5 没有
+    private static func period(_ all: [HKCategorySample]) -> [String: Any]? {
+        let flow = all.filter { $0.value != 5 }.sorted { $0.startDate < $1.startDate }
+        guard let last = flow.last else { return nil }
+        let cal = Calendar.current
+        var start = last.startDate
+        for x in flow.reversed() {
+            let gap = cal.dateComponents([.day], from: cal.startOfDay(for: x.startDate), to: cal.startOfDay(for: start)).day ?? 0
+            if gap > 2 { break }
+            start = x.startDate
+        }
+        let day = DateFormatter()
+        day.locale = Locale(identifier: "en_US_POSIX")
+        day.dateFormat = "yyyy-MM-dd"
+        var d: [String: Any] = ["last_start": day.string(from: start), "last_flow_day": day.string(from: last.startDate)]
+        let names = [1: "没写多少", 2: "少", 3: "中", 4: "多"]
+        if let n = names[last.value] { d["flow"] = n }
+        return d
+    }
+
+    private static func workoutName(_ t: HKWorkoutActivityType) -> String {
+        switch t {
+        case .walking: return "走路"
+        case .running: return "跑步"
+        case .cycling: return "骑车"
+        case .hiking: return "徒步"
+        case .yoga: return "瑜伽"
+        case .pilates: return "普拉提"
+        case .swimming: return "游泳"
+        case .traditionalStrengthTraining, .functionalStrengthTraining: return "力量训练"
+        case .highIntensityIntervalTraining: return "HIIT"
+        case .cardioDance, .socialDance: return "跳舞"
+        case .flexibility: return "拉伸"
+        case .mindAndBody: return "身心"
+        case .elliptical: return "椭圆机"
+        case .stairClimbing, .stairs: return "爬楼"
+        default: return "运动"
+        }
+    }
+
+    private func send(_ payload: [String: Any], done: (() -> Void)?) {
+        var req = URLRequest(url: AlcoveAPI.fullURL("/api/health/report"))
+        req.httpMethod = "POST"
+        req.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        req.setValue(secret, forHTTPHeaderField: "X-Auth-Token")
+        req.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+        // 被健康的新数据从后台叫醒时系统只给几秒，申请一段时间把这条发完
+        var taskID = UIBackgroundTaskIdentifier.invalid
+        taskID = UIApplication.shared.beginBackgroundTask(withName: "alcove-health") {
+            if taskID != .invalid { UIApplication.shared.endBackgroundTask(taskID) }
+            taskID = .invalid
+        }
+        URLSession.shared.dataTask(with: req) { _, _, _ in
+            DispatchQueue.main.async {
+                if taskID != .invalid { UIApplication.shared.endBackgroundTask(taskID) }
+                taskID = .invalid
+                done?()
+            }
+        }.resume()
+    }
 }

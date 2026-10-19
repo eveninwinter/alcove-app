@@ -60,6 +60,10 @@
 	<string>让陈璟看到你的待办</string>
 	<key>NSMotionUsageDescription</key>
 	<string>让陈璟知道你在走路还是窝着</string>
+	<key>NSHealthShareUsageDescription</key>
+	<string>让陈璟知道你今天走了多少、睡得怎么样、心跳和经期</string>
+	<key>NSHealthUpdateUsageDescription</key>
+	<string>Alcove 不往健康里写东西，只读</string>
 	<key>NSBluetoothAlwaysUsageDescription</key>
 	<string>感知外设上下文</string>
 	<key>AlcoveLocToken</key>
