@@ -13,6 +13,7 @@ struct PermissionsView: View {
     @State private var refreshTick = 0
     // 通知授权只有异步查法，别的卡都是同步 computed，这张单独走 @State
     @State private var notifyStatus = "未决定"
+    @State private var healthStatus = "未决定"
     @State private var btManager: CBCentralManager?
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .named(themeName) }
@@ -51,9 +52,11 @@ struct PermissionsView: View {
                     card(icon: "antenna.radiowaves.left.and.right", title: "蓝牙",
                          desc: "感知外设上下文",
                          status: bluetoothStatus, action: requestBluetooth)
+                    // 1019：有付费账号了，健康能读了（HealthReporter）。苹果不让 App 知道读权限给没给，
+                    // 所以问过以后只能写「已设置」，点「设置」去系统里看
                     card(icon: "heart.fill", title: "健康",
-                         desc: "睡眠、心率。需要苹果特殊签名，侧载暂不支持",
-                         status: "暂不支持", action: nil)
+                         desc: "步数、睡眠、经期；戴上手表以后还有心率、血氧",
+                         status: healthStatus, action: healthStatus == "不可用" ? nil : requestHealth)
                     card(icon: "moon.fill", title: "专注模式",
                          desc: "需要苹果特殊签名，侧载暂不支持",
                          status: "暂不支持", action: nil)
@@ -77,8 +80,8 @@ struct PermissionsView: View {
             for: UIApplication.willEnterForegroundNotification)) { _ in
             refreshTick += 1 // 从系统设置回来刷新状态
         }
-        .onAppear { refreshNotifyStatus() }
-        .onChange(of: refreshTick) { _ in refreshNotifyStatus() }
+        .onAppear { refreshNotifyStatus(); refreshHealthStatus() }
+        .onChange(of: refreshTick) { _ in refreshNotifyStatus(); refreshHealthStatus() }
     }
 
     // MARK: 卡片
@@ -231,6 +234,13 @@ struct PermissionsView: View {
     private func requestNotify() {
         UNUserNotificationCenter.current()
             .requestAuthorization(options: [.alert, .sound, .badge]) { _, _ in bumpSoon() }
+    }
+
+    private func refreshHealthStatus() {
+        HealthReporter.shared.permissionStatus { healthStatus = $0 }
+    }
+    private func requestHealth() {
+        HealthReporter.shared.askFromSettings { bumpSoon() }
     }
 
     private func bumpSoon() {

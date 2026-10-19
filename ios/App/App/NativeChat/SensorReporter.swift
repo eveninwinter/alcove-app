@@ -342,6 +342,35 @@ final class HealthReporter {
         report(force: false)
     }
 
+    /// 权限页用。苹果不告诉 App 读权限到底给没给，只能知道还要不要再弹一次：
+    /// 要弹＝「未决定」，不用弹＝「已设置」，查不了（安装链接那条线没签 healthkit）＝「不可用」
+    func permissionStatus(_ cb: @escaping (String) -> Void) {
+        guard HKHealthStore.isHealthDataAvailable() else { cb("不可用"); return }
+        store.getRequestStatusForAuthorization(toShare: [], read: Self.readTypes) { status, _ in
+            let s: String
+            switch status {
+            case .shouldRequest: s = "未决定"
+            case .unnecessary: s = "已设置"
+            default: s = "不可用"
+            }
+            DispatchQueue.main.async { cb(s) }
+        }
+    }
+
+    /// 权限页点「开启」：弹授权，回来就挂监听、报一份
+    func askFromSettings(_ done: @escaping () -> Void) {
+        guard HKHealthStore.isHealthDataAvailable() else { done(); return }
+        askedThisRun = true
+        store.requestAuthorization(toShare: nil, read: Self.readTypes) { [weak self] _, _ in
+            DispatchQueue.main.async {
+                UserDefaults.standard.set(true, forKey: HealthReporter.askedKey)
+                self?.startObservers()
+                self?.report(force: true)
+                done()
+            }
+        }
+    }
+
     private func startObservers() {
         guard !observersOn else { return }
         observersOn = true
