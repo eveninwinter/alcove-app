@@ -1408,6 +1408,8 @@ struct ReadingItem: Identifiable, Equatable {
     /// 1017 #4007：后端抓的正文——ok 有整篇中文 / long 太长没翻 / none 没抓到 / 空＝还在排队
     let bodyState: String
     let bodyChars: Int
+    /// 1019 #4083 她：文章自己的发布日期（后端统一成北京时间 YYYY-MM-DD，认不出来是空）
+    let publishedDay: String
 
     init?(json: [String: Any]) {
         guard let id = json["item_id"] as? String else { return nil }
@@ -1424,6 +1426,7 @@ struct ReadingItem: Identifiable, Equatable {
         fetchedAt = json["fetched_at"] as? String ?? ""
         bodyState = json["body_state"] as? String ?? ""
         bodyChars = json["body_chars"] as? Int ?? 0
+        publishedDay = json["published_day"] as? String ?? ""
         notes = (json["notes"] as? [[String: Any]] ?? []).compactMap {
             guard let nid = $0["note_id"] as? String else { return nil }
             return ReadingNote(id: nid, author: $0["author"] as? String ?? "", text: $0["text"] as? String ?? "",
@@ -1433,6 +1436,13 @@ struct ReadingItem: Identifiable, Equatable {
 }
 
 extension ReadingItem {
+    /// 「10 月 16 日发布」；不是今年的带上年份
+    var publishedLabel: String {
+        let p = publishedDay.split(separator: "-").compactMap { Int($0) }
+        guard p.count == 3 else { return "" }
+        let thisYear = Calendar.current.component(.year, from: Date())
+        return (p[0] == thisYear ? "" : "\(p[0]) 年 ") + "\(p[1]) 月 \(p[2]) 日发布"
+    }
     /// 1017 她：「一眼看过去我不知道看什么」——英文来源名后面跟一个中文门类
     var topic: String {
         switch source {
@@ -1606,8 +1616,15 @@ private struct ReadingBoard: View {
                 Text(it.summary).font(WindowFont.swiftUI(13)).foregroundColor(paper.inkSoft).lineSpacing(4)
                     .lineLimit(3).multilineTextAlignment(.leading)
             }
-            if !it.notes.isEmpty {
-                Text("✎ \(it.notes.count) 则随笔").font(WindowFont.swiftUI(10)).foregroundColor(paper.rubric)
+            if !it.publishedLabel.isEmpty || !it.notes.isEmpty {
+                HStack(spacing: 8) {
+                    if !it.publishedLabel.isEmpty {
+                        Text(it.publishedLabel).font(WindowFont.swiftUI(10)).foregroundColor(paper.inkSoft)
+                    }
+                    if !it.notes.isEmpty {
+                        Text("✎ \(it.notes.count) 则随笔").font(WindowFont.swiftUI(10)).foregroundColor(paper.rubric)
+                    }
+                }
             }
         }
         .frame(maxWidth: .infinity, alignment: .leading)
@@ -1653,6 +1670,9 @@ private struct ReadingItemPage: View {
                         Text(it.sourceName).font(WindowFont.smallCaps(9.5)).tracking(1.8).foregroundColor(paper.rubric)
                         Text(it.title).font(WindowFont.swiftUI(22, bold: true)).foregroundColor(paper.ink)
                             .fixedSize(horizontal: false, vertical: true)
+                        if !it.publishedLabel.isEmpty {
+                            Text(it.publishedLabel).font(WindowFont.swiftUI(11)).foregroundColor(paper.inkSoft)
+                        }
                         if !it.trackQuery.isEmpty {
                             Text("他留的词「\(it.trackQuery)」找到的").font(WindowFont.swiftUI(11)).foregroundColor(paper.inkSoft)
                         }
