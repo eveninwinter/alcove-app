@@ -624,8 +624,16 @@ struct HealthRoomView: View {
                 head(.cycle, ink, opened: false)
                 if let c = m.cycle {
                     let day = HP.dayOfCycle(c)
-                    big("\(day)", "day of \(c.avgLen ?? 28)", ink, size: 27)
-                    HPCycleDots(day: day, length: max(c.avgLen ?? 28, day), runDays: c.runDays, ink: ink).padding(.top, 14)
+                    let len = c.avgLen ?? 28
+                    if day <= len + 10 {
+                        big("\(day)", "day of \(len)", ink, size: 27)
+                        HPCycleDots(day: day, length: len, runDays: c.runDays, ink: ink).padding(.top, 14)
+                    } else {
+                        // 1019 她截图：健康里最后记的那次是 71 天前，「第 71 天 / 28」没意义，71 个点还把整页撑出屏幕。
+                        // 隔得比一个周期还久很多，就只说离上次多少天、上次哪天开始
+                        big("\(day)", "days since", ink, size: 27)
+                        mix(["上次 ", HP.md(c.lastStart), " 开始"], ink).padding(.top, 6)
+                    }
                 } else {
                     big("—", "", ink, size: 27)
                     Text("健康里还没记过").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub).padding(.top, 6)
@@ -765,7 +773,8 @@ struct HealthRoomView: View {
                 head(.cycle, ink, opened: true)
                 if let c = m.cycle {
                     let day = HP.dayOfCycle(c)
-                    big("\(day)", "day of \(c.avgLen ?? 28)", ink, size: 40)
+                    let len = c.avgLen ?? 28
+                    big("\(day)", day <= len + 10 ? "day of \(len)" : "days since", ink, size: 40)
                     mix(["上次 ", HP.md(c.lastStart), " 开始"], ink).padding(.top, 6)
                     SanctusHair(ink: ink).padding(.top, 22)
                     (Text("\(HP.monthEN()) · ").font(SanctusCardFont.kicker()) + Text(HP.monthCN()).font(.system(size: 7.5, design: .serif)))
@@ -1035,21 +1044,28 @@ struct HPCycleDots: View {
     let length: Int
     let runDays: Int
     let ink: SanctusCardInk
+    // 1019：原来一个点一个 View、各自占最小宽度，点一多（她那次 71 个）整行比卡还宽，把整页撑出屏幕。
+    // 改成按给的宽度画，点再多也只铺满这一行
     var body: some View {
-        HStack(spacing: 0) {
-            ForEach(1...max(1, length), id: \.self) { d in
-                Group {
-                    if d == day {
-                        Circle().stroke(ink.dark ? HP.rgb(0xE3E4E8) : HP.rgb(0x2A2A2E), lineWidth: 1).frame(width: 6.5, height: 6.5)
-                    } else if d <= runDays {
-                        Circle().fill(HP.rgb(0x6F7480)).frame(width: 4, height: 4)
-                    } else {
-                        Circle().stroke(ink.hair, lineWidth: 0.6).frame(width: 4, height: 4)
-                    }
+        Canvas { ctx, size in
+            let n = max(1, length)
+            let step = size.width / CGFloat(n)
+            let r: CGFloat = min(2, step * 0.36)
+            let y = size.height / 2
+            for d in 1...n {
+                let x = step * (CGFloat(d) - 0.5)
+                if d == day {
+                    let rr = r + 1.2
+                    ctx.stroke(Path(ellipseIn: CGRect(x: x - rr, y: y - rr, width: rr * 2, height: rr * 2)),
+                               with: .color(ink.dark ? HP.rgb(0xE3E4E8) : HP.rgb(0x2A2A2E)), lineWidth: 1)
+                } else if d <= runDays {
+                    ctx.fill(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(HP.rgb(0x6F7480)))
+                } else {
+                    ctx.stroke(Path(ellipseIn: CGRect(x: x - r, y: y - r, width: r * 2, height: r * 2)), with: .color(ink.hair), lineWidth: 0.6)
                 }
-                .frame(maxWidth: .infinity)
             }
         }
+        .frame(maxWidth: .infinity)
         .frame(height: 8)
     }
 }
