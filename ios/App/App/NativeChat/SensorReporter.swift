@@ -44,7 +44,9 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
     override private init() {
         super.init()
         lm.delegate = self
-        lm.desiredAccuracy = kCLLocationAccuracyHundredMeters
+        // 1019 #4071–4079 她：「定位老是不准会漂移」。原来要的是「一百米左右就行」，手机就不开 GPS、拿基站和 Wi‑Fi 凑，
+        // 后台四分钟一个点正好赶上歪的那下。改成跟地图一样要最准的；代价是费电，她点了头
+        lm.desiredAccuracy = kCLLocationAccuracyBest
     }
 
     func appActive() {
@@ -153,14 +155,52 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         }
     }
 
+    // 1019 漂移：查了一周 1.6 万个点，109 次跳出去几百米（多是 368 米，最远 2.3 公里）又跳回来。
+    // 手机每个点都带着自己估的误差（地图上蓝点外那圈），原来从来不看。现在：
+    // ① 误差超过 100 米、或者是两分钟前的旧缓存点，不报，等更准的；十分钟都没有准点就报攒到的最好那个，免得他那边断了
+    // ② 她静止时突然跳出去很远的点先压着，下一次还在那边才认（真挪了），跳回来了就扔
+    // ③ 报的时候带上误差，陈璟那边看得到
+    private let goodAccuracy: CLLocationAccuracy = 100
+    private var bestPending: CLLocation?          // 上次报完以后攒到的最准的点
+    private var lastSent: CLLocation?             // 上一个报出去的点
+    private var lastGoodSent = Date.distantPast   // 上一次报出准点的时间
+    private var suspectJump: CLLocation?          // 静止时跳远、等下一次确认的点
+
     func locationManager(_ manager: CLLocationManager, didUpdateLocations locations: [CLLocation]) {
-        guard let loc = locations.last else { return }
-        lastLocation = loc
+        let now = Date()
+        for loc in locations where loc.horizontalAccuracy >= 0 && now.timeIntervalSince(loc.timestamp) < 120 {
+            // 差不多准就要新的（人在动），明显更差的不要
+            if let b = bestPending, loc.horizontalAccuracy > b.horizontalAccuracy + 5 { continue }
+            bestPending = loc
+        }
+        // 位置卡「发送我的当前位置」用的：准的点直接换；手上那个太旧了也换
+        if let newest = locations.last, newest.horizontalAccuracy >= 0 {
+            let stale = lastLocation.map { now.timeIntervalSince($0.timestamp) > 120 } ?? true
+            if newest.horizontalAccuracy <= goodAccuracy || stale { lastLocation = newest }
+        }
         guard !secret.isEmpty else { return }
         // 后台持续定位会一直往回丢点，这里再挡一道，节奏由 minGap 说了算
-        guard Date().timeIntervalSince(lastReport) > minGap else { return }
-        lastReport = Date()
-        collectAndSend(loc)
+        guard now.timeIntervalSince(lastReport) > minGap, let cand = bestPending else { return }
+        if cand.horizontalAccuracy > goodAccuracy && now.timeIntervalSince(lastGoodSent) < 600 { return }
+        if let prev = lastSent, liveMotion == "静止",
+           cand.distance(from: prev) > max(200, cand.horizontalAccuracy + prev.horizontalAccuracy) {
+            if let s = suspectJump,
+               cand.distance(from: s) <= max(150, cand.horizontalAccuracy + s.horizontalAccuracy) {
+                suspectJump = nil          // 第二次还在那边：真挪了，照报
+            } else {
+                suspectJump = cand         // 先压着，隔一个 minGap 再看
+                bestPending = nil
+                lastReport = now
+                return
+            }
+        } else {
+            suspectJump = nil
+        }
+        bestPending = nil
+        lastReport = now
+        lastSent = cand
+        if cand.horizontalAccuracy <= goodAccuracy { lastGoodSent = now }
+        collectAndSend(cand)
     }
 
     // 位置到手之后再去问步数和运动状态。两个都是异步的，用 group 等齐了一起发。
@@ -209,6 +249,7 @@ final class SensorReporter: NSObject, CLLocationManagerDelegate {
         ]
         if let s = steps { payload["steps"] = s }
         if let m = motion { payload["motion"] = m }
+        payload["accuracy"] = Int(loc.horizontalAccuracy.rounded())   // 1019：误差多少米（蓝点外那圈的半径）
 
         var req = URLRequest(url: AlcoveAPI.fullURL("/api/location/report"))
         req.httpMethod = "POST"
