@@ -311,7 +311,7 @@ final class HealthReporter {
     ]
     private static let categoryIDs: [HKCategoryTypeIdentifier] = [.sleepAnalysis, .menstrualFlow, .mindfulSession]
 
-    private static var readTypes: Set<HKObjectType> {
+    static var readTypes: Set<HKObjectType> {   // 健康页（HealthView.swift）也用
         var s = Set<HKObjectType>()
         for id in quantityIDs { if let t = q(id) { s.insert(t) } }
         for id in categoryIDs { if let t = c(id) { s.insert(t) } }
@@ -601,7 +601,7 @@ final class HealthReporter {
         return d
     }
 
-    private static func workoutName(_ t: HKWorkoutActivityType) -> String {
+    static func workoutName(_ t: HKWorkoutActivityType) -> String {
         switch t {
         case .walking: return "走路"
         case .running: return "跑步"

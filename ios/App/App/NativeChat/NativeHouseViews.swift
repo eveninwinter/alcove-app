@@ -39,6 +39,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case embroidery
     case window         // 0923 世界之窗：每天九幅开放图库的图配中文讲解
     case ears           // 1014 只给你听：他专门录的长语音
+    case health         // 1019 健康：她的苹果健康（HealthView.swift）
 
     var id: String { rawValue }
 
@@ -89,6 +90,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .embroidery: return "刺绣"
         case .window: return "世界之窗"
         case .ears: return "只给你听"
+        case .health: return "健康"
         }
     }
 
@@ -99,6 +101,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .settings, .letterbox, .qipai, .tarot, .nursery, .wallet, .shop, .album, .window, .ears,
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
+             .health,  // 1019 健康页自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -150,6 +153,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .embroidery: return "pencil.and.outline"
         case .window: return "books.vertical"
         case .ears: return "headphones"
+        case .health: return "heart"
         default: return "sparkles"
         }
     }
@@ -263,6 +267,8 @@ struct NativeHouseSheet: View {
                     NativeWindowView()
                 case .ears:
                     EarsRoomView()
+                case .health:
+                    HealthRoomView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -544,6 +550,7 @@ struct NativeHouseDrawer: View {
                     drawerTitle("此刻与日常", note: "still here")
                     VStack(spacing: 7) {
                         drawerRow(.pulse, detail: "心率、五感、八维、念头池")
+                        drawerRow(.health, detail: "你的步数、睡眠、心率和经期")   // 1019 先放这，侧边栏待会整个改版
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室

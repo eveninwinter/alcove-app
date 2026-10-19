@@ -36,6 +36,7 @@
 		CB00000000000000101502A1 /* PeregrinatioGlobe.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101502A2 /* PeregrinatioGlobe.swift */; };
 		CB00000000000000101503A1 /* SanctusPageKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101503A2 /* SanctusPageKit.swift */; };
 		CB00000000000000101601A1 /* StickerMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101601A2 /* StickerMask.swift */; };
+		CB00000000000000101901A1 /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101901A2 /* HealthView.swift */; };
 		9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */; };
 		9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */; };
 		9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */; };
@@ -174,6 +175,7 @@
 		CB00000000000000101502A2 /* PeregrinatioGlobe.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PeregrinatioGlobe.swift; sourceTree = "<group>"; };
 		CB00000000000000101503A2 /* SanctusPageKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SanctusPageKit.swift; sourceTree = "<group>"; };
 		CB00000000000000101601A2 /* StickerMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerMask.swift; sourceTree = "<group>"; };
+		CB00000000000000101901A2 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletRoomView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BuyCardView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextEffects.swift; sourceTree = "<group>"; };
@@ -329,6 +331,7 @@
 				CB00000000000000101502A2 /* PeregrinatioGlobe.swift */,
 				CB00000000000000101503A2 /* SanctusPageKit.swift */,
 				CB00000000000000101601A2 /* StickerMask.swift */,
+				CB00000000000000101901A2 /* HealthView.swift */,
 				9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */,
 				9A11C0DE00114F8CA3D60E22 /* BuyCardView.swift */,
 				9A11C0DE00114F8CA3D6EF02 /* TextEffects.swift */,
@@ -566,6 +569,7 @@
 				CB00000000000000101502A1 /* PeregrinatioGlobe.swift in Sources */,
 				CB00000000000000101503A1 /* SanctusPageKit.swift in Sources */,
 				CB00000000000000101601A1 /* StickerMask.swift in Sources */,
+				CB00000000000000101901A1 /* HealthView.swift in Sources */,
 				9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */,
 				9A11C0DE00114F8CA3D60E11 /* BuyCardView.swift in Sources */,
 				9A11C0DE00114F8CA3D6EF01 /* TextEffects.swift in Sources */,
