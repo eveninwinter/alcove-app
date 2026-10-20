@@ -1685,6 +1685,14 @@ struct ChatView: View {
             || !pendingImages.isEmpty || pendingSticker != nil || pendingLink != nil
     }
 
+    /// 1020 #4149 她：攒了气泡以后发送键变成「放出去」，想接着说语音就没地方按了。
+    /// 只攒着气泡（框里没字、没语音卡、他没在回）时，旁边单给一支话筒；录完照旧出卡片，
+    /// 卡片按发送＝语音排在攒着的那几条后面一起给他（服务端 _held_msgs 本来就按顺序一起放）。
+    private var showMicBesideHeld: Bool {
+        store.heldCount > 0 && !canSend && store.pendingVoice == nil
+            && !isGenerating && !recorder.isRecording
+    }
+
     // PWA .chat-input-capsule 同款：大胶囊两行，粉描边，透底毛玻璃
     @ViewBuilder private var floatingInput: some View {
         legacyFloatingInput
@@ -2042,6 +2050,16 @@ struct ChatView: View {
                             .buttonStyle(.plain)
                             .accessibilityLabel("切换 CLI 或 SDK 通道，当前 \(activeChatChannel.uppercased())") }
                             Spacer()
+                            if showMicBesideHeld {
+                                Button { recorder.start() } label: {
+                                    Image(systemName: "waveform")
+                                        .font(.system(size: 16, weight: .light))
+                                        .foregroundColor(theme.textDim)
+                                        .frame(width: 36, height: 36)
+                                        .contentShape(Rectangle())
+                                }
+                                .buttonStyle(.plain)
+                            }
                         }
                         Button(action: performDynamicComposerAction) {
                             ZStack(alignment: .topTrailing) {
@@ -2127,6 +2145,16 @@ struct ChatView: View {
                         .tint(Color(uiColor: .systemBlue))
                         .onChange(of: draft) { value in handleDraftChange(value) }
                 }
+                if showMicBesideHeld {
+                    Button { recorder.start() } label: {
+                        Image(systemName: "mic")
+                            .font(.system(size: 17))
+                            .foregroundColor(composerTheme.textDim)
+                            .frame(width: 30, height: 30)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
                 Button(action: performDynamicComposerAction) {
                     ZStack(alignment: .topTrailing) {
                         // 0902：录音中显示停止键——按下去是停下来去听写、出卡片，不是发送
@@ -2200,7 +2228,8 @@ struct ChatView: View {
                         .foregroundColor(ink)
                         .tint(ink)
                         .onChange(of: draft) { value in handleDraftChange(value) }
-                    if !hasPayload && !isGenerating {
+                    // 1020 #4149：只攒着气泡时话筒也留着（以前 hasPayload 把它藏了）
+                    if (!hasPayload || showMicBesideHeld) && !isGenerating {
                         Button { recorder.start() } label: {
                             Image(systemName: "mic")
                                 .font(.system(size: 15, weight: .light))
