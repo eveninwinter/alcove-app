@@ -213,6 +213,7 @@
         <div class="tf"><span>全天</span><div class="pills"><button type="button" class="pill" id="tfAll">全天</button></div></div>
         <div class="tf" id="tfTimeRow"><span>时间</span><input type="time" id="tfTime" value="09:30"></div>
         <div class="tf"><span>重复</span><div class="pills" id="tfRep"></div></div>
+        <div class="tf"><span>星期</span><div class="pills" id="tfWd"></div></div>
         <div class="tf"><span>提醒</span><div class="pills" id="tfAlert"></div></div>
         <label class="tf"><span>备注</span><input type="text" id="tfNote" placeholder="可不填" maxlength="200" autocomplete="off"></label>
         <button type="button" class="td-add" id="tfAdd" disabled>添加</button>
@@ -999,7 +1000,23 @@
   const REPS = [['none', '不重复'], ['daily', '每天'], ['weekly', '每周'], ['monthly', '每月'], ['yearly', '每年']];
   const ALERTS = [[0, '准时'], [60, '提前1小时'], [1440, '提前1天']];
   let tfRep = 'none', tfAlert = 60, tfAllDay = false, tfSaving = false, editing = null;
-  const repPills = () => pills($('tfRep'), REPS, tfRep, v => { tfRep = v; });
+  // 1020 #4129 她：重复加周一到周日，能多选、能只选一天。选了星期就是 weekdays:1,3,5（1=周一…7=周日），
+  // 上面那排五个就都不亮；再点上面那排任意一个，星期清空
+  const WDS = ['一', '二', '三', '四', '五', '六', '日'];
+  let tfWd = new Set();
+  const repPills = () => { pills($('tfRep'), REPS, tfRep, v => { tfRep = v; tfWd = new Set(); wdPills(); }); wdPills(); };
+  function wdPills() {
+    const el = $('tfWd');
+    el.innerHTML = WDS.map((t, i) => `<button type="button" class="pill${tfWd.has(i + 1) ? ' on' : ''}" data-v="${i + 1}">${t}</button>`).join('');
+    el.onclick = e => {
+      const b = e.target.closest('.pill'); if (!b) return;
+      const v = +b.dataset.v;
+      tfWd.has(v) ? tfWd.delete(v) : tfWd.add(v);
+      tfRep = tfWd.size ? 'weekdays:' + [...tfWd].sort((a, b) => a - b).join(',') : 'none';
+      pills($('tfRep'), REPS, tfRep, v => { tfRep = v; tfWd = new Set(); wdPills(); });
+      wdPills();
+    };
+  }
   const alertPills = () => pills($('tfAlert'), ALERTS, tfAlert, v => { tfAlert = v; });
   const setAllDay = on => { tfAllDay = on; tfAll.classList.toggle('on', on); $('tfTimeRow').style.display = on ? 'none' : ''; };
   // 编辑：第二页换成「编辑提醒」带入原来的内容；后端只能整串改，重复的没动日期就不送 day（免得把起始那天挪走）
@@ -1009,6 +1026,7 @@
     tfDay.min = ''; tfDay.value = x.day;
     setAllDay(!x.time); if (x.time) tfTime.value = x.time;
     tfRep = x.repeat || 'none'; tfAlert = x.alert || 0;
+    tfWd = new Set(tfRep.startsWith('weekdays:') ? tfRep.slice(9).split(',').map(Number).filter(n => n >= 1 && n <= 7) : []);
     if (!ALERTS.some(([v]) => v === tfAlert)) ALERTS.push([tfAlert, `提前${tfAlert}分钟`]);
     repPills(); alertPills();
     $('tfHead').textContent = '编辑提醒';
@@ -1023,7 +1041,7 @@
     tfTitle.value = ''; tfNote.value = '';
     tfDay.value = TODAY_KEY; tfDay.min = TODAY_KEY;
     setAllDay(false); tfTime.value = '09:30';
-    tfRep = 'none'; tfAlert = 60; repPills(); alertPills();
+    tfRep = 'none'; tfWd = new Set(); tfAlert = 60; repPills(); alertPills();
     $('tfHead').textContent = '添加提醒'; $('tfMeta').textContent = '新的一条 · 标成「我加的」';
     tfAdd.textContent = '添加'; $('tfCancel').hidden = true;
     tfHint.classList.remove('err'); tfHint.textContent = '到点后台告诉陈璟';

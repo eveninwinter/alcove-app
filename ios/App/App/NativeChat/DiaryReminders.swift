@@ -200,6 +200,7 @@ struct ReminderItem: Identifiable, Equatable {
     let title: String
     let note: String
     let repeatKind: String
+    let repeatZh: String     // 后端给的中文（1020 按星期的写成「周一、三、五」）
     let alertMin: Int
     let author: String       // user = 她 / assistant = 他
     var done: Bool
@@ -208,7 +209,8 @@ struct ReminderItem: Identifiable, Equatable {
     var isHim: Bool { author == "assistant" }
     var timeLabel: String { time.isEmpty ? "全天" : time }
     var repeatLabel: String {
-        ["daily": "每天", "weekly": "每周", "monthly": "每月", "yearly": "每年"][repeatKind] ?? ""
+        if !repeatZh.isEmpty { return repeatZh }
+        return ["daily": "每天", "weekly": "每周", "monthly": "每月", "yearly": "每年"][repeatKind] ?? ""
     }
     /// 「10/03」
     var shortDay: String {
@@ -225,6 +227,7 @@ struct ReminderItem: Identifiable, Equatable {
         title = o["title"] as? String ?? ""
         note = o["note"] as? String ?? ""
         repeatKind = o["repeat"] as? String ?? "none"
+        repeatZh = o["repeat_zh"] as? String ?? ""
         alertMin = o["alert_min"] as? Int ?? 0
         author = o["author"] as? String ?? "user"
         done = o["done"] as? Bool ?? false
