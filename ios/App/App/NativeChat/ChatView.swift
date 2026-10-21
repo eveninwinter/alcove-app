@@ -1116,7 +1116,14 @@ struct ChatView: View {
             let photos = message.inlineImages.isEmpty
                 ? chatPhotoGroup(startingAt: index)
                 : message.inlineImages.map(AlcoveAPI.attachmentURL)
-            let groupEnd = index + max(photos.count, mergeRun, 1) - 1
+            // 1021 晚她的 App 一开就闪退：给她挑耳机壳一口气发了六张，收轮时并成
+            // 一叠挂在同一段话上（inline_images）。并进来的图不占消息行，这里却还按
+            // 「一张图一行」往后数 6 行，那段话后面只剩 4 条，数到表外面去，thShowTime
+            // 里 msgs[rowEnd] 当场越界崩掉。以前最多并 3 张、后面行数够，一直没撞上。
+            // 内联图一律算 0 行，只有真一条条排着的图（chatPhotoGroup）才算行数；
+            // 末了再夹一道栏杆，以后不管发多少张都不会再越界。
+            let rowSpan = message.inlineImages.isEmpty ? max(photos.count, mergeRun, 1) : mergeRun
+            let groupEnd = min(index + max(rowSpan, 1) - 1, store.messages.count - 1)
             let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
             let recall = recallFor(index: index)
             let selectionEnd = message.inlineImages.isEmpty
@@ -1558,6 +1565,8 @@ struct ChatView: View {
     /// 这一串里一个文字泡都没有（只发了图 / 语音），照旧挂在末尾外面。别的主题不动。
     private func thShowTime(rowEnd: Int, next: ChatMessage?) -> Bool {
         let msgs = store.messages
+        // 1021：第二道栏杆。算行数的地方再错一次也只是时间戳画得不对，不会再把 App 掐死
+        guard rowEnd >= 0, rowEnd < msgs.count else { return true }
         let normal = isGroupTail(cur: msgs[rowEnd], next: next)
         guard theme.isTreehouse else { return normal }
         func isMedia(_ m: ChatMessage) -> Bool { m.isAudio || m.isSticker || (m.isImage && m.displayText.isEmpty) }   // #3537 表情包同理
