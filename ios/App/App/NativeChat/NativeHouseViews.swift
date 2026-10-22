@@ -8875,11 +8875,16 @@ private struct StudioPhotoViewer: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            AsyncImage(url: url) { image in
-                image.resizable().scaledToFit()
-            } placeholder: {
-                ProgressView().tint(.white)
+            // 1022 #4176：双指跟手放大、不弹回；单击还是关
+            ZoomContainer(onSingleTap: onClose) {
+                AsyncImage(url: url) { image in
+                    image.resizable().scaledToFit()
+                } placeholder: {
+                    ProgressView().tint(.white)
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
+            .ignoresSafeArea()
             VStack {
                 HStack {
                     // 1010 #3569 她：「工作室的图不能保存」——大图左上角一个存到相册
@@ -8918,7 +8923,6 @@ private struct StudioPhotoViewer: View {
                 }
             }
         }
-        .onTapGesture(perform: onClose)
     }
 }
 
@@ -8940,9 +8944,12 @@ private struct StudioLocalPhotoViewer: View {
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            Image(uiImage: image).resizable().scaledToFit()
+            ZoomContainer(onSingleTap: onClose) {
+                Image(uiImage: image).resizable().scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .ignoresSafeArea()
         }
-        .onTapGesture(perform: onClose)
     }
 }
 

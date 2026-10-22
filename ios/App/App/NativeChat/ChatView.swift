@@ -9271,17 +9271,105 @@ struct PhotoPageViewer: View {
     }
 }
 
+/// 1022 #4176 她：「能点开看图的每一个地方，都做成双指放大哪里就跟着手指放大、不会缩回去——微信那种看图」。
+/// 以前各处是 SwiftUI 的 scaleEffect，只会从中间放大、一松手弹回 1。改成系统滚动视图自己管缩放：
+/// 双指在哪就以哪为中心放大、松手停在那、放大后单指拖着看；双击在点的地方放大 / 再双击复原；
+/// 单击（等双击判定完）交给 onSingleTap，多半是关掉大图。没放大时不吃横滑，翻页照常。
+struct ZoomContainer<Content: View>: UIViewRepresentable {
+    var maxScale: CGFloat = 5
+    var onSingleTap: (() -> Void)? = nil
+    @ViewBuilder var content: () -> Content
+
+    func makeCoordinator() -> ZoomCoordinator { ZoomCoordinator() }
+
+    func makeUIView(context: Context) -> ZoomScrollView {
+        let sv = ZoomScrollView()
+        sv.delegate = context.coordinator
+        sv.minimumZoomScale = 1
+        sv.maximumZoomScale = maxScale
+        sv.bouncesZoom = true
+        sv.showsVerticalScrollIndicator = false
+        sv.showsHorizontalScrollIndicator = false
+        sv.contentInsetAdjustmentBehavior = .never
+        sv.backgroundColor = .clear
+        sv.decelerationRate = .fast
+        let host = UIHostingController(rootView: AnyView(content()))
+        host.view.backgroundColor = .clear
+        host.safeAreaRegions = []
+        sv.addSubview(host.view)
+        sv.hostedView = host.view
+        context.coordinator.host = host
+        context.coordinator.scroll = sv
+        let double = UITapGestureRecognizer(target: context.coordinator, action: #selector(ZoomCoordinator.doubleTap(_:)))
+        double.numberOfTapsRequired = 2
+        sv.addGestureRecognizer(double)
+        let single = UITapGestureRecognizer(target: context.coordinator, action: #selector(ZoomCoordinator.singleTap(_:)))
+        single.require(toFail: double)
+        sv.addGestureRecognizer(single)
+        return sv
+    }
+
+    func updateUIView(_ sv: ZoomScrollView, context: Context) {
+        context.coordinator.host?.rootView = AnyView(content())
+        context.coordinator.onSingleTap = onSingleTap
+        sv.maximumZoomScale = maxScale
+    }
+}
+
+final class ZoomCoordinator: NSObject, UIScrollViewDelegate {
+    var host: UIHostingController<AnyView>?
+    weak var scroll: ZoomScrollView?
+    var onSingleTap: (() -> Void)?
+
+    func viewForZooming(in scrollView: UIScrollView) -> UIView? { host?.view }
+
+    func scrollViewDidZoom(_ scrollView: UIScrollView) { (scrollView as? ZoomScrollView)?.centerContent() }
+
+    @objc func doubleTap(_ g: UITapGestureRecognizer) {
+        guard let sv = scroll, let v = host?.view else { return }
+        if sv.zoomScale > sv.minimumZoomScale + 0.01 {
+            sv.setZoomScale(sv.minimumZoomScale, animated: true)
+        } else {
+            let p = g.location(in: v)
+            let scale = min(2.5, sv.maximumZoomScale)
+            let w = sv.bounds.width / scale, h = sv.bounds.height / scale
+            sv.zoom(to: CGRect(x: p.x - w / 2, y: p.y - h / 2, width: w, height: h), animated: true)
+        }
+    }
+
+    @objc func singleTap(_ g: UITapGestureRecognizer) { onSingleTap?() }
+}
+
+final class ZoomScrollView: UIScrollView {
+    weak var hostedView: UIView?
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        guard let v = hostedView, bounds.width > 0 else { return }
+        if abs(zoomScale - minimumZoomScale) < 0.001 && !isZooming && !isZoomBouncing {
+            // 没放大：内容就是一屏大，contentSize 跟屏一样，横滑留给外面翻页
+            v.transform = .identity
+            v.frame = CGRect(origin: .zero, size: bounds.size)
+            contentSize = bounds.size
+        }
+        centerContent()
+    }
+    func centerContent() {
+        guard let v = hostedView else { return }
+        let dx = max(0, (bounds.width - v.frame.width) / 2)
+        let dy = max(0, (bounds.height - v.frame.height) / 2)
+        contentInset = UIEdgeInsets(top: dy, left: dx, bottom: dy, right: dx)
+    }
+}
+
 private struct ZoomableRemoteImage: View {
     let url: URL
-    @State private var scale: CGFloat = 1
     var body: some View {
-        CachedImage(url: url) { image in
-            image.resizable().scaledToFit()
-                .scaleEffect(scale)
-                .gesture(MagnificationGesture()
-                    .onChanged { scale = max(1, $0) }
-                    .onEnded { _ in withAnimation { scale = 1 } })
-        } placeholder: { ProgressView().tint(.white) }
+        ZoomContainer {
+            CachedImage(url: url) { image in
+                image.resizable().scaledToFit()
+            } placeholder: { ProgressView().tint(.white) }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .contextMenu {
             Button {
@@ -9294,19 +9382,17 @@ private struct ZoomableRemoteImage: View {
 struct ImageViewer: View {
     let url: URL
     var dismiss: () -> Void
-    @State private var scale: CGFloat = 1
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            CachedImage(url: url) { img in
-                img.resizable().scaledToFit()
-                    .scaleEffect(scale)
-                    .gesture(MagnificationGesture()
-                        .onChanged { scale = max(1, $0) }
-                        .onEnded { _ in withAnimation { scale = 1 } })
-            } placeholder: { ProgressView().tint(.white) }
-            .frame(maxWidth: .infinity, maxHeight: .infinity) // 居中铺满
+            ZoomContainer(onSingleTap: dismiss) {
+                CachedImage(url: url) { img in
+                    img.resizable().scaledToFit()
+                } placeholder: { ProgressView().tint(.white) }
+                .frame(maxWidth: .infinity, maxHeight: .infinity) // 居中铺满
+            }
+            .ignoresSafeArea()
         }
         .overlay(alignment: .topTrailing) {
             Button {
@@ -9318,7 +9404,6 @@ struct ImageViewer: View {
                     .padding()
             }
         }
-        .onTapGesture { dismiss() }
     }
 }
 
@@ -9628,19 +9713,17 @@ extension UIImage: @retroactive Identifiable {
 struct LocalImageViewer: View {
     let image: UIImage
     var dismiss: () -> Void
-    @State private var scale: CGFloat = 1
 
     var body: some View {
         ZStack {
             Color.black.ignoresSafeArea()
-            Image(uiImage: image)
-                .resizable()
-                .scaledToFit()
-                .scaleEffect(scale)
-                .gesture(MagnificationGesture()
-                    .onChanged { scale = max(1, $0) }
-                    .onEnded { _ in withAnimation { scale = 1 } })
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            ZoomContainer(onSingleTap: dismiss) {
+                Image(uiImage: image)
+                    .resizable()
+                    .scaledToFit()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .ignoresSafeArea()
         }
         .overlay(alignment: .topTrailing) {
             Button { dismiss() } label: {
@@ -9650,7 +9733,6 @@ struct LocalImageViewer: View {
                     .padding()
             }
         }
-        .onTapGesture { dismiss() }
     }
 }
 

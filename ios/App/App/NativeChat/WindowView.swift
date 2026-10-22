@@ -1343,37 +1343,19 @@ private struct AestheticPinPage: View {
 private struct WindowZoomView: View {
     let url: URL?
     @Environment(\.dismiss) private var dismiss
-    @State private var scale: CGFloat = 1
-    @State private var base: CGFloat = 1
-    @State private var offset: CGSize = .zero
-    @State private var lastOffset: CGSize = .zero
 
     var body: some View {
         ZStack(alignment: .topTrailing) {
             Color.black.ignoresSafeArea()
-            CachedPhaseImage(url: url) { phase in
-                switch phase {
-                case .success(let image): image.resizable().aspectRatio(contentMode: .fit)
-                default: ProgressView().tint(.white)
+            // 1022 #4176：换成 ZoomContainer（双指跟手放大、不弹回，双击放大/复原）
+            ZoomContainer(maxScale: 6) {
+                CachedPhaseImage(url: url) { phase in
+                    switch phase {
+                    case .success(let image): image.resizable().aspectRatio(contentMode: .fit)
+                    default: ProgressView().tint(.white)
+                    }
                 }
-            }
-            .scaleEffect(scale)
-            .offset(offset)
-            .frame(maxWidth: .infinity, maxHeight: .infinity)
-            .gesture(
-                MagnifyGesture()
-                    .onChanged { v in scale = max(1, min(base * v.magnification, 6)) }
-                    .onEnded { _ in base = scale; if scale == 1 { offset = .zero; lastOffset = .zero } }
-                    .simultaneously(with: DragGesture()
-                        .onChanged { v in
-                            guard scale > 1 else { return }
-                            offset = CGSize(width: lastOffset.width + v.translation.width,
-                                            height: lastOffset.height + v.translation.height)
-                        }
-                        .onEnded { _ in lastOffset = offset })
-            )
-            .onTapGesture(count: 2) {
-                withAnimation(.easeOut(duration: 0.2)) { scale = 1; base = 1; offset = .zero; lastOffset = .zero }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             Button { dismiss() } label: {
                 Image(systemName: "xmark").font(.system(size: 15, weight: .semibold)).foregroundColor(.white)

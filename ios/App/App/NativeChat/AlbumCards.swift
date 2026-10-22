@@ -239,10 +239,10 @@ private func albumDate(_ raw: String, time: Bool = false) -> String {
 // 中图拉不到（比如后端还没重启）才退回原图。
 private struct AlbumZoomImage: View {
     let photo: AlbumPhoto
-    @State private var scale: CGFloat = 1
-    @State private var baseScale: CGFloat = 1
     @State private var useOriginal = false
     var body: some View {
+        // 1022 #4176：换成 ZoomContainer（双指跟手放大、不弹回，双击放大/复原）
+        ZoomContainer {
         GeometryReader { geometry in
             CachedPhaseImage(url: useOriginal ? photo.original : photo.view) { phase in
                 ZStack {
@@ -263,14 +263,7 @@ private struct AlbumZoomImage: View {
                 }.frame(width: geometry.size.width, height: geometry.size.height)
             }.id(useOriginal)
         }.clipped()
-            .scaleEffect(scale).clipped()
-            .gesture(MagnifyGesture().onChanged { value in
-                scale = min(max(baseScale * value.magnification, 1), 4)
-            }.onEnded { _ in baseScale = scale })
-            .onTapGesture(count: 2) {
-                withAnimation(.easeInOut(duration: 0.2)) { scale = scale > 1 ? 1 : 2; baseScale = scale }
-            }
-            .onDisappear { scale = 1; baseScale = 1 }
+        }
             .accessibilityLabel("照片，双击或双指缩放")
     }
 }

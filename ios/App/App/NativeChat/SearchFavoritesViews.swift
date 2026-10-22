@@ -598,6 +598,9 @@ private struct FavoriteEntry: Identifiable {
     /// 1016：谁收的（user＝她 / assistant＝他）、收的时候写的那句话
     let byWho: String
     let note: String
+    /// 1022 #4175：他收藏的每条配一张图（后端从她挑的 34 张里按 id 轮着分）＋他收之前说的那句
+    let pic: String
+    let context: String
 
     var isThread: Bool { kind == "thread" }
     var isPlayableAudio: Bool { !isThread && atype == "audio" && !attURL.isEmpty }
@@ -616,6 +619,8 @@ private struct FavoriteEntry: Identifiable {
         audioZh = raw.string("audio_zh")
         byWho = raw.string("by_who").isEmpty ? "user" : raw.string("by_who")
         note = raw.string("note")
+        pic = raw.string("pic")
+        context = raw.string("context")
     }
 }
 
@@ -672,6 +677,9 @@ struct GlassFavoritesView: View {
     @State private var forwardRequest: (ids: [Int], key: String)?
     @State private var noteFor: FavoriteEntry?
     @State private var noteDraft = ""
+    /// 1022 #4175「他收藏的」两种看法：grid 胶片格子 / big 大图往下刷（记住上次选的）
+    @AppStorage("favHisMode") private var hisMode = "grid"
+    @State private var hisFocus: Int?
 
     private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
     private let filters: [(String, String)] = [
@@ -760,6 +768,8 @@ struct GlassFavoritesView: View {
             Text(emptyText).font(SF.song(11)).tracking(1.2).foregroundColor(ink.sub)
                 .multilineTextAlignment(.center).lineSpacing(5)
             Spacer()
+        } else if by == "assistant" {
+            hisContent(ink)
         } else {
             ScrollView(showsIndicators: false) {
                 LazyVStack(spacing: 12) {
@@ -902,6 +912,208 @@ struct GlassFavoritesView: View {
                 }
             }
         }
+    }
+
+    // MARK: 他收藏的（1022 #4175，照她点头的效果图 mock-favpics：左格子、右大图）
+
+    private func hisModeRow(_ ink: SanctusCardInk) -> some View {
+        HStack(spacing: 14) {
+            Spacer()
+            ForEach([("grid", "格子"), ("big", "大图")], id: \.0) { key, label in
+                Button {
+                    withAnimation(.easeInOut(duration: 0.18)) { hisMode = key }
+                } label: {
+                    Text(label).font(SF.song(11)).tracking(2.2)
+                        .foregroundColor(hisMode == key ? ink.body : ink.sub)
+                        .overlay(alignment: .bottom) {
+                            if hisMode == key { Rectangle().fill(ink.body).frame(height: 0.7).offset(y: 3) }
+                        }
+                        .padding(.vertical, 4).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 26).padding(.top, 10)
+    }
+
+    /// 按天分组（ts 前 10 位），新的在上
+    private var hisDays: [(day: String, items: [FavoriteEntry])] {
+        var order: [String] = []
+        var map: [String: [FavoriteEntry]] = [:]
+        for e in entries {
+            let d = String(e.ts.prefix(10))
+            if map[d] == nil { order.append(d) }
+            map[d, default: []].append(e)
+        }
+        return order.map { ($0, map[$0] ?? []) }
+    }
+
+    private func dayTitle(_ d: String) -> String {
+        guard d.count == 10, let m = Int(d.dropFirst(5).prefix(2)), let dd = Int(d.suffix(2)) else { return d }
+        return "\(m)月\(dd)日"
+    }
+
+    /// 图右上角那行橙色日期「26 10 21」
+    private func filmStamp(_ ts: String) -> String {
+        guard ts.count >= 10 else { return "" }
+        return "\(ts.dropFirst(2).prefix(2)) \(ts.dropFirst(5).prefix(2)) \(ts.dropFirst(8).prefix(2))"
+    }
+
+    private func hisText(_ e: FavoriteEntry) -> String {
+        let t = ChatMessage.stripVoiceTags(e.text).trimmingCharacters(in: .whitespacesAndNewlines)
+        if !t.isEmpty { return t }
+        return e.atype == "audio" ? "一段语音" : (e.atype == "image" ? "一张图" : "")
+    }
+
+    private func hisPic(_ e: FavoriteEntry, height: CGFloat?) -> some View {
+        AsyncImage(url: AlcoveAPI.attachmentURL(e.pic.isEmpty ? e.attURL : e.pic)) { phase in
+            if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+            else { Rectangle().fill(ink.frame) }
+        }
+        .frame(maxWidth: .infinity)
+        .frame(height: height)
+        .clipped()
+    }
+
+    @ViewBuilder private func hisContent(_ ink: SanctusCardInk) -> some View {
+        hisModeRow(ink)
+        ScrollViewReader { proxy in
+            ScrollView(showsIndicators: false) {
+                if hisMode == "grid" {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(hisDays, id: \.day) { group in
+                            HStack(alignment: .firstTextBaseline) {
+                                Text(dayTitle(group.day)).font(SF.song(17)).tracking(1).foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
+                                Spacer()
+                                Text("\(group.items.count) kept").font(SF.ital(11)).foregroundColor(ink.sub)
+                            }
+                            .padding(.horizontal, 8).padding(.top, 20).padding(.bottom, 10)
+                            LazyVGrid(columns: [GridItem(.flexible(), spacing: 12), GridItem(.flexible(), spacing: 12)], spacing: 12) {
+                                ForEach(group.items) { e in hisFrame(e, ink: ink) }
+                            }
+                        }
+                        Color.clear.frame(height: SF.safeBottom + 40)
+                    }
+                    .padding(.horizontal, 18)
+                } else {
+                    LazyVStack(spacing: 22) {
+                        ForEach(entries) { e in hisBig(e, ink: ink).id(e.id) }
+                        Color.clear.frame(height: SF.safeBottom + 40)
+                    }
+                    .padding(.top, 14)
+                }
+            }
+            .onChange(of: hisMode) { _ in
+                guard hisMode == "big", let id = hisFocus else { return }
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { proxy.scrollTo(id, anchor: .top) }
+            }
+        }
+    }
+
+    /// 格子：白卡里一张 4:3 的图（右上角橙色日期）、她那句、时间｜kept by him。点一格跳到大图看法的那一条
+    private func hisFrame(_ e: FavoriteEntry, ink: SanctusCardInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Color.clear.aspectRatio(4.0 / 3.0, contentMode: .fit)
+                .overlay(hisPic(e, height: nil))
+                .overlay(alignment: .topTrailing) {
+                    Text(filmStamp(e.ts)).font(.system(size: 8.5, design: .monospaced)).tracking(1)
+                        .foregroundColor(Color(red: 0.91, green: 0.53, blue: 0.35).opacity(0.85))
+                        .padding(.top, 6).padding(.trailing, 7)
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+            Text(hisText(e)).font(SF.song(11.5)).foregroundColor(ink.body)
+                .lineSpacing(4).lineLimit(3)
+                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
+                .padding(.top, 8).padding(.horizontal, 4)
+            HStack {
+                Text(String(e.ts.dropFirst(11).prefix(5))).font(SF.corm(11)).foregroundColor(ink.sub)
+                Spacer()
+                Text("kept by him").font(SF.ital(10)).foregroundColor(ink.sub)
+            }
+            .padding(.top, 6).padding(.horizontal, 4)
+        }
+        .padding(.horizontal, 7).padding(.top, 7).padding(.bottom, 9)
+        .modifier(SFGlass(ink: ink))
+        .contentShape(Rectangle())
+        .overlay(RoundedRectangle(cornerRadius: 12.5, style: .continuous)
+            .stroke(picked.contains(e.id) ? ink.script.opacity(0.55) : .clear, lineWidth: 1))
+        .onTapGesture {
+            if picking {
+                if picked.contains(e.id) { picked.remove(e.id) } else { picked.insert(e.id) }
+                return
+            }
+            hisFocus = e.id
+            withAnimation(.easeInOut(duration: 0.18)) { hisMode = "big" }
+        }
+        .contextMenu { hisMenu(e) }
+    }
+
+    /// 大图：整宽一张图往下淡进底色；日期时间、「他：……」、她那句大字、发丝线、why he kept it
+    private func hisBig(_ e: FavoriteEntry, ink: SanctusCardInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            hisPic(e, height: 300)
+                .mask(LinearGradient(stops: [.init(color: .black, location: 0), .init(color: .black, location: 0.6),
+                                             .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                .overlay(alignment: .bottomTrailing) {
+                    Text(filmStamp(e.ts)).font(.system(size: 11, design: .monospaced)).tracking(1.3)
+                        .foregroundColor(Color(red: 0.91, green: 0.53, blue: 0.35).opacity(0.85))
+                        .padding(.trailing, 22).padding(.bottom, 128)
+                }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(sfStamp(e.ts)).font(SF.corm(10)).tracking(2.5).foregroundColor(ink.sub)
+                if !e.context.isEmpty {
+                    Text("他：\(e.context)").font(SF.song(12)).foregroundColor(ink.sub)
+                        .lineLimit(2).padding(.top, 10)
+                }
+                HStack(alignment: .top, spacing: 10) {
+                    Text(hisText(e)).font(SF.song(19)).foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
+                        .lineSpacing(8).frame(maxWidth: .infinity, alignment: .leading)
+                    if e.isPlayableAudio {
+                        Button { audio.toggle(e.id, url: AlcoveAPI.attachmentURL(e.attURL)) } label: {
+                            Image(systemName: audio.playingID == e.id ? "pause.fill" : "play.fill")
+                                .font(.system(size: 10)).foregroundColor(ink.script)
+                                .frame(width: 30, height: 30)
+                                .overlay(Circle().stroke(ink.pill, lineWidth: 0.7))
+                                .frame(width: 44, height: 44).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.top, 6)
+                if !e.note.isEmpty {
+                    SFHair(ink: ink).padding(.top, 14)
+                    HStack(alignment: .firstTextBaseline, spacing: 10) {
+                        Text("why he kept it").font(SF.ital(11)).foregroundColor(ink.sub).fixedSize()
+                        Text(e.note).font(SF.song(12)).foregroundColor(ink.script).lineSpacing(4)
+                    }
+                    .padding(.top, 10)
+                }
+            }
+            .padding(.horizontal, 28)
+            .padding(.top, -22)
+        }
+        .contentShape(Rectangle())
+        .overlay(alignment: .topLeading) {
+            if picking {
+                Image(systemName: picked.contains(e.id) ? "checkmark.circle.fill" : "circle")
+                    .font(.system(size: 18, weight: .light)).foregroundColor(.white)
+                    .shadow(color: .black.opacity(0.25), radius: 2).padding(16)
+            }
+        }
+        .onTapGesture {
+            if picking {
+                if picked.contains(e.id) { picked.remove(e.id) } else { picked.insert(e.id) }
+                return
+            }
+            NotificationCenter.default.post(name: .alcoveRequestJumpToMessage, object: e.ts)
+        }
+        .contextMenu { hisMenu(e) }
+    }
+
+    @ViewBuilder private func hisMenu(_ e: FavoriteEntry) -> some View {
+        Button { Task { await forward([e.id]) } } label: {
+            Label("发送到聊天", systemImage: "paperplane")
+        }.disabled(sending)
     }
 
     /// 语音转文字拆成「第一句（大号斜体）＋后面（小一行）」
