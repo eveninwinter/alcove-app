@@ -744,6 +744,9 @@ struct GlassFavoritesView: View {
     private func seg(_ title: String, _ value: String, _ ink: SanctusCardInk) -> some View {
         Button {
             guard by != value else { return }
+            // 1022 #4179：切栏先清空、转圈，别拿上一栏的条目去画这一栏
+            entries = []
+            loading = true
             by = value
             picked.removeAll(); picking = false
             Task { await load() }
@@ -919,7 +922,8 @@ struct GlassFavoritesView: View {
     private func hisModeRow(_ ink: SanctusCardInk) -> some View {
         HStack(spacing: 14) {
             Spacer()
-            ForEach([("grid", "格子"), ("big", "大图")], id: \.0) { key, label in
+            ForEach(["grid", "big"], id: \.self) { key in
+                let label = key == "grid" ? "格子" : "大图"
                 Button {
                     withAnimation(.easeInOut(duration: 0.18)) { hisMode = key }
                 } label: {
@@ -937,7 +941,9 @@ struct GlassFavoritesView: View {
     }
 
     /// 按天分组（ts 前 10 位），新的在上
-    private var hisDays: [(day: String, items: [FavoriteEntry])] {
+    private struct HisDay: Identifiable { let id: String; let items: [FavoriteEntry] }
+
+    private var hisDays: [HisDay] {
         var order: [String] = []
         var map: [String: [FavoriteEntry]] = [:]
         for e in entries {
@@ -945,7 +951,7 @@ struct GlassFavoritesView: View {
             if map[d] == nil { order.append(d) }
             map[d, default: []].append(e)
         }
-        return order.map { ($0, map[$0] ?? []) }
+        return order.map { HisDay(id: $0, items: map[$0] ?? []) }
     }
 
     private func dayTitle(_ d: String) -> String {
@@ -965,14 +971,21 @@ struct GlassFavoritesView: View {
         return e.atype == "audio" ? "一段语音" : (e.atype == "image" ? "一张图" : "")
     }
 
-    private func hisPic(_ e: FavoriteEntry, height: CGFloat?) -> some View {
-        AsyncImage(url: AlcoveAPI.attachmentURL(e.pic.isEmpty ? e.attURL : e.pic)) { phase in
-            if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
-            else { Rectangle().fill(ink.frame) }
+    /// 1022 #4179 她「点他收藏的就崩」：切栏那一下列表里还是她自己那 47 条（没 pic、多半也没附件），
+    /// 空串喂给 attachmentURL → fullURL 里 URL(...)! 强拆就崩。没图的不碰 URL，只铺底色
+    @ViewBuilder private func hisPic(_ e: FavoriteEntry, height: CGFloat?) -> some View {
+        let raw = e.pic.isEmpty ? e.attURL : e.pic
+        if raw.isEmpty {
+            Rectangle().fill(ink.frame).frame(maxWidth: .infinity).frame(height: height)
+        } else {
+            AsyncImage(url: AlcoveAPI.attachmentURL(raw)) { phase in
+                if let image = phase.image { image.resizable().aspectRatio(contentMode: .fill) }
+                else { Rectangle().fill(ink.frame) }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: height)
+            .clipped()
         }
-        .frame(maxWidth: .infinity)
-        .frame(height: height)
-        .clipped()
     }
 
     @ViewBuilder private func hisContent(_ ink: SanctusCardInk) -> some View {
@@ -981,9 +994,9 @@ struct GlassFavoritesView: View {
             ScrollView(showsIndicators: false) {
                 if hisMode == "grid" {
                     LazyVStack(alignment: .leading, spacing: 0) {
-                        ForEach(hisDays, id: \.day) { group in
+                        ForEach(hisDays) { group in
                             HStack(alignment: .firstTextBaseline) {
-                                Text(dayTitle(group.day)).font(SF.song(17)).tracking(1).foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
+                                Text(dayTitle(group.id)).font(SF.song(17)).tracking(1).foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
                                 Spacer()
                                 Text("\(group.items.count) kept").font(SF.ital(11)).foregroundColor(ink.sub)
                             }
