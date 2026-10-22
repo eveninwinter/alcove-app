@@ -173,6 +173,7 @@ final class ChatStore: ObservableObject {
     func start() {
         guard pollTask == nil else { return }
         pollTask = Task { [weak self] in
+            await self?.refreshHerAsleep()
             await self?.initialLoad()
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: self?.pollInterval() ?? 2_500_000_000)
@@ -972,6 +973,12 @@ final class ChatStore: ObservableObject {
             hasOlder = true
         }
         messages = applyTemporaryHides(out)
+    }
+
+    /// 1023 #4232：从服务端拿一次真状态（启动时、打开开关面板时）
+    func refreshHerAsleep() async {
+        guard let v = try? await AlcoveAPI.herSleep() else { return }
+        if herAsleep != v { herAsleep = v }
     }
 
     func setHerAsleep(_ v: Bool) {

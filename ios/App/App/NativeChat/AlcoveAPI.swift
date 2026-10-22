@@ -275,6 +275,12 @@ enum AlcoveAPI {
             herAsleep: status["her_asleep"] as? Bool ?? false)
     }
 
+    /// 1023 #4232：开 App / 打开开关那一下先问服务端（以前只靠主聊天轮询，没轮询过就一直显示关）
+    static func herSleep() async throws -> Bool {
+        let obj = try await getJSON("/api/status/sleep")
+        return obj["asleep"] as? Bool ?? false
+    }
+
     /// 1022 #4225 加号菜单「我睡着了」：开 / 关
     static func setHerSleep(_ asleep: Bool) async throws {
         _ = try await postJSON("/api/status/sleep", body: ["asleep": asleep])

@@ -69,6 +69,7 @@ struct ChatView: View {
     @State private var showDocPicker = false
     @State private var showEmbroidery = false
     @State private var showLocationPicker = false   // 1008 加号里的「位置」
+    @State private var showSleepSwitch = false      // 1023 #4232 加号里的「我睡着了」开关面板
     @State private var frostedWall: CGRect?   // 1016 毛玻璃气泡对位用：壁纸在屏幕上的位置
     @State private var showPhotoPicker = false
     @Namespace private var photoTransition
@@ -242,6 +243,11 @@ struct ChatView: View {
         }
         .sheet(isPresented: $showLocationPicker) {
             LocationPickerSheet { text in store.sendText(text) }
+        }
+        .sheet(isPresented: $showSleepSwitch) {
+            HerSleepSwitchSheet(store: store)
+                .presentationDetents([.height(170)])
+                .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showDocPicker) {
             DocumentPicker { urls in
@@ -1963,8 +1969,10 @@ struct ChatView: View {
                 Label("位置", systemImage: "location")       // 1008 iMessage 那样发位置 / 共享实时位置 / 搜地点
             }
             // 1022 #4225 她：睡前点开；手动关、或者一发消息就自动关。开着时他发的那几轮挂「你睡着时他发来的」
-            Toggle(isOn: Binding(get: { store.herAsleep }, set: { store.setHerAsleep($0) })) {
-                Label("我睡着了", systemImage: "moon.zzz")
+            // 1023 #4232 她：「我要做开关 不要这个勾」——菜单里放不了真开关，点了弹一个小面板，里面是开关；菜单上直接写开着 / 关着
+            Button { showSleepSwitch = true } label: {
+                Label(store.herAsleep ? "我睡着了 · 开着" : "我睡着了 · 关着",
+                      systemImage: store.herAsleep ? "moon.zzz.fill" : "moon.zzz")
             }
             if composerTheme.isMessages {
                 // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
@@ -7950,6 +7958,30 @@ struct MessagesTimeDivider: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+/// 1023 #4232「我睡着了」开关面板：一个真开关，下面一句写清楚现在是什么状态。打开时先问服务端拿真状态
+struct HerSleepSwitchSheet: View {
+    @ObservedObject var store: ChatStore
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Toggle(isOn: Binding(get: { store.herAsleep }, set: { store.setHerAsleep($0) })) {
+                Label("我睡着了", systemImage: store.herAsleep ? "moon.zzz.fill" : "moon.zzz")
+                    .font(.system(size: 17, weight: .semibold))
+            }
+            .tint(Color(red: 0.93, green: 0.62, blue: 0.74))
+            Text(store.herAsleep
+                 ? "开着。他这会儿发的会挂「你睡着时他发来的」；你一发消息就自动关。"
+                 : "关着。睡前打开；醒了手动关，或者发一条消息就自动关。")
+                .font(.system(size: 13))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 22)
+        .padding(.top, 26)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+        .task { await store.refreshHerAsleep() }
+    }
 }
 
 /// 1022 #4225 她要的：「你睡着时他发来的」——跟时间截断不一样的框，透粉白雾玻璃胶囊。
