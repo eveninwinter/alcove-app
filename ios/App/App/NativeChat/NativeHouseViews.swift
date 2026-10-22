@@ -2085,6 +2085,7 @@ private struct BubbleAppearanceSettingsView: View {
                 if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                 ForEach(paletteItems) { item in colorRow(item) }
                             frostTintRows
+                swapSidesButton
             }
             Text(chatTheme.isTreehouse
                  ? "Sanctus 的气泡与颜色跟信息主题分开存；白天、黑夜各一套，跟全屋的日夜开关走；每项的默认只恢复该项。"
@@ -2112,6 +2113,7 @@ private struct BubbleAppearanceSettingsView: View {
                             if chatTheme.isTreehouse { treehouseGlassPicker; treehouseBubbleModePicker } else { bubbleStylePicker }
                             ForEach(paletteItems) { item in colorRow(item) }
                             frostTintRows
+                            swapSidesButton
                         }
                         Text(chatTheme.isTreehouse
                              ? "预设一点就换；「自定义」里有色轮和吸管，可以直接从壁纸上吸颜色；每项的「默认」只回这一项。Sanctus 跟信息主题那套分开存，各调各的；白天、黑夜各一套，跟全屋的日夜开关走。现在调的是\(chatTheme.isDark ? "夜里" : "白天")这套"
@@ -2186,6 +2188,35 @@ private struct BubbleAppearanceSettingsView: View {
     }
 
     /// 1016 #3935 她：「调色盘 我俩分开调节 默认就是现在的颜色」——毛玻璃上面那层的颜色，只在玻璃气泡＋毛玻璃时出现
+    /// 1022 #4223 她要的：我的 / 他的气泡互相调换——气泡颜色、气泡里正文颜色一起换（玻璃下毛玻璃色调也换）。
+    /// 只换眼下这一套（信息 / Sanctus、白天 / 黑夜、普通 / 玻璃各存各的）；再点一次就换回来
+    private var swapSidesButton: some View {
+        Button { swapSides() } label: {
+            Label("我的和他的互相调换", systemImage: "arrow.left.arrow.right")
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(panelTheme.fyAccent)
+                .frame(maxWidth: .infinity)
+                .padding(.vertical, 6)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func swapSides() {
+        let dark = chatTheme.isDark
+        let th = chatTheme.isTreehouse
+        func cur(_ i: MessagesPalette.Item) -> Color { th ? MessagesPalette.thCurrent(i, dark: dark) : MessagesPalette.current(i, dark: dark) }
+        func put(_ i: MessagesPalette.Item, _ c: Color) { th ? MessagesPalette.thSet(i, c, dark: dark) : MessagesPalette.set(i, c, dark: dark) }
+        for (a, b) in [(MessagesPalette.Item.bubbleUser, MessagesPalette.Item.bubbleAI), (.textUser, .textAI)] {
+            let ca = cur(a), cb = cur(b)
+            put(a, cb); put(b, ca)
+        }
+        if chatTheme.isMessages && !chatTheme.isKakao && (th ? thGlass : bubbleGlass) && glassKind == "fog" {
+            let u = FrostTint.current(user: true, dark: dark), h = FrostTint.current(user: false, dark: dark)
+            FrostTint.set(h, user: true, dark: dark); FrostTint.set(u, user: false, dark: dark)
+        }
+    }
+
     @ViewBuilder private var frostTintRows: some View {
         if chatTheme.isMessages && !chatTheme.isKakao && (chatTheme.isTreehouse ? thGlass : bubbleGlass) && glassKind == "fog" {
             frostTintRow(user: true)
