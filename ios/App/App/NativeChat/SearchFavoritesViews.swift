@@ -1034,14 +1034,21 @@ struct GlassFavoritesView: View {
                         .padding(.top, 6).padding(.trailing, 7)
                 }
                 .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
-            Text(hisText(e)).font(SF.song(11.5)).foregroundColor(ink.body)
-                .lineSpacing(4).lineLimit(3)
-                .frame(maxWidth: .infinity, minHeight: 36, alignment: .topLeading)
-                .padding(.top, 8).padding(.horizontal, 4)
+            // 1022 #4188–4189 照参考图：她那句一行灰小字（不带「她：」），他收的时候说的那句是正文
+            VStack(alignment: .leading, spacing: 3) {
+                if !e.note.isEmpty {
+                    Text(hisText(e)).font(SF.song(10)).foregroundColor(ink.sub).lineLimit(1)
+                }
+                Text(e.note.isEmpty ? hisText(e) : e.note).font(SF.song(12.5))
+                    .foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
+                    .lineSpacing(4).lineLimit(3)
+            }
+            .frame(maxWidth: .infinity, minHeight: 52, alignment: .topLeading)
+            .padding(.top, 8).padding(.horizontal, 4)
             HStack {
                 Text(String(e.ts.dropFirst(11).prefix(5))).font(SF.corm(11)).foregroundColor(ink.sub)
                 Spacer()
-                Text("kept by him").font(SF.ital(10)).foregroundColor(ink.sub)
+                Text("he said").font(SF.ital(10)).foregroundColor(ink.sub)
             }
             .padding(.top, 6).padding(.horizontal, 4)
         }
@@ -1074,13 +1081,12 @@ struct GlassFavoritesView: View {
                 }
             VStack(alignment: .leading, spacing: 0) {
                 Text(sfStamp(e.ts)).font(SF.corm(10)).tracking(2.5).foregroundColor(ink.sub)
-                if !e.context.isEmpty {
-                    Text("他：\(e.context)").font(SF.song(12)).foregroundColor(ink.sub)
-                        .lineLimit(2).padding(.top, 10)
-                }
+                // 1022 #4188–4189 照参考图：她那句灰小字（不带「她：」）、他说的那句大字；没写那句的就拿她那句当大字
                 HStack(alignment: .top, spacing: 10) {
-                    Text(hisText(e)).font(SF.song(19)).foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
-                        .lineSpacing(8).frame(maxWidth: .infinity, alignment: .leading)
+                    if !e.note.isEmpty {
+                        Text(hisText(e)).font(SF.song(12)).foregroundColor(ink.sub).lineSpacing(5)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
                     if e.isPlayableAudio {
                         Button { audio.toggle(e.id, url: AlcoveAPI.attachmentURL(e.attURL)) } label: {
                             Image(systemName: audio.playingID == e.id ? "pause.fill" : "play.fill")
@@ -1092,15 +1098,11 @@ struct GlassFavoritesView: View {
                         .buttonStyle(.plain)
                     }
                 }
-                .padding(.top, 6)
-                if !e.note.isEmpty {
-                    SFHair(ink: ink).padding(.top, 14)
-                    HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text("why he kept it").font(SF.ital(11)).foregroundColor(ink.sub).fixedSize()
-                        Text(e.note).font(SF.song(12)).foregroundColor(ink.script).lineSpacing(4)
-                    }
-                    .padding(.top, 10)
-                }
+                .padding(.top, 10)
+                Text(e.note.isEmpty ? hisText(e) : e.note).font(SF.song(20))
+                    .foregroundColor(ink.dark ? ink.body : Color(red: 0.165, green: 0.165, blue: 0.18))
+                    .lineSpacing(8).frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.top, 8)
             }
             .padding(.horizontal, 28)
             .padding(.top, -22)
