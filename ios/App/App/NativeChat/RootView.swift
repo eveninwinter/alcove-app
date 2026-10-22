@@ -75,15 +75,20 @@ struct RootView: View {
 
     // 0827 拍一拍：双击顶栏头像。名字跟着设置走，所以每次把当前设置名一起递过去，
     // 后端拿它生成那行字并存进消息里，以后改名不会倒改旧记录。
-    private func sendPat() {
-        UIImpactFeedbackGenerator(style: .light).impactOccurred()
-        Task {
-            _ = try? await NativeHouseAPI.object(
-                "/api/pat/send",
-                method: "POST",
-                body: ["actor": "chenji",
-                       "assistant_name": UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"])
-        }
+    // 1022 #4177–4182：双击发她在动作单里设的那个（默认拍了拍），长按弹动作单；头像按动作动一下
+    private func sendPat() { PatStore.shared.send(nil) }
+
+    private func longPressPat() {
+        PatStore.shared.longPressedAt = Date()
+        UIImpactFeedbackGenerator(style: .medium).impactOccurred()
+        Task { await PatStore.shared.load() }
+        PatStore.shared.showSheet = true
+    }
+
+    /// 长按松手时单击也会跟着认出来——刚长按过的那一下不开终端页
+    private func tapHeader() {
+        guard Date().timeIntervalSince(PatStore.shared.longPressedAt) > 0.8 else { return }
+        openHeader()
     }
 
     var body: some View {
@@ -124,6 +129,7 @@ struct RootView: View {
                     .zIndex(6)
                     .transition(.move(edge: .top).combined(with: .opacity))
             }
+            PatSheetHost().zIndex(15)
             if showTerminal {
                 ZStack {
                     Color(red: 0.1, green: 0.1, blue: 0.12).ignoresSafeArea()
@@ -413,6 +419,7 @@ struct RootView: View {
                         .clipShape(Circle())
                         .overlay(Circle().stroke(ink.opacity(0.06), lineWidth: 1))
                         .shadow(color: ink.opacity(0.18), radius: 5, x: 0, y: 4)
+                        .patWiggle()
                         if assistantAsleep {
                             Text("💤").font(.system(size: 11)).offset(x: 5, y: -4)
                         }
@@ -429,7 +436,8 @@ struct RootView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { sendPat() }
-                .onTapGesture { openHeader() }
+                .onTapGesture { tapHeader() }
+                .onLongPressGesture(minimumDuration: 0.45) { longPressPat() }
                 Spacer(minLength: 8)
                 // 1010 她那张图：心率数字、电话、音符、菜单之间净空 16–18，菜单离屏幕右边 17。
                 // 电话 / 音符 / 菜单的框左右各多 6 给手指点，所以间距 18 → 5（心率数字跟电话之间补回去）
@@ -506,6 +514,7 @@ struct RootView: View {
                     .frame(width: 50, height: 50)
                     .clipShape(Circle())
                     .overlay(Circle().stroke(.white.opacity(0.8), lineWidth: 1.6))
+                    .patWiggle()
                     if assistantAsleep {
                         Text("💤").font(.system(size: 13)).offset(x: 5, y: -3)
                     }
@@ -530,7 +539,8 @@ struct RootView: View {
             // 双击先声明才抢得到，单击照旧进终端页
             .contentShape(Rectangle())
             .onTapGesture(count: 2) { sendPat() }
-            .onTapGesture { openHeader() }
+            .onTapGesture { tapHeader() }
+            .onLongPressGesture(minimumDuration: 0.45) { longPressPat() }
             .frame(maxWidth: .infinity)
             HStack {
                 // 0919 她要的：左上角一颗跟右边同款的玻璃胶囊，一扇门，点开挑房间（tmux / SDK / API）
@@ -608,6 +618,7 @@ struct RootView: View {
                                 .foregroundColor(textDim)
                         }
                     }
+                    .patWiggle()
                     if assistantAsleep {
                         Text("💤")
                             .font(.system(size: 15))
@@ -618,7 +629,8 @@ struct RootView: View {
                 }
                 .contentShape(Rectangle())
                 .onTapGesture(count: 2) { sendPat() }
-                .onTapGesture { openHeader() }
+                .onTapGesture { tapHeader() }
+                .onLongPressGesture(minimumDuration: 0.45) { longPressPat() }
                 .frame(width: 44, height: 44)
 
                 // 0919 同上：门，挑房间
@@ -1015,5 +1027,323 @@ private struct TreehouseBpmBadge<Icon: View>: View {
             .layoutPriority(1)
             .padding(.trailing, 5)
         }
+    }
+}
+
+// MARK: - 1022 #4177–4182 拍一拍改版：长按头像弹动作单（点一行就发）＋编辑（改字/删/加/排序/选双击发哪个）＋保存；
+// 被碰的头像按动作动一下（她挑的 B：拍＝左右晃、摸头＝往下压、捏脸＝横着挤、抱＝放大、戳＝歪一下，别的都按晃）。
+// 动效全用弹簧收尾，不用生硬的来回补间。效果图 /root/rhysel/sanctus-kit/mock-pat/mock.html
+
+struct PatAction: Identifiable, Equatable {
+    var id: String
+    var text: String
+}
+
+enum PatAnim { case shake, press, squeeze, hug, tilt }
+
+@MainActor
+final class PatStore: ObservableObject {
+    static let shared = PatStore()
+    @Published var actions: [PatAction] = []
+    @Published var doubleID = "pat"
+    @Published var showSheet = false
+    @Published var tick = 0
+    @Published var anim: PatAnim = .shake
+    /// 长按松手那一下别再被当成单击去开终端页
+    var longPressedAt = Date.distantPast
+
+    func load() async {
+        guard let o = try? await NativeHouseAPI.object("/api/pat") else { return }
+        if let raw = o["actions"] as? [[String: Any]] {
+            actions = raw.compactMap { a in
+                guard let id = a["id"] as? String, let text = a["text"] as? String else { return nil }
+                return PatAction(id: id, text: text)
+            }
+        }
+        if let d = o["double"] as? String { doubleID = d }
+    }
+
+    @discardableResult
+    func save(_ list: [PatAction], double: String) async -> Bool {
+        let body: [String: Any] = ["actions": list.map { ["id": $0.id, "text": $0.text] }, "double": double]
+        guard let o = try? await NativeHouseAPI.object("/api/pat/actions", method: "POST", body: body),
+              o["ok"] as? Bool == true else { return false }
+        if let raw = o["actions"] as? [[String: Any]] {
+            actions = raw.compactMap { a in
+                guard let id = a["id"] as? String, let text = a["text"] as? String else { return nil }
+                return PatAction(id: id, text: text)
+            }
+        }
+        if let d = o["double"] as? String { doubleID = d }
+        return true
+    }
+
+    static func anim(for text: String) -> PatAnim {
+        if text.contains("捏") { return .squeeze }
+        if text.contains("抱") { return .hug }
+        if text.contains("戳") { return .tilt }
+        if text.contains("头") && (text.contains("摸") || text.contains("揉") || text.contains("拍")) { return .press }
+        return .shake
+    }
+
+    /// actionID 为空＝双击：发她设的那个
+    func send(_ actionID: String?) {
+        UIImpactFeedbackGenerator(style: .light).impactOccurred()
+        let id = actionID ?? doubleID
+        anim = Self.anim(for: actions.first { $0.id == id }?.text ?? "拍了拍 {他}")
+        tick += 1
+        var body: [String: Any] = ["actor": "chenji",
+                                   "assistant_name": UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"]
+        if let actionID { body["action_id"] = actionID } else { body["double"] = true }
+        Task { _ = try? await NativeHouseAPI.object("/api/pat/send", method: "POST", body: body) }
+    }
+}
+
+/// 头像被碰的那一下。先用很短的缓动把形状推过去，再交给欠阻尼弹簧自己弹回来——回弹和余震都是弹簧算的，所以顺。
+struct PatWiggle: ViewModifier {
+    @ObservedObject private var store = PatStore.shared
+    @State private var rot: Double = 0
+    @State private var sx: CGFloat = 1
+    @State private var sy: CGFloat = 1
+    @State private var dx: CGFloat = 0
+    @State private var dy: CGFloat = 0
+
+    func body(content: Content) -> some View {
+        content
+            .scaleEffect(x: sx, y: sy, anchor: .bottom)
+            .rotationEffect(.degrees(rot), anchor: .bottom)
+            .offset(x: dx, y: dy)
+            .onChange(of: store.tick) { _ in play(store.anim) }
+    }
+
+    private func play(_ a: PatAnim) {
+        let push: Animation
+        let release: Animation
+        switch a {
+        case .shake:
+            push = .easeOut(duration: 0.07)
+            release = .spring(response: 0.5, dampingFraction: 0.3)
+        case .press:
+            push = .easeOut(duration: 0.1)
+            release = .spring(response: 0.42, dampingFraction: 0.42)
+        case .squeeze:
+            push = .easeOut(duration: 0.1)
+            release = .spring(response: 0.4, dampingFraction: 0.4)
+        case .hug:
+            push = .easeOut(duration: 0.16)
+            release = .spring(response: 0.5, dampingFraction: 0.5)
+        case .tilt:
+            push = .easeOut(duration: 0.09)
+            release = .spring(response: 0.48, dampingFraction: 0.38)
+        }
+        withAnimation(push) {
+            switch a {
+            case .shake: rot = -11; dx = -1.5
+            case .press: sy = 0.84; sx = 1.06; dy = 2
+            case .squeeze: sx = 0.8; sy = 1.07
+            case .hug: sx = 1.16; sy = 1.16
+            case .tilt: rot = 15; dx = 2.5
+            }
+        }
+        let wait: Double = a == .hug ? 0.16 : (a == .shake ? 0.07 : 0.1)
+        DispatchQueue.main.asyncAfter(deadline: .now() + wait) {
+            withAnimation(release) { rot = 0; sx = 1; sy = 1; dx = 0; dy = 0 }
+        }
+    }
+}
+
+extension View {
+    func patWiggle() -> some View { modifier(PatWiggle()) }
+}
+
+/// 盖在聊天页上：一层淡灰的遮罩＋居中一张 Sanctus 卡
+struct PatSheetHost: View {
+    @ObservedObject private var store = PatStore.shared
+    var body: some View {
+        ZStack {
+            if store.showSheet {
+                Color(red: 0.16, green: 0.17, blue: 0.2).opacity(0.18).ignoresSafeArea()
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { store.showSheet = false } }
+                    .transition(.opacity)
+                PatSheet()
+                    .padding(.horizontal, 22)
+                    .transition(.scale(scale: 0.96).combined(with: .opacity))
+            }
+        }
+        .animation(.spring(response: 0.32, dampingFraction: 0.86), value: store.showSheet)
+    }
+}
+
+private struct PatSheet: View {
+    @ObservedObject private var store = PatStore.shared
+    @State private var editing = false
+    @State private var draft: [PatAction] = []
+    @State private var draftDouble = "pat"
+    @State private var saving = false
+    @State private var error: String?
+    private let ink = SanctusCardInk()
+    private var name: String { UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟" }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .top) {
+                VStack(alignment: .leading, spacing: 6) {
+                    Text("a little touch").font(.custom("PinyonScript-Regular", size: 27)).foregroundColor(ink.script)
+                    Text(editing ? "EDIT · 改动作" : "PAT · 碰碰他").font(.custom("CormorantGaramond-Medium", size: 8))
+                        .tracking(2.4).foregroundColor(ink.kicker)
+                }
+                Spacer()
+                if !editing {
+                    Button("编辑") { beginEdit() }
+                        .font(.system(size: 10.5, design: .serif)).tracking(2).foregroundColor(ink.link)
+                        .padding(.top, 6)
+                }
+            }
+            if editing { editBody } else { pickBody }
+        }
+        .padding(.horizontal, 22).padding(.top, 22).padding(.bottom, 18)
+        .background(LinearGradient(colors: [ink.fillTop, ink.fillBottom], startPoint: .top, endPoint: .bottom))
+        .background(.ultraThinMaterial)
+        .clipShape(RoundedRectangle(cornerRadius: 12.5, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 8.5, style: .continuous).stroke(ink.frame, lineWidth: 0.6).padding(5))
+        .overlay(RoundedRectangle(cornerRadius: 12.5, style: .continuous).stroke(ink.edge, lineWidth: 0.8))
+        .frame(maxHeight: 600)
+        .task { if store.actions.isEmpty { await store.load() } }
+    }
+
+    private func section(_ s: String) -> some View {
+        Text(s).font(.custom("CormorantGaramond-Medium", size: 8)).tracking(2.4).foregroundColor(ink.kicker)
+            .padding(.top, 18).padding(.bottom, 6)
+    }
+
+    private func line(_ text: String) -> String { "我" + text.replacingOccurrences(of: "{他}", with: "“\(name)”") }
+
+    private var pickBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            section("TAP TO SEND · 点一下就发")
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    ForEach(store.actions) { a in
+                        Button {
+                            store.longPressedAt = .distantPast
+                            withAnimation(.easeOut(duration: 0.18)) { store.showSheet = false }
+                            store.send(a.id)
+                        } label: {
+                            HStack(spacing: 6) {
+                                Text(line(a.text)).font(.system(size: 13, design: .serif)).foregroundColor(ink.body)
+                                    .lineLimit(1)
+                                if a.id == store.doubleID {
+                                    Circle().fill(ink.dark ? Color(red: 0.23, green: 0.33, blue: 1) : Color(red: 0.04, green: 0.11, blue: 1))
+                                        .frame(width: 5, height: 5)
+                                }
+                                Spacer()
+                                Text(a.id == store.doubleID ? "double tap" : "send ›")
+                                    .font(.custom("CormorantGaramondItalic-MediumItalic", size: 11)).foregroundColor(ink.sub)
+                            }
+                            .padding(.vertical, 10).padding(.horizontal, 2)
+                            .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        if a.id != store.actions.last?.id { Rectangle().fill(ink.frame).frame(height: 0.6) }
+                    }
+                }
+            }
+            .frame(maxHeight: 380)
+            Text("小蓝点＝双击头像发的那一个").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub).padding(.top, 8)
+        }
+    }
+
+    private var editBody: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            section("DOUBLE TAP · 双击头像发")
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 6) {
+                    ForEach(draft) { a in
+                        let label = a.text.replacingOccurrences(of: "{他}", with: "").replacingOccurrences(of: " ", with: "")
+                        Button { draftDouble = a.id } label: {
+                            Text(label.isEmpty ? "（空）" : label).font(.system(size: 10.5, design: .serif)).tracking(1)
+                                .foregroundColor(draftDouble == a.id ? ink.body : ink.link)
+                                .padding(.horizontal, 10).padding(.vertical, 4)
+                                .overlay(Capsule().stroke(draftDouble == a.id ? ink.script : ink.pill, lineWidth: 0.6))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.vertical, 1)
+            }
+            section("ACTIONS · 名字写成 {他}")
+            List {
+                ForEach($draft) { $a in
+                    HStack(spacing: 8) {
+                        Button {
+                            withAnimation { draft.removeAll { $0.id == a.id } }
+                        } label: {
+                            Image(systemName: "minus").font(.system(size: 9, weight: .medium)).foregroundColor(ink.link)
+                                .frame(width: 16, height: 16).overlay(Circle().stroke(ink.sub, lineWidth: 0.7))
+                                .frame(width: 28, height: 28).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        TextField("动作 {他} …", text: $a.text)
+                            .font(.system(size: 13, design: .serif)).foregroundColor(ink.body)
+                            .textInputAutocapitalization(.never).autocorrectionDisabled()
+                    }
+                    .listRowBackground(Color.clear)
+                    .listRowInsets(EdgeInsets(top: 4, leading: 0, bottom: 4, trailing: 0))
+                    .listRowSeparatorTint(ink.frame)
+                }
+                .onMove { from, to in draft.move(fromOffsets: from, toOffset: to) }
+                .deleteDisabled(true)
+                Button {
+                    withAnimation { draft.append(PatAction(id: UUID().uuidString.prefix(8).lowercased(), text: " {他}")) }
+                } label: {
+                    Text("＋ 加一个动作").font(.system(size: 11.5, design: .serif)).tracking(1.8).foregroundColor(ink.link)
+                }
+                .buttonStyle(.plain)
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
+            }
+            .listStyle(.plain)
+            .scrollContentBackground(.hidden)
+            .environment(\.editMode, .constant(.active))
+            .frame(height: min(CGFloat(draft.count + 1) * 46, 330))
+            if let error {
+                Text(error).font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub).padding(.top, 6)
+            }
+            HStack(spacing: 12) {
+                Spacer()
+                Button("取消") { withAnimation(.easeOut(duration: 0.18)) { editing = false; error = nil } }
+                    .font(.system(size: 12, design: .serif)).tracking(3).foregroundColor(ink.link)
+                    .padding(.horizontal, 18).padding(.vertical, 7)
+                    .overlay(Capsule().stroke(ink.pill, lineWidth: 0.7))
+                Button {
+                    Task { await commit() }
+                } label: {
+                    Text(saving ? "保存中" : "保存").font(.system(size: 12, design: .serif)).tracking(3)
+                        .foregroundColor(ink.dark ? Color(red: 0.11, green: 0.11, blue: 0.13) : .white)
+                        .padding(.horizontal, 18).padding(.vertical, 7)
+                        .background(ink.dark ? Color(red: 0.89, green: 0.89, blue: 0.91) : Color(red: 0.165, green: 0.165, blue: 0.18), in: Capsule())
+                }
+                .buttonStyle(.plain)
+                .disabled(saving)
+            }
+            .padding(.top, 14)
+        }
+    }
+
+    private func beginEdit() {
+        draft = store.actions
+        draftDouble = store.doubleID
+        error = nil
+        withAnimation(.easeOut(duration: 0.18)) { editing = true }
+    }
+
+    @MainActor private func commit() async {
+        let list = draft.map { PatAction(id: $0.id, text: $0.text.trimmingCharacters(in: .whitespaces)) }
+            .filter { !$0.text.replacingOccurrences(of: "{他}", with: "").trimmingCharacters(in: .whitespaces).isEmpty }
+        guard !list.isEmpty else { error = "至少留一个动作"; return }
+        saving = true
+        let ok = await store.save(list, double: list.contains { $0.id == draftDouble } ? draftDouble : list[0].id)
+        saving = false
+        if ok { withAnimation(.easeOut(duration: 0.18)) { editing = false } } else { error = "没存上，网不好再按一次" }
     }
 }
