@@ -10,6 +10,9 @@ final class ChatStore: ObservableObject {
     private var temporarilyHiddenTextTs: Set<String> = []
     private var temporarilyHiddenPhotoTs: Set<String> = []
     @Published var isTyping = false
+    /// 1022 #4225 加号菜单「我睡着了」。她手动关、或者一发消息就醒（服务端也会关，轮询带回来）
+    @Published var herAsleep = false
+    private var herAsleepSetAt = Date.distantPast
     @Published var apiLive: AlcoveAPI.LiveState? = nil   // 0926 API 房间流式的半截，poll 捎回来
     @Published var currentTool: String?
     @Published var stickers: [Sticker] = []
@@ -301,6 +304,7 @@ final class ChatStore: ObservableObject {
     // 多张图微信式一起发，caption 挂第一张；ext 跟着数据走，透明图是 png
     func sendImages(_ datas: [(data: Data, ext: String)], caption: String) {
         guard !datas.isEmpty, !stagingImages else { return }
+        wakeHerLocally()
         stagingImages = true
         Task {
             defer { stagingImages = false }
@@ -368,6 +372,7 @@ final class ChatStore: ObservableObject {
     /// 上传落定后再调 then，后面那条才出发——不然 /chat/send 抢在上传前面，语音就得等下下句。
     func sendPendingVoice(followedByText: Bool, then: (() -> Void)? = nil) {
         guard let pv = pendingVoice else { return }
+        wakeHerLocally()
         pendingVoice = nil
         voiceAnalyzing = false
         if !followedByText { optimisticTyping() }
@@ -771,6 +776,8 @@ final class ChatStore: ObservableObject {
             // 0927 任务#2986 她报的「主聊天滑动一卡一卡」：@Published 只要赋值就通知整页重算，值没变也算。
             // 这里每次轮询（闲 8 秒 / 忙 2.5 秒 / API 流式 1 秒）原来都照写一遍，整张聊天表（几百条）跟着重算一回。
             // 下面一律「真变了才写」。
+            // 刚点完开关的几秒里别让还没赶上的轮询把勾拨回去
+            if herAsleep != r.herAsleep && Date().timeIntervalSince(herAsleepSetAt) > 6 { herAsleep = r.herAsleep }
             var tool = r.currentTool
             let typing = r.isTyping || Date() < optimisticUntil
             if isTyping != typing { isTyping = typing }
@@ -967,9 +974,23 @@ final class ChatStore: ObservableObject {
         messages = applyTemporaryHides(out)
     }
 
+    func setHerAsleep(_ v: Bool) {
+        herAsleep = v
+        herAsleepSetAt = Date()
+        Task { try? await AlcoveAPI.setHerSleep(v) }
+    }
+
+    /// 她发了东西就算醒：勾先在本地放掉（服务端触发器也会关）
+    private func wakeHerLocally() {
+        guard herAsleep else { return }
+        herAsleep = false
+        herAsleepSetAt = Date()
+    }
+
     func sendText(_ text: String) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
+        wakeHerLocally()
         let local = ChatMessage(localText: trimmed)
         messages.append(local)
         heldCount = 0
@@ -1191,6 +1212,7 @@ final class ChatStore: ObservableObject {
     /// 一次发送可以同时带文字和表情：它们是同一轮（共享 turn_id）的两条消息。
     /// 文字照旧走气泡，表情不带气泡只显示图本身（教程第 1、3 节）。
     func sendSticker(_ stk: Sticker, text: String? = nil) {
+        wakeHerLocally()
         // 0819 傍晚：我曾在这儿把文字那条也提前转正，结果 poll 回来找不到
         // pending 占位可替换，同一句话画了两遍。撤回——占位就该等服务器认领。
         // 「跟表情一起发的字被吞」她说的是我那边收不到，病灶在后端注入，已修。

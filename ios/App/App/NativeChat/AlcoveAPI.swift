@@ -35,6 +35,8 @@ enum AlcoveAPI {
         var reactionUpdates: [[String: Any]] = []
         // 1010 #3555：后台刚删掉的（重来 / 编辑 / 她在终端回退），每条 {ts, role}
         var removed: [[String: Any]] = []
+        // 1022 #4225 她的「我睡着了」：服务端那边她一发消息就自动关，勾要跟着走
+        var herAsleep: Bool = false
     }
 
     // 0730 实时预览：他一说完一段就先给她看，不等整轮工具跑完。
@@ -269,7 +271,13 @@ enum AlcoveAPI {
             callId: call["call_id"] as? String ?? "",
             apiPartial: status["api_partial"] as? [String: Any],
             reactionUpdates: chat["reaction_updates"] as? [[String: Any]] ?? [],
-            removed: chat["removed"] as? [[String: Any]] ?? [])
+            removed: chat["removed"] as? [[String: Any]] ?? [],
+            herAsleep: status["her_asleep"] as? Bool ?? false)
+    }
+
+    /// 1022 #4225 加号菜单「我睡着了」：开 / 关
+    static func setHerSleep(_ asleep: Bool) async throws {
+        _ = try await postJSON("/api/status/sleep", body: ["asleep": asleep])
     }
 
     /// 1001 她给一条消息贴 emoji（再贴就换掉她上次贴的）

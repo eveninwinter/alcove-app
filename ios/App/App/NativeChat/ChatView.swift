@@ -1141,7 +1141,17 @@ struct ChatView: View {
             // 0925 她定的：三个主题一样，只跟紧挨着的上一条比，不管上一条是什么消息，隔超过 15 分钟就插时间
             // （0924 那套「跳过拍一拍往前找」让互相拍一拍中间插了三次截断，删了）。
             let divided = needsDivider(prev: previous, cur: message, gap: 900)
-            if divided {
+            // 1022 #4225 她点了「我睡着了」以后他发的：一轮挂一枚「你睡着时他发来的」胶囊。
+            // 这一轮上面本来要插时间的，时间并进胶囊里（「12:30  你睡着时他发来的」），不另起一行
+            let herAsleepStart: Bool = {
+                guard message.role == "assistant", message.herAsleep else { return false }
+                guard !divided, let prev = previous, prev.role == "assistant", prev.herAsleep else { return true }
+                if let a = prev.turnID, !a.isEmpty, let b = message.turnID, !b.isEmpty { return a != b }
+                return abs(message.date.timeIntervalSince(prev.date)) > 180   // 没有轮次号的（他 curl 的），三分钟内算同一轮
+            }()
+            if herAsleepStart {
+                HerAsleepCapsule(date: divided ? message.date : nil)
+            } else if divided {
                 if theme.isKakao {
                     KakaoDateDivider(date: message.date)
                 } else if theme.isTreehouse {
@@ -1951,6 +1961,10 @@ struct ChatView: View {
             }
             Button { showLocationPicker = true } label: {
                 Label("位置", systemImage: "location")       // 1008 iMessage 那样发位置 / 共享实时位置 / 搜地点
+            }
+            // 1022 #4225 她：睡前点开；手动关、或者一发消息就自动关。开着时他发的那几轮挂「你睡着时他发来的」
+            Toggle(isOn: Binding(get: { store.herAsleep }, set: { store.setHerAsleep($0) })) {
+                Label("我睡着了", systemImage: "moon.zzz")
             }
             if composerTheme.isMessages {
                 // 0822 她定的：iMessage 主题下模型、通道、过程线开关都收进加号里
@@ -7936,6 +7950,34 @@ struct MessagesTimeDivider: View {
         f.dateFormat = "HH:mm"
         return f
     }()
+}
+
+/// 1022 #4225 她要的：「你睡着时他发来的」——跟时间截断不一样的框，透粉白雾玻璃胶囊。
+/// 这一轮本来要插时间的就把时间并进来（date 不是 nil），不然只有这行字。所有主题同一枚
+struct HerAsleepCapsule: View {
+    let date: Date?
+    var body: some View {
+        let dark = AlcoveAppearance.isDark
+        HStack(spacing: 8) {
+            if let d = date {
+                Text(TreehouseTimeDivider.text(d)).fontWeight(.semibold)
+            }
+            Text("你睡着时他发来的")
+        }
+        .font(.system(size: 11))
+        .foregroundColor(dark ? Color(red: 0.93, green: 0.86, blue: 0.90) : Color(red: 0.55, green: 0.40, blue: 0.48))
+        .padding(.horizontal, 13).padding(.vertical, 4.5)
+        .background {
+            ZStack {
+                Capsule().fill(.ultraThinMaterial)
+                Capsule().fill(Color(red: 1.0, green: 0.90, blue: 0.94).opacity(dark ? 0.16 : 0.55))
+            }
+        }
+        .overlay(Capsule().stroke(Color.white.opacity(dark ? 0.22 : 0.75), lineWidth: 0.6))
+        .shadow(color: Color(red: 0.94, green: 0.68, blue: 0.80).opacity(dark ? 0.10 : 0.28), radius: 6, y: 1)
+        .frame(maxWidth: .infinity)
+        .padding(.vertical, 9)
+    }
 }
 
 /// 1009 树屋的时间：打字机字、字距拉开，衬一块半透明的雾白小底（照她成品 stamp()）

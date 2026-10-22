@@ -62,6 +62,8 @@ struct ChatMessage: Identifiable, Equatable {
     var attachmentFilename: String?
     var attachmentGroup: String?
     var asleepAtSend: Bool
+    /// 1022 #4225：她点了「我睡着了」以后他发的（服务端触发器盖的章）。一轮挂一枚「你睡着时他发来的」胶囊
+    var herAsleep: Bool = false
     var msgType: String?      // "sticker" / "call_summary" 等
     var stickerId: String?
     // 0831 任务#1195：通话摘要。打完电话聊天页只留这一条，
@@ -339,6 +341,8 @@ struct ChatMessage: Identifiable, Equatable {
         if let a = json["asleep_at_send"] as? Int { self.asleepAtSend = a != 0 }
         else if let a = json["asleep_at_send"] as? Bool { self.asleepAtSend = a }
         else { self.asleepAtSend = false }
+        if let a = json["her_asleep"] as? Int { self.herAsleep = a != 0 }
+        else if let a = json["her_asleep"] as? Bool { self.herAsleep = a }
         self.msgType = json["msg_type"] as? String
         self.stickerId = json["sticker_id"] as? String
         if let r = json["reactions"] as? [String: String] { self.reactions = r }
