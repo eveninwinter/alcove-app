@@ -622,7 +622,8 @@ enum AlcoveAPI {
                              emotionZh: obj["emotion_zh"] as? String ?? "",
                              confidence: (obj["confidence"] as? NSNumber)?.doubleValue ?? 0,
                              hint: obj["hint"] as? String ?? "",
-                             tone: obj["tone"] as? String ?? "")
+                             tone: obj["tone"] as? String ?? "",
+                             zh: obj["zh"] as? String ?? "")
     }
 
     /// voice：语音卡片上她看过的转文字和情绪，随上传一起带给服务端（不再算第二遍）。
@@ -643,6 +644,7 @@ enum AlcoveAPI {
                 items.append(URLQueryItem(name: "hint", value: v.hint))
             }
             if !v.tone.isEmpty { items.append(URLQueryItem(name: "tone", value: v.tone)) }
+            if !v.zh.isEmpty { items.append(URLQueryItem(name: "zh", value: v.zh)) }   // 1022 卡片上翻好的中文，服务端不再翻第二遍
         }
         if hold { items.append(URLQueryItem(name: "hold", value: "1")) }
         if chatRoom == "api" { items.append(URLQueryItem(name: "room", value: "api")) }   // 0926 落进 API 房间

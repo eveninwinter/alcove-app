@@ -1852,7 +1852,8 @@ struct ChatView: View {
                 Image(systemName: "waveform").font(.system(size: 13, weight: .semibold))
                 Text(String(format: "语音 %d:%02d", pv.seconds / 60, pv.seconds % 60))
                     .font(.system(size: 12.5, weight: .semibold))
-                if let a = pv.analysis, !a.engine.isEmpty, a.engine != "whisper-large-v3" {
+                // 1022 起 Qwen3-Omni 是主听写，Whisper / SenseVoice 都算备用
+                if let a = pv.analysis, !a.engine.isEmpty, a.engine != "qwen3-omni" {
                     Text("备用听写").font(.system(size: 11)).opacity(0.7)
                 }
                 Spacer()
@@ -1872,6 +1873,13 @@ struct ChatView: View {
                     .font(.system(size: 15.5))
                     .foregroundColor(ink)
                     .fixedSize(horizontal: false, vertical: true)
+                // 1022 #4219 她：「语音听写的时候有外语的话也显示翻译」——原文下面一行淡一点的中文
+                if !a.zh.isEmpty {
+                    Text(a.zh)
+                        .font(.system(size: 14))
+                        .foregroundColor(dim)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
                 if pv.emotionPending {
                     HStack(spacing: 6) {
                         ProgressView().controlSize(.mini)
@@ -9029,7 +9037,8 @@ struct AudioBubble: View {
                 // 0907 她要的：展开以后箭头跟着气泡最右边走。
                 // 只在展开时撑开——没展开时加 Spacer 会把语音条拉成整行宽
                 if transcriptShown { Spacer(minLength: 8) }
-                // 0912 她圈的位置：展开后箭头左边一点点。他写了中文翻译才有这个「译」
+                // 0912 她圈的位置：展开后箭头左边一点点。有中文翻译才有这个「译」
+                //（他的是他自己写的；1022 起她说外语的语音也有，是服务端机器翻的）
                 if transcriptShown && !translation.isEmpty {
                     Button {
                         withAnimation(.easeInOut(duration: 0.18)) { translationShown.toggle() }

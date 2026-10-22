@@ -955,6 +955,8 @@ struct VoiceAnalysis: Equatable {
     var confidence: Double = 0
     var hint: String = ""
     var tone: String = ""
+    /// 1022：她说外语时机器翻的中文（服务端 /voice/emotion 带回来）；中文的语音是空的
+    var zh: String = ""
 
     var hasEmotion: Bool { !hint.isEmpty || !emotionZh.isEmpty }
 }
