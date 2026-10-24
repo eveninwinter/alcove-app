@@ -8,6 +8,8 @@ import SwiftUI
 // - 点一篇进来直接能改：标题、正文，右上「保存」。保存前后端自动留旧版，左下「旧版」能翻回去。
 // - 改完陈璟下次开窗读到的就是这一版（开窗现读后端那张表）。月篇到 20 号、月底还会接着往下写，改过的句子原样留着。
 // 数据：/api/lmc5/chronicle/list|get|history|save|restore（alcove-backend/chronicle_api.py）；文字是 /root/lmc5/chronicle.py 夜里写的。
+// #4295 她「也加一个底稿的」「都补」：每周周篇底下多一行「底稿」，点开能看能改（底稿是这周写全的那份，不进开窗，月篇从它写）；
+// 周篇、月篇陈璟还没核对的标「他还没看」。
 
 struct ChronItem: Identifiable {
     let id: Int
@@ -19,6 +21,10 @@ struct ChronItem: Identifiable {
     let chars: Int
     let edited: String
     let excerpt: String
+    var review = ""          // todo / pending：陈璟还没核对；done：核对过
+    var draftID = 0          // 这周底稿的编号（周篇才有）
+    var draftChars = 0
+    var draftEdited = ""
     init(_ r: [String: Any]) {
         id = r.int("id")
         period = r.string("period")
@@ -29,8 +35,26 @@ struct ChronItem: Identifiable {
         chars = r.int("chars")
         edited = r.string("edited")
         excerpt = r.string("excerpt")
+        review = r.string("review")
+        draftID = r.int("draft_id")
+        draftChars = r.int("draft_chars")
+        draftEdited = r.string("draft_edited")
+    }
+    /// 周篇那行点「底稿」时现拼一个
+    init(draftOf w: ChronItem) {
+        id = w.draftID
+        period = "weekly_draft"
+        start = w.start
+        end = w.end
+        head = w.head
+        name = ""
+        chars = w.draftChars
+        edited = w.draftEdited
+        excerpt = ""
     }
     var isMonth: Bool { period == "monthly" }
+    var isDraft: Bool { period == "weekly_draft" }
+    var unreviewed: Bool { !isDraft && review != "done" && !review.isEmpty }
 }
 
 struct ChronMonth: Identifiable {
@@ -188,6 +212,7 @@ struct ChronicleRoomView: View {
                     Text(ChronFmt.grouped(it.chars)).font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
                     Text(" 字").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
                     if !it.edited.isEmpty { editedPill(it.edited, ink).padding(.leading, 8) }
+                    if it.unreviewed { pendingPill(ink).padding(.leading, 6) }
                     Spacer(minLength: 0)
                     Text("写到 ").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
                     Text(ChronFmt.md(it.end)).font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
@@ -200,18 +225,41 @@ struct ChronicleRoomView: View {
     }
 
     private func weekRow(_ w: ChronItem, last: Bool, _ ink: SanctusCardInk) -> some View {
-        HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text("\(ChronFmt.md(w.start)) — \(ChronFmt.md(w.end))").font(SanctusPageFont.corm(12.5)).foregroundColor(ink.sub)
-                .frame(width: 84, alignment: .leading)
-            Text(w.name).font(.system(size: 12, design: .serif)).foregroundColor(ink.body).lineLimit(1)
-            Spacer(minLength: 4)
-            if !w.edited.isEmpty { editedPill(w.edited, ink) }
-            Text("\(w.chars)").font(SanctusPageFont.corm(11.5)).foregroundColor(ink.sub)
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("\(ChronFmt.md(w.start)) — \(ChronFmt.md(w.end))").font(SanctusPageFont.corm(12.5)).foregroundColor(ink.sub)
+                    .frame(width: 84, alignment: .leading)
+                Text(w.name).font(.system(size: 12, design: .serif)).foregroundColor(ink.body).lineLimit(1)
+                Spacer(minLength: 4)
+                if !w.edited.isEmpty { editedPill(w.edited, ink) }
+                if w.unreviewed { pendingPill(ink) }
+                Text("\(w.chars)").font(SanctusPageFont.corm(11.5)).foregroundColor(ink.sub)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { openItem = w }
+            if w.draftID > 0 {
+                // #4295：这周写全的底稿，单独点
+                HStack(spacing: 6) {
+                    Text("底稿").font(.system(size: 10.5, design: .serif)).tracking(1).foregroundColor(ink.link)
+                    Text(ChronFmt.grouped(w.draftChars)).font(SanctusPageFont.corm(11.5)).foregroundColor(ink.sub)
+                    Text("字 ›").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
+                    if !w.draftEdited.isEmpty { editedPill(w.draftEdited, ink) }
+                    Spacer(minLength: 0)
+                }
+                .padding(.leading, 94)
+                .contentShape(Rectangle())
+                .onTapGesture { openItem = ChronItem(draftOf: w) }
+            }
         }
         .padding(.horizontal, 2).padding(.vertical, 10)
         .overlay(alignment: .bottom) { if !last { Rectangle().fill(ink.frame).frame(height: 0.6) } }
-        .contentShape(Rectangle())
-        .onTapGesture { openItem = w }
+    }
+
+    private func pendingPill(_ ink: SanctusCardInk) -> some View {
+        Text("他还没看").font(.system(size: 9, design: .serif)).tracking(1)
+            .foregroundColor(ink.sub)
+            .padding(.horizontal, 6).padding(.vertical, 1)
+            .overlay(Capsule().stroke(ink.frame, style: StrokeStyle(lineWidth: 0.8, dash: [2, 2])))
     }
 
     private func editedPill(_ by: String, _ ink: SanctusCardInk) -> some View {
@@ -270,8 +318,10 @@ struct ChronicleEditView: View {
                         .padding(.top, 6)
                         .padding(.horizontal, -5)
                     Text(note.isEmpty
-                         ? "保存前自动留一份旧版。保存后陈璟下次开窗读到的就是这一版"
-                            + (item.isMonth ? "；到 20 号、月底还会接着往下写，你改过的句子原样留着。" : "。")
+                         ? (item.isDraft
+                            ? "底稿是这周写全的那份，不放进开窗，月篇从它写。保存前自动留一份旧版；改完下次写月篇就用你改的。"
+                            : "保存前自动留一份旧版。保存后陈璟下次开窗读到的就是这一版"
+                              + (item.isMonth ? "；到 20 号、月底还会接着往下写，你改过的句子原样留着。" : "。"))
                          : note)
                         .font(.system(size: 10, design: .serif)).foregroundColor(ink.sub).lineSpacing(4)
                         .multilineTextAlignment(.center)
@@ -303,8 +353,8 @@ struct ChronicleEditView: View {
 
     private var topBar: some View {
         ZStack {
-            (Text(item.isMonth ? "MONTH · " : "WEEK · ").font(SanctusPageFont.corm(8))
-                + Text(item.isMonth ? "月篇" : "周篇").font(.system(size: 8, design: .serif)))
+            (Text(item.isMonth ? "MONTH · " : item.isDraft ? "DRAFT · " : "WEEK · ").font(SanctusPageFont.corm(8))
+                + Text(item.isMonth ? "月篇" : item.isDraft ? "这周的底稿" : "周篇").font(.system(size: 8, design: .serif)))
                 .tracking(2.6).foregroundColor(ink.kicker)
             HStack {
                 Button { dismiss() } label: {
