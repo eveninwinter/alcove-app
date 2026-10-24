@@ -516,19 +516,67 @@ final class HealthReporter {
         let wq = HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: today, limit: 20,
                                sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { _, ss, _ in
             let energy = HKQuantityType(.activeEnergyBurned)
-            let list: [[String: Any]] = ((ss as? [HKWorkout]) ?? []).map { w in
+            let ws = (ss as? [HKWorkout]) ?? []
+            var list: [[String: Any]] = ws.map { w in
                 var x: [String: Any] = [
                     "type": HealthReporter.workoutName(w.workoutActivityType),
                     "min": (w.duration / 60).rounded(),
                     "start": HealthReporter.iso.string(from: w.startDate),
+                    "end": HealthReporter.iso.string(from: w.endDate),
                 ]
                 if let kcal = w.statistics(for: energy)?.sumQuantity()?.doubleValue(for: .kilocalorie()) { x["kcal"] = kcal.rounded() }
                 return x
             }
-            if !list.isEmpty { bag.put("workouts", list) }
-            group.leave()
+            // 1024 #4264：每次运动里的心率（AirPods Pro 3 / 手表测的）——平均、最高、最高在几点，陈璟的「健康」能看到
+            let inner = DispatchGroup()
+            let lock = NSLock()
+            if let hrType = HealthReporter.q(.heartRate) {
+                for (i, w) in ws.enumerated() {
+                    inner.enter()
+                    let p = HKQuery.predicateForSamples(withStart: w.startDate, end: w.endDate, options: [])
+                    let hq = HKSampleQuery(sampleType: hrType, predicate: p, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, hs, _ in
+                        let pts = ((hs as? [HKQuantitySample]) ?? []).map { ($0.startDate, $0.quantity.doubleValue(for: bpm)) }
+                        if let top = pts.max(by: { $0.1 < $1.1 }) {
+                            let avg = pts.reduce(0.0) { $0 + $1.1 } / Double(pts.count)
+                            lock.lock()
+                            list[i]["hr_avg"] = avg.rounded()
+                            list[i]["hr_max"] = top.1.rounded()
+                            list[i]["hr_max_at"] = HealthReporter.iso.string(from: top.0)
+                            lock.unlock()
+                        }
+                        inner.leave()
+                    }
+                    store.execute(hq)
+                }
+            }
+            inner.notify(queue: .global()) {
+                if !list.isEmpty { bag.put("workouts", list) }
+                group.leave()
+            }
         }
         store.execute(wq)
+
+        // 这一周每天动了几分钟（健康页「运动」卡那七根柱子，陈璟那边也看得到）
+        group.enter()
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: now)
+        let weekStart = cal.date(byAdding: .day, value: -6, to: dayStart) ?? dayStart
+        let weekQ = HKSampleQuery(sampleType: HKObjectType.workoutType(),
+                                  predicate: HKQuery.predicateForSamples(withStart: weekStart, end: now, options: []),
+                                  limit: HKObjectQueryNoLimit, sortDescriptors: nil) { _, ss, _ in
+            let ws = (ss as? [HKWorkout]) ?? []
+            let f = DateFormatter()
+            f.locale = Locale(identifier: "en_US_POSIX")
+            f.dateFormat = "yyyy-MM-dd"
+            let days: [[String: Any]] = (0..<7).reversed().compactMap { i in
+                guard let day = cal.date(byAdding: .day, value: -i, to: dayStart) else { return nil }
+                let mins = ws.filter { cal.isDate($0.startDate, inSameDayAs: day) }.reduce(0.0) { $0 + $1.duration / 60 }
+                return ["date": f.string(from: day), "min": mins.rounded()]
+            }
+            if !ws.isEmpty { bag.put("workout_week", days) }
+            group.leave()
+        }
+        store.execute(weekQ)
 
         group.notify(queue: .main) { finish(bag.snapshot()) }
     }

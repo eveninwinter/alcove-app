@@ -10,9 +10,12 @@ import CoreMotion
 // - 今天、心率、身体展开的样子效果图里没画，照同一套零件排的。
 // 素材是她 1019 给的四张，抠成只有透明度的图，颜色在这里上（白天冷灰、黑夜白）。
 // 数据当场从苹果健康读（只读）；步数、距离、楼层用手机计步（她：「走了多少步还是用现在的」）。心率那些要手表，没有就写空的那句。
+// 1024 #4262–4264 她 AirPods Pro 3 到了：加第六张「运动」（moved，翅膀）。效果图 mock-health/d.html 她「可以」：
+// 今天每一次（时长 · 千卡 · 心率 平均/最高），点哪次在那行下面展开这次的心率线（虚线平均、蓝点最高）；这一周每天几分钟。
+// 原来身体卡里那段「今天的运动」挪过来了，身体卡只留体重、喝水、正念。
 
 enum HPCard: String, CaseIterable, Identifiable {
-    case today, sleep, heart, cycle, body
+    case today, sleep, heart, cycle, body, workout
     var id: String { rawValue }
     var script: String {
         switch self {
@@ -21,6 +24,7 @@ enum HPCard: String, CaseIterable, Identifiable {
         case .heart: return "heartbeat"
         case .cycle: return "cycle"
         case .body: return "body"
+        case .workout: return "moved"
         }
     }
     var kickerEN: String {
@@ -30,6 +34,7 @@ enum HPCard: String, CaseIterable, Identifiable {
         case .heart: return "HEART"
         case .cycle: return "CYCLE"
         case .body: return "BODY"
+        case .workout: return "WORKOUT"
         }
     }
     var kickerCN: String {
@@ -39,6 +44,7 @@ enum HPCard: String, CaseIterable, Identifiable {
         case .heart: return "心率"
         case .cycle: return "经期"
         case .body: return "身体"
+        case .workout: return "运动"
         }
     }
 }
@@ -75,6 +81,20 @@ struct HPWorkout: Identifiable {
     let minutes: Double
     let kcal: Double?
     let start: Date
+    var end: Date
+    // 这次运动里的心率（耳机 / 手表测的），没测到就是空
+    var hrAvg: Double?
+    var hrMax: Double?
+    var hrMaxAt: Date?
+    var curve: [CGPoint] = []   // x：这次运动从头到尾的位置（0…1），y：心率
+}
+
+/// 这一周每天动了几分钟
+struct HPMinuteBar: Identifiable {
+    let id: Int
+    let label: String
+    let minutes: Double
+    let isLast: Bool
 }
 
 struct HPCycle {
@@ -108,6 +128,8 @@ final class HealthPageModel: ObservableObject {
     @Published var resp: Double?
     @Published var cycle: HPCycle?
     @Published var workouts: [HPWorkout] = []
+    @Published var workoutWeek: [HPMinuteBar] = []
+    @Published var weekLongest: (minutes: Double, label: String)?
     @Published var weight: Double?
     @Published var water: Double?
     @Published var mindful: Double?
@@ -245,14 +267,70 @@ final class HealthPageModel: ObservableObject {
                 DispatchQueue.main.async { self?.mindful = total > 0 ? total / 60 : nil }
             })
         }
+        // 运动：拿这一周的，今天的列出来，七天按天加起来画柱子
         let energy = HKQuantityType(.activeEnergyBurned)
-        store.execute(HKSampleQuery(sampleType: HKObjectType.workoutType(), predicate: today, limit: 20,
+        let weekStart = cal.date(byAdding: .day, value: -6, to: dayStart) ?? dayStart
+        store.execute(HKSampleQuery(sampleType: HKObjectType.workoutType(),
+                                    predicate: HKQuery.predicateForSamples(withStart: weekStart, end: now, options: []),
+                                    limit: HKObjectQueryNoLimit,
                                     sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { [weak self] _, ss, _ in
-            let list = ((ss as? [HKWorkout]) ?? []).map { w in
+            let all = (ss as? [HKWorkout]) ?? []
+            let list = all.filter { $0.startDate >= dayStart }.map { w in
                 HPWorkout(name: HealthReporter.workoutName(w.workoutActivityType), minutes: w.duration / 60,
-                          kcal: w.statistics(for: energy)?.sumQuantity()?.doubleValue(for: .kilocalorie()), start: w.startDate)
+                          kcal: w.statistics(for: energy)?.sumQuantity()?.doubleValue(for: .kilocalorie()),
+                          start: w.startDate, end: w.endDate)
             }
-            DispatchQueue.main.async { self?.workouts = list }
+            let names = ["日", "一", "二", "三", "四", "五", "六"]
+            let bars = (0..<7).reversed().compactMap { i -> HPMinuteBar? in
+                guard let day = cal.date(byAdding: .day, value: -i, to: dayStart) else { return nil }
+                let mins = all.filter { cal.isDate($0.startDate, inSameDayAs: day) }.reduce(0.0) { $0 + $1.duration / 60 }
+                return HPMinuteBar(id: i, label: names[cal.component(.weekday, from: day) - 1], minutes: mins, isLast: i == 0)
+            }
+            let longest = all.max(by: { $0.duration < $1.duration }).map {
+                (minutes: $0.duration / 60, label: names[cal.component(.weekday, from: $0.startDate) - 1])
+            }
+            DispatchQueue.main.async {
+                guard let self = self else { return }
+                self.workouts = list
+                self.workoutWeek = bars
+                self.weekLongest = longest
+                for w in list { self.workoutHeart(w, bpm) }
+            }
+        })
+    }
+
+    /// 一次运动里的心率：平均、最高（哪一刻）、整条线。点太多就按时间分 120 段取平均
+    private func workoutHeart(_ w: HPWorkout, _ bpm: HKUnit) {
+        guard let t = qt(.heartRate) else { return }
+        let pred = HKQuery.predicateForSamples(withStart: w.start, end: w.end, options: [])
+        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
+        store.execute(HKSampleQuery(sampleType: t, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [weak self] _, ss, _ in
+            let pts = ((ss as? [HKQuantitySample]) ?? []).map { ($0.startDate, $0.quantity.doubleValue(for: bpm)) }
+            guard !pts.isEmpty else { return }
+            let span = max(1, w.end.timeIntervalSince(w.start))
+            let avg = pts.reduce(0.0) { $0 + $1.1 } / Double(pts.count)
+            let top = pts.max(by: { $0.1 < $1.1 })!
+            var curve: [CGPoint] = []
+            if pts.count <= 120 {
+                curve = pts.map { CGPoint(x: min(1, max(0, $0.0.timeIntervalSince(w.start) / span)), y: $0.1) }
+            } else {
+                var buckets = Array(repeating: (0.0, 0), count: 120)
+                for (d, v) in pts {
+                    let i = min(119, max(0, Int(d.timeIntervalSince(w.start) / span * 120)))
+                    buckets[i].0 += v
+                    buckets[i].1 += 1
+                }
+                curve = buckets.enumerated().compactMap { i, b in
+                    b.1 > 0 ? CGPoint(x: (Double(i) + 0.5) / 120, y: b.0 / Double(b.1)) : nil
+                }
+            }
+            DispatchQueue.main.async {
+                guard let self = self, let i = self.workouts.firstIndex(where: { $0.id == w.id }) else { return }
+                self.workouts[i].hrAvg = avg
+                self.workouts[i].hrMax = top.1
+                self.workouts[i].hrMaxAt = top.0
+                self.workouts[i].curve = curve
+            }
         })
     }
 
@@ -357,6 +435,7 @@ struct HealthRoomView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var m = HealthPageModel()
     @State private var open: HPCard?
+    @State private var pickedWorkout: UUID?
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -463,6 +542,7 @@ struct HealthRoomView: View {
                 bodySmall(ink)
             }
             .fixedSize(horizontal: false, vertical: true)
+            workoutSmall(ink)
         }
     }
 
@@ -651,14 +731,9 @@ struct HealthRoomView: View {
             VStack(alignment: .leading, spacing: 0) {
                 head(.body, ink, opened: false)
                 VStack(alignment: .leading, spacing: 7) {
-                    if let w = m.workouts.first {
-                        mix(["\(w.name) ", HP.int(w.minutes), " 分钟"], ink)
-                    } else {
-                        Text("今天还没运动").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
-                    }
-                    if m.weight != nil || m.water != nil {
-                        mix(["体重 ", m.weight.map { String(format: "%.1f", $0) } ?? "—", " 公斤 · 水 ", m.water.map(HP.int) ?? "—", ""], ink)
-                    }
+                    // 1024：运动挪去「运动」卡了，这里只留身体本身的
+                    mix(["体重 ", m.weight.map { String(format: "%.1f", $0) } ?? "—", " 公斤"], ink)
+                    mix(["水 ", m.water.map(HP.int) ?? "—", " · 正念 ", m.mindful.map(HP.int) ?? "—", " 分"], ink)
                 }
                 .padding(.top, 12)
                 Spacer(minLength: 0)
@@ -667,6 +742,36 @@ struct HealthRoomView: View {
         }
         .contentShape(Rectangle())
         .onTapGesture { toggle(.body) }
+    }
+
+    private func workoutSmall(_ ink: SanctusCardInk) -> some View {
+        HPShell(ink: ink) {
+            VStack(alignment: .leading, spacing: 0) {
+                head(.workout, ink, opened: false)
+                if m.workouts.isEmpty {
+                    big("—", "minutes today", ink, size: 27)
+                    Text("今天还没运动").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub).padding(.top, 6)
+                } else {
+                    big(HP.int(m.workouts.reduce(0.0) { $0 + $1.minutes }), "minutes today", ink, size: 27)
+                    mix(workoutCountLine, ink).padding(.top, 6)
+                }
+                Spacer(minLength: 0)
+            }
+            .frame(minHeight: 96, alignment: .top)
+        } art: {
+            art("HealthWing", ink, width: 96, dayOpacity: 0.55, nightOpacity: 0.6)
+                .offset(x: -40, y: 4)
+        }
+        .contentShape(Rectangle())
+        .onTapGesture { toggle(.workout) }
+    }
+
+    /// 「2 次 · 消耗 286 千卡」（mix 用：奇数位是数字）
+    private var workoutCountLine: [String] {
+        let kcal = m.workouts.compactMap { $0.kcal }
+        // 奇数位是数字：拼的时候字和数字要一格一格交替，不然字会套成数字的字体
+        if kcal.isEmpty { return ["", "\(m.workouts.count)", " 次"] }
+        return ["", "\(m.workouts.count)", " 次 · 消耗 ", HP.int(kcal.reduce(0, +)), " 千卡"]
     }
 
     // MARK: 展开
@@ -678,6 +783,7 @@ struct HealthRoomView: View {
         case .heart: heartOpen(ink)
         case .cycle: cycleOpen(ink)
         case .body: bodyOpen(ink)
+        case .workout: workoutOpen(ink)
         }
     }
 
@@ -804,15 +910,6 @@ struct HealthRoomView: View {
         HPShell(ink: ink) {
             VStack(alignment: .leading, spacing: 0) {
                 head(.body, ink, opened: true)
-                (Text("WORKOUT · ").font(SanctusCardFont.kicker()) + Text("今天的运动").font(.system(size: 7.5, design: .serif)))
-                    .tracking(2.25).foregroundColor(ink.kicker).padding(.top, 16)
-                if m.workouts.isEmpty {
-                    Text("今天还没有运动记录").font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub).padding(.top, 10)
-                } else {
-                    HPFacts(ink: ink, rows: m.workouts.map { w in
-                        (w.name, [HP.clock(w.start) + " · ", HP.int(w.minutes), " 分钟" + (w.kcal.map { " · \(HP.int($0)) 千卡" } ?? "")])
-                    }).padding(.top, 4)
-                }
                 HPFacts(ink: ink, rows: [
                     ("体重", ["", m.weight.map { String(format: "%.1f", $0) } ?? "—", " 公斤"]),
                     ("喝水", ["", m.water.map(HP.int) ?? "—", " 毫升"]),
@@ -821,6 +918,93 @@ struct HealthRoomView: View {
                 foot("kept in apple health", "收起 －", ink) { toggle(nil) }
             }
         }
+    }
+    private func workoutOpen(_ ink: SanctusCardInk) -> some View {
+        let picked = pickedWorkout ?? m.workouts.last?.id   // 没点过就看最近那一次
+        return HPShell(ink: ink) {
+            VStack(alignment: .leading, spacing: 0) {
+                head(.workout, ink, opened: true)
+                if m.workouts.isEmpty {
+                    big("—", "minutes today", ink, size: 40)
+                    Text("今天还没运动。戴着 AirPods Pro 3 或手表，在「健身」App 里开始一次体能训练，练完这里就有这次的时长、消耗和心率。")
+                        .font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub).lineSpacing(4).padding(.top, 10)
+                        .frame(maxWidth: 230, alignment: .leading)
+                } else {
+                    big(HP.int(m.workouts.reduce(0.0) { $0 + $1.minutes }), "minutes today", ink, size: 40)
+                    mix(workoutCountLine, ink).padding(.top, 6)
+                    VStack(spacing: 0) {
+                        ForEach(m.workouts) { w in
+                            workoutRow(w, on: w.id == picked, ink)
+                            if w.id == picked { workoutHeart(w, ink) }
+                        }
+                    }
+                    .padding(.top, 12)
+                }
+                SanctusHair(ink: ink).padding(.top, 14)
+                (Text("THIS WEEK · ").font(SanctusCardFont.kicker()) + Text("这一周").font(.system(size: 7.5, design: .serif)))
+                    .tracking(2.25).foregroundColor(ink.kicker).padding(.top, 14)
+                HPMinuteBars(bars: m.workoutWeek, ink: ink).frame(height: 112).padding(.top, 10)
+                if let s = weekLine { mix(s, ink).padding(.top, 12) }
+                foot("kept by the body", "收起 －", ink) { toggle(nil) }
+            }
+        } art: {
+            art("HealthWing", ink, width: 118, dayOpacity: 0.55, nightOpacity: 0.6)
+                .offset(x: -44, y: 6)
+        }
+    }
+
+    /// 一次运动一行：左边名字＋几点，右边「28 分 · 210 千卡 · 心率 142/168」；点一下在下面看这次的心率
+    private func workoutRow(_ w: HPWorkout, on: Bool, _ ink: SanctusCardInk) -> some View {
+        // 字和数字一格一格交替（偶数位字、奇数位数字），最后补上收尾的字
+        var right = ["", HP.int(w.minutes)]
+        var tail = " 分"
+        if let k = w.kcal { right += [tail + " · ", HP.int(k)]; tail = " 千卡" }
+        if let a = w.hrAvg, let x = w.hrMax { right += [tail + " · 心率 ", HP.int(a), "/", HP.int(x)]; tail = "" }
+        right.append(tail)
+        return HStack(alignment: .firstTextBaseline) {
+            (Text(w.name).font(.system(size: 11.5, design: .serif)).foregroundColor(on ? (ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E)) : ink.body)
+                + Text("  " + HP.clock(w.start)).font(SanctusPageFont.corm(13)).foregroundColor(ink.sub))
+            Spacer(minLength: 8)
+            right.enumerated().reduce(Text("")) { t, p in
+                p.offset % 2 == 0
+                    ? t + Text(p.element).font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
+                    : t + Text(p.element).font(SanctusPageFont.corm(13.5)).foregroundColor(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E))
+            }
+        }
+        .padding(.vertical, 8)
+        .overlay(alignment: .bottom) { Rectangle().fill(ink.frame).frame(height: 0.6) }
+        .contentShape(Rectangle())
+        .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { pickedWorkout = w.id } }
+    }
+
+    @ViewBuilder private func workoutHeart(_ w: HPWorkout, _ ink: SanctusCardInk) -> some View {
+        if w.curve.count >= 2, let avg = w.hrAvg, let top = w.hrMax {
+            VStack(spacing: 6) {
+                HPWorkoutCurve(points: w.curve, avg: avg, ink: ink).frame(height: 74)
+                HStack(alignment: .firstTextBaseline) {
+                    Text(HP.clock(w.start)).font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
+                    Spacer(minLength: 4)
+                    mix(["平均 ", HP.int(avg), "（虚线）· 最高 ", HP.int(top), w.hrMaxAt.map { " 在 " + HP.clock($0) } ?? ""], ink, size: 10)
+                    Spacer(minLength: 4)
+                    Text(HP.clock(w.end)).font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
+                }
+            }
+            .padding(.top, 12).padding(.bottom, 6)
+        } else {
+            Text("这次没测到心率（戴着 AirPods Pro 3 或手表运动才有）")
+                .font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.vertical, 10)
+        }
+    }
+
+    /// 这一周底下那行：动了几天、一共多少分、最长一次哪天（mix 用：奇数位是数字）
+    private var weekLine: [String]? {
+        let days = m.workoutWeek.filter { $0.minutes > 0 }
+        guard !days.isEmpty else { return nil }
+        let head = ["这周动了 ", "\(days.count)", " 天 · 共 ", HP.int(days.reduce(0.0) { $0 + $1.minutes })]
+        guard let l = m.weekLongest else { return head + [" 分"] }
+        return head + [" 分 · 最长一次 ", HP.int(l.minutes), " 分（周\(l.label)）"]
     }
 }
 
@@ -1125,6 +1309,66 @@ struct HPFacts: View {
                 }
                 .padding(.vertical, 7)
                 .overlay(alignment: .bottom) { Rectangle().fill(ink.frame).frame(height: 0.6) }
+            }
+        }
+    }
+}
+
+/// 这一周每天动了几分钟：一天一根，今天那根深一点；没动的那天只画一道短横
+struct HPMinuteBars: View {
+    let bars: [HPMinuteBar]
+    let ink: SanctusCardInk
+    var body: some View {
+        let top = max(bars.map { $0.minutes }.max() ?? 0, 30)
+        HStack(alignment: .bottom, spacing: 0) {
+            ForEach(bars) { b in
+                VStack(spacing: 4) {
+                    Text(b.minutes > 0 ? HP.int(b.minutes) : " ").font(SanctusPageFont.corm(11)).foregroundColor(ink.body)
+                    if b.minutes > 0 {
+                        Capsule()
+                            .fill(LinearGradient(colors: b.isLast ? [HP.rgb(0x6F7480), HP.rgb(0x3E4048)] : [HP.rgb(0xC6C9D0), HP.rgb(0x8A8F9A)],
+                                                 startPoint: .top, endPoint: .bottom))
+                            .frame(width: 12, height: max(6, 74 * CGFloat(b.minutes / top)))
+                    } else {
+                        Capsule().fill(ink.frame).frame(width: 12, height: 3)
+                    }
+                    Text(b.label).font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
+                }
+                .frame(maxWidth: .infinity)
+            }
+        }
+        .frame(maxHeight: .infinity, alignment: .bottom)
+    }
+}
+
+/// 一次运动的心率线：灰线、平均是一道虚线，最高那一刻是电光蓝的点
+struct HPWorkoutCurve: View {
+    let points: [CGPoint]
+    let avg: Double
+    let ink: SanctusCardInk
+    var body: some View {
+        GeometryReader { g in
+            let ys = points.map { $0.y }
+            let lo = (ys.min() ?? 0) - 4
+            let hi = (ys.max() ?? 1) + 4
+            let pos: (CGPoint) -> CGPoint = { p in
+                CGPoint(x: p.x * g.size.width, y: g.size.height * (1 - (p.y - lo) / max(1, hi - lo)))
+            }
+            let ay = g.size.height * (1 - (avg - lo) / max(1, hi - lo))
+            Path { p in
+                p.move(to: CGPoint(x: 0, y: ay))
+                p.addLine(to: CGPoint(x: g.size.width, y: ay))
+            }
+            .stroke(ink.hair, style: StrokeStyle(lineWidth: 0.8, dash: [3, 3]))
+            Path { path in
+                path.move(to: pos(points[0]))
+                for p in points.dropFirst() { path.addLine(to: pos(p)) }
+            }
+            .stroke(HP.rgb(0x6F7480, 0.85), style: StrokeStyle(lineWidth: 1.2, lineJoin: .round))
+            if let top = points.max(by: { $0.y < $1.y }) {
+                Circle().fill(ink.dark ? HP.rgb(0x3A55FF) : HP.rgb(0x0B1BFF))
+                    .frame(width: 5.5, height: 5.5)
+                    .position(pos(top))
             }
         }
     }
