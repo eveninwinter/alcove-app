@@ -546,7 +546,7 @@ final class HealthReporter {
                         }
                         inner.leave()
                     }
-                    store.execute(hq)
+                    self.store.execute(hq)
                 }
             }
             inner.notify(queue: .global()) {
