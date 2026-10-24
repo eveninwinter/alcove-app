@@ -40,6 +40,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case window         // 0923 世界之窗：每天九幅开放图库的图配中文讲解
     case ears           // 1014 只给你听：他专门录的长语音
     case health         // 1019 健康：她的苹果健康（HealthView.swift）
+    case chronicle      // 1024 家账：每个月的月篇、每周的周篇，她能看能改（ChronicleView.swift）
 
     var id: String { rawValue }
 
@@ -91,6 +92,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .window: return "世界之窗"
         case .ears: return "只给你听"
         case .health: return "健康"
+        case .chronicle: return "家账"
         }
     }
 
@@ -102,6 +104,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
+             .chronicle,   // 1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -154,6 +157,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .window: return "books.vertical"
         case .ears: return "headphones"
         case .health: return "heart"
+        case .chronicle: return "book.closed"
         default: return "sparkles"
         }
     }
@@ -269,6 +273,8 @@ struct NativeHouseSheet: View {
                     EarsRoomView()
                 case .health:
                     HealthRoomView()
+                case .chronicle:
+                    ChronicleRoomView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -564,6 +570,7 @@ struct NativeHouseDrawer: View {
                     VStack(spacing: 7) {
                         drawerRow(.album, detail: "照片和留给它的一句话")
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
+                        drawerRow(.chronicle, detail: "每个月的月篇、每周的周篇，能改")   // 1024 #4272
                         drawerRow(.dreams, detail: "梦与旧日记")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
                         drawerRow(.ears, detail: "他只说给你一个人听的")
