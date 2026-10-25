@@ -101,6 +101,7 @@ private enum PondFilter: String, CaseIterable {
 // - 每条平铺不装卡：左方头像，右边名字、正文、图（一张放大、多张三个一排方格）、链接、许愿状态，
 //   一行时间＋许愿/念头＋心情，最右「··」点开「赞 / 评论」；赞和回复收在底下浅色小框里。
 // - 底色 EEEFF1（跟 Sanctus 一样深、去掉一点黄），深浅只认全屋按钮。
+// - #4332 她「除了图片 其他地方边框圆角」：链接卡、赞评论框、赞/评论条圆角 9，「··」7；图片、头像不动。
 
 private struct PondInk {
     let dark: Bool
@@ -524,8 +525,8 @@ private struct PondMomentRow: View {
             Spacer(minLength: 0)
         }
         .padding(6)
-        .background(ink.box)
-        .overlay(Rectangle().stroke(ink.frame, lineWidth: 0.6))
+        .background(ink.box, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.frame, lineWidth: 0.6))
     }
 
     private var statusRow: some View {
@@ -569,7 +570,7 @@ private struct PondMomentRow: View {
                 }
                 .foregroundColor(ink.link)
                 .frame(width: 30, height: 19)
-                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ink.dots))
+                .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(ink.dots))
                 .frame(width: 40, height: 30).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -606,7 +607,7 @@ private struct PondMomentRow: View {
             .buttonStyle(.plain)
         }
         .foregroundColor(.white)
-        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ink.menu))
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(ink.menu))
     }
 
     /// 赞和回复：浅色小框，左上一个小尖角朝上
@@ -633,7 +634,8 @@ private struct PondMomentRow: View {
                 }
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(ink.box)
+            .background(ink.box, in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(ink.frame, lineWidth: 0.6))
         }
     }
 
