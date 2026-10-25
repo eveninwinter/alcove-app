@@ -7,9 +7,8 @@ import UIKit
 // 一张表两个 kind：wish 许愿（带状态：想要→在做→成了）、thought 念头（纯流水）。
 // "朋友圈"不是第三种东西，是这两种混在一条时间线上、两个人交替冒头的那个视图。
 //
-// 皮按她 0818 给的四张参考图（Sui-IB/InternalBeyond-Mobile）：冷蓝玻璃、
-// 强噪点、光从下面照上来、衬线标题＋等宽元信息。这套配色暂时只活在这一页，
-// 没进主题引擎——她说了新主题先不动。
+// 1025 #4323 起主页面换成朋友圈的样子、Sanctus 配色（见「主页面」那段注释）；
+// 放一条 / 回一句两个弹层还是 0818 的冷蓝玻璃皮（GlassPalette），没动。
 
 
 // MARK: - 数据
@@ -95,9 +94,75 @@ private enum PondFilter: String, CaseIterable {
 
 // MARK: - 主页面
 
+// 1025 #4323–4325 她：「檐下布局改成朋友圈的感觉」，效果图 /root/rhysel/sanctus-kit/mock-moments/mock.html
+// 她点头：「可以 颜色有点黄了 稍微偏白一点点就行 其他的没问题」「黑夜版换那个人脸闭眼那张图在上面去」。
+// - 顶上一张封面（白天天使壁纸 PondCoverDay，黑夜人脸闭眼那张 HealthPortrait），往下化进底色；
+//   右下两个方头像（聊天页设的那两张）＋花体 under the eaves；左上返回、右上加号＝放一条（原来右下的圆按钮去掉）。
+// - 每条平铺不装卡：左方头像，右边名字、正文、图（一张放大、多张三个一排方格）、链接、许愿状态，
+//   一行时间＋许愿/念头＋心情，最右「··」点开「赞 / 评论」；赞和回复收在底下浅色小框里。
+// - 底色比 Sanctus 页面再白一点（F4F5F7），深浅只认全屋按钮。
+
+private struct PondInk {
+    let dark: Bool
+    private func rgb(_ hex: Int, _ a: Double = 1) -> Color {
+        Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255, opacity: a)
+    }
+    var page: Color { dark ? rgb(0x1B1C20) : rgb(0xF4F5F7) }
+    var ink: Color { dark ? rgb(0xE4E4E7) : rgb(0x2A2A2E) }
+    var body: Color { dark ? rgb(0xE3E4E8) : rgb(0x3E4048) }
+    var name: Color { dark ? rgb(0xAEB3BF) : rgb(0x5E6474) }
+    var script: Color { dark ? rgb(0xC3C6CE) : rgb(0x6F7480) }
+    var sub: Color { dark ? rgb(0x8B8F99) : rgb(0x9A9EA8) }
+    var link: Color { dark ? rgb(0xA3A7B0) : rgb(0x7D818C) }
+    var hair: Color { dark ? Color.white.opacity(0.14) : rgb(0x969AA4, 0.45) }
+    var frame: Color { dark ? Color.white.opacity(0.08) : rgb(0x969AA4, 0.22) }
+    var box: Color { dark ? Color.white.opacity(0.05) : Color.white.opacity(0.66) }
+    var dots: Color { dark ? Color.white.opacity(0.08) : rgb(0x969AA4, 0.16) }
+    var menu: Color { dark ? rgb(0x3A3B42) : rgb(0x3E4048) }
+    var blue: Color { dark ? rgb(0x3A55FF) : rgb(0x0B1BFF) }
+    var avatarEdge: Color { dark ? Color.white.opacity(0.18) : Color.white }
+}
+
+/// 头像：跟聊天页同一份（设置里换的那两张）；没设就一个字
+private struct PondAvatar: View {
+    let isHers: Bool
+    var size: CGFloat = 40
+    var radius: CGFloat = 8
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    @AppStorage("assistantAvatarDataURL") private var assistantAvatar = ""
+
+    private static var cache: [Int: UIImage] = [:]
+    private static func decode(_ value: String) -> UIImage? {
+        guard !value.isEmpty else { return nil }
+        let key = value.hashValue
+        if let hit = cache[key] { return hit }
+        let payload = value.split(separator: ",", maxSplits: 1).last.map(String.init) ?? value
+        guard let img = Data(base64Encoded: payload).flatMap(UIImage.init(data:)) else { return nil }
+        cache[key] = img
+        return img
+    }
+
+    var body: some View {
+        Group {
+            if let img = Self.decode(isHers ? userAvatar : assistantAvatar) {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                ZStack {
+                    Color(red: isHers ? 0xB9 / 255 : 0x8E / 255, green: isHers ? 0xBD / 255 : 0x93 / 255,
+                          blue: isHers ? 0xC6 / 255 : 0xA0 / 255)
+                    Text(isHers ? "霁" : "璟").font(.system(size: size * 0.38, design: .serif)).foregroundColor(.white)
+                }
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+    }
+}
+
 struct NativePondView: View {
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
 
     @State private var items: [PondItem] = []
     @State private var filter: PondFilter = .all
@@ -105,14 +170,28 @@ struct NativePondView: View {
     @State private var failed = false
     @State private var composing = false
     @State private var replyingTo: PondItem?
+    @State private var menuFor: String?
 
     private var palette: GlassPalette { .named(themeName) }
+    private var ink: PondInk { _ = houseAppearance; return PondInk(dark: AlcoveAppearance.isDark) }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
 
     var body: some View {
-        ZStack(alignment: .bottomTrailing) {
-            background
-            content
-            composeButton
+        let ink = self.ink
+        ZStack(alignment: .top) {
+            ink.page.ignoresSafeArea()
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) {
+                    cover(ink)
+                    subBar(ink)
+                    content(ink)
+                    Color.clear.frame(height: safeBottom + 30)
+                }
+            }
+            .ignoresSafeArea(edges: .top)
+            .refreshable { await load() }
+            topButtons(ink)
         }
         .task { await load() }
         .sheet(isPresented: $composing) {
@@ -127,104 +206,129 @@ struct NativePondView: View {
         }
     }
 
-    private var background: some View { GlassBackdrop(palette: palette) }
+    // MARK: 封面
 
-    private var content: some View {
-        VStack(spacing: 0) {
-            header
-            filterBar
-            if loading {
-                Spacer()
-                ProgressView().tint(palette.ink3)
-                Spacer()
-            } else if failed {
-                Spacer()
-                emptyNote("没捞上来，下拉再试一次")
-                Spacer()
-            } else if items.isEmpty {
-                Spacer()
-                emptyNote(filter == .wish
-                          ? "还没许过愿。贴个链接就算一条，一个字都不用写"
-                          : "池子是空的")
-                Spacer()
-            } else {
-                ScrollView {
-                    LazyVStack(spacing: 12) {
-                        ForEach(items) { item in
-                            PondItemCard(item: item, palette: palette,
-                                         onReply: { replyingTo = item },
-                                         onLike: { Task { await like(item.id) } },
-                                         onStatus: { status in
-                                             Task { await setStatus(item.id, status) }
-                                         })
-                        }
-                        Color.clear.frame(height: 76)
-                    }
-                    .padding(.horizontal, 14)
-                    .padding(.top, 4)
+    private func cover(_ ink: PondInk) -> some View {
+        let h: CGFloat = 300
+        return ZStack(alignment: .bottomTrailing) {
+            Color.clear
+                .frame(maxWidth: .infinity)
+                .frame(height: h)
+                .overlay {
+                    Image(ink.dark ? "HealthPortrait" : "PondCoverDay")
+                        .resizable().scaledToFill()
+                        .brightness(ink.dark ? -0.08 : 0)
                 }
-                .refreshable { await load() }
+                .clipped()
+                .overlay(alignment: .bottom) {
+                    LinearGradient(colors: [ink.page.opacity(0), ink.page], startPoint: .top, endPoint: .bottom)
+                        .frame(height: 90)
+                }
+            HStack(alignment: .bottom, spacing: 12) {
+                VStack(alignment: .trailing, spacing: 6) {
+                    Text("under the eaves").font(SanctusPageFont.script(31)).foregroundColor(ink.ink)
+                    Text("ji & jing, side by side").font(SanctusPageFont.ital(11)).foregroundColor(ink.script)
+                }
+                .padding(.bottom, 26)
+                ZStack(alignment: .bottomLeading) {
+                    PondAvatar(isHers: true, size: 56, radius: 10)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.avatarEdge, lineWidth: 2))
+                    PondAvatar(isHers: false, size: 56, radius: 10)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.avatarEdge, lineWidth: 2))
+                        .offset(x: 40, y: -10)
+                }
+                .frame(width: 96, height: 66, alignment: .bottomLeading)
             }
+            .padding(.trailing, 16)
+            .offset(y: 20)
         }
+        .zIndex(1)
     }
 
-    private var header: some View {
-        GlassHeader(title: "檐下", palette: palette, onBack: { dismiss() })
-    }
-
-    private var filterBar: some View {
-        HStack(spacing: 7) {
-            ForEach(PondFilter.allCases, id: \.self) { f in
-                Button {
-                    withAnimation(.easeInOut(duration: 0.16)) { filter = f }
-                    Task { await load() }
-                } label: {
-                    Text(f.label)
-                        .font(.system(size: 12.5, weight: filter == f ? .semibold : .regular,
-                                      design: .serif))
-                        .tracking(1.2)
-                        .foregroundColor(filter == f ? palette.ink : palette.ink3)
-                        .padding(.horizontal, 15)
-                        .padding(.vertical, 7)
-                        .background(
-                            Capsule().fill(filter == f ? palette.glass : Color.clear)
-                                .overlay(Capsule().strokeBorder(
-                                    filter == f ? palette.line : Color.clear, lineWidth: 0.7)))
-                }
-                .buttonStyle(.plain)
+    private func topButtons(_ ink: PondInk) -> some View {
+        HStack {
+            Button { dismiss() } label: {
+                Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular))
+                    .foregroundColor(ink.script)
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
             }
+            .buttonStyle(.plain)
+            .padding(.leading, 6)
+            .accessibilityLabel("返回")
             Spacer()
+            Button { composing = true } label: {
+                Image(systemName: "plus").font(.system(size: 14, weight: .light))
+                    .foregroundColor(ink.script)
+                    .frame(width: 30, height: 30)
+                    .background(Circle().fill(ink.dark ? Color.black.opacity(0.25) : Color.white.opacity(0.55)))
+                    .overlay(Circle().stroke(ink.script.opacity(0.6), lineWidth: 0.8))
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, 9)
+            .accessibilityLabel("放一条")
         }
-        .padding(.horizontal, 16)
-        .padding(.top, 6)
-        .padding(.bottom, 10)
+        .padding(.top, safeTop)
     }
 
-    private func emptyNote(_ text: String) -> some View {
+    // MARK: 封面下面一行：眉标＋全部/许愿/念头
+
+    private func subBar(_ ink: PondInk) -> some View {
+        HStack(alignment: .firstTextBaseline) {
+            (Text("ON THE EAVES · ").font(SanctusPageFont.corm(8)) + Text("檐下").font(.system(size: 8, design: .serif)))
+                .tracking(2.4).foregroundColor(ink.sub)
+            Spacer()
+            HStack(spacing: 16) {
+                ForEach(PondFilter.allCases, id: \.self) { f in
+                    Button {
+                        filter = f
+                        menuFor = nil
+                        Task { await load() }
+                    } label: {
+                        Text(f.label).font(.system(size: 11.5, design: .serif)).tracking(2.3)
+                            .foregroundColor(filter == f ? ink.ink : ink.sub)
+                            .padding(.bottom, 3)
+                            .overlay(alignment: .bottom) {
+                                if filter == f { Rectangle().fill(ink.ink).frame(height: 0.8) }
+                            }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.horizontal, 18)
+        .padding(.top, 30)
+        .padding(.bottom, 4)
+    }
+
+    @ViewBuilder private func content(_ ink: PondInk) -> some View {
+        if loading {
+            ProgressView().tint(ink.sub).padding(.top, 50)
+        } else if failed {
+            emptyNote("没捞上来，下拉再试一次", ink)
+        } else if items.isEmpty {
+            emptyNote(filter == .wish ? "还没许过愿。贴个链接就算一条，一个字都不用写" : "池子是空的", ink)
+        } else {
+            LazyVStack(spacing: 0) {
+                ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                    if i > 0 { Rectangle().fill(ink.frame).frame(height: 0.6) }
+                    PondMomentRow(item: item, ink: ink, menuOpen: menuFor == item.id,
+                                  onMenu: { withAnimation(.easeOut(duration: 0.15)) { menuFor = menuFor == item.id ? nil : item.id } },
+                                  onReply: { menuFor = nil; replyingTo = item },
+                                  onLike: { menuFor = nil; Task { await like(item.id) } },
+                                  onStatus: { status in Task { await setStatus(item.id, status) } })
+                }
+            }
+        }
+    }
+
+    private func emptyNote(_ text: String, _ ink: PondInk) -> some View {
         Text(text)
             .font(.system(size: 12.5, design: .serif))
-            .foregroundColor(palette.ink3)
+            .foregroundColor(ink.sub)
             .multilineTextAlignment(.center)
             .padding(.horizontal, 40)
-    }
-
-    private var composeButton: some View {
-        Button { composing = true } label: {
-            Image(systemName: "plus")
-                .font(.system(size: 17, weight: .light))
-                .foregroundColor(palette.ink)
-                .frame(width: 50, height: 50)
-                .background(
-                    Circle().fill(.ultraThinMaterial)
-                        .overlay(Circle().fill(palette.glass))
-                        .overlay(Circle().strokeBorder(palette.line, lineWidth: 0.8))
-                        .shadow(color: palette.isDark ? .black.opacity(0.4)
-                                : Color(red: 90/255, green: 120/255, blue: 170/255).opacity(0.22),
-                                radius: 14, y: 6))
-        }
-        .buttonStyle(.plain)
-        .padding(.trailing, 20)
-        .padding(.bottom, 24)
+            .padding(.top, 50)
     }
 
     // MARK: 网络
@@ -300,154 +404,128 @@ struct NativePondView: View {
     }
 }
 
-// MARK: - 一条
+// MARK: - 一条（朋友圈那样平铺）
 
-private struct PondItemCard: View {
+private struct PondMomentRow: View {
     let item: PondItem
-    let palette: GlassPalette
+    let ink: PondInk
+    let menuOpen: Bool
+    var onMenu: () -> Void
     var onReply: () -> Void
     var onLike: () -> Void
     var onStatus: (String) -> Void
 
+    private func who(_ author: String) -> String { author == "ji" ? "陈霁" : "陈璟" }
+
     private var stamp: String {
-        // "2026-08-19T02:27:21.202+08:00" → "08-19 02:27"
+        // "2026-08-19T02:27:21.202+08:00" → "08 · 19  02:27"
         let s = item.createdAt
         guard s.count >= 16 else { return s }
-        let date = s.dropFirst(5).prefix(5)
-        let time = s.dropFirst(11).prefix(5)
-        return "\(date) \(time)"
+        let m = s.dropFirst(5).prefix(2)
+        let d = s.dropFirst(8).prefix(2)
+        let t = s.dropFirst(11).prefix(5)
+        return "\(m) · \(d)  \(t)"
     }
 
     var body: some View {
         HStack(alignment: .top, spacing: 11) {
-            GlassBead(isHers: item.isHers)
-            VStack(alignment: .leading, spacing: 8) {
-                header
+            PondAvatar(isHers: item.isHers)
+            VStack(alignment: .leading, spacing: 0) {
+                Text(who(item.author))
+                    .font(.system(size: 13.5, weight: .medium, design: .serif)).tracking(0.8)
+                    .foregroundColor(ink.name)
                 if !item.text.isEmpty {
                     Text(item.text)
-                        .font(.system(size: 14.5, design: .serif))
-                        .foregroundColor(palette.ink)
+                        .font(.system(size: 14, design: .serif))
+                        .foregroundColor(ink.body)
                         .lineSpacing(4)
                         .fixedSize(horizontal: false, vertical: true)
+                        .padding(.top, 4)
                 }
-                if !item.images.isEmpty { imageWall }
-                if item.card != nil || !item.url.isEmpty { linkCard }
-                if item.isWish { statusRow }
-                if !item.replies.isEmpty { repliesBlock }
-                footer
+                if !item.images.isEmpty { imageWall.padding(.top, 8) }
+                if item.card != nil || !item.url.isEmpty { linkCard.padding(.top, 8) }
+                if item.isWish { statusRow.padding(.top, 8) }
+                metaRow.padding(.top, 9)
+                if !item.likedBy.isEmpty || !item.replies.isEmpty { interactions.padding(.top, 8) }
             }
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
-        .padding(13)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .glassCard(palette)
-        .overlay(alignment: .topTrailing) {
-            if item.pinned {
-                Image(systemName: "pin.fill")
-                    .font(.system(size: 9))
-                    .foregroundColor(palette.acc.opacity(0.7))
-                    .padding(10)
-            }
-        }
+        .padding(.horizontal, 16)
+        .padding(.top, 16)
+        .padding(.bottom, 14)
     }
 
-    private var header: some View {
-        HStack(spacing: 7) {
-            Text(item.isHers ? "陈霁" : "陈璟")
-                .font(.system(size: 12, weight: .medium, design: .serif))
-                .tracking(1.0)
-                .foregroundColor(palette.ink2)
-            Text(item.isWish ? "许愿" : "念头")
-                .font(.system(size: 9, design: .monospaced))
-                .tracking(0.8)
-                .foregroundColor(palette.ink3)
-                .padding(.horizontal, 6).padding(.vertical, 2)
-                .background(Capsule().strokeBorder(palette.line, lineWidth: 0.6))
-            ForEach(item.moods, id: \.self) { feel in
-                HStack(spacing: 3.5) {
-                    Circle().fill(palette.acc.opacity(0.75)).frame(width: 4, height: 4)
-                    Text(feel)
-                        .font(.system(size: 10, design: .serif))
-                        .tracking(0.6)
-                        .foregroundColor(palette.acc)
-                }
-                .padding(.horizontal, 7).padding(.vertical, 2.5)
-                .background(Capsule().fill(palette.acc.opacity(0.10)))
-            }
-            Spacer()
-        }
-    }
-
-    // 一张就铺开，多张走两列
-    private var imageWall: some View {
-        let columns = item.images.count == 1
-            ? [GridItem(.flexible())]
-            : [GridItem(.flexible(), spacing: 5), GridItem(.flexible(), spacing: 5)]
-        let boxHeight: CGFloat = item.images.count == 1 ? 178 : 104
-        return LazyVGrid(columns: columns, spacing: 5) {
-            ForEach(item.images, id: \.self) { path in
-                // 0907 她抓的：窄图会撑破卡片、左右漫到屏幕外去。
-                // 原来是 AsyncImage 先 .frame(height:) 再 .frame(maxWidth:)：
-                // 中间那层的宽度由「按高度填满后被放大的图」自己说了算，
-                // 高瘦的图横向能放到比屏幕还宽，等外层想 clipped 时布局已经越界。
-                // 现在拿一张空底把格子尺寸钉死，图只在格子里当背景铺，铺不下当场裁。
-                Color.clear
-                    .frame(maxWidth: .infinity)
-                    .frame(height: boxHeight)
-                    .overlay {
-                        AsyncImage(url: AlcoveAPI.attachmentURL(path)) { phase in
-                            if let image = phase.image {
-                                image.resizable().aspectRatio(contentMode: .fill)
-                            } else {
-                                Rectangle().fill(palette.glass)
-                            }
+    // 一张放大竖着摆；四张两个一排；其他三个一排方格
+    @ViewBuilder private var imageWall: some View {
+        if item.images.count == 1 {
+            cell(item.images[0], w: 170, h: 212)
+        } else {
+            let perRow = item.images.count == 4 ? 2 : 3
+            VStack(alignment: .leading, spacing: 4) {
+                ForEach(Array(stride(from: 0, to: item.images.count, by: perRow)), id: \.self) { start in
+                    HStack(spacing: 4) {
+                        ForEach(item.images[start..<min(start + perRow, item.images.count)], id: \.self) { path in
+                            cell(path, w: 82, h: 82)
                         }
                     }
-                    .clipped()
-                    .clipShape(RoundedRectangle(cornerRadius: 11, style: .continuous))
-                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .strokeBorder(palette.line.opacity(0.5), lineWidth: 0.6))
+                }
             }
         }
     }
 
-    private var linkCard: some View {
-        HStack(spacing: 10) {
-            if let cover = item.card?.cover, !cover.isEmpty {
-                AsyncImage(url: AlcoveAPI.attachmentURL(cover)) { phase in
+    private func cell(_ path: String, w: CGFloat, h: CGFloat) -> some View {
+        // 0907：格子先用空底钉死尺寸，图只在格子里铺，铺不下当场裁（窄图会撑破）
+        Color.clear
+            .frame(width: w, height: h)
+            .overlay {
+                AsyncImage(url: AlcoveAPI.attachmentURL(path)) { phase in
                     if let image = phase.image {
                         image.resizable().aspectRatio(contentMode: .fill)
                     } else {
-                        Rectangle().fill(palette.glass)
+                        Rectangle().fill(ink.box)
                     }
                 }
-                .frame(width: 58, height: 58)
-                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
-            } else {
-                Image(systemName: "link")
-                    .font(.system(size: 15, weight: .light))
-                    .foregroundColor(palette.ink3)
-                    .frame(width: 58, height: 58)
-                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous)
-                        .fill(palette.glass))
             }
-            VStack(alignment: .leading, spacing: 3) {
+            .clipped()
+            .overlay(Rectangle().stroke(ink.frame, lineWidth: 0.6))
+    }
+
+    private var linkCard: some View {
+        HStack(spacing: 9) {
+            Group {
+                if let cover = item.card?.cover, !cover.isEmpty {
+                    AsyncImage(url: AlcoveAPI.attachmentURL(cover)) { phase in
+                        if let image = phase.image {
+                            image.resizable().aspectRatio(contentMode: .fill)
+                        } else {
+                            Rectangle().fill(ink.box)
+                        }
+                    }
+                } else {
+                    Image(systemName: "link").font(.system(size: 14, weight: .light)).foregroundColor(ink.sub)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                        .background(ink.box)
+                }
+            }
+            .frame(width: 44, height: 44)
+            .clipped()
+            VStack(alignment: .leading, spacing: 2) {
                 Text(item.card?.title.isEmpty == false ? item.card!.title : item.url)
                     .font(.system(size: 12, design: .serif))
-                    .foregroundColor(palette.ink)
+                    .foregroundColor(ink.body)
                     .lineLimit(2)
                 if let c = item.card, !c.site.isEmpty || !c.author.isEmpty {
                     Text([c.site, c.author].filter { !$0.isEmpty }.joined(separator: " · "))
-                        .font(.system(size: 9.5, design: .monospaced))
-                        .foregroundColor(palette.ink3)
+                        .font(SanctusPageFont.ital(10.5))
+                        .foregroundColor(ink.sub)
+                        .lineLimit(1)
                 }
             }
             Spacer(minLength: 0)
         }
-        .padding(8)
-        .background(RoundedRectangle(cornerRadius: 12, style: .continuous)
-            .fill(palette.glass.opacity(0.6))
-            .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(palette.line.opacity(0.6), lineWidth: 0.6)))
+        .padding(6)
+        .background(ink.box)
+        .overlay(Rectangle().stroke(ink.frame, lineWidth: 0.6))
     }
 
     private var statusRow: some View {
@@ -455,86 +533,135 @@ private struct PondItemCard: View {
             ForEach([("", "想要"), ("doing", "在做"), ("done", "成了")], id: \.0) { value, label in
                 let on = item.status == value
                 Button { onStatus(value) } label: {
-                    Text(label)
-                        .font(.system(size: 10, design: .serif))
-                        .tracking(0.6)
-                        .foregroundColor(on ? (value == "done" ? palette.gold : palette.acc)
-                                            : palette.ink3)
-                        .padding(.horizontal, 9).padding(.vertical, 4)
-                        .background(Capsule().strokeBorder(
-                            on ? (value == "done" ? palette.gold : palette.acc).opacity(0.55)
-                               : palette.line.opacity(0.5),
-                            lineWidth: 0.7))
+                    HStack(spacing: 4) {
+                        if on { Circle().fill(ink.blue).frame(width: 4, height: 4) }
+                        Text(label).font(.system(size: 9.5, design: .serif)).tracking(1.1)
+                    }
+                    .foregroundColor(on ? ink.ink : ink.sub)
+                    .padding(.horizontal, 8).padding(.vertical, 2)
+                    .overlay(Capsule().stroke(on ? ink.ink : ink.hair, lineWidth: 0.6))
                 }
                 .buttonStyle(.plain)
             }
             if !item.statusNote.isEmpty {
-                Text(item.statusNote)
-                    .font(.system(size: 10, design: .serif))
-                    .foregroundColor(palette.ink3)
+                Text(item.statusNote).font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
             }
-            Spacer()
         }
     }
 
-    private var repliesBlock: some View {
-        VStack(alignment: .leading, spacing: 5) {
-            ForEach(item.replies) { r in
-                HStack(alignment: .top, spacing: 6) {
-                    Text(r.author == "ji" ? "陈霁" : "陈璟")
-                        .font(.system(size: 10, weight: .medium, design: .serif))
-                        .foregroundColor(r.author == "ji" ? palette.ink2 : palette.acc)
-                    if !r.poke.isEmpty {
-                        Text(r.poke).font(.system(size: 11))
-                    }
-                    if !r.text.isEmpty {
-                        Text(r.text)
-                            .font(.system(size: 11.5, design: .serif))
-                            .foregroundColor(palette.ink2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    Spacer(minLength: 0)
-                }
+    private var metaRow: some View {
+        HStack(spacing: 8) {
+            Text(stamp).font(SanctusPageFont.corm(12)).foregroundColor(ink.sub)
+            Text(item.isWish ? "许愿" : "念头")
+                .font(.system(size: 8.5, design: .serif)).tracking(1.2).foregroundColor(ink.link)
+                .padding(.horizontal, 7).padding(.vertical, 1)
+                .overlay(Capsule().stroke(ink.hair, lineWidth: 0.6))
+            if !item.moods.isEmpty {
+                Text("· " + item.moods.joined(separator: " · "))
+                    .font(.system(size: 9.5, design: .serif)).tracking(1).foregroundColor(ink.link)
+                    .lineLimit(1)
             }
+            Spacer(minLength: 0)
+            Button(action: onMenu) {
+                HStack(spacing: 4) {
+                    Circle().frame(width: 3.5, height: 3.5)
+                    Circle().frame(width: 3.5, height: 3.5)
+                }
+                .foregroundColor(ink.link)
+                .frame(width: 30, height: 19)
+                .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ink.dots))
+                .frame(width: 40, height: 30).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.trailing, -5)
+            .accessibilityLabel("赞或评论")
         }
-        .padding(.leading, 9)
-        .overlay(alignment: .leading) {
-            Rectangle().fill(palette.line).frame(width: 1)
+        .overlay(alignment: .trailing) {
+            if menuOpen { menu.padding(.trailing, 41).transition(.opacity) }
         }
     }
 
-    private var footer: some View {
-        HStack(spacing: 12) {
-            Text(stamp)
-                .font(.system(size: 9.5, design: .monospaced))
-                .tracking(0.4)
-                .foregroundColor(palette.ink3)
-            Spacer()
-            // 0927 她说「点赞看不见谁点的」：他点了就单独挂一个「陈璟 ♥」；心形按钮只管她自己的赞
-            if item.likedBy.contains("jing") {
-                HStack(spacing: 3) {
-                    Image(systemName: "heart.fill").font(.system(size: 9))
-                    Text("陈璟").font(.system(size: 10, design: .serif)).tracking(0.6)
-                }
-                .foregroundColor(palette.acc)
-                .accessibilityLabel("陈璟点了赞")
-            }
+    /// 「··」点开：赞 / 评论（她点过赞就变「取消」）
+    private var menu: some View {
+        let liked = item.likedBy.contains("ji")
+        return HStack(spacing: 0) {
             Button(action: onLike) {
-                Image(systemName: item.likedBy.contains("ji") ? "heart.fill" : "heart")
-                    .font(.system(size: 11.5, weight: .light))
-                    .foregroundColor(item.likedBy.contains("ji") ? palette.acc : palette.ink3)
-                    .contentShape(Rectangle())
+                HStack(spacing: 6) {
+                    Image(systemName: liked ? "heart.slash" : "heart").font(.system(size: 11, weight: .light))
+                    Text(liked ? "取消" : "赞").font(.system(size: 12, design: .serif)).tracking(1.8)
+                }
+                .padding(.horizontal, 15).padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
-            .accessibilityLabel(item.likedBy.contains("ji") ? "收回我的赞" : "点赞")
+            Rectangle().fill(Color.white.opacity(0.2)).frame(width: 0.6, height: 18)
             Button(action: onReply) {
-                Image(systemName: "bubble.right")
-                    .font(.system(size: 11, weight: .light))
-                    .foregroundColor(palette.ink3)
+                HStack(spacing: 6) {
+                    Image(systemName: "bubble.left").font(.system(size: 11, weight: .light))
+                    Text("评论").font(.system(size: 12, design: .serif)).tracking(1.8)
+                }
+                .padding(.horizontal, 15).padding(.vertical, 8)
+                .contentShape(Rectangle())
             }
             .buttonStyle(.plain)
         }
-        .padding(.top, 1)
+        .foregroundColor(.white)
+        .background(RoundedRectangle(cornerRadius: 5, style: .continuous).fill(ink.menu))
+    }
+
+    /// 赞和回复：浅色小框，左上一个小尖角朝上
+    private var interactions: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            PondCaret().fill(ink.box).frame(width: 10, height: 5).padding(.leading, 12)
+            VStack(alignment: .leading, spacing: 0) {
+                if !item.likedBy.isEmpty {
+                    HStack(spacing: 5) {
+                        Text("♡").font(SanctusPageFont.corm(13)).foregroundColor(ink.link)
+                        Text(item.likedBy.map(who).joined(separator: "，"))
+                            .font(.system(size: 12, design: .serif)).tracking(0.5).foregroundColor(ink.name)
+                    }
+                    .padding(.horizontal, 9).padding(.vertical, 5)
+                    if !item.replies.isEmpty { Rectangle().fill(ink.hair).frame(height: 0.6).padding(.horizontal, 6) }
+                }
+                if !item.replies.isEmpty {
+                    VStack(alignment: .leading, spacing: 2) {
+                        ForEach(Array(item.replies.enumerated()), id: \.element.id) { i, r in
+                            replyLine(r, after: i > 0 ? item.replies[i - 1] : nil)
+                        }
+                    }
+                    .padding(.horizontal, 9).padding(.vertical, 5)
+                }
+            }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(ink.box)
+        }
+    }
+
+    /// 朋友圈那样「陈璟 回复 陈霁：……」：发这条的人接在对方的回复后面，就算回对方
+    private func replyLine(_ r: PondReply, after prev: PondReply?) -> some View {
+        let to: String? = (prev != nil && prev!.author != r.author && r.author == item.author) ? who(prev!.author) : nil
+        var line = Text(who(r.author)).fontWeight(.medium).foregroundColor(ink.name)
+        if let to = to {
+            line = line + Text(" 回复 ").foregroundColor(ink.body) + Text(to).fontWeight(.medium).foregroundColor(ink.name)
+        }
+        line = line + Text("：").foregroundColor(ink.body)
+        if !r.poke.isEmpty { line = line + Text(r.poke + " ") }
+        line = line + Text(r.text).foregroundColor(ink.body)
+        return line
+            .font(.system(size: 12, design: .serif))
+            .lineSpacing(3)
+            .fixedSize(horizontal: false, vertical: true)
+    }
+}
+
+private struct PondCaret: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.midX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.closeSubpath()
+        return p
     }
 }
 
