@@ -234,9 +234,10 @@ struct NativePondView: View {
                 }
                 .padding(.bottom, 26)
                 ZStack(alignment: .bottomLeading) {
-                    PondAvatar(isHers: true, size: 56, radius: 10)
-                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.avatarEdge, lineWidth: 2))
+                    // 1025 她截图「位置调换一下」：他在左下，她在右上（压在上面）
                     PondAvatar(isHers: false, size: 56, radius: 10)
+                        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.avatarEdge, lineWidth: 2))
+                    PondAvatar(isHers: true, size: 56, radius: 10)
                         .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.avatarEdge, lineWidth: 2))
                         .offset(x: 40, y: -10)
                 }
