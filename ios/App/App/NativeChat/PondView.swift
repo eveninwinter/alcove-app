@@ -100,14 +100,14 @@ private enum PondFilter: String, CaseIterable {
 //   右下两个方头像（聊天页设的那两张）＋花体 under the eaves；左上返回、右上加号＝放一条（原来右下的圆按钮去掉）。
 // - 每条平铺不装卡：左方头像，右边名字、正文、图（一张放大、多张三个一排方格）、链接、许愿状态，
 //   一行时间＋许愿/念头＋心情，最右「··」点开「赞 / 评论」；赞和回复收在底下浅色小框里。
-// - 底色比 Sanctus 页面再白一点（F4F5F7），深浅只认全屋按钮。
+// - 底色 EEEFF1（跟 Sanctus 一样深、去掉一点黄），深浅只认全屋按钮。
 
 private struct PondInk {
     let dark: Bool
     private func rgb(_ hex: Int, _ a: Double = 1) -> Color {
         Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255, opacity: a)
     }
-    var page: Color { dark ? rgb(0x1B1C20) : rgb(0xF4F5F7) }
+    var page: Color { dark ? rgb(0x1B1C20) : rgb(0xEEEFF1) }   // 1025 #4328–4329：EFEFED 嫌黄、F4F5F7 嫌太白，定 EEEFF1
     var ink: Color { dark ? rgb(0xE4E4E7) : rgb(0x2A2A2E) }
     var body: Color { dark ? rgb(0xE3E4E8) : rgb(0x3E4048) }
     var name: Color { dark ? rgb(0xAEB3BF) : rgb(0x5E6474) }
