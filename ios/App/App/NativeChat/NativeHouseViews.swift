@@ -41,6 +41,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case ears           // 1014 只给你听：他专门录的长语音
     case health         // 1019 健康：她的苹果健康（HealthView.swift）
     case chronicle      // 1024 家账：每个月的月篇、每周的周篇，她能看能改（ChronicleView.swift）
+    case farm           // 1025 晴岛：我们俩的小岛（网页 /farm/，横屏）
 
     var id: String { rawValue }
 
@@ -93,6 +94,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .ears: return "只给你听"
         case .health: return "健康"
         case .chronicle: return "家账"
+        case .farm: return "晴岛"
         }
     }
 
@@ -104,7 +106,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
-             .chronicle,   // 1024 家账页同健康页一套，自己铺底、自己做页头
+             .chronicle, .farm,   // 1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -158,6 +160,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .ears: return "headphones"
         case .health: return "heart"
         case .chronicle: return "book.closed"
+        case .farm: return "leaf"
         default: return "sparkles"
         }
     }
@@ -275,6 +278,8 @@ struct NativeHouseSheet: View {
                     HealthRoomView()
                 case .chronicle:
                     ChronicleRoomView()
+                case .farm:
+                    FarmGameView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -551,6 +556,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.terminal, detail: "看看他正在做什么")
                         drawerRow(.settings, detail: "主题、权限与小屋设置")
                         drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
+                        drawerRow(.farm, detail: "我们俩的小岛，雨停了就出门玩")   // 1025 她要放出厂设置下面
                     }
 
                     drawerTitle("此刻与日常", note: "still here")
@@ -17145,5 +17151,67 @@ struct EarsPlayerPage: View {
         }
         .padding(.horizontal, 29)
         .padding(.top, 8)
+    }
+}
+
+
+// MARK: - 1025 晴岛：我们俩的小岛（网页 /farm/）
+// 进来先锁横屏再转（照麻将桌的老规矩），走的时候一定放开锁。
+// 页面左上角「返回」走 webkit.messageHandlers.farm.postMessage('close') 关掉。
+struct FarmGameView: View {
+    @Environment(\.dismiss) private var dismiss
+    var body: some View {
+        FarmWebView(onClose: close)
+            .ignoresSafeArea()
+            .background(Color.black.ignoresSafeArea())
+            .onAppear {
+                AlcoveOrientation.landscapeLocked = true
+                farmTurn(.landscapeRight)
+            }
+            .onDisappear {
+                AlcoveOrientation.landscapeLocked = false
+                farmTurn(.portrait)
+            }
+    }
+    private func close() {
+        AlcoveOrientation.landscapeLocked = false
+        farmTurn(.portrait)
+        dismiss()
+    }
+}
+
+private func farmTurn(_ mask: UIInterfaceOrientationMask) {
+    guard let scene = UIApplication.shared.connectedScenes
+        .compactMap({ $0 as? UIWindowScene }).first else { return }
+    scene.requestGeometryUpdate(.iOS(interfaceOrientations: mask))
+}
+
+struct FarmWebView: UIViewRepresentable {
+    var onClose: () -> Void
+    func makeCoordinator() -> Coordinator { Coordinator(onClose: onClose) }
+    final class Coordinator: NSObject, WKScriptMessageHandler {
+        let onClose: () -> Void
+        init(onClose: @escaping () -> Void) { self.onClose = onClose }
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            if (message.body as? String) == "close" { DispatchQueue.main.async { self.onClose() } }
+        }
+    }
+    func makeUIView(context: Context) -> WKWebView {
+        let cfg = WKWebViewConfiguration()
+        cfg.websiteDataStore = .default()
+        cfg.allowsInlineMediaPlayback = true
+        cfg.userContentController.add(context.coordinator, name: "farm")
+        let web = WKWebView(frame: .zero, configuration: cfg)
+        web.isOpaque = false
+        web.backgroundColor = .black
+        web.scrollView.isScrollEnabled = false
+        web.scrollView.bounces = false
+        web.scrollView.contentInsetAdjustmentBehavior = .never
+        web.load(URLRequest(url: AlcoveAPI.base.appendingPathComponent("farm/")))
+        return web
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "farm")
     }
 }
