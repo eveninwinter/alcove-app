@@ -8,7 +8,7 @@ import UIKit
 // "朋友圈"不是第三种东西，是这两种混在一条时间线上、两个人交替冒头的那个视图。
 //
 // 1025 #4323 起主页面换成朋友圈的样子、Sanctus 配色（见「主页面」那段注释）；
-// 放一条 / 回一句两个弹层还是 0818 的冷蓝玻璃皮（GlassPalette），没动。
+// #4337 放一条 / 回一句两个弹层也换成 Sanctus（不再用 0818 的冷蓝玻璃 GlassPalette）。
 
 
 // MARK: - 数据
@@ -122,6 +122,10 @@ private struct PondInk {
     var menu: Color { dark ? rgb(0x3A3B42) : rgb(0x3E4048) }
     var blue: Color { dark ? rgb(0x3A55FF) : rgb(0x0B1BFF) }
     var avatarEdge: Color { dark ? Color.white.opacity(0.18) : Color.white }
+    /// 放一条 / 回一句的弹层底和输入框
+    var sheet: Color { dark ? rgb(0x232428) : rgb(0xF7F7F8) }
+    var field: Color { dark ? Color.white.opacity(0.05) : Color.white }
+    var fieldEdge: Color { dark ? Color.white.opacity(0.10) : rgb(0x969AA4, 0.28) }
 }
 
 /// 头像：跟聊天页同一份（设置里换的那两张）；没设就一个字
@@ -162,7 +166,6 @@ private struct PondAvatar: View {
 
 struct NativePondView: View {
     @Environment(\.dismiss) private var dismiss
-    @AppStorage("alcoveTheme") private var themeName = "haven"
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
 
     @State private var items: [PondItem] = []
@@ -173,7 +176,6 @@ struct NativePondView: View {
     @State private var replyingTo: PondItem?
     @State private var menuFor: String?
 
-    private var palette: GlassPalette { .named(themeName) }
     private var ink: PondInk { _ = houseAppearance; return PondInk(dark: AlcoveAppearance.isDark) }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
     private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
@@ -196,12 +198,12 @@ struct NativePondView: View {
         }
         .task { await load() }
         .sheet(isPresented: $composing) {
-            PondComposeSheet(palette: palette) { kind, text, url, mood, photos in
+            PondComposeSheet(ink: ink) { kind, text, url, mood, photos in
                 Task { await add(kind: kind, text: text, url: url, mood: mood, photos: photos) }
             }
         }
         .sheet(item: $replyingTo) { item in
-            PondReplySheet(palette: palette, item: item) { text in
+            PondReplySheet(ink: ink, item: item) { text in
                 Task { await reply(to: item.id, text: text) }
             }
         }
@@ -669,8 +671,12 @@ private struct PondCaret: Shape {
 
 // MARK: - 放一条
 
+// 1025 #4335–4337：她截图「放一条」还是 0818 的冷蓝玻璃，跟朋友圈版檐下不搭 → 照效果图 mock-compose.html 换成 Sanctus：
+// 白纸底、标题旁一行斜体英文、许愿/念头下划线、白底圆角输入框、链接框＋加图一行、心情细线胶囊（选中描墨色边）。
+// 半屏时四周那圈空隙是系统给的（她 #4336 问过），这里不管。
+
 private struct PondComposeSheet: View {
-    let palette: GlassPalette
+    let ink: PondInk
     var onSubmit: (String, String, String, String, [Data]) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var kind = "wish"
@@ -684,11 +690,12 @@ private struct PondComposeSheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text("放一条")
                     .font(.system(size: 17, weight: .medium, design: .serif))
                     .tracking(2)
-                    .foregroundColor(palette.ink)
+                    .foregroundColor(ink.ink)
+                Text("leave one here").font(SanctusPageFont.ital(11.5)).foregroundColor(ink.sub)
                 Spacer()
                 Button("放进去") {
                     onSubmit(kind, text.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -697,74 +704,71 @@ private struct PondComposeSheet: View {
                              pending.map { $0.jpeg })
                     dismiss()
                 }
-                .font(.system(size: 13, weight: .medium, design: .serif))
-                .foregroundColor(canSubmit ? palette.acc : palette.ink3)
+                .font(.system(size: 13, design: .serif))
+                .tracking(2.4)
+                .foregroundColor(canSubmit ? ink.ink : ink.sub)
                 .disabled(!canSubmit)
             }
 
             ScrollView(showsIndicators: false) {
-              VStack(alignment: .leading, spacing: 16) {
-            HStack(spacing: 8) {
+              VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 18) {
                 ForEach([("wish", "许愿"), ("thought", "念头")], id: \.0) { value, label in
                     Button { kind = value } label: {
                         Text(label)
                             .font(.system(size: 12.5, design: .serif))
-                            .tracking(1)
-                            .foregroundColor(kind == value ? palette.ink : palette.ink3)
-                            .padding(.horizontal, 16).padding(.vertical, 7)
-                            .background(Capsule()
-                                .fill(kind == value ? palette.glass : .clear)
-                                .overlay(Capsule().strokeBorder(
-                                    kind == value ? palette.line : palette.line.opacity(0.4),
-                                    lineWidth: 0.7)))
+                            .tracking(2.6)
+                            .foregroundColor(kind == value ? ink.ink : ink.sub)
+                            .padding(.bottom, 3)
+                            .overlay(alignment: .bottom) {
+                                if kind == value { Rectangle().fill(ink.ink).frame(height: 0.8) }
+                            }
                     }
                     .buttonStyle(.plain)
                 }
                 Spacer()
             }
+            .padding(.bottom, 2)
 
             TextEditor(text: $text)
                 .font(.system(size: 14, design: .serif))
-                .foregroundColor(palette.ink)
+                .foregroundColor(ink.ink)
                 .scrollContentBackground(.hidden)
-                .frame(height: 120)
-                .padding(10)
-                .glassCard(palette, radius: 14)
+                .frame(height: 96)
+                .padding(8)
+                .background(ink.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ink.fieldEdge, lineWidth: 0.6))
                 .overlay(alignment: .topLeading) {
                     if text.isEmpty {
                         Text(kind == "wish" ? "想要什么，不写字也行" : "刚被戳到的那下")
                             .font(.system(size: 14, design: .serif))
-                            .foregroundColor(palette.ink3)
-                            .padding(.horizontal, 15).padding(.vertical, 18)
+                            .foregroundColor(ink.sub)
+                            .padding(.horizontal, 13).padding(.vertical, 16)
                             .allowsHitTesting(false)
                     }
                 }
 
-            moodRow
-
-            TextField("", text: $url, prompt: Text("贴个链接（可以只有链接）")
-                .foregroundColor(palette.ink3))
-                .font(.system(size: 12.5, design: .monospaced))
-                .foregroundColor(palette.ink)
-                .textInputAutocapitalization(.never)
-                .autocorrectionDisabled()
-                .padding(11)
-                .glassCard(palette, radius: 12)
-
-            HStack(spacing: 10) {
+            HStack(spacing: 8) {
+                TextField("", text: $url, prompt: Text("贴个链接（可以只有链接）").foregroundColor(ink.sub))
+                    .font(.system(size: 12.5, design: .serif))
+                    .foregroundColor(ink.ink)
+                    .textInputAutocapitalization(.never)
+                    .autocorrectionDisabled()
+                    .padding(.horizontal, 12)
+                    .frame(height: 36)
+                    .background(ink.field, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.fieldEdge, lineWidth: 0.6))
                 PhotosPicker(selection: $picks, maxSelectionCount: 9, matching: .images) {
-                    HStack(spacing: 6) {
-                        Image(systemName: "photo.on.rectangle.angled")
-                            .font(.system(size: 13, weight: .light))
+                    HStack(spacing: 5) {
+                        if uploading { ProgressView().scaleEffect(0.6).tint(ink.sub) }
                         Text(pending.isEmpty ? "加图" : "\(pending.count) 张")
-                            .font(.system(size: 12, design: .serif)).tracking(1)
+                            .font(.system(size: 12, design: .serif)).tracking(1.8)
                     }
-                    .foregroundColor(palette.ink2)
-                    .padding(.horizontal, 14).padding(.vertical, 8)
-                    .background(Capsule().strokeBorder(palette.line, lineWidth: 0.7))
+                    .foregroundColor(ink.link)
+                    .padding(.horizontal, 13)
+                    .frame(height: 36)
+                    .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.hair, lineWidth: 0.6))
                 }
-                if uploading { ProgressView().scaleEffect(0.7).tint(palette.ink3) }
-                Spacer()
             }
 
             if !pending.isEmpty {
@@ -774,7 +778,7 @@ private struct PondComposeSheet: View {
                             Image(uiImage: photo.thumb)
                                 .resizable().aspectRatio(contentMode: .fill)
                                 .frame(width: 62, height: 62)
-                                .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                                .clipped()
                                 .overlay(alignment: .topTrailing) {
                                     Button {
                                         pending.removeAll { $0.id == photo.id }
@@ -792,20 +796,14 @@ private struct PondComposeSheet: View {
                 }
             }
 
+            moodRow.padding(.top, 8)
+
             Color.clear.frame(height: 8)
               }
             }
         }
         .padding(20)
-        .background(
-            ZStack {
-                LinearGradient(colors: [palette.bgTop, palette.bgMid, palette.bgBottom],
-                               startPoint: .top, endPoint: .bottom)
-                RadialGradient(colors: [palette.glow, .clear],
-                               center: UnitPoint(x: 0.5, y: 1.05),
-                               startRadius: 10, endRadius: 380)
-                GlassGrain(opacity: palette.isDark ? 0.05 : 0.07)
-            }.ignoresSafeArea())
+        .background(ink.sheet.ignoresSafeArea())
         .presentationDetents([.medium, .large])
         .onChange(of: picks) { _, items in
             Task { await loadPicks(items) }
@@ -834,33 +832,32 @@ private struct PondComposeSheet: View {
     }
 
     private var moodRow: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            HStack(spacing: 6) {
-                Text(kind == "wish" ? "什么心情想要的" : "被戳到的那下")
-                    .font(.system(size: 11, design: .serif))
-                    .tracking(1)
-                Text("最多三个")
-                    .font(.system(size: 9.5, design: .monospaced))
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                (Text("HOW IT FELT · ").font(SanctusPageFont.corm(8)) + Text(kind == "wish" ? "什么心情想要的" : "被戳到的那下").font(.system(size: 8, design: .serif)))
+                    .tracking(2.4).foregroundColor(ink.sub)
                 Spacer()
                 if !moods.isEmpty {
                     Text(moods.joined(separator: " · "))
                         .font(.system(size: 10.5, design: .serif))
-                        .foregroundColor(palette.acc)
+                        .foregroundColor(ink.ink)
                     Button { moods.removeAll() } label: {
-                        Text("清掉").font(.system(size: 10.5, design: .serif))
+                        Text("清掉").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.link)
                     }
                     .buttonStyle(.plain)
+                } else {
+                    Text("最多三个").font(.system(size: 10, design: .serif)).tracking(1).foregroundColor(ink.sub)
                 }
             }
-            .foregroundColor(palette.ink3)
+            .padding(.bottom, 2)
 
             ForEach(Self.moodGroups, id: \.0) { group, feels in
-                HStack(alignment: .top, spacing: 9) {
+                HStack(alignment: .top, spacing: 8) {
                     Text(group)
-                        .font(.system(size: 10, design: .serif))
-                        .foregroundColor(palette.ink3)
+                        .font(.system(size: 10.5, design: .serif))
+                        .foregroundColor(ink.sub)
                         .frame(width: 14, alignment: .leading)
-                        .padding(.top, 6)
+                        .padding(.top, 3)
                     FlowLayout(spacing: 6, lineSpacing: 6) {
                         ForEach(feels, id: \.self) { feel in
                             moodChip(feel)
@@ -870,19 +867,21 @@ private struct PondComposeSheet: View {
             }
 
             HStack(spacing: 8) {
-                TextField("", text: $customMood, prompt: Text("没有合适的就自己写")
-                    .foregroundColor(palette.ink3))
+                TextField("", text: $customMood, prompt: Text("没有合适的就自己写").foregroundColor(ink.sub))
                     .font(.system(size: 12.5, design: .serif))
-                    .foregroundColor(palette.ink)
+                    .foregroundColor(ink.ink)
                     .onSubmit { addCustomMood() }
                 Button("加上", action: addCustomMood)
                     .font(.system(size: 11.5, design: .serif))
-                    .foregroundColor(customMood.isEmpty || moods.count >= Self.moodLimit
-                                     ? palette.ink3 : palette.acc)
+                    .tracking(1.5)
+                    .foregroundColor(customMood.isEmpty || moods.count >= Self.moodLimit ? ink.sub : ink.ink)
                     .disabled(customMood.isEmpty || moods.count >= Self.moodLimit)
             }
-            .padding(10)
-            .glassCard(palette, radius: 11)
+            .padding(.horizontal, 12)
+            .frame(height: 36)
+            .background(ink.field, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(ink.fieldEdge, lineWidth: 0.6))
+            .padding(.top, 4)
         }
     }
 
@@ -890,21 +889,12 @@ private struct PondComposeSheet: View {
         let on = moods.contains(feel)
         let full = moods.count >= Self.moodLimit && !on
         return Button { toggleMood(feel) } label: {
-            HStack(spacing: 3.5) {
-                Circle()
-                    .fill(on ? palette.acc : palette.ink3.opacity(full ? 0.2 : 0.45))
-                    .frame(width: 4, height: 4)
-                Text(feel)
-                    .font(.system(size: 12, design: .serif))
-                    .tracking(0.6)
-            }
-            .foregroundColor(on ? palette.acc : palette.ink2.opacity(full ? 0.38 : 1))
-            .padding(.horizontal, 10).padding(.vertical, 6)
-            .background(
-                Capsule().fill(on ? palette.acc.opacity(0.12) : .clear)
-                    .overlay(Capsule().strokeBorder(
-                        on ? palette.acc.opacity(0.45) : palette.line.opacity(full ? 0.4 : 1),
-                        lineWidth: 0.7)))
+            Text(feel)
+                .font(.system(size: 11, design: .serif))
+                .tracking(1.1)
+                .foregroundColor(on ? ink.ink : ink.link.opacity(full ? 0.4 : 1))
+                .padding(.horizontal, 10).padding(.vertical, 3)
+                .overlay(Capsule().stroke(on ? ink.ink : ink.hair.opacity(full ? 0.5 : 1), lineWidth: on ? 0.8 : 0.6))
         }
         .buttonStyle(.plain)
     }
@@ -945,7 +935,7 @@ private struct PondPendingPhoto: Identifiable {
 // MARK: - 回一句
 
 private struct PondReplySheet: View {
-    let palette: GlassPalette
+    let ink: PondInk
     let item: PondItem
     var onSubmit: (String) -> Void
     @Environment(\.dismiss) private var dismiss
@@ -953,37 +943,41 @@ private struct PondReplySheet: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(alignment: .firstTextBaseline) {
                 Text("回一句")
                     .font(.system(size: 16, weight: .medium, design: .serif))
                     .tracking(2)
-                    .foregroundColor(palette.ink)
+                    .foregroundColor(ink.ink)
+                Text("say something back").font(SanctusPageFont.ital(11.5)).foregroundColor(ink.sub)
                 Spacer()
                 Button("发") {
                     onSubmit(text.trimmingCharacters(in: .whitespacesAndNewlines))
                     dismiss()
                 }
-                .font(.system(size: 13, weight: .medium, design: .serif))
-                .foregroundColor(text.isEmpty ? palette.ink3 : palette.acc)
+                .font(.system(size: 13, design: .serif))
+                .tracking(2.4)
+                .foregroundColor(text.isEmpty ? ink.sub : ink.ink)
                 .disabled(text.isEmpty)
             }
             if !item.text.isEmpty {
                 Text(item.text)
                     .font(.system(size: 12, design: .serif))
-                    .foregroundColor(palette.ink3)
+                    .foregroundColor(ink.sub)
+                    .lineSpacing(3)
                     .lineLimit(3)
             }
             TextEditor(text: $text)
                 .font(.system(size: 14, design: .serif))
-                .foregroundColor(palette.ink)
+                .foregroundColor(ink.ink)
                 .scrollContentBackground(.hidden)
                 .frame(height: 100)
-                .padding(10)
-                .glassCard(palette, radius: 14)
+                .padding(8)
+                .background(ink.field, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(ink.fieldEdge, lineWidth: 0.6))
             Spacer()
         }
         .padding(20)
-        .background(GlassBackdrop(palette: palette))
+        .background(ink.sheet.ignoresSafeArea())
         .presentationDetents([.medium])
     }
 }
