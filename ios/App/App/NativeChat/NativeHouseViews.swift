@@ -17268,3 +17268,42 @@ struct IslandPhoneSheet: UIViewRepresentable {
     }
     func updateUIView(_ uiView: WKWebView, context: Context) {}
 }
+
+
+// MARK: - 1025 #4375/#4377 晴岛粉框
+/// 陈璟在岛上做了一件事（farm_rules 直接落 msg_type=farm_event）。居中的粉色小框；连着的几条拼成一个框往下长：
+/// 打头那条有上圆角，收尾那条有下圆角，中间的方边贴着，看起来就是同一个框。
+struct FarmEventLine: View {
+    let text: String
+    let isHead: Bool
+    let isTail: Bool
+    private let fill = Color(red: 1.0, green: 0.86, blue: 0.91)        // #FFDBE9（她小手机素材里的浅粉）
+    private let edge = Color(red: 1.0, green: 0.63, blue: 0.77)        // #FFA1C5
+    private let ink = Color(red: 0.29, green: 0.17, blue: 0.23)        // #4A2C3A
+
+    var body: some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: isHead ? 12 : 0, bottomLeadingRadius: isTail ? 12 : 0,
+                                           bottomTrailingRadius: isTail ? 12 : 0, topTrailingRadius: isHead ? 12 : 0,
+                                           style: .continuous)
+        HStack(alignment: .top, spacing: 6) {
+            Image(systemName: isHead ? "leaf.fill" : "circle.fill")
+                .font(.system(size: isHead ? 10 : 3.5))
+                .foregroundColor(edge)
+                .frame(width: 12, height: 14)
+            Text(text)
+                .font(.system(size: 12.5))
+                .foregroundColor(ink)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 12)
+        .padding(.top, isHead ? 8 : 2)
+        .padding(.bottom, isTail ? 8 : 2)
+        .frame(width: 250, alignment: .leading)
+        .background(shape.fill(fill))
+        // 描边：不是打头/收尾的那一边往外多画 3 点再裁掉，中间几条就只剩左右两条边，连起来像一个框
+        .overlay(shape.stroke(edge, lineWidth: 1).padding(.top, isHead ? 0 : -3).padding(.bottom, isTail ? 0 : -3))
+        .clipped()
+        .frame(maxWidth: .infinity)
+    }
+}

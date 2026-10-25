@@ -1186,7 +1186,7 @@ struct ChatView: View {
                       prev.role != message.role,
                       prev.role == "user" || prev.role == "assistant",
                       message.role == "user" || message.role == "assistant" else { return 0 }
-                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error", "notice"]
+                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error", "notice", "farm_event"]
                 if quiet.contains(prev.msgType ?? "") || quiet.contains(message.msgType ?? "") { return 0 }
                 if theme.isKakao {
                     return 12 + 2 + ((message.role == "assistant" && listKakaoShowAvatar) ? 6 : 0)
@@ -1217,6 +1217,13 @@ struct ChatView: View {
                 PatLine(text: message.text,
                         strong: message.msgType == "pat_incoming",
                         isDark: theme.isDark && !theme.isKakao)   // 1002：这行直接压在 Kakao 包的壁纸上，壁纸不分黑白，字色照旧不跟按钮翻
+            } else if message.msgType == "farm_event" {
+                // 1025 #4375/#4377 她要的：陈璟在晴岛干了什么（种、浇、收、买卖、做完任务）落一条粉框；
+                // 只记他的，连着的几条并成一个框往下长——上一条也是粉框就不要上圆角、往上贴住，下一条也是就不要下圆角
+                FarmEventLine(text: message.displayText,
+                              isHead: previous?.msgType != "farm_event",
+                              isTail: next?.msgType != "farm_event")
+                    .padding(.top, previous?.msgType == "farm_event" ? -CGFloat(chatBubbleGap) : 0)
             } else if message.msgType == "divider" && message.source == "dream" {
                 // 0822 她定的：做梦之后聊天页只落这一道线，梦本身在梦面板
                 DreamDivider(text: message.text, date: message.date, color: theme.dividerColor)
@@ -1453,7 +1460,7 @@ struct ChatView: View {
     }
 
     /// 这几种行后面那条算新一串的开头（分隔线、拍一拍、报错行）
-    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error", "notice"]
+    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error", "notice", "farm_event"]
 
     /// 跟 kakaoHead 同一个认法：b 是不是接着 a 那一串
     private func thSameGroup(_ a: ChatMessage, _ b: ChatMessage) -> Bool {
