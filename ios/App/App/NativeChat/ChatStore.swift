@@ -843,6 +843,7 @@ final class ChatStore: ObservableObject {
         let fresh = recs.filter {
             $0.role == "assistant" && !deletedMessageTs.contains($0.ts)
                 && !notifiedTs.contains($0.ts)
+                && $0.msgType != "farm_event"      // 1025 她：他在晴岛种地浇水的粉框不要推送
         }
         guard !fresh.isEmpty else { return }
         for rec in fresh {
