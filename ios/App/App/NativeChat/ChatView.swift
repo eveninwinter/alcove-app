@@ -1572,6 +1572,7 @@ struct ChatView: View {
         if m.reminderCard != nil { return false }   // 1002 单独一行，上面那串够长了，别再让编译器算超时
         if m.embroideryCard != nil { return false }
         if m.locationCard != nil { return false }   // 1008 位置卡
+        if m.islandSummary != nil { return false }   // 1025 晴岛小手机卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
     }
@@ -4438,6 +4439,7 @@ struct MessageRow: View {
         msg.tarotCard != nil || msg.tarotOffer != nil
             || msg.insideText != nil || msg.pondCard != nil || msg.memoryCard != nil || msg.reminderCard != nil
             || msg.postcardCard != nil || msg.earsCard != nil || msg.letterCard != nil
+            || msg.islandSummary != nil   // 1025 晴岛小手机卡
     }
 
     var body: some View {
@@ -4582,6 +4584,10 @@ struct MessageRow: View {
                 } else if let journey = msg.journeyCard {
                     JourneyMessageCard(ref: journey, theme: cardTheme)
                         .frame(maxWidth: .infinity)   // 她要卡片在聊天页正中间
+                } else if let isl = msg.islandSummary {
+                    // 1025 #4374 她要的：岛上的聊天不在聊天页一条条出现，一次上岛只留这一张小手机卡，点开看这段
+                    IslandPhoneCard(info: isl, theme: cardTheme)
+                        .frame(maxWidth: .infinity)
                 } else if let call = msg.callSummary {
                     // 0831 任务#1195：打完电话聊天页只留这一条，点开展开这一通的记录。
                     // 左右不用这里判——服务端已经把 role 写成打电话那个人了

@@ -17215,3 +17215,56 @@ struct FarmWebView: UIViewRepresentable {
         uiView.configuration.userContentController.removeScriptMessageHandler(forName: "farm")
     }
 }
+
+
+// MARK: - 1025 #4374 晴岛小手机卡
+/// 聊天页那一张：岛上那只像素小手机图标＋「晴岛 · 小手机」＋几句、最后一句。点开是网页 farm/phone.html（跟岛上同一套小手机素材，只看不发）
+struct IslandPhoneCard: View {
+    let info: IslandSummaryInfo
+    let theme: AlcoveTheme
+    @State private var open = false
+
+    var body: some View {
+        Button { open = true } label: {
+            HStack(spacing: 10) {
+                AsyncImage(url: AlcoveAPI.base.appendingPathComponent("farm/phone_64.png")) { img in
+                    img.interpolation(.none).resizable().scaledToFit()
+                } placeholder: { Color.clear }
+                .frame(width: 34, height: 34)
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("晴岛 · 小手机")
+                        .font(.system(size: 13.5, weight: .medium))
+                        .foregroundColor(theme.text)
+                    Text("\(info.count) 句 · \(info.last)")
+                        .font(.system(size: 11.5))
+                        .foregroundColor(theme.text.opacity(0.6))
+                        .lineLimit(1)
+                }
+            }
+            .padding(.horizontal, 13).padding(.vertical, 9)
+            .frame(maxWidth: 250, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 15, style: .continuous).fill(theme.fyCardSub))
+        }
+        .buttonStyle(.plain)
+        .sheet(isPresented: $open) {
+            IslandPhoneSheet(session: info.session)
+                .ignoresSafeArea()
+        }
+    }
+}
+
+/// 点开小手机卡：整页就是那只像素小手机，里面是这一次上岛的对话
+struct IslandPhoneSheet: UIViewRepresentable {
+    let session: String
+    func makeUIView(context: Context) -> WKWebView {
+        let web = WKWebView(frame: .zero, configuration: WKWebViewConfiguration())
+        web.isOpaque = false
+        web.backgroundColor = UIColor(red: 0.11, green: 0.09, blue: 0.13, alpha: 1)
+        web.scrollView.bounces = false
+        var c = URLComponents(url: AlcoveAPI.base.appendingPathComponent("farm/phone.html"), resolvingAgainstBaseURL: false)
+        c?.queryItems = [URLQueryItem(name: "session", value: session)]
+        if let u = c?.url { web.load(URLRequest(url: u)) }
+        return web
+    }
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+}

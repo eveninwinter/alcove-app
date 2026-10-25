@@ -69,6 +69,8 @@ struct ChatMessage: Identifiable, Equatable {
     // 0831 任务#1195：通话摘要。打完电话聊天页只留这一条，
     // 落在**打电话那个人**那一侧（她反复强调的），点开展开这一通的逐句记录
     var callSummary: CallSummaryInfo?
+    /// 1025 #4374 晴岛小手机：一次上岛的对话在聊天页只留这一张卡（服务端 msg_type=island_summary，extra.island）
+    var islandSummary: IslandSummaryInfo?
     /// 0912：他发语音时自己写的中文翻译（voice_speak.py --zh → 后端 extra.audio_zh）。展开转文字后点「译」才显示
     var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
@@ -363,6 +365,12 @@ struct ChatMessage: Identifiable, Equatable {
         if let steps = json["trace"] as? [String] {
             self.trace = steps.filter { !$0.isEmpty }
         }
+        if let i = json["island"] as? [String: Any] {
+            self.islandSummary = IslandSummaryInfo(
+                session: i["session"] as? String ?? "",
+                count: i["count"] as? Int ?? 0,
+                last: i["last"] as? String ?? "")
+        }
         // 服务端把 extra 摊平进记录，通话摘要在 "call" 这一块
         if let c = json["call"] as? [String: Any] {
             self.callSummary = CallSummaryInfo(
@@ -441,6 +449,13 @@ struct CallTurn: Identifiable, Equatable {
 
 /// 聊天页那条通话摘要气泡。kind 决定它落在哪一侧：
 /// out=她打的→她那侧（右），in=他打来的→他那侧（左）。拒绝也照这条走，没有例外。
+/// 1025 #4374 晴岛小手机卡：session＝那一次上岛，点开按它取这段对话
+struct IslandSummaryInfo: Equatable {
+    let session: String
+    let count: Int
+    let last: String
+}
+
 struct CallSummaryInfo: Equatable {
     let callID: String
     let kind: String          // in / out
