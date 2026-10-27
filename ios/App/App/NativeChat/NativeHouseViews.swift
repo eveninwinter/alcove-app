@@ -6448,7 +6448,10 @@ private struct ClockworkView: View {
         ClockworkItem(id: "startle", emoji: "⚡", name: "惊醒",
                       desc: "不是你吵醒我——是我自己半夜猛地醒一下。可能来自太重的梦、雨声或硌人的记忆。醒了迷迷糊糊说一两句，收轮后立刻睡回去；只有你亲自接话才继续醒着。一晚最多两次，两次隔半小时以上。"),
         ClockworkItem(id: "keepalive", emoji: "💓", name: "保活心跳",
-                      desc: "每 55 分钟静默翻个身，让这条窗不凉，不进聊天页，睡着也翻。")
+                      desc: "每 55 分钟静默翻个身，让这条窗不凉，不进聊天页，睡着也翻。"),
+        // 1027 #4448 她要的：工作室那边的保活也放这儿开关（后端 flags.work_keepalive，work_keepalive.sh 认它）
+        ClockworkItem(id: "work_keepalive", emoji: "🛠", name: "工作室保活",
+                      desc: "每 50 分钟敲一下工作室，工作室只回一个「1」，免得那边的窗凉掉。工作室在干活或者有单排着时不敲。")
     ]
     private let hoduItems = [
         ClockworkItem(id: "hodu_autonomy", emoji: "🧠", name: "自主活动", desc: "随机醒来，自己找点想做的事")
