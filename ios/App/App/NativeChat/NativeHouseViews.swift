@@ -8523,9 +8523,10 @@ private struct NativeStudioView: View {
                         .onTapGesture { photoViewer = StudioPhotoTarget(url: attachmentURL) }
                         .modifier(StudioSaveMenu(url: attachmentURL))
                     } else {
-                        Label(message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"), systemImage: "doc")
-                            .font(.system(size: 11, weight: .medium)).padding(9)
-                            .background(.white.opacity(0.34), in: RoundedRectangle(cornerRadius: 11))
+                        // 1027 #4445 她：工作室的文件看得见点不开——换成主聊天那张文件卡，点了在浏览器里打开/下载
+                        DocumentAttachmentCard(url: attachmentURL,
+                                               filename: message.string("attachment_filename").isEmpty ? "附件" : message.string("attachment_filename"),
+                                               theme: chatTheme)
                     }
                 }
                 // 只有图没有字的时候不要再吐一个空气泡出来

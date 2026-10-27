@@ -7726,7 +7726,7 @@ private struct GhostActivityMessageCard: View {
     }
 }
 
-private struct DocumentAttachmentCard: View {
+struct DocumentAttachmentCard: View {   // 1027 #4445 工作室的文件也用这张（点开＝浏览器里打开/下载）
     let url: URL
     let filename: String
     let theme: AlcoveTheme
