@@ -17195,7 +17195,19 @@ struct FarmWebView: UIViewRepresentable {
     func makeCoordinator() -> Coordinator { Coordinator(onClose: onClose) }
     final class Coordinator: NSObject, WKScriptMessageHandler {
         let onClose: () -> Void
-        init(onClose: @escaping () -> Void) { self.onClose = onClose }
+        init(onClose: @escaping () -> Void) {
+            self.onClose = onClose
+            super.init()
+            // 1027 #4449 她：开静音就听不到晴岛的音效、切到别的软件回来也没声——
+            // 网页里的声音跟着 App 的音频类别走：换成「播放」类（静音键管不着），混着别的 App 的声音放，回到前台再激活一次
+            Self.activateAudio()
+            NotificationCenter.default.addObserver(forName: UIApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in Self.activateAudio() }
+        }
+        static func activateAudio() {
+            let s = AVAudioSession.sharedInstance()
+            try? s.setCategory(.playback, mode: .default, options: [.mixWithOthers])
+            try? s.setActive(true)
+        }
         func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
             if (message.body as? String) == "close" { DispatchQueue.main.async { self.onClose() } }
         }
@@ -17204,6 +17216,7 @@ struct FarmWebView: UIViewRepresentable {
         let cfg = WKWebViewConfiguration()
         cfg.websiteDataStore = .default()
         cfg.allowsInlineMediaPlayback = true
+        cfg.mediaTypesRequiringUserActionForPlayback = []
         cfg.userContentController.add(context.coordinator, name: "farm")
         let web = WKWebView(frame: .zero, configuration: cfg)
         web.isOpaque = false
