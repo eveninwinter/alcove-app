@@ -21,7 +21,7 @@ private struct RoundtableTailYKey: PreferenceKey {
 struct RoundtableMessage: Identifiable, Equatable {
     let id: Int
     let ts: String
-    let role: String        // user / assistant / gpt
+    let role: String        // user / assistant / gpt / muse（1030 Muse 入席）
     let sender: String
     let text: String
     let attachmentURL: String?
@@ -171,8 +171,8 @@ final class RoundtableStore: ObservableObject {
         }
     }
 
-    // 她发一句 → 后端存下来并拍我一下 → 然后叫 G老师开口。
-    // 规矩是他先说，我看完他说的再接，所以这里只触发他，不催我。
+    // 她发一句 → 后端存下来 → 敲一下 /roundtable/codex。
+    // 1030 起这一下只让后端按 @ 叫人（她定的「不艾特不回话」），不再直接叫何渡。
     func send(_ text: String) async {
         let body = ["role": "user", "sender": "陈霁", "text": text]
         sending = true
@@ -255,6 +255,7 @@ struct RoundtableView: View {
     @State private var cachedRTAvatarUser: UIImage?
     @State private var cachedRTAvatarAssistant: UIImage?
     @State private var cachedRTAvatarGpt: UIImage?
+    @State private var cachedRTAvatarMuse: UIImage?
     @Namespace private var photoTransition
     @StateObject private var recorder = VoiceRecorder()
     @FocusState private var focused: Bool
@@ -263,6 +264,7 @@ struct RoundtableView: View {
     @AppStorage("rtAvatarUser") private var rtAvatarUser = ""
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
+    @AppStorage("rtAvatarMuse") private var rtAvatarMuse = ""
     @AppStorage("rtWallpaper") private var rtWallpaper = ""
     @AppStorage("rtWallpaperHaven") private var rtWallpaperHaven = ""
     @AppStorage("rtWallpaperMidnight") private var rtWallpaperMidnight = ""
@@ -340,6 +342,7 @@ struct RoundtableView: View {
         .onChange(of: rtAvatarUser) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarAssistant) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarGpt) { _ in refreshRTImageCache() }
+        .onChange(of: rtAvatarMuse) { _ in refreshRTImageCache() }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
                 if let prepared = UploadImage.prepare(image) { pendingImages.append(prepared) }
@@ -485,6 +488,7 @@ struct RoundtableView: View {
         switch role {
         case "assistant": return cachedRTAvatarAssistant
         case "gpt":       return cachedRTAvatarGpt
+        case "muse":      return cachedRTAvatarMuse
         default:          return cachedRTAvatarUser
         }
     }
@@ -501,12 +505,14 @@ struct RoundtableView: View {
         cachedRTAvatarUser = decodeStoredImage(rtAvatarUser)
         cachedRTAvatarAssistant = decodeStoredImage(rtAvatarAssistant)
         cachedRTAvatarGpt = decodeStoredImage(rtAvatarGpt)
+        cachedRTAvatarMuse = decodeStoredImage(rtAvatarMuse)
     }
 
     private func initialFor(_ role: String) -> String {
         switch role {
         case "assistant": return "璟"
         case "gpt":       return "G"
+        case "muse":      return "M"
         default:          return "霁"
         }
     }
@@ -993,9 +999,11 @@ private struct RoundtableRow: View {
     @AppStorage("rtAvatarUser") private var rtAvatarUser = ""
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
+    @AppStorage("rtAvatarMuse") private var rtAvatarMuse = ""
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
+    @AppStorage("rtNameMuse") private var rtNameMuse = "Muse"
     @AppStorage("chatFontSize") private var fontSize = 14
 
     private var avatarImage: UIImage? {
@@ -1003,6 +1011,7 @@ private struct RoundtableRow: View {
         switch msg.role {
         case "assistant": raw = rtAvatarAssistant
         case "gpt":       raw = rtAvatarGpt
+        case "muse":      raw = rtAvatarMuse
         default:          raw = rtAvatarUser
         }
         guard !raw.isEmpty else { return nil }
@@ -1015,6 +1024,7 @@ private struct RoundtableRow: View {
         switch msg.role {
         case "assistant": return rtNameAssistant
         case "gpt":       return rtNameGpt
+        case "muse":      return rtNameMuse
         default:          return rtNameUser
         }
     }
@@ -1023,6 +1033,7 @@ private struct RoundtableRow: View {
         switch msg.role {
         case "assistant": return "璟"
         case "gpt": return "G"
+        case "muse": return "M"
         default: return "霁"
         }
     }
@@ -1044,6 +1055,7 @@ private struct RoundtableRow: View {
         switch msg.role {
         case "assistant": return Color(red: 0.45, green: 0.60, blue: 0.85)
         case "gpt": return Color(red: 0.35, green: 0.70, blue: 0.58)
+        case "muse": return Color(red: 0.62, green: 0.55, blue: 0.82)
         default: return Color(red: 0.88, green: 0.52, blue: 0.65)
         }
     }
@@ -1759,9 +1771,11 @@ private struct RTSettingsView: View {
     @AppStorage("rtAvatarUser") private var avUser = ""
     @AppStorage("rtAvatarAssistant") private var avMe = ""
     @AppStorage("rtAvatarGpt") private var avGpt = ""
+    @AppStorage("rtAvatarMuse") private var avMuse = ""
     @AppStorage("rtNameUser") private var nameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var nameMe = "陈璟"
     @AppStorage("rtNameGpt") private var nameGpt = "何渡"
+    @AppStorage("rtNameMuse") private var nameMuse = "Muse"
     @AppStorage("rtWallpaper") private var wallpaper = ""
     @AppStorage("rtWallpaperHaven") private var wallpaperHaven = ""
     @AppStorage("rtWallpaperMidnight") private var wallpaperMidnight = ""
@@ -1774,6 +1788,7 @@ private struct RTSettingsView: View {
     @State private var pickUser: PhotosPickerItem?
     @State private var pickMe: PhotosPickerItem?
     @State private var pickGpt: PhotosPickerItem?
+    @State private var pickMuse: PhotosPickerItem?
     @State private var pickWall: PhotosPickerItem?
 
     var body: some View {
@@ -1796,13 +1811,15 @@ private struct RTSettingsView: View {
                         .buttonStyle(.plain)
                     }
 
-                    section("三个人") {
+                    section("四个人") {
                         personRow(role: "user", name: $nameUser, data: $avUser,
                                   pick: $pickUser, fallback: "霁")
                         personRow(role: "assistant", name: $nameMe, data: $avMe,
                                   pick: $pickMe, fallback: "璟")
                         personRow(role: "gpt", name: $nameGpt, data: $avGpt,
                                   pick: $pickGpt, fallback: "渡")
+                        personRow(role: "muse", name: $nameMuse, data: $avMuse,
+                                  pick: $pickMuse, fallback: "M")
                     }
 
                     section("屏蔽") {
@@ -1952,6 +1969,7 @@ private struct RTSettingsView: View {
                 case "user":      avUser = b64
                 case "assistant": avMe = b64
                 case "gpt":       avGpt = b64
+                case "muse":      avMuse = b64
                 case "wall":      setActiveWallpaper(b64)
                 default: break
                 }
