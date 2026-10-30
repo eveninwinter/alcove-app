@@ -729,7 +729,21 @@ struct RoundtableView: View {
 
     // 打字框照抄主聊天页，她说"打字框也不变"。
     // 颜色全走 theme，白天黑夜两套主题它自己跟着变。
+    // 1030 #4604 她：「输入框改成跟主聊天一样的 然后上面加一栏艾特的 一行」。
+    // 原来圆桌不管什么主题都是经典两行框；现在跟主聊天一样按主题分三种（Sanctus / 信息 / 经典）。
     private var composer: some View {
+        VStack(spacing: 6) {
+            mentionBar
+            composerBox
+        }
+        .padding(.bottom, 0)
+        .background(GeometryReader { geo in
+            Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
+        })
+        .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+    }
+
+    private var composerBox: some View {
         VStack(spacing: 0) {
             if let quotedText {
                 HStack(spacing: 8) {
@@ -767,6 +781,25 @@ struct RoundtableView: View {
                     }.padding(.init(top: 8, leading: 12, bottom: 4, trailing: 12))
                 }
             }
+            if theme.isTreehouse { treehouseComposerRow }
+            else if theme.isMessages { messagesComposerRow }
+            else { classicComposerBody }
+        }
+        .background {
+            RoundedRectangle(cornerRadius: 28, style: .continuous)
+                .fill(Color.clear)
+                .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
+                .onTapGesture { focused = true }
+        }
+        .modifier(RTInputGlass(tint: theme.capsuleTint, border: theme.capsuleBorder,
+                               enabled: !theme.isMessages))
+        .shadow(color: .black.opacity(theme.isMessages ? 0 : 0.05), radius: 14, y: 2)
+        .padding(.horizontal, theme.isMessages ? 0 : 14)
+    }
+
+    // 经典：文本框在上、按钮一排在下（圆桌原来的样子）
+    private var classicComposerBody: some View {
+        VStack(spacing: 0) {
             if recorder.isRecording { recordingStatus } else { draftField }
 
             HStack(spacing: 2) {
@@ -802,20 +835,249 @@ struct RoundtableView: View {
             }
             .padding(.init(top: 4, leading: 8, bottom: 8, trailing: 8))
         }
-        .background {
-            RoundedRectangle(cornerRadius: 28, style: .continuous)
-                .fill(Color.clear)
-                .contentShape(RoundedRectangle(cornerRadius: 28, style: .continuous))
-                .onTapGesture { focused = true }
+    }
+
+    // ── @ 栏：一行，点一下往框里加「@名字 」，再点一下拿掉。
+    // 插的是后端认的正名（改了圆桌显示名也照样叫得到人）；后端也认拼音 @chenjing @hedu。
+    private static let mentionTags = ["陈璟", "何渡", "Muse"]
+
+    private func draftHasMention(_ tag: String) -> Bool {
+        draft.range(of: "@" + tag, options: .caseInsensitive) != nil
+            || draft.range(of: "＠" + tag, options: .caseInsensitive) != nil
+    }
+
+    private func toggleMention(_ tag: String) {
+        if draftHasMention(tag) {
+            var out = draft
+            for mark in ["@", "＠"] {
+                for form in [mark + tag + " ", mark + tag] {
+                    out = out.replacingOccurrences(of: form, with: "", options: .caseInsensitive)
+                }
+            }
+            draft = out
+        } else {
+            let sep = (draft.isEmpty || draft.hasSuffix(" ") || draft.hasSuffix("\n")) ? "" : " "
+            draft = draft + sep + "@" + tag + " "
         }
-        .modifier(RTInputGlass(tint: theme.capsuleTint, border: theme.capsuleBorder))
-        .shadow(color: .black.opacity(0.05), radius: 14, y: 2)
-        .padding(.horizontal, 14)
-        .padding(.bottom, 0)
-        .background(GeometryReader { geo in
-            Color.clear.preference(key: InputBarHeightKey.self, value: geo.size.height)
-        })
-        .onPreferenceChange(InputBarHeightKey.self) { inputBarHeight = $0 }
+        previousDraft = draft
+        focused = true
+    }
+
+    private var mentionBar: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 8) {
+                ForEach(Self.mentionTags, id: \.self) { tag in
+                    let on = draftHasMention(tag)
+                    Button { toggleMention(tag) } label: { mentionChip("@" + tag, on: on) }
+                        .buttonStyle(.plain)
+                }
+            }
+            .padding(.horizontal, 18)
+            .padding(.vertical, 2)
+        }
+    }
+
+    @ViewBuilder
+    private func mentionChip(_ text: String, on: Bool) -> some View {
+        let label = Text(text).font(.system(size: 13, weight: on ? .semibold : .regular))
+        if theme.isTreehouse {
+            label
+                .foregroundColor(on ? TreehouseInk.blue : TreehouseInk.ink.opacity(0.7))
+                .padding(.horizontal, 12).frame(height: 30)
+                .modifier(TreehouseFogGlass(shape: Capsule(), border: on ? 0.9 : 0.55))
+        } else if theme.isMessages {
+            let line = theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+            let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
+            label
+                .foregroundColor(on ? theme.sendButtonColor : theme.textDim)
+                .padding(.horizontal, 12).frame(height: 30)
+                .modifier(MessagesGlassModifier(face: face, line: line,
+                                                shadow: Color.black.opacity(theme.isDark ? 0.35 : 0.10),
+                                                circle: false))
+        } else {
+            label
+                .foregroundColor(on ? theme.fyAccent : theme.textLight)
+                .padding(.horizontal, 12).frame(height: 30)
+                .background(theme.glassTint.opacity(theme.isDark ? 0.72 : 0.92), in: Capsule())
+                .overlay(Capsule().stroke(on ? theme.fyAccent.opacity(0.6) : theme.glassBorder, lineWidth: 1))
+        }
+    }
+
+    @ViewBuilder
+    private var attachmentMenuItems: some View {
+        Button { showStickers = true } label: { Label("表情", systemImage: "face.smiling") }
+        Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
+        Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
+        Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
+    }
+
+    /// 照抄主聊天 treehouseComposerRow：细加号｜雾白胶囊（占位 drop a leaf…，右边话筒）｜蝴蝶发送
+    private var treehouseComposerRow: some View {
+        let ink = TreehouseInk.ink
+        let hasPayload = canSend || store.heldCount > 0
+        return HStack(alignment: .bottom, spacing: 2) {
+            if recorder.isRecording {
+                Button(action: { recorder.cancel() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 17, weight: .light))
+                        .foregroundColor(ink)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            } else {
+                Menu { attachmentMenuItems } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 21, weight: .light))
+                        .foregroundColor(ink)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Rectangle())
+                }
+            }
+            HStack(alignment: .center, spacing: 6) {
+                if recorder.isRecording {
+                    Circle().fill(TreehouseInk.blue).frame(width: 7, height: 7)
+                    Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                        .font(.system(size: 15, design: .monospaced))
+                        .foregroundColor(ink)
+                    Text("录音中… 按蝴蝶发出去").font(.system(size: 13)).foregroundColor(ink.opacity(0.55))
+                    Spacer(minLength: 0)
+                } else {
+                    TextField("", text: $draft,
+                              prompt: Text("drop a leaf…").font(.custom("PinyonScript-Regular", size: 19))
+                                .foregroundColor(ink.opacity(0.35)),
+                              axis: .vertical)
+                        .focused($focused)
+                        .lineLimit(1...5)
+                        .font(.system(size: 15))
+                        .foregroundColor(ink)
+                        .tint(ink)
+                        .onChange(of: draft) { value in handleDraftChange(value) }
+                    if !canSend {
+                        Button { recorder.start() } label: {
+                            Image(systemName: "mic")
+                                .font(.system(size: 15, weight: .light))
+                                .foregroundColor(ink.opacity(0.55))
+                                .frame(width: 28, height: 30)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 10)
+            .padding(.vertical, 5)
+            .frame(minHeight: 40)
+            .modifier(TreehouseFogGlass(shape: Capsule(), border: 0.55))
+            .contentShape(Capsule())
+            .onTapGesture { if !recorder.isRecording { focused = true } }
+            .padding(.trailing, 8)
+            Button {
+                if hasPayload || recorder.isRecording { performDynamicComposerAction() }
+            } label: {
+                ZStack(alignment: .topTrailing) {
+                    Image("TreehouseSendButterfly")
+                        .resizable()
+                        .renderingMode(.template)
+                        .interpolation(.high)
+                        .scaledToFit()
+                        .foregroundColor(theme.sendButtonColor)
+                        .frame(width: 36, height: 36)
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                    if store.heldCount > 0 {
+                        Text("\(store.heldCount)")
+                            .font(.system(size: 9, weight: .bold))
+                            .foregroundColor(TreehouseInk.white)
+                            .frame(minWidth: 14, minHeight: 14)
+                            .background(ink, in: Capsule())
+                            .offset(x: 2, y: -2)
+                    }
+                }
+            }
+            .buttonStyle(.plain)
+            .padding(.bottom, -2)
+        }
+        .padding(.init(top: 6, leading: 14, bottom: 6, trailing: 18))
+    }
+
+    /// 照抄主聊天 messagesComposerRow：圆加号｜细边单行框（右边话筒，有字换蓝圆发送）
+    private var messagesComposerRow: some View {
+        let line = theme.isDark ? Color.white.opacity(0.10) : Color.black.opacity(0.06)
+        let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
+        let shadow = Color.black.opacity(theme.isDark ? 0.35 : 0.10)
+        let showBlue = canSend || recorder.isRecording || store.heldCount > 0
+        return HStack(alignment: .bottom, spacing: 10) {
+            if recorder.isRecording {
+                Button(action: { recorder.cancel() }) {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 15, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                        .frame(width: 40, height: 40)
+                        .contentShape(Circle())
+                }
+                .buttonStyle(.plain)
+                .background(
+                    Color.clear.frame(width: 40, height: 40)
+                        .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: true))
+                        .allowsHitTesting(false)
+                )
+            } else {
+                Menu { attachmentMenuItems } label: {
+                    Image(systemName: "plus")
+                        .font(.system(size: 18, weight: .medium))
+                        .foregroundColor(theme.textDim)
+                        .frame(width: 40, height: 40)
+                        .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: true))
+                }
+            }
+            HStack(alignment: .center, spacing: 4) {
+                if recorder.isRecording {
+                    Circle().fill(Color.red).frame(width: 8, height: 8)
+                    Text(String(format: "%d:%02d", recorder.seconds / 60, recorder.seconds % 60))
+                        .font(.system(size: 15).monospacedDigit())
+                        .foregroundColor(theme.text)
+                    Text("录音中… 按↑发出去").font(.system(size: 14)).foregroundColor(theme.textDim)
+                    Spacer(minLength: 0)
+                } else {
+                    TextField("", text: $draft, prompt: Text("信息").font(.system(size: 16)),
+                              axis: .vertical)
+                        .focused($focused)
+                        .lineLimit(1...5)
+                        .font(.system(size: 16))
+                        .tint(Color(uiColor: .systemBlue))
+                        .onChange(of: draft) { value in handleDraftChange(value) }
+                }
+                Button(action: performDynamicComposerAction) {
+                    ZStack(alignment: .topTrailing) {
+                        Image(systemName: recorder.isRecording ? "stop.fill"
+                              : (canSend || store.heldCount > 0) ? "arrow.up" : "mic")
+                            .font(.system(size: showBlue ? 15 : 17, weight: showBlue ? .semibold : .regular))
+                            .foregroundColor(showBlue ? .white : theme.textDim)
+                            .frame(width: 30, height: 30)
+                            .background(showBlue ? theme.sendButtonColor : Color.clear, in: Circle())
+                        if store.heldCount > 0 {
+                            Text("\(store.heldCount)")
+                                .font(.system(size: 9, weight: .bold))
+                                .foregroundColor(.white)
+                                .frame(minWidth: 14, minHeight: 14)
+                                .background(theme.sendButtonColor, in: Capsule())
+                                .offset(x: 3, y: -3)
+                        }
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.leading, 16)
+            .padding(.trailing, 6)
+            .padding(.vertical, 5)
+            .frame(minHeight: 40)
+            .modifier(MessagesGlassModifier(face: face, line: line, shadow: shadow, circle: false))
+            .contentShape(Capsule())
+            .onTapGesture { if !recorder.isRecording { focused = true } }
+        }
+        .padding(.init(top: 6, leading: 12, bottom: 4, trailing: 12))
     }
 
     private var draftField: some View {
@@ -850,12 +1112,7 @@ struct RoundtableView: View {
     }
 
     private var attachmentControls: some View {
-        Menu {
-                Button { showStickers = true } label: { Label("表情", systemImage: "face.smiling") }
-                Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
-                Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
-                Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
-        } label: { composerIcon("plus") }
+        Menu { attachmentMenuItems } label: { composerIcon("plus") }
     }
 
     private func composerIcon(_ name: String) -> some View {
@@ -1982,11 +2239,14 @@ private struct RTSettingsView: View {
 private struct RTInputGlass: ViewModifier {
     let tint: Color
     let border: Color
+    var enabled: Bool = true
 
     @ViewBuilder
     func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: 28, style: .continuous)
-        if #available(iOS 26.0, *) {
+        if !enabled {
+            content
+        } else if #available(iOS 26.0, *) {
             content.glassEffect(.regular.tint(tint).interactive(), in: shape)
         } else {
             content

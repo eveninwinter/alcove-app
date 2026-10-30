@@ -9673,7 +9673,8 @@ private struct EdgeFadeMaskModifier<M: View>: ViewModifier {
 }
 
 // 0822 她要的打字框材质：iOS 26 真玻璃（圆加号 + 胶囊），老系统退回白片 + 细线 + 软阴影
-private struct MessagesGlassModifier: ViewModifier {
+// 1030 去掉 private：圆桌的「信息」输入栏也照抄这一份
+struct MessagesGlassModifier: ViewModifier {
     let face: Color
     let line: Color
     let shadow: Color
