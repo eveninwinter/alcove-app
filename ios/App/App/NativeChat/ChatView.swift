@@ -1557,6 +1557,18 @@ struct ChatView: View {
         if msgs[index].embroideryCard != nil { return false }
         var head = index
         while head > 0, thSameGroup(msgs[head - 1], msgs[head]) { head -= 1 }
+        // 1031 她：「一轮发的信息 只许出现一次时间戳这一行」。一轮中间夹了拍一拍 / 提示行会把它切成两串，
+        // 后半串又挂一次时间。同一轮号、同一个人前面已经有正经消息了，这串就不再挂。
+        if let tid = msgs[index].turnID, !tid.isEmpty {
+            let role = msgs[index].role
+            var k = head - 1
+            while k >= 0 && k >= head - 40 {
+                let m = msgs[k]
+                if m.turnID == tid && m.role == role
+                    && !Self.kakaoGroupBreakers.contains(m.msgType ?? "") { return false }
+                k -= 1
+            }
+        }
         var j = head
         while j < msgs.count, j == head || thSameGroup(msgs[j - 1], msgs[j]) {
             if !thIsCard(msgs[j]) { return j == index }
