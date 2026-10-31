@@ -1558,20 +1558,8 @@ struct ChatView: View {
         if msgs[index].embroideryCard != nil { return false }
         var head = index
         while head > 0, thSameGroup(msgs[head - 1], msgs[head]) { head -= 1 }
-        // 1031 她：「一轮发的信息 只许出现一次时间戳这一行」。一轮中间夹了拍一拍 / 提示行会把它切成两串，
-        // 后半串又挂一次时间。同一轮号、同一个人前面已经有正经消息了，这串就不再挂。
-        if let tid = msgs[index].turnID, !tid.isEmpty {
-            let role = msgs[index].role
-            var k = head - 1
-            while k >= 0 && k >= head - 40 {
-                let m = msgs[k]
-                // 1031 #4637：卡片挪到一轮最前以后，前面那几张卡不算「这一轮已经挂过时间」——不然正文那条也不挂，整轮没有时间
-                if m.turnID == tid && m.role == role
-                    && !Self.kakaoGroupBreakers.contains(m.msgType ?? "")
-                    && !thIsCard(m) && !ChatStore.isTurnCard(m) { return false }
-                k -= 1
-            }
-        }
+        // 1031 #4644：撤掉早上另加的「同一轮只挂一次」那道判断——时间戳跟 trace 那一行用同一个位置（这一串第一条不是卡片的），
+        // 不另外判断，两个永远在一起。拍一拍现在挪到一轮最前（ChatStore.cardsFirst），不会再把一轮切成两串。
         var j = head
         while j < msgs.count, j == head || thSameGroup(msgs[j - 1], msgs[j]) {
             if !thIsCard(msgs[j]) { return j == index }
