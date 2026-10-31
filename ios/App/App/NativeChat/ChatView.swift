@@ -1565,8 +1565,10 @@ struct ChatView: View {
             var k = head - 1
             while k >= 0 && k >= head - 40 {
                 let m = msgs[k]
+                // 1031 #4637：卡片挪到一轮最前以后，前面那几张卡不算「这一轮已经挂过时间」——不然正文那条也不挂，整轮没有时间
                 if m.turnID == tid && m.role == role
-                    && !Self.kakaoGroupBreakers.contains(m.msgType ?? "") { return false }
+                    && !Self.kakaoGroupBreakers.contains(m.msgType ?? "")
+                    && !thIsCard(m) && !ChatStore.isTurnCard(m) { return false }
                 k -= 1
             }
         }
