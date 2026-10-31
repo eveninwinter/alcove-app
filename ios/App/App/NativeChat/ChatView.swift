@@ -1473,6 +1473,7 @@ struct ChatView: View {
         let b = m.displayText
         return b.contains("_CARD]") || b.contains("[INSIDE]")
             || m.choiceCard != nil || m.journeyCard != nil || m.morningPaperDate != nil
+            || m.musicCard != nil || m.pondCard != nil || m.memoryCard != nil || m.insideText != nil   // 1031 #4636 这几样挪到一轮最前，时间挂在它们下面
     }
 
     /// 这条自己有没有思绪那一排要画的东西（手写思绪 / 动作 / 原生思考 / 召回）

@@ -3,7 +3,64 @@ import SwiftUI
 
 @MainActor
 final class ChatStore: ObservableObject {
-    @Published var messages: [ChatMessage] = []
+    // 1031 #4636 她：「有记忆卡、檐下、拍一拍、inside、点歌…只要在一轮中出现，全都统一放在一轮时间戳上面」——
+    // 他把 pond() 之类写在正文最后，卡片就跟着排到一轮末尾（或者夹在中间）。这里不管从哪条路进来的，
+    // 每次 messages 一变就在同一轮里把这五样挪到最前（相对顺序不变），时间戳那行认「一轮第一条不是卡片的」，自然落在卡片下面。
+    @Published var messages: [ChatMessage] = [] {
+        didSet {
+            guard !reorderingCards else { return }
+            let r = Self.cardsFirst(messages)
+            if r.count == messages.count, zip(r, messages).contains(where: { $0.uid != $1.uid }) {
+                reorderingCards = true
+                messages = r
+                reorderingCards = false
+            }
+        }
+    }
+    private var reorderingCards = false
+
+    /// 这五样算「卡片」：记忆卡、檐下卡、拍一拍（他拍她那行）、inside 便签、点歌卡
+    nonisolated static func isTurnCard(_ m: ChatMessage) -> Bool {
+        guard m.role == "assistant", !m.isLive else { return false }
+        if m.msgType == "pat_incoming" || m.msgType == "pat_outgoing" { return true }
+        // 只看标记、不解析（每次 messages 变都要过一遍，几百条）
+        let t = m.text
+        return t.contains("[MEMORY_CARD]") || t.contains("[POND_CARD]") || t.contains("[INSIDE]") || t.hasPrefix("[MUSIC_CARD]")
+    }
+
+    /// 一段连着的他的消息（中间没有她的）里，按轮号分组；没轮号的（拍一拍行）跟前面那轮走，前面没有就跟后面那轮。
+    /// 每组里卡片挪到最前，别的照原顺序。
+    nonisolated static func cardsFirst(_ ms: [ChatMessage]) -> [ChatMessage] {
+        var out: [ChatMessage] = []
+        out.reserveCapacity(ms.count)
+        var i = 0
+        while i < ms.count {
+            guard ms[i].role == "assistant" else { out.append(ms[i]); i += 1; continue }
+            var j = i
+            while j < ms.count, ms[j].role == "assistant" { j += 1 }
+            let run = Array(ms[i..<j])
+            var keys: [String?] = run.map { ($0.turnID?.isEmpty == false) ? $0.turnID : nil }
+            var last: String? = nil
+            for k in keys.indices { if let t = keys[k] { last = t } else { keys[k] = last } }
+            var next: String? = nil
+            for k in keys.indices.reversed() { if let t = keys[k] { next = t } else { keys[k] = next } }
+            var k = 0
+            while k < run.count {
+                var e = k
+                while e < run.count, keys[e] == keys[k] { e += 1 }
+                let group = run[k..<e]
+                if keys[k] != nil, group.count > 1 {
+                    out.append(contentsOf: group.filter { isTurnCard($0) })
+                    out.append(contentsOf: group.filter { !isTurnCard($0) })
+                } else {
+                    out.append(contentsOf: group)
+                }
+                k = e
+            }
+            i = j
+        }
+        return out
+    }
     private var deletedMessageTs: Set<String> = []
     // 0906 她要的：多选时图一个圈、字一个圈，勾哪个收哪个。
     // 两个名单各管一块；同一条两个名单都在 = 整条收走。
@@ -474,7 +531,8 @@ final class ChatStore: ObservableObject {
     }
 
     func loadOlder() {
-        guard !loadingOlder, hasOlder, let first = messages.first else { return }
+        // 1031：卡片挪到一轮最前以后，第一条不一定是最早的，往前翻拿最早那条的时间
+        guard !loadingOlder, hasOlder, let first = messages.min(by: { $0.ts < $1.ts }) else { return }
         // 0922 任务#2572：往上翻最多攒到 900 条，再往上不堆了（要看更早的走搜索/时间跳转那条换窗的路）
         guard messages.count < 900 else { return }
         loadingOlder = true
