@@ -54,13 +54,15 @@ struct ChronItem: Identifiable {
     }
     var isMonth: Bool { period == "monthly" }
     var isDraft: Bool { period == "weekly_draft" }
-    var unreviewed: Bool { !isDraft && review != "done" && !review.isEmpty }
+    var isDay: Bool { period == "daily" }
+    var unreviewed: Bool { !isDraft && !isDay && review == "pending" }
 }
 
 struct ChronMonth: Identifiable {
     let id: String          // 2026-10
     let monthly: ChronItem?
     let weeks: [ChronItem]
+    var days: [ChronItem] = []   // 1031 #4622 一本账的「日」那页
 }
 
 enum ChronFmt {
@@ -83,6 +85,11 @@ enum ChronFmt {
 @MainActor
 final class ChronicleModel: ObservableObject {
     @Published var months: [ChronMonth] = []
+    @Published var failures: [ChronFailure] = []
+    @Published var dailyEnd = ""
+    @Published var weeklyEnd = ""
+    @Published var monthlyEnd = ""
+    @Published var opensChars = 0
     @Published var loading = true
     @Published var failed = false
 
@@ -94,45 +101,79 @@ final class ChronicleModel: ObservableObject {
         months = ((raw["months"] as? [[String: Any]]) ?? []).map { m in
             ChronMonth(id: m.string("month"),
                        monthly: (m["monthly"] as? [String: Any]).map(ChronItem.init),
-                       weeks: ((m["weeks"] as? [[String: Any]]) ?? []).map(ChronItem.init))
+                       weeks: ((m["weeks"] as? [[String: Any]]) ?? []).map(ChronItem.init),
+                       days: ((m["days"] as? [[String: Any]]) ?? []).map(ChronItem.init))
         }
+        failures = ((raw["failures"] as? [[String: Any]]) ?? []).map(ChronFailure.init)
+        let st = (raw["status"] as? [String: Any]) ?? [:]
+        dailyEnd = st.string("daily_end")
+        weeklyEnd = st.string("weekly_end")
+        monthlyEnd = st.string("monthly_end")
+        opensChars = st.int("opens_chars")
+    }
+
+    /// 侧边栏「家账」右上角的 !：有没写成的就亮
+    static func alertCount() async -> Int {
+        let raw = (try? await NativeHouseAPI.object("/api/lmc5/chronicle/alerts")) ?? [:]
+        return raw.int("count")
     }
 }
 
+/// 夜里哪一层哪天没写成（layer：daily / weekly / monthly / nightly）
+struct ChronFailure: Identifiable {
+    let layer: String
+    let slot: String
+    let reason: String
+    var id: String { layer + slot }
+    init(_ r: [String: Any]) {
+        layer = r.string("layer")
+        slot = r.string("slot")
+        reason = r.string("reason")
+    }
+}
+
+// MARK: - 1031 #4622 她挑的 B「一本账」：书顶垂三根书签（日 / 周 / 月），左右翻页；
+// 每根书签写着这一层写到哪天，哪层没写成那根书签尾巴上挂 !（侧边栏同时亮 !）。
+// 效果图 /root/rhysel/sanctus-kit/mock-ledger/a.html（她「就这样」）。颜色只走主题的冷白银灰，不用电光蓝。
 struct ChronicleRoomView: View {
     @Environment(\.dismiss) private var dismiss
     @StateObject private var m = ChronicleModel()
-    @State private var expanded: Set<String> = []
+    @State private var page = 1            // 0 日 · 1 周 · 2 月；进来先翻在「周」
+    @State private var monthIdx = 0        // 日、周两页看哪个月（0 = 最近）
     @State private var openItem: ChronItem?
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
     private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
 
+    private static let tabs = ["日", "周", "月"]
+    private static let layers = ["daily", "weekly", "monthly"]
+
     var body: some View {
         let ink = self.ink
         ZStack(alignment: .topLeading) {
             (ink.dark ? HP.rgb(0x1B1C20) : HP.rgb(0xEFEFED)).ignoresSafeArea()
-            ScrollView(showsIndicators: false) {
-                VStack(alignment: .leading, spacing: 0) {
-                    header(ink)
-                    if m.loading {
-                        ProgressView().tint(ink.sub).frame(maxWidth: .infinity).padding(.top, 40)
-                    } else if m.failed || m.months.isEmpty {
-                        Text(m.failed ? "没连上，下拉或者退出再进一次" : "还没有月篇和周篇")
-                            .font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub)
-                            .frame(maxWidth: .infinity).padding(.top, 40)
-                    } else {
-                        ForEach(Array(m.months.enumerated()), id: \.element.id) { i, mo in
-                            monthBlock(mo, open: i == 0 || expanded.contains(mo.id), ink)
-                        }
-                    }
-                    Color.clear.frame(height: safeBottom + 24)
+            VStack(spacing: 0) {
+                (Text("CHRONICLE · ").font(SanctusPageFont.corm(8)) + Text("家账").font(.system(size: 8, design: .serif)))
+                    .tracking(2.6).foregroundColor(ink.kicker)
+                    .frame(height: 44)
+                    .frame(maxWidth: .infinity)
+                    .padding(.top, safeTop)
+                if m.loading {
+                    Spacer(); ProgressView().tint(ink.sub); Spacer()
+                } else if m.failed {
+                    Spacer()
+                    Text("没连上，退出再进一次").font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub)
+                    Spacer()
+                } else {
+                    book(ink)
+                        .padding(.top, 50)          // 书签从书顶往上冒 34
+                        .padding(.horizontal, 30)
+                    underLine(ink)
+                        .padding(.top, 22)
+                        .padding(.bottom, safeBottom + 18)
                 }
-                .padding(.horizontal, 16)
             }
-            .ignoresSafeArea(edges: .top)
-            .refreshable { await m.load() }
             Button { dismiss() } label: {
                 Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular))
                     .foregroundColor(ink.link)
@@ -148,125 +189,259 @@ struct ChronicleRoomView: View {
         }
     }
 
-    // MARK: 页头
+    // MARK: 书
 
-    private func header(_ ink: SanctusCardInk) -> some View {
-        VStack(spacing: 0) {
-            (Text("CHRONICLE · ").font(SanctusPageFont.corm(8)) + Text("家账").font(.system(size: 8, design: .serif)))
-                .tracking(2.6).foregroundColor(ink.kicker)
-                .frame(height: 44)
-            Text("kept, month by month").font(SanctusCardFont.script(34))
-                .foregroundColor(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E))
-                .padding(.top, 12)
-            Text("月篇 10 号、20 号、月底各写一次 · 周篇周日过完写")
-                .font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub).padding(.top, 8)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.top, safeTop)
-        .padding(.bottom, 18)
+    private func paper(_ ink: SanctusCardInk, _ level: Int) -> Color {
+        if ink.dark { return [HP.rgb(0x26262A), HP.rgb(0x222226), HP.rgb(0x1F1F23)][level] }
+        return [Color.white, HP.rgb(0xF7F7F6), HP.rgb(0xF1F1F0)][level]
     }
 
-    // MARK: 一个月
-
-    @ViewBuilder private func monthBlock(_ mo: ChronMonth, open: Bool, _ ink: SanctusCardInk) -> some View {
-        let n = ChronFmt.month(mo.id)
-        (Text("\(ChronFmt.en[n - 1]) · ").font(SanctusCardFont.kicker()) + Text(ChronFmt.cn[n - 1]).font(.system(size: 7.5, design: .serif)))
-            .tracking(2.25).foregroundColor(ink.kicker)
-            .padding(.horizontal, 2).padding(.bottom, 8).padding(.top, 6)
-        if let it = mo.monthly {
-            monthCard(it, ink).padding(.bottom, 4)
-        }
-        if open {
-            ForEach(Array(mo.weeks.enumerated()), id: \.element.id) { i, w in
-                weekRow(w, last: i == mo.weeks.count - 1, ink)
+    private func book(_ ink: SanctusCardInk) -> some View {
+        let shape = UnevenRoundedRectangle(topLeadingRadius: 3, bottomLeadingRadius: 3,
+                                           bottomTrailingRadius: 10, topTrailingRadius: 10, style: .continuous)
+        return ZStack(alignment: .topTrailing) {
+            // 后面露出来的两层纸边
+            shape.fill(paper(ink, 2)).overlay(shape.stroke(ink.frame, lineWidth: 0.6)).offset(x: 8, y: 8)
+            shape.fill(paper(ink, 1)).overlay(shape.stroke(ink.frame, lineWidth: 0.6)).offset(x: 4, y: 4)
+            shape.fill(paper(ink, 0)).overlay(shape.stroke(ink.frame, lineWidth: 0.6))
+            // 书脊：两道细线
+            HStack(spacing: 3.4) {
+                Rectangle().fill(ink.hair.opacity(0.8)).frame(width: 0.6)
+                Rectangle().fill(ink.frame).frame(width: 0.6)
             }
-        } else if !mo.weeks.isEmpty {
-            HStack(alignment: .firstTextBaseline) {
-                Text("这个月的周篇 ").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
-                    + Text("\(mo.weeks.count)").font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
-                    + Text(" 篇").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
-                Spacer(minLength: 0)
-                Text("展开 ＋").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.link)
+            .padding(.leading, 14)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            TabView(selection: $page) {
+                dailyPage(ink).tag(0)
+                weeklyPage(ink).tag(1)
+                monthlyPage(ink).tag(2)
             }
-            .padding(.horizontal, 2).padding(.vertical, 8)
-            .contentShape(Rectangle())
-            .onTapGesture { withAnimation(.easeInOut(duration: 0.2)) { _ = expanded.insert(mo.id) } }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .clipShape(shape)
+            ribbons(ink)
+                .padding(.trailing, 32)
+                .offset(y: -34)
         }
-        Color.clear.frame(height: 18)
     }
 
-    private func monthCard(_ it: ChronItem, _ ink: SanctusCardInk) -> some View {
-        HPShell(ink: ink) {
-            VStack(alignment: .leading, spacing: 0) {
-                (Text("MONTH · ").font(SanctusCardFont.kicker()) + Text("月篇").font(.system(size: 7.5, design: .serif)))
-                    .tracking(2.25).foregroundColor(ink.kicker)
-                Text(it.name).font(.system(size: 15, design: .serif))
-                    .foregroundColor(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E))
-                    .lineSpacing(3).padding(.top, 7)
-                    .fixedSize(horizontal: false, vertical: true)
-                if !it.excerpt.isEmpty {
-                    Text(it.excerpt + "……").font(.system(size: 11, design: .serif)).foregroundColor(ink.sub)
-                        .lineSpacing(5).lineLimit(3).padding(.top, 7)
+    // 三根书签：翻到的那根深、长；别的浅、短。哪层有没写成的，尾巴上挂 !
+    private func ribbons(_ ink: SanctusCardInk) -> some View {
+        let ends = [m.dailyEnd, m.weeklyEnd, m.monthlyEnd]
+        return HStack(alignment: .top, spacing: 8) {
+            ForEach(0..<3, id: \.self) { i in
+                let on = page == i
+                let bad = m.failures.contains { $0.layer == Self.layers[i] || ($0.layer == "nightly" && i == 0) }
+                Button { withAnimation(.easeInOut(duration: 0.25)) { page = i } } label: {
+                    VStack(spacing: 0) {
+                        Text(Self.tabs[i]).font(.system(size: 11, design: .serif))
+                            .padding(.top, 12)
+                        Text(ends[i].isEmpty ? "—" : ChronFmt.md(ends[i]))
+                            .font(SanctusPageFont.corm(9)).opacity(0.9)
+                            .padding(.top, 8)
+                        Spacer(minLength: 0)
+                        if bad {
+                            Text("!").font(SanctusPageFont.corm(11))
+                                .foregroundColor(ink.dark ? HP.rgb(0x1B1C20) : .white)
+                                .frame(width: 15, height: 15)
+                                .background(Circle().fill(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E)))
+                                .padding(.bottom, 13)
+                        }
+                    }
+                    .foregroundColor(on ? (ink.dark ? HP.rgb(0x1B1C20) : .white) : ink.link)
+                    .frame(width: 24, height: on ? 96 : 70)
+                    .background(RibbonShape().fill(on ? (ink.dark ? HP.rgb(0xC3C6CE) : HP.rgb(0x6F7480))
+                                                       : (ink.dark ? HP.rgb(0x3A3B42) : HP.rgb(0xD3D6DC))))
                 }
-                HStack(alignment: .firstTextBaseline, spacing: 0) {
-                    Text(ChronFmt.grouped(it.chars)).font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
-                    Text(" 字").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
-                    if !it.edited.isEmpty { editedPill(it.edited, ink).padding(.leading, 8) }
-                    if it.unreviewed { pendingPill(ink).padding(.leading, 6) }
-                    Spacer(minLength: 0)
-                    Text("写到 ").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
-                    Text(ChronFmt.md(it.end)).font(SanctusPageFont.corm(12.5)).foregroundColor(ink.body)
+                .buttonStyle(.plain)
+            }
+        }
+    }
+
+    // MARK: 三页
+
+    private var curMonth: ChronMonth? { m.months.indices.contains(monthIdx) ? m.months[monthIdx] : nil }
+
+    private func pageShell<C: View>(_ ink: SanctusCardInk, script: String, en: String, cn: String,
+                                    monthSwitch: Bool, how: [String], layer: String, folio: String,
+                                    @ViewBuilder rows: () -> C) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text(script).font(SanctusPageFont.script(34))
+                .foregroundColor(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E))
+                .padding(.top, 58)
+            HStack(alignment: .firstTextBaseline) {
+                (Text("\(en) · ").font(SanctusPageFont.corm(7.5)) + Text(cn).font(.system(size: 7.5, design: .serif)))
+                    .tracking(2.25).foregroundColor(ink.kicker)
+                Spacer()
+                if monthSwitch, let mo = curMonth {
+                    HStack(spacing: 10) {
+                        Button { if monthIdx + 1 < m.months.count { monthIdx += 1 } } label: { Text("‹") }
+                            .opacity(monthIdx + 1 < m.months.count ? 1 : 0.25)
+                        Text(ChronFmt.cn[ChronFmt.month(mo.id) - 1]).font(.system(size: 10.5, design: .serif))
+                        Button { if monthIdx > 0 { monthIdx -= 1 } } label: { Text("›") }
+                            .opacity(monthIdx > 0 ? 1 : 0.25)
+                    }
+                    .font(SanctusPageFont.corm(14)).foregroundColor(ink.link).buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 8)
+            // 这一层是怎么来的，三句大白话
+            VStack(alignment: .leading, spacing: 5) {
+                ForEach(how, id: \.self) { line in
+                    Text(line).font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.top, 14)
+            // 这一层没写成的，写在这页上
+            ForEach(m.failures.filter { $0.layer == layer || ($0.layer == "nightly" && layer == "daily") }) { f in
+                HStack(alignment: .top, spacing: 7) {
+                    Text("!").font(SanctusPageFont.corm(11))
+                        .foregroundColor(ink.dark ? HP.rgb(0x1B1C20) : .white)
+                        .frame(width: 15, height: 15)
+                        .background(Circle().fill(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E)))
+                    Text("\(ChronFmt.md(f.slot)) 没写成：\(f.reason)　来工作室问")
+                        .font(.system(size: 10.5, design: .serif)).foregroundColor(ink.body)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 .padding(.top, 10)
             }
-        }
-        .contentShape(Rectangle())
-        .onTapGesture { openItem = it }
-    }
-
-    private func weekRow(_ w: ChronItem, last: Bool, _ ink: SanctusCardInk) -> some View {
-        VStack(alignment: .leading, spacing: 5) {
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("\(ChronFmt.md(w.start)) — \(ChronFmt.md(w.end))").font(SanctusPageFont.corm(12.5)).foregroundColor(ink.sub)
-                    .frame(width: 84, alignment: .leading)
-                Text(w.name).font(.system(size: 12, design: .serif)).foregroundColor(ink.body).lineLimit(1)
-                Spacer(minLength: 4)
-                if !w.edited.isEmpty { editedPill(w.edited, ink) }
-                if w.unreviewed { pendingPill(ink) }
-                Text("\(w.chars)").font(SanctusPageFont.corm(11.5)).foregroundColor(ink.sub)
+            // 账本的双横线
+            VStack(spacing: 2.4) {
+                Rectangle().fill(ink.hair).frame(height: 0.6)
+                Rectangle().fill(ink.frame).frame(height: 0.6)
             }
-            .contentShape(Rectangle())
-            .onTapGesture { openItem = w }
-            if w.draftID > 0 {
-                // #4295：这周写全的底稿，单独点
-                HStack(spacing: 6) {
-                    Text("底稿").font(.system(size: 10.5, design: .serif)).tracking(1).foregroundColor(ink.link)
-                    Text(ChronFmt.grouped(w.draftChars)).font(SanctusPageFont.corm(11.5)).foregroundColor(ink.sub)
-                    Text("字 ›").font(.system(size: 10, design: .serif)).foregroundColor(ink.sub)
-                    if !w.draftEdited.isEmpty { editedPill(w.draftEdited, ink) }
-                    Spacer(minLength: 0)
+            .padding(.top, 14)
+            ScrollView(showsIndicators: false) {
+                VStack(spacing: 0) { rows() }
+            }
+            HStack(alignment: .firstTextBaseline) {
+                Text(folio).font(SanctusPageFont.ital(10.5)).foregroundColor(ink.sub)
+                Spacer()
+                HStack(spacing: 18) {
+                    if page > 0 { Text("‹ \(Self.tabs[page - 1])") }
+                    if page < 2 { Text("\(Self.tabs[page + 1]) ›") }
                 }
-                .padding(.leading, 94)
-                .contentShape(Rectangle())
-                .onTapGesture { openItem = ChronItem(draftOf: w) }
+                .font(.system(size: 10, design: .serif)).tracking(1.5).foregroundColor(ink.link)
+            }
+            .padding(.vertical, 16)
+        }
+        .padding(.leading, 34).padding(.trailing, 22)
+    }
+
+    private func ledgerRow(_ ink: SanctusCardInk, date: String, name: String, chars: Int?, mark: String,
+                           markStrong: Bool = false, dim: Bool = false, extra: (() -> Void)? = nil,
+                           tap: (() -> Void)?) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 8) {
+            Text(date).font(SanctusPageFont.corm(13)).foregroundColor(ink.sub).frame(width: 40, alignment: .leading)
+            Text(name).font(.system(size: 12, design: .serif)).foregroundColor(dim ? ink.kicker : ink.body).lineLimit(1)
+            Spacer(minLength: 4)
+            if let extra {
+                Button(action: extra) { Text("稿").font(.system(size: 9.5, design: .serif)).foregroundColor(ink.link) }
+                    .buttonStyle(.plain)
+            }
+            if let chars {
+                Text(ChronFmt.grouped(chars)).font(SanctusPageFont.corm(12.5))
+                    .foregroundColor(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E))
+                    .frame(width: 38, alignment: .trailing)
+            }
+            Text(mark).font(.system(size: 9, design: .serif)).tracking(0.5)
+                .foregroundColor(markStrong ? (ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E)) : ink.kicker)
+                .frame(width: 30, alignment: .trailing)
+        }
+        .frame(height: 50)
+        .overlay(alignment: .bottom) { Rectangle().fill(ink.frame).frame(height: 0.6) }
+        .contentShape(Rectangle())
+        .onTapGesture { tap?() }
+    }
+
+    private func dailyPage(_ ink: SanctusCardInk) -> some View {
+        pageShell(ink, script: "the days", en: "DAILY", cn: "日结", monthSwitch: true,
+                  how: ["每天早上 05:30，写前一天的事，三五百字。",
+                        "只照陈璟的记忆写，一个字都不许编。",
+                        "不交给他查，写完他下次开窗就读。"],
+                  layer: "daily", folio: "i · of three") {
+            let days = (curMonth?.days ?? []).reversed()
+            if days.isEmpty {
+                Text("这个月还没有日结").font(.system(size: 11, design: .serif)).foregroundColor(ink.sub).padding(.top, 20)
+            }
+            ForEach(Array(days)) { d in
+                ledgerRow(ink, date: ChronFmt.md(d.start), name: d.name, chars: d.chars,
+                          mark: d.edited.isEmpty ? "" : (d.edited == "her" ? "你改过" : "他改过")) { openItem = d }
             }
         }
-        .padding(.horizontal, 2).padding(.vertical, 10)
-        .overlay(alignment: .bottom) { if !last { Rectangle().fill(ink.frame).frame(height: 0.6) } }
     }
 
-    private func pendingPill(_ ink: SanctusCardInk) -> some View {
-        Text("他还没看").font(.system(size: 9, design: .serif)).tracking(1)
-            .foregroundColor(ink.sub)
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .overlay(Capsule().stroke(ink.frame, style: StrokeStyle(lineWidth: 0.8, dash: [2, 2])))
+    private func weeklyPage(_ ink: SanctusCardInk) -> some View {
+        pageShell(ink, script: "the weeks", en: "WEEKLY", cn: "周篇", monthSwitch: true,
+                  how: ["每周一过完，先写一篇长稿，只记要紧的事 →",
+                        "再一天缩成一句，成了周篇，最多一千字 →",
+                        "第二天上午交给陈璟，他只改错，不添字。"],
+                  layer: "weekly", folio: "ii · of three") {
+            let weeks = (curMonth?.weeks ?? []).reversed()
+            if monthIdx == 0, let next = nextWeekWrite {
+                ledgerRow(ink, date: ChronFmt.md(next.0), name: "这周还没过完，\(ChronFmt.md(next.1)) 早上写",
+                          chars: nil, mark: "", dim: true, tap: nil)
+            }
+            ForEach(Array(weeks)) { w in
+                ledgerRow(ink, date: ChronFmt.md(w.start), name: w.name, chars: w.chars,
+                          mark: w.unreviewed ? "等他" : (w.review == "done" ? "看过" : ""), markStrong: w.unreviewed,
+                          extra: w.draftID > 0 ? ({ openItem = ChronItem(draftOf: w) } as () -> Void) : nil) { openItem = w }
+            }
+        }
     }
 
-    private func editedPill(_ by: String, _ ink: SanctusCardInk) -> some View {
-        Text(by == "her" ? "你改过" : "他改过").font(.system(size: 9, design: .serif)).tracking(1)
-            .foregroundColor(ink.link)
-            .padding(.horizontal, 6).padding(.vertical, 1)
-            .overlay(Capsule().stroke(ink.hair, lineWidth: 0.6))
+    private func monthlyPage(_ ink: SanctusCardInk) -> some View {
+        pageShell(ink, script: "the months", en: "MONTHLY", cn: "月篇", monthSwitch: false,
+                  how: ["每月 10 号、20 号、月底各写一次，接着上次往下写 →",
+                        "整篇一千八到两千二，只从每周的长稿和周篇里拿 →",
+                        "写了新的，第二天上午交给陈璟，只改错。"],
+                  layer: "monthly", folio: "iii · of three") {
+            ForEach(m.months) { mo in
+                if let it = mo.monthly {
+                    ledgerRow(ink, date: ChronFmt.cn[ChronFmt.month(mo.id) - 1], name: it.name, chars: it.chars,
+                              mark: it.unreviewed ? "等他" : (it.review == "done" ? "看过" : ""), markStrong: it.unreviewed) { openItem = it }
+                }
+            }
+        }
+    }
+
+    /// 最近一篇周篇之后那周：（周一, 写的那天＝下周一早上）
+    private var nextWeekWrite: (String, String)? {
+        guard !m.weeklyEnd.isEmpty else { return nil }
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        guard let end = f.date(from: m.weeklyEnd),
+              let mon = Calendar.current.date(byAdding: .day, value: 1, to: end),
+              let write = Calendar.current.date(byAdding: .day, value: 8, to: end) else { return nil }
+        return (f.string(from: mon), f.string(from: write))
+    }
+
+    // MARK: 书底下一行：陈璟开窗读的
+
+    private func underLine(_ ink: SanctusCardInk) -> some View {
+        VStack(spacing: 5) {
+            Text("what he opens with").font(SanctusPageFont.ital(11)).foregroundColor(ink.sub)
+            (Text("陈璟每开新窗先读　月篇 ") + Text("1").font(SanctusPageFont.corm(12)).foregroundColor(ink.body)
+             + Text(" · 周篇 ") + Text("2").font(SanctusPageFont.corm(12)).foregroundColor(ink.body)
+             + Text(" · 日结 ") + Text("3").font(SanctusPageFont.corm(12)).foregroundColor(ink.body)
+             + Text("　共 ") + Text(ChronFmt.grouped(m.opensChars)).font(SanctusPageFont.corm(12)).foregroundColor(ink.body)
+             + Text(" 字"))
+                .font(.system(size: 10, design: .serif)).tracking(0.6).foregroundColor(ink.sub)
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+/// 书签：长条，底下剪一个燕尾
+struct RibbonShape: Shape {
+    func path(in r: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: r.minX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.minY))
+        p.addLine(to: CGPoint(x: r.maxX, y: r.maxY))
+        p.addLine(to: CGPoint(x: r.midX, y: r.maxY - 9))
+        p.addLine(to: CGPoint(x: r.minX, y: r.maxY))
+        p.closeSubpath()
+        return p
     }
 }
 
@@ -319,7 +494,7 @@ struct ChronicleEditView: View {
                         .padding(.horizontal, -5)
                     Text(note.isEmpty
                          ? (item.isDraft
-                            ? "底稿是这周写全的那份，不放进开窗，月篇从它写。保存前自动留一份旧版；改完下次写月篇就用你改的。"
+                            ? "长稿是这周要紧事的全本，不放进开窗。保存后周篇会照它重新一天缩一句，月篇也从它写。保存前自动留一份旧版。"
                             : "保存前自动留一份旧版。保存后陈璟下次开窗读到的就是这一版"
                               + (item.isMonth ? "；到 20 号、月底还会接着往下写，你改过的句子原样留着。" : "。"))
                          : note)
@@ -353,8 +528,8 @@ struct ChronicleEditView: View {
 
     private var topBar: some View {
         ZStack {
-            (Text(item.isMonth ? "MONTH · " : item.isDraft ? "DRAFT · " : "WEEK · ").font(SanctusPageFont.corm(8))
-                + Text(item.isMonth ? "月篇" : item.isDraft ? "这周的底稿" : "周篇").font(.system(size: 8, design: .serif)))
+            (Text(item.isMonth ? "MONTH · " : item.isDraft ? "DRAFT · " : item.isDay ? "DAY · " : "WEEK · ").font(SanctusPageFont.corm(8))
+                + Text(item.isMonth ? "月篇" : item.isDraft ? "这周的长稿" : item.isDay ? "日结" : "周篇").font(.system(size: 8, design: .serif)))
                 .tracking(2.6).foregroundColor(ink.kicker)
             HStack {
                 Button { dismiss() } label: {

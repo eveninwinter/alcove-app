@@ -488,6 +488,7 @@ struct NativeHouseDrawer: View {
     @AppStorage("assistantName") private var assistantName = "陈璟"
     @AppStorage("assistantAvatarDataURL") private var avatarDataURL = ""
     @StateObject private var model = SidebarModel()
+    @State private var chronicleAlerts = 0   // 1031 #4618 家账有没写成的 → 那一行右上角冒 !
     // 0925 她抓的「侧边栏不跟着黑白切换吗」：Kakao 的聊天主题没有夜版（恒按白天画），侧边栏原来直接用它，
     // 全屋白天 / 黑夜开关怎么拨都是奶白毛玻璃，暗色包的白字压在上面刺眼。Kakao 下改用面板那套：深浅跟全屋开关走
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
@@ -576,7 +577,7 @@ struct NativeHouseDrawer: View {
                     VStack(spacing: 7) {
                         drawerRow(.album, detail: "照片和留给它的一句话")
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
-                        drawerRow(.chronicle, detail: "每个月的月篇、每周的周篇，能改")   // 1024 #4272
+                        drawerRow(.chronicle, detail: "日结、周篇、月篇，一本账", alert: chronicleAlerts > 0)   // 1024 #4272；1031 一本账
                         drawerRow(.dreams, detail: "梦与旧日记")
                         drawerRow(.fiction, detail: "陈璟写给你的小说")
                         drawerRow(.ears, detail: "他只说给你一个人听的")
@@ -638,6 +639,7 @@ struct NativeHouseDrawer: View {
                 }
         )
         .task { await model.load() }
+        .task { chronicleAlerts = await ChronicleModel.alertCount() }
     }
 
     private var homeCards: some View {
@@ -727,7 +729,7 @@ struct NativeHouseDrawer: View {
         .padding(.top, 4).padding(.horizontal, 3)
     }
 
-    private func drawerRow(_ target: HouseDestination, detail: String) -> some View {
+    private func drawerRow(_ target: HouseDestination, detail: String, alert: Bool = false) -> some View {
         Button { select(target) } label: {
             HStack(spacing: 11) {
                 Image(systemName: target.icon)
@@ -746,6 +748,17 @@ struct NativeHouseDrawer: View {
             .padding(.horizontal, 12)
             .frame(maxWidth: .infinity, minHeight: 52)
             .drawerGlass(theme)
+            .overlay(alignment: .topTrailing) {
+                // 1031 #4618 她：「模型没写出来要冒感叹号在侧边栏这个小板块右上角 像未读」
+                if alert {
+                    Text("!").font(.custom("CormorantGaramond-Medium", size: 12))
+                        .foregroundColor(AlcoveAppearance.isDark ? Color(red: 0x1B/255, green: 0x1C/255, blue: 0x20/255) : .white)
+                        .frame(width: 17, height: 17)
+                        .background(Circle().fill(AlcoveAppearance.isDark ? Color(red: 0xE4/255, green: 0xE4/255, blue: 0xE7/255)
+                                                                          : Color(red: 0x2A/255, green: 0x2A/255, blue: 0x2E/255)))
+                        .offset(x: 4, y: -4)
+                }
+            }
         }.buttonStyle(.plain)
     }
 
