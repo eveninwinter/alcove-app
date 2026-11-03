@@ -503,7 +503,7 @@ enum AlcoveAPI {
 
     static func uploadSticker(data: Data, mime: String, owner: String,
                               name: String = "", description: String = "",
-                              emotionTags: [String] = []) async throws {
+                              emotionTags: [String] = [], categories: [String] = []) async throws {
         let boundary = "----alcove\(UUID().uuidString)"
         var req = URLRequest(url: fullURL("/api/stickers/upload"))
         req.httpMethod = "POST"
@@ -524,6 +524,10 @@ enum AlcoveAPI {
            let json = String(data: tags, encoding: .utf8) {
             field("emotion_tags", json)
         }
+        if let cats = try? JSONSerialization.data(withJSONObject: categories),
+           let json = String(data: cats, encoding: .utf8) {
+            field("categories", json)
+        }
         body.append("--\(boundary)\r\nContent-Disposition: form-data; name=\"file\"; filename=\"sticker.\(ext)\"\r\nContent-Type: \(mime)\r\n\r\n".data(using: .utf8)!)
         body.append(data)
         body.append("\r\n--\(boundary)--\r\n".data(using: .utf8)!)
@@ -543,9 +547,10 @@ enum AlcoveAPI {
 
     /// 给已有的表情补名称/描述/情绪标签（长按格子进编辑）
     static func updateSticker(id: String, name: String, description: String,
-                              emotionTags: [String]) async throws {
+                              emotionTags: [String], categories: [String]) async throws {
         _ = try await postJSON("/api/stickers/update", body: [
             "id": id, "name": name, "description": description, "emotion_tags": emotionTags,
+            "categories": categories,
         ])
     }
 

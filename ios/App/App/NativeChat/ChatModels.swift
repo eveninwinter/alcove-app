@@ -1,4 +1,5 @@
 import Foundation
+import CoreGraphics
 
 /// One renderer for ordinary chat text in every Alcove room. The stored text
 /// stays untouched; only its presentation receives inline Markdown styling.
@@ -742,6 +743,14 @@ struct Sticker: Identifiable, Equatable {
     let description: String
     let emotionTags: [String]
     let url: String
+    /// 1103 她要的分类（可多选）；后端 stickers.categories
+    let categories: [String]
+    /// 原图宽高（后端量的）；0 ＝不知道，聊天里就退回老的方格
+    let width: Int
+    let height: Int
+
+    /// 1103 #4680 她定的七类，面板上按这个顺序排；后端要是出现别的类名，接在后面
+    static let categoryOrder = ["撒娇亲亲", "开心得意", "生气嫌弃", "委屈难过", "色色", "日常回应", "梗库"]
 
     init?(json: [String: Any]) {
         guard let id = json["id"] as? String,
@@ -752,6 +761,33 @@ struct Sticker: Identifiable, Equatable {
         self.description = json["description"] as? String ?? ""
         self.emotionTags = json["emotion_tags"] as? [String] ?? []
         self.url = url
+        self.categories = json["categories"] as? [String] ?? []
+        self.width = (json["width"] as? NSNumber)?.intValue ?? 0
+        self.height = (json["height"] as? NSNumber)?.intValue ?? 0
+    }
+
+    var jsonObject: [String: Any] {
+        ["id": id, "owner": owner, "name": name, "description": description,
+         "emotion_tags": emotionTags, "url": url, "categories": categories,
+         "width": width, "height": height]
+    }
+
+    /// 宽 / 高；不知道就当方的
+    var aspect: CGFloat {
+        width > 0 && height > 0 ? CGFloat(width) / CGFloat(height) : 1
+    }
+
+    /// 按原比例塞进 side×side 的框里：长边顶满，短边跟着比例走
+    func fitSize(_ side: CGFloat) -> CGSize {
+        aspect >= 1 ? CGSize(width: side, height: side / aspect) : CGSize(width: side * aspect, height: side)
+    }
+
+    /// 搜索：名字、说明、标签、分类里有这几个字就算
+    func matches(_ query: String) -> Bool {
+        let q = query.trimmingCharacters(in: .whitespaces).lowercased()
+        if q.isEmpty { return true }
+        let hay = ([name, description] + emotionTags + categories).joined(separator: " ").lowercased()
+        return q.split(separator: " ").allSatisfy { hay.contains($0) }
     }
 
     // 与 PWA stickerDescForAI 保持一致的注入文本

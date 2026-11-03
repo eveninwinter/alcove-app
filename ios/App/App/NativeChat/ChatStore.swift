@@ -152,10 +152,7 @@ final class ChatStore: ObservableObject {
     }
 
     private func saveStickerCache() {
-        let raw: [[String: Any]] = stickers.map {
-            ["id": $0.id, "owner": $0.owner, "name": $0.name,
-             "description": $0.description, "emotion_tags": $0.emotionTags, "url": $0.url]
-        }
+        let raw: [[String: Any]] = stickers.map(\.jsonObject)
         if let data = try? JSONSerialization.data(withJSONObject: raw) {
             UserDefaults.standard.set(data, forKey: Self.stickerCacheKey)
         }
@@ -321,7 +318,7 @@ final class ChatStore: ObservableObject {
 
     func uploadSticker(data: Data, mime: String, owner: String,
                        name: String = "", description: String = "",
-                       emotionTags: [String] = []) {
+                       emotionTags: [String] = [], categories: [String] = []) {
         guard !stickerUploading else { return }
         stickerUploading = true
         stickerUploadError = ""
@@ -330,7 +327,7 @@ final class ChatStore: ObservableObject {
             do {
                 try await AlcoveAPI.uploadSticker(data: data, mime: mime, owner: owner,
                                                   name: name, description: description,
-                                                  emotionTags: emotionTags)
+                                                  emotionTags: emotionTags, categories: categories)
                 stickers = try await AlcoveAPI.stickers()
                 saveStickerCache()
                 await prefetchStickerImages()
@@ -341,10 +338,11 @@ final class ChatStore: ObservableObject {
         }
     }
 
-    func updateSticker(_ stk: Sticker, name: String, description: String, emotionTags: [String]) {
+    func updateSticker(_ stk: Sticker, name: String, description: String, emotionTags: [String],
+                       categories: [String]) {
         Task {
             try? await AlcoveAPI.updateSticker(id: stk.id, name: name, description: description,
-                                               emotionTags: emotionTags)
+                                               emotionTags: emotionTags, categories: categories)
             if let list = try? await AlcoveAPI.stickers() { stickers = list; saveStickerCache() }
         }
     }

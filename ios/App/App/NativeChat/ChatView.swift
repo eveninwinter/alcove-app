@@ -5622,10 +5622,12 @@ struct MessageRow: View {
     private var stickerBody: some View {
         Group {
             if let stk = sticker {
+                // 1103 #4680 她：表情按原图比例切边，不再一律套 110 的方格（宽高后端量好跟着表情库下来）
+                let box = stk.fitSize(120)
                 CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
                     img.resizable().scaledToFit()
                 } placeholder: { Color(.tertiarySystemFill) }
-                .frame(width: 110, height: 110)
+                .frame(width: box.width, height: box.height)
                 .clipShape(RoundedRectangle(cornerRadius: 12))
             } else {
                 Text(msg.text.isEmpty ? "[表情]" : msg.text)

@@ -13,6 +13,13 @@ struct StickerSheet: View {
     @State private var draft: StickerDraft?
     @State private var editing: Sticker?      // 长按格子 → 补描述
     @State private var errorMessage = ""
+    // 1103 #4680 她：「加分类和搜索 我现在有点太杂了」
+    @State private var query = ""
+    @State private var tab = ""               // "" ＝还没挑过：有最近用过就停在「最近」，没有就「全部」
+
+    private static let recentTab = "最近"
+    private static let allTab = "全部"
+    private static let looseTab = "未分类"
 
     /// 整库：近 60 天用得多的在前，没用过的保持库里原来的顺序
     private var shown: [Sticker] {
@@ -25,20 +32,76 @@ struct StickerSheet: View {
             .map(\.element)
     }
 
-    /// 最近用过的 12 张（她发的、他发的都算），最近的在最左
+    /// 最近用过的（她发的、他发的都算），最近的在最前
     private var recent: [Sticker] {
         let byID = Dictionary(store.stickers.map { ($0.id, $0) }, uniquingKeysWith: { a, _ in a })
-        return store.stickerRecentIDs.compactMap { byID[$0] }.prefix(12).map { $0 }
+        return store.stickerRecentIDs.compactMap { byID[$0] }.prefix(24).map { $0 }
+    }
+
+    /// 分类一排：最近、全部、她定的七类，库里要是出现别的类名接在后面，没分类的兜一个「未分类」
+    private var tabs: [String] {
+        var out = recent.isEmpty ? [Self.allTab] : [Self.recentTab, Self.allTab]
+        out += Sticker.categoryOrder
+        for stk in store.stickers {
+            for c in stk.categories where !out.contains(c) { out.append(c) }
+        }
+        if store.stickers.contains(where: { $0.categories.isEmpty }) { out.append(Self.looseTab) }
+        return out
+    }
+
+    private var currentTab: String {
+        if tabs.contains(tab) { return tab }
+        return recent.isEmpty ? Self.allTab : Self.recentTab
+    }
+
+    /// 能勾的分类（写说明那页用）：去掉最近 / 全部 / 未分类这三个不是真分类的
+    private var pickableCategories: [String] {
+        tabs.filter { $0 != Self.recentTab && $0 != Self.allTab && $0 != Self.looseTab }
+    }
+
+    /// 停在某一类时新加表情，默认先勾上这一类
+    private var tabCategory: String? {
+        pickableCategories.contains(currentTab) ? currentTab : nil
+    }
+
+    /// 搜索框里有字就在整库里搜，不管停在哪一类
+    private var visible: [Sticker] {
+        if !query.trimmingCharacters(in: .whitespaces).isEmpty {
+            return shown.filter { $0.matches(query) }
+        }
+        switch currentTab {
+        case Self.recentTab: return recent
+        case Self.allTab: return shown
+        case Self.looseTab: return shown.filter { $0.categories.isEmpty }
+        default: return shown.filter { $0.categories.contains(currentTab) }
+        }
     }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 12) {
             Text("Stickers")
                 .font(.system(size: 26, weight: .semibold))
                 .padding(.top, 18)
 
-            HStack {
-                Spacer()
+            HStack(spacing: 10) {
+                HStack(spacing: 6) {
+                    Image(systemName: "magnifyingglass")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                    TextField("搜名字、说明、标签", text: $query)
+                        .font(.system(size: 15))
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                    if !query.isEmpty {
+                        Button { query = "" } label: {
+                            Image(systemName: "xmark.circle.fill").foregroundColor(.secondary)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 12)
+                .frame(height: 38)
+                .background(Color(.systemGray6), in: Capsule())
 
                 PhotosPicker(selection: $uploadItem, matching: .images,
                              preferredItemEncoding: .current) {
@@ -47,57 +110,59 @@ struct StickerSheet: View {
                         else { Image(systemName: "plus").font(.system(size: 16)) }
                     }
                     .foregroundColor(.secondary)
-                    .frame(width: 42, height: 42)
+                    .frame(width: 38, height: 38)
                     .background(Color(.systemGray6), in: Circle())
                 }
                 .disabled(store.stickerUploading)
             }
 
-            ScrollView {
-                if !recent.isEmpty {
-                    VStack(alignment: .leading, spacing: 8) {
-                        Text("最近用过")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.secondary)
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 10) {
-                                ForEach(recent) { stk in
-                                    Button { onPick(stk) } label: {
-                                        CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
-                                            img.resizable().scaledToFit()
-                                        } placeholder: {
-                                            Color(.systemGray6)
-                                        }
-                                        .frame(width: 64, height: 64)
-                                        .background(Color(.systemGray6).opacity(0.5))
-                                        .clipShape(RoundedRectangle(cornerRadius: 10))
-                                    }
-                                    .buttonStyle(.plain)
-                                }
+            if query.trimmingCharacters(in: .whitespaces).isEmpty {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 8) {
+                        ForEach(tabs, id: \.self) { t in
+                            let on = t == currentTab
+                            Button { tab = t } label: {
+                                Text(t)
+                                    .font(.system(size: 14, weight: on ? .semibold : .regular))
+                                    .foregroundColor(on ? Color(.systemBackground) : .primary)
+                                    .padding(.horizontal, 13)
+                                    .frame(height: 30)
+                                    .background(on ? Color.primary : Color(.systemGray6), in: Capsule())
                             }
+                            .buttonStyle(.plain)
                         }
-                        Text("全部")
-                            .font(.system(size: 13, weight: .semibold))
-                            .foregroundColor(.secondary)
-                            .padding(.top, 6)
                     }
-                    .padding(.bottom, 4)
+                }
+            } else {
+                Text("搜到 \(visible.count) 张")
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundColor(.secondary)
+            }
+
+            ScrollView {
+                if visible.isEmpty {
+                    Text(query.isEmpty ? "这一类还没有表情" : "没搜到，换个词试试")
+                        .font(.system(size: 14))
+                        .foregroundColor(.secondary)
+                        .frame(maxWidth: .infinity)
+                        .padding(.top, 40)
                 }
                 LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 12), count: 3),
                           spacing: 12) {
-                    ForEach(shown) { stk in
+                    ForEach(visible) { stk in
                         // 点一下选中；长按进编辑——以前传的那些没法补描述，她 0818 要的
                         Button { onPick(stk) } label: {
                             VStack(spacing: 4) {
+                                // 1103：格子按原图比例，边框只沿着图本身切
                                 CachedImage(url: AlcoveAPI.stickerURL(stk.url), animates: true) { img in
                                     img.resizable().scaledToFit()
                                 } placeholder: {
                                     Color(.systemGray6)
-                                        .frame(height: 100)
                                 }
-                                .frame(maxWidth: .infinity)
-                                .background(Color(.systemGray6).opacity(0.5))
+                                .aspectRatio(stk.aspect, contentMode: .fit)
+                                .frame(maxWidth: .infinity, maxHeight: 150)
                                 .clipShape(RoundedRectangle(cornerRadius: 12))
+                                .frame(maxWidth: .infinity, minHeight: 60)
                                 // 没写描述的，陈璟看不懂——在格子上标出来，好补
                                 if stk.description.isEmpty {
                                     Text("缺描述 · 长按补")
@@ -114,22 +179,27 @@ struct StickerSheet: View {
                 }
                 .padding(.bottom, 20)
             }
+            .scrollDismissesKeyboard(.immediately)
         }
         .padding(.horizontal, 18)
         .onAppear { store.loadStickerUsage() }
         .sheet(item: $draft) { item in
             StickerDescribeSheet(preview: .local(item.image, item.data), mime: item.mime,
-                                 initialName: "", initialDescription: "", initialTags: []) { name, description, tags in
+                                 initialName: "", initialDescription: "", initialTags: [],
+                                 initialCategories: tabCategory.map { [$0] } ?? [],
+                                 allCategories: pickableCategories) { name, description, tags, cats in
                 store.uploadSticker(data: item.data, mime: item.mime, owner: item.owner,
-                                    name: name, description: description, emotionTags: tags)
+                                    name: name, description: description, emotionTags: tags, categories: cats)
                 draft = nil
             } onCancel: { draft = nil }
         }
         .sheet(item: $editing) { stk in
             StickerDescribeSheet(preview: .remote(AlcoveAPI.stickerURL(stk.url)), mime: "",
                                  initialName: stk.name.hasSuffix(".jpg") || stk.name.hasSuffix(".png") || stk.name.hasSuffix(".gif") ? "" : stk.name,
-                                 initialDescription: stk.description, initialTags: stk.emotionTags) { name, description, tags in
-                store.updateSticker(stk, name: name, description: description, emotionTags: tags)
+                                 initialDescription: stk.description, initialTags: stk.emotionTags,
+                                 initialCategories: stk.categories,
+                                 allCategories: pickableCategories) { name, description, tags, cats in
+                store.updateSticker(stk, name: name, description: description, emotionTags: tags, categories: cats)
                 editing = nil
             } onCancel: { editing = nil } onDelete: {
                 store.deleteSticker(stk)
@@ -201,8 +271,10 @@ private struct StickerDescribeSheet: View {
     }
     let preview: Preview
     let mime: String
-    var onSave: (String, String, [String]) -> Void
+    var onSave: (String, String, [String], [String]) -> Void
     var onCancel: () -> Void
+    /// 1103 #4681 她：写说明那里加「放在哪个分类下」，可以多选
+    let allCategories: [String]
     /// 1016 她要的删除：只有长按已有表情进来时有（新传的那张还没进库，没得删）
     var onDelete: (() -> Void)? = nil
     @State private var confirmDelete = false
@@ -210,10 +282,12 @@ private struct StickerDescribeSheet: View {
     @State private var name: String
     @State private var description: String
     @State private var tagText: String
+    @State private var picked: [String]
 
     init(preview: Preview, mime: String,
          initialName: String, initialDescription: String, initialTags: [String],
-         onSave: @escaping (String, String, [String]) -> Void,
+         initialCategories: [String], allCategories: [String],
+         onSave: @escaping (String, String, [String], [String]) -> Void,
          onCancel: @escaping () -> Void,
          onDelete: (() -> Void)? = nil) {
         self.preview = preview
@@ -224,6 +298,10 @@ private struct StickerDescribeSheet: View {
         _name = State(initialValue: initialName)
         _description = State(initialValue: initialDescription)
         _tagText = State(initialValue: initialTags.joined(separator: "、"))
+        _picked = State(initialValue: initialCategories)
+        var all = allCategories
+        for c in initialCategories where !all.contains(c) { all.append(c) }
+        self.allCategories = all
     }
 
     private var tags: [String] {
@@ -282,6 +360,29 @@ private struct StickerDescribeSheet: View {
                 Section("情绪标签") {
                     TextField("困、睡前、软乎乎（逗号分隔）", text: $tagText)
                 }
+                Section {
+                    FlowLayout(spacing: 8, lineSpacing: 8) {
+                        ForEach(allCategories, id: \.self) { c in
+                            let on = picked.contains(c)
+                            Button {
+                                if on { picked.removeAll { $0 == c } } else { picked.append(c) }
+                            } label: {
+                                Text(c)
+                                    .font(.system(size: 14, weight: on ? .semibold : .regular))
+                                    .foregroundColor(on ? Color(.systemBackground) : .primary)
+                                    .padding(.horizontal, 12)
+                                    .frame(height: 30)
+                                    .background(on ? Color.primary : Color(.systemGray5), in: Capsule())
+                            }
+                            .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 4)
+                } header: {
+                    Text("放在哪个分类下（可多选）")
+                } footer: {
+                    Text("一个都不选就进「未分类」")
+                }
                 if onDelete != nil {
                     Section {
                         Button(role: .destructive) { confirmDelete = true } label: {
@@ -303,7 +404,8 @@ private struct StickerDescribeSheet: View {
                 ToolbarItem(placement: .confirmationAction) {
                     Button("保存") {
                         onSave(name.trimmingCharacters(in: .whitespaces),
-                               description.trimmingCharacters(in: .whitespaces), tags)
+                               description.trimmingCharacters(in: .whitespaces), tags,
+                               allCategories.filter { picked.contains($0) })
                     }.disabled(!canSave)
                 }
             }
