@@ -55,6 +55,12 @@ enum RTStyle {
     static let fontKey = "rtFontSize"
     static let defaultFont = 16
     static func colorKey(_ role: String) -> String { "rtBubbleColor.\(role)" }
+    /// 1103 #4686 她：圆桌时间戳颜色单独配，不跟主聊天调色走；白天黑夜各一份，没配过就用信息主题原来的
+    static func stampKey(dark: Bool) -> String { dark ? "rtStampColor.night" : "rtStampColor.day" }
+    static func stampColor(dark: Bool, fallback: Color) -> Color {
+        let v = UserDefaults.standard.string(forKey: stampKey(dark: dark)) ?? ""
+        return v.isEmpty ? fallback : color(v)
+    }
     static func defaultHex(_ role: String) -> String {
         switch role {
         case "user":      return "#0C0C0E"
@@ -1400,6 +1406,7 @@ private struct RoundtableRow: View {
     private var isUser: Bool { msg.role == "user" }
 
     var body: some View {
+        let _ = colorStamp   // 设置里改了颜色 / 时间戳颜色，整行跟着重画
         if msg.role == "system" {
             // 1103 对话上限的提示：居中一行小灰字，不带头像
             Text(msg.text)
@@ -1464,7 +1471,7 @@ private struct RoundtableRow: View {
                 if showTime {
                     Text(timestamp)
                         .font(.system(size: 10, design: .serif))
-                        .foregroundColor(theme.timestamp)
+                        .foregroundColor(RTStyle.stampColor(dark: theme.isDark, fallback: theme.timestamp))
                         .padding(.horizontal, 12)
                 }
             }
@@ -2200,6 +2207,7 @@ private struct RTSettingsView: View {
                         colorRow("gpt", nameGpt)
                         colorRow("muse", nameMuse)
                         colorRow("workroom", nameWorkroom)
+                        stampRow
                     }
 
                     // 1103 #4683：对话上限。开着才有上限；超了那个发言的人会收到「这一轮别再艾特了」
@@ -2264,6 +2272,34 @@ private struct RTSettingsView: View {
         }
         .foregroundColor(theme.text)
         .task { await store.loadLimit() }
+    }
+
+    /// 时间戳颜色：改的是全屋按钮当下那一份（白天 / 黑夜）
+    private var stampRow: some View {
+        let _ = colorStamp
+        let key = RTStyle.stampKey(dark: houseDark)
+        let fallback = theme.timestamp
+        return HStack(spacing: 12) {
+            Text(houseDark ? "时间戳 · 黑夜  21:05" : "时间戳 · 白天  21:05")
+                .font(.system(size: 12, design: .serif))
+                .foregroundColor(RTStyle.stampColor(dark: houseDark, fallback: fallback))
+                .padding(.horizontal, 4).padding(.vertical, 7)
+            Spacer()
+            ColorPicker("", selection: Binding(
+                get: { RTStyle.stampColor(dark: houseDark, fallback: fallback) },
+                set: { c in
+                    UserDefaults.standard.set(RTStyle.hexString(c), forKey: key)
+                    colorStamp = Date().timeIntervalSince1970
+                }), supportsOpacity: false)
+                .labelsHidden()
+            if UserDefaults.standard.string(forKey: key) != nil {
+                Button {
+                    UserDefaults.standard.removeObject(forKey: key)
+                    colorStamp = Date().timeIntervalSince1970
+                } label: { label("默认") }
+                    .buttonStyle(.plain)
+            }
+        }
     }
 
     private func colorRow(_ role: String, _ name: String) -> some View {
