@@ -339,6 +339,8 @@ struct TripRoomView: View {
     var body: some View {
         ZStack {
             page
+                // 1103 #4722：照片选择器跟弹单挂在同一个 view 上只会有一个生效（弹单全打不开），选择器挂到里面这层
+                .photosPicker(isPresented: $pickingCover, selection: $coverItem, matching: .images)
             if !store.toast.isEmpty {
                 VStack { Spacer()
                     Text(store.toast).font(TripInk.serif(12)).foregroundStyle(TripInk.plainBG)
@@ -356,7 +358,6 @@ struct TripRoomView: View {
                 .presentationDetents([.medium, .large])
                 .presentationBackground(TripInk.paper)
         }
-        .photosPicker(isPresented: $pickingCover, selection: $coverItem, matching: .images)
         .onReceive(NotificationCenter.default.publisher(for: .tripAskEdit)) { _ in sheet = .editTrip }
         .onReceive(NotificationCenter.default.publisher(for: .tripAskDelete)) { _ in sheet = .delTrip }
         .onChange(of: coverItem) { _, item in
@@ -592,7 +593,6 @@ private struct TripHome: View {
             AsyncImage(url: AlcoveAPI.fullURL("/\(t.cover)")) { img in img.resizable().scaledToFill() } placeholder: { Color.clear }
                 .frame(height: 300).clipped().grayscale(1)
                 .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16), .init(color: .black, location: 0.64), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.14), .init(color: .black, location: 0.86), .init(color: .clear, location: 1)], startPoint: .leading, endPoint: .trailing))
         }
     }
 
@@ -1242,9 +1242,18 @@ private struct TripSheetView: View {
             guard let item else { return }
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
-                    let kindName: String = { if case .dayNote = kind { return "day" }; return "ticket" }()
+                    let kindName: String = {
+                        if case .dayNote = kind { return "day" }
+                        if case .menu = kind { return "cover" }
+                        return "ticket"
+                    }()
                     let j = await store.upload(data, kind: kindName)
-                    if let p = j["path"] as? String { img = p; store.say("传好了") }
+                    if kindName == "cover" {
+                        if (j["ok"] as? Bool) == true {
+                            store.say((j["colors"] as? [String] ?? []).isEmpty ? "封面换好了" : "封面换好了，颜色也取好了")
+                            await store.reload()
+                        }
+                    } else if let p = j["path"] as? String { img = p; store.say("传好了") }
                 }
                 photo = nil
             }
@@ -1356,9 +1365,15 @@ private struct TripSheetView: View {
             Button { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NotificationCenter.default.post(name: .tripAskEdit, object: nil) } } label: {
                 TripRow { Text("改目的地、日期、航班").font(TripInk.serif(14)).foregroundStyle(TripInk.ink); Spacer() }
             }.buttonStyle(.plain)
-            Button { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { onPickCover() } } label: {
+            PhotosPicker(selection: $photo, matching: .images) {
                 TripRow { Text("换封面照片").font(TripInk.serif(14)).foregroundStyle(TripInk.ink); Spacer() }
-            }.buttonStyle(.plain)
+            }
+            .buttonStyle(.plain)
+            if let t, t.colors.isEmpty {
+                Hair()
+                Text(t.cover.isEmpty ? "放了封面以后，这里会从照片里挑颜色" : "这张封面挑不出颜色（黑白，或者都是黄、棕这类暖色），现在是黑白")
+                    .font(TripInk.serif(12)).foregroundStyle(TripInk.g1).padding(.top, 14)
+            }
             if let t, !t.colors.isEmpty {
                 Hair()
                 Mono("这次的颜色 · 从封面里挑的").padding(.top, 14).padding(.bottom, 10)
