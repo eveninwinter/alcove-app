@@ -168,25 +168,30 @@ private struct TripMat: View {
 }
 
 private struct TripHeader: View {
+    // 返回那一行照檐下：顶上只让状态栏那么高（外面已经 padding 了 TripSafe.top），一行 44 高；
+    // 返回键离屏幕左边 6、右边按钮离右边 9，点按区 44×44
     let title: String
     var back: () -> Void
     var menu: (() -> Void)? = nil
     var body: some View {
         ZStack {
             Text(title).font(TripInk.pin(25)).foregroundStyle(TripInk.ink)
-            HStack {
+            HStack(spacing: 0) {
                 Button(action: back) {
-                    Image(systemName: "chevron.left").font(.system(size: 19, weight: .ultraLight)).foregroundStyle(TripInk.ink)
-                        .frame(width: 40, height: 40, alignment: .leading)
+                    Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular)).foregroundStyle(TripInk.ink)
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
                 Spacer()
                 if let menu {
                     Button(action: menu) {
                         VStack(spacing: 6) { Rectangle().frame(width: 22, height: 1); Rectangle().frame(width: 22, height: 1) }
-                            .foregroundStyle(TripInk.ink).frame(width: 40, height: 40, alignment: .trailing)
+                            .foregroundStyle(TripInk.ink).frame(width: 44, height: 44).contentShape(Rectangle())
                     }
+                    .buttonStyle(.plain)
                 }
             }
+            .padding(.leading, -16).padding(.trailing, -13)
         }
         .frame(height: 44)
     }
