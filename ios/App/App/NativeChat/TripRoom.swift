@@ -128,13 +128,9 @@ enum TripInk {
         ui.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
         return Color(hue: Double(h), saturation: 0.035, brightness: 0.962)
     }
-    /// 素材上色：白的变一点点那个颜色，灰的跟着偏过去
-    static func mat(_ tint: String) -> Color {
-        guard let ui = UIColor.kakaoHex(tint) else { return .white }
-        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        ui.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
-        return Color(hue: Double(h), saturation: 0.22, brightness: 1)
-    }
+    /// 素材不上色（1103 #4727）：原来把素材的白纸也乘成了蓝，正片叠底以后整块图变成带硬边的蓝方块（花销页公式、日程整棵树发蓝）。
+    /// 白纸必须保持纯白才会在叠底里消失，所以素材一律原样灰；颜色怎么上等她定
+    static func mat(_ tint: String) -> Color { .white }
 
     static func pin(_ size: CGFloat) -> Font { .custom("PinyonScript-Regular", size: size) }
     static func serif(_ size: CGFloat) -> Font { WindowFont.swiftUI(size) }
@@ -197,18 +193,6 @@ private struct TripHeader: View {
     }
 }
 
-private struct TripFoot: View {
-    let left: String; let right: String
-    var body: some View {
-        HStack(alignment: .lastTextBaseline) {
-            Text(left).font(TripInk.serif(10)).foregroundStyle(TripInk.g2)
-            Spacer()
-            Text(right).font(TripInk.pin(16)).foregroundStyle(TripInk.g2)
-        }
-        .padding(.top, 28)
-    }
-}
-
 private struct TripRow<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
@@ -220,31 +204,50 @@ private struct TripRow<Content: View>: View {
     }
 }
 
-/// 页面骨架：头＋可滚动的内容＋底下的「加一条」栏
+/// 页面骨架：顶上返回那一行固定、中间滚、底下「加一条」＋页脚那行固定（1103 #4727：头尾都不跟着滚）
 private struct TripPage<Content: View, Bar: View>: View {
     let title: String
     let tint: String
     var back: () -> Void
     var menu: (() -> Void)? = nil
+    var foot: (String, String)? = nil
     @ViewBuilder var content: Content
     @ViewBuilder var bar: Bar
+    private var hasBar: Bool { Bar.self != EmptyView.self }
     var body: some View {
-        ZStack(alignment: .bottom) {
-            TripInk.bg(tint).ignoresSafeArea()
+        let bg = TripInk.bg(tint)
+        ZStack {
+            bg.ignoresSafeArea()
             ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    TripHeader(title: title, back: back, menu: menu)
-                    content
-                }
-                .padding(.horizontal, 22)
-                .padding(.top, TripSafe.top)
-                .padding(.bottom, 90 + TripSafe.bottom)
+                VStack(alignment: .leading, spacing: 0) { content }
+                    .padding(.horizontal, 22)
+                    .padding(.top, TripSafe.top + 44)
+                    .padding(.bottom, (hasBar ? 60 : 0) + (foot == nil ? 0 : 40) + 40 + TripSafe.bottom)
             }
             .scrollIndicators(.hidden)
-            bar
-                .padding(.horizontal, 22).padding(.top, 14).padding(.bottom, TripSafe.bottom + 4)
-                .frame(maxWidth: .infinity)
-                .background(LinearGradient(colors: [TripInk.bg(tint).opacity(0), TripInk.bg(tint)], startPoint: .top, endPoint: .init(x: 0.5, y: 0.35)).ignoresSafeArea())
+        }
+        .overlay(alignment: .top) {
+            VStack(spacing: 0) {
+                TripHeader(title: title, back: back, menu: menu)
+                    .padding(.horizontal, 22).padding(.top, TripSafe.top)
+                    .background(bg)
+                LinearGradient(colors: [bg, bg.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 16).allowsHitTesting(false)
+            }
+        }
+        .overlay(alignment: .bottom) {
+            VStack(alignment: .leading, spacing: 12) {
+                if hasBar { bar }
+                if let foot {
+                    HStack(alignment: .lastTextBaseline) {
+                        Text(foot.0).font(TripInk.serif(10)).foregroundStyle(TripInk.g2)
+                        Spacer()
+                        Text(foot.1).font(TripInk.pin(16)).foregroundStyle(TripInk.g2)
+                    }
+                }
+            }
+            .padding(.horizontal, 22).padding(.top, 22).padding(.bottom, TripSafe.bottom + 4)
+            .frame(maxWidth: .infinity)
+            .background(LinearGradient(colors: [bg.opacity(0), bg], startPoint: .top, endPoint: .init(x: 0.5, y: 0.35)).ignoresSafeArea().allowsHitTesting(false))
         }
     }
 }
@@ -544,7 +547,7 @@ private struct TripHome: View {
         let s = t.sum, today = TripText.ymdBJ(Date())
         let cd: (Int, String) = s.status == "before" ? (TripText.days(today, t.start), "DAYS TO GO")
             : s.status == "during" ? (TripText.days(t.start, today) + 1, "DAY · 第几天") : (TripText.days(t.end, today), "DAYS SINCE · 回来")
-        TripPage(title: "Voyage", tint: t.tint, back: back, menu: menu) {
+        TripPage(title: "Voyage", tint: t.tint, back: back, menu: menu, foot: ("\(s.days) 天 · \(s.items) 样 · \(s.wishes) 处想去", "off we go…")) {
             ZStack(alignment: .top) {
                 TripMat(name: "mountain", tint: t.tint, opacity: 0.3).frame(height: 150).padding(.horizontal, -20)
                     .mask(LinearGradient(colors: [.clear, .black, .clear], startPoint: .top, endPoint: .bottom))
@@ -579,7 +582,6 @@ private struct TripHome: View {
             if !t.packedAt.isEmpty && !t.stub.isEmpty {
                 Text("「\(t.stub)」 — 璟").font(TripInk.serif(12)).foregroundStyle(TripInk.g1).lineSpacing(6).padding(.top, 22)
             }
-            TripFoot(left: "\(s.days) 天 · \(s.items) 样 · \(s.wishes) 处想去", right: "off we go…")
         } bar: { EmptyView() }
     }
 
@@ -593,6 +595,8 @@ private struct TripHome: View {
             AsyncImage(url: AlcoveAPI.fullURL("/\(t.cover)")) { img in img.resizable().scaledToFill() } placeholder: { Color.clear }
                 .frame(height: 300).clipped().grayscale(1)
                 .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16), .init(color: .black, location: 0.64), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
+                // 1103 #4727：scaledToFill 的图 clipped 只裁画面不裁点按范围，竖图伸上去盖住顶栏（返回、两道横线点不动）
+                .allowsHitTesting(false)
         }
     }
 
@@ -621,7 +625,7 @@ private struct TripPack: View {
 
     var body: some View {
         let s = t.sum
-        TripPage(title: "Packing", tint: t.tint, back: back, menu: nil) {
+        TripPage(title: "Packing", tint: t.tint, back: back, menu: nil, foot: ("\(s.items) 样", "pack it all…")) {
             VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .lastTextBaseline, spacing: 6) {
                         Text("\(s.done)").font(TripInk.serif(40))
@@ -657,7 +661,6 @@ private struct TripPack: View {
                     Hair()
                 }
             }
-            TripFoot(left: "\(s.items) 样", right: "pack it all…")
         } bar: {
             HStack {
                 Button { sheet = .item(nil) } label: { Text("＋ 加一条").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }
@@ -812,7 +815,7 @@ private struct TripDay: View {
         let cur: Int = isToday ? (ss.lastIndex { !$0.time.isEmpty && $0.time <= nowHM } ?? -1) : -1
         let wx = t.weather[day]
         let wd = TripText.date(day).map { TripText.weekdays[(TripText.bjComponents($0).weekday ?? 1) - 1] } ?? ""
-        TripPage(title: "Day by Day", tint: t.tint, back: back, menu: nil) {
+        TripPage(title: "Day by Day", tint: t.tint, back: back, menu: nil, foot: ("\(ss.count) 件事" + (wx.map { $0.sunset.isEmpty ? "" : " · 日落 \($0.sunset)" } ?? ""), "slowly…")) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -843,7 +846,6 @@ private struct TripDay: View {
                         if !ss.isEmpty { Hair() }
                     }
                     .padding(.top, 18)
-                    TripFoot(left: "\(ss.count) 件事" + (wx.map { $0.sunset.isEmpty ? "" : " · 日落 \($0.sunset)" } ?? ""), right: "slowly…")
                 }
                 .background(alignment: .topLeading) {
                     TripMat(name: "tree", tint: t.tint, opacity: 0.42).frame(width: 450, height: 788)
@@ -893,7 +895,7 @@ private struct TripWishes: View {
 
     var body: some View {
         let ws = t.wishes.filter { tab == "全部" || $0.cat == tab }
-        TripPage(title: "Someday", tint: t.tint, back: back, menu: nil) {
+        TripPage(title: "Someday", tint: t.tint, back: back, menu: nil, foot: ("\(t.wishes.count) 处 · 霁 \(t.wishes.filter { $0.who == "霁" }.count) · 璟 \(t.wishes.filter { $0.who == "璟" }.count)", "someday…")) {
                 VStack(alignment: .leading, spacing: 0) {
                     HStack(alignment: .top) {
                         VStack(alignment: .leading, spacing: 8) {
@@ -923,7 +925,6 @@ private struct TripWishes: View {
                         if !ws.isEmpty { Hair() }
                     }
                     .padding(.top, 18)
-                    TripFoot(left: "\(t.wishes.count) 处 · 霁 \(t.wishes.filter { $0.who == "霁" }.count) · 璟 \(t.wishes.filter { $0.who == "璟" }.count)", right: "someday…")
                 }
                 .background(alignment: .topLeading) {
                     TripMat(name: "foam", tint: t.tint, opacity: 0.26).frame(width: 330, height: 578)
@@ -951,7 +952,7 @@ private struct TripTickets: View {
     var body: some View {
         let today = TripText.ymdBJ(TripText.localNow(t.tz))
         let next = t.tickets.first { !$0.at.isEmpty && $0.at >= today }
-        TripPage(title: "Tickets", tint: t.tint, back: back, menu: nil) {
+        TripPage(title: "Tickets", tint: t.tint, back: back, menu: nil, foot: ("\(t.tickets.count) 张", "keep them…")) {
             VStack(alignment: .leading, spacing: 8) {
                 Text(String(format: "%02d", t.tickets.count)).font(TripInk.serif(40))
                 HStack(spacing: 6) { Mono("KEPT · 票据"); if let next { Text("· 下一张 \(next.title) · \(next.at)").font(TripInk.serif(10)).foregroundStyle(TripInk.g1).lineLimit(1) } }
@@ -977,7 +978,6 @@ private struct TripTickets: View {
                 if !t.tickets.isEmpty { Hair() }
             }
             .padding(.top, 18)
-            TripFoot(left: "\(t.tickets.count) 张", right: "keep them…")
         } bar: {
             HStack { Button { sheet = .ticket(nil) } label: { Text("＋ 存一张截图").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }; Spacer() }
         }
@@ -1006,7 +1006,7 @@ private struct TripSpending: View {
         let mx = max(1, per.map { $0.1 }.max() ?? 1)
         let cats = TripText.spendCats.map { c in (c, t.spends.filter { $0.cat == c }.reduce(0) { $0 + $1.amount }) }.filter { $0.1 > 0 }
         let cm = max(1, cats.map { $0.1 }.max() ?? 1)
-        TripPage(title: "Spending", tint: t.tint, back: back, menu: nil) {
+        TripPage(title: "Spending", tint: t.tint, back: back, menu: nil, foot: (t.budget > 0 ? "预算 ¥\(TripText.money(Double(t.budget)))" : "没设预算", "keep it small…")) {
                 VStack(alignment: .leading, spacing: 8) {
                     HStack(alignment: .lastTextBaseline, spacing: 6) {
                         Text(TripText.money(total)).font(TripInk.serif(40))
@@ -1073,7 +1073,6 @@ private struct TripSpending: View {
             }
             TripMat(name: "formula", tint: t.tint, opacity: 0.22).frame(height: 58).padding(.top, 20)
                 .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
-            TripFoot(left: t.budget > 0 ? "预算 ¥\(TripText.money(Double(t.budget)))" : "没设预算", right: "keep it small…")
         } bar: {
             HStack { Button { sheet = .spend } label: { Text("＋ 记一笔").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }; Spacer() }
         }
@@ -1088,7 +1087,7 @@ private struct TripRecap: View {
     @Binding var sheet: TripSheet?
 
     var body: some View {
-        TripPage(title: "Remembered", tint: t.tint, back: back, menu: nil) {
+        TripPage(title: "Remembered", tint: t.tint, back: back, menu: nil, foot: t.sum.status == "after" ? ("回来以后", "let it stay…") : nil) {
             if t.sum.status != "after" {
                 VStack(spacing: 12) {
                     Text("回来以后，这里会把这几天收成一页").font(TripInk.serif(13)).foregroundStyle(TripInk.g3)
@@ -1098,7 +1097,7 @@ private struct TripRecap: View {
             } else {
                 if let ph = t.dayList.compactMap({ t.dayNotes[$0]?.photo }).first(where: { !$0.isEmpty }) {
                     AsyncImage(url: AlcoveAPI.fullURL("/\(ph)")) { i in i.resizable().scaledToFill() } placeholder: { Color.clear }
-                        .frame(height: 250).clipped().grayscale(1).padding(.horizontal, -22)
+                        .frame(height: 250).clipped().grayscale(1).allowsHitTesting(false).padding(.horizontal, -22)
                         .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16), .init(color: .black, location: 0.64), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -1134,7 +1133,6 @@ private struct TripRecap: View {
                             .mask(RadialGradient(colors: [.black, .clear], center: .center, startRadius: 40, endRadius: 110)).offset(x: 60, y: 40)
                     }
                 .padding(.top, 26)
-                TripFoot(left: "回来以后", right: "let it stay…")
             }
         } bar: { EmptyView() }
     }
