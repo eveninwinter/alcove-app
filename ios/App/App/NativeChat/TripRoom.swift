@@ -148,6 +148,7 @@ private struct Mono: View {
 }
 
 /// 侧边栏房间外面整页 ignoresSafeArea，这里拿到的安全区是 0：灵动岛和 Home 横条要自己问 app 主窗让开
+@MainActor
 enum TripSafe {
     static var top: CGFloat { max(FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0, 20) }
     static var bottom: CGFloat { max(FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0, 10) }
