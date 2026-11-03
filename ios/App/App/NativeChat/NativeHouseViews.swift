@@ -42,7 +42,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case health         // 1019 健康：她的苹果健康（HealthView.swift）
     case chronicle      // 1024 家账：每个月的月篇、每周的周篇，她能看能改（ChronicleView.swift）
     case farm           // 1025 晴岛：我们俩的小岛（网页 /farm/，横屏）
-    case trip           // 1103 旅行：一次旅行一整套（网页 /trip/，竖屏）
+    case trip           // 1103 旅行：一次旅行一整套（原生 TripRoom.swift，数据走 /api/trip/*）
 
     var id: String { rawValue }
 
@@ -108,7 +108,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
-             .chronicle, .farm, .trip,   // 1103 旅行整页网页自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
+             .chronicle, .farm, .trip,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -17341,53 +17341,5 @@ struct FarmEventLine: View {
         .overlay(shape.stroke(edge, lineWidth: 1).padding(.top, isHead ? 0 : -3).padding(.bottom, isTail ? 0 : -3))
         .clipped()
         .frame(maxWidth: .infinity)
-    }
-}
-
-
-// MARK: - 1103 旅行（网页 /trip/，#4703–4712）
-// 《与此同时》大钟列表＋一次旅行八页，都在网页里；数据走前门 /api/trip/*（alcove-independent/trip_api.py）。
-// 网页发 {act:'close'} 关页；{act:'open', url} 交给系统打开（导航跳苹果地图，不在网页里开）。
-struct TripRoomView: View {
-    @Environment(\.dismiss) private var dismiss
-    var body: some View {
-        TripWebView(onClose: { dismiss() })
-            .ignoresSafeArea()
-            .background(Color(red: 0xF5/255, green: 0xF5/255, blue: 0xF3/255).ignoresSafeArea())
-    }
-}
-
-struct TripWebView: UIViewRepresentable {
-    var onClose: () -> Void
-    func makeCoordinator() -> Coordinator { Coordinator(onClose: onClose) }
-    final class Coordinator: NSObject, WKScriptMessageHandler {
-        let onClose: () -> Void
-        init(onClose: @escaping () -> Void) { self.onClose = onClose }
-        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
-            guard let body = message.body as? [String: Any], let act = body["act"] as? String else { return }
-            DispatchQueue.main.async {
-                if act == "close" {
-                    self.onClose()
-                } else if act == "open", let s = body["url"] as? String, let u = URL(string: s) {
-                    UIApplication.shared.open(u)
-                }
-            }
-        }
-    }
-    func makeUIView(context: Context) -> WKWebView {
-        let cfg = WKWebViewConfiguration()
-        cfg.websiteDataStore = .default()
-        cfg.userContentController.add(context.coordinator, name: "trip")
-        let web = WKWebView(frame: .zero, configuration: cfg)
-        web.isOpaque = false
-        web.backgroundColor = UIColor(red: 0xF5/255, green: 0xF5/255, blue: 0xF3/255, alpha: 1)
-        web.scrollView.bounces = false
-        web.scrollView.contentInsetAdjustmentBehavior = .never
-        web.load(URLRequest(url: AlcoveAPI.base.appendingPathComponent("trip/")))
-        return web
-    }
-    func updateUIView(_ uiView: WKWebView, context: Context) {}
-    static func dismantleUIView(_ uiView: WKWebView, coordinator: Coordinator) {
-        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "trip")
     }
 }
