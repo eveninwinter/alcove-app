@@ -121,13 +121,8 @@ enum TripInk {
     static let paper = Color(red: 0xFB/255, green: 0xFB/255, blue: 0xF9/255)
     static let plainBG = Color(red: 0xF5/255, green: 0xF5/255, blue: 0xF3/255)
 
-    /// 底色：没取色就是米白；取了色就把色相留下、饱和度压到很低
-    static func bg(_ tint: String) -> Color {
-        guard let ui = UIColor.kakaoHex(tint) else { return plainBG }
-        var h: CGFloat = 0, sat: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
-        ui.getHue(&h, saturation: &sat, brightness: &b, alpha: &a)
-        return Color(hue: Double(h), saturation: 0.035, brightness: 0.962)
-    }
+    /// 底色：1103 #4724 不染色了，每页都跟首页一样的米白，不发蓝
+    static func bg(_ tint: String) -> Color { plainBG }
     /// 素材不上色（1103 #4727）：原来把素材的白纸也乘成了蓝，正片叠底以后整块图变成带硬边的蓝方块（花销页公式、日程整棵树发蓝）。
     /// 白纸必须保持纯白才会在叠底里消失，所以素材一律原样灰；颜色怎么上等她定
     static func mat(_ tint: String) -> Color { .white }
@@ -368,7 +363,7 @@ struct TripRoomView: View {
             Task {
                 if let data = try? await item.loadTransferable(type: Data.self) {
                     let j = await store.upload(data, kind: "cover")
-                    if (j["ok"] as? Bool) == true { store.say((j["colors"] as? [String] ?? []).isEmpty ? "封面换好了" : "封面换好了，颜色也取好了") }
+                    if (j["ok"] as? Bool) == true { store.say("封面换好了") }
                     await store.reload()
                 }
                 coverItem = nil
@@ -593,7 +588,7 @@ private struct TripHome: View {
             .frame(height: 300)
         } else {
             AsyncImage(url: AlcoveAPI.fullURL("/\(t.cover)")) { img in img.resizable().scaledToFill() } placeholder: { Color.clear }
-                .frame(height: 300).clipped().grayscale(1)
+                .frame(height: 300).clipped()
                 .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16), .init(color: .black, location: 0.64), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                 // 1103 #4727：scaledToFill 的图 clipped 只裁画面不裁点按范围，竖图伸上去盖住顶栏（返回、两道横线点不动）
                 .allowsHitTesting(false)
@@ -988,7 +983,7 @@ private struct TripTickets: View {
             Rectangle().fill(Color(white: 0.93)).overlay(Rectangle().stroke(TripInk.hl, lineWidth: 0.5))
         } else {
             AsyncImage(url: AlcoveAPI.fullURL("/\(img)")) { i in i.resizable().scaledToFill() } placeholder: { Color(white: 0.93) }
-                .grayscale(1).opacity(0.8).clipped().overlay(Rectangle().stroke(TripInk.hl, lineWidth: 0.5))
+                .opacity(0.8).clipped().overlay(Rectangle().stroke(TripInk.hl, lineWidth: 0.5))
         }
     }
 }
@@ -1097,7 +1092,7 @@ private struct TripRecap: View {
             } else {
                 if let ph = t.dayList.compactMap({ t.dayNotes[$0]?.photo }).first(where: { !$0.isEmpty }) {
                     AsyncImage(url: AlcoveAPI.fullURL("/\(ph)")) { i in i.resizable().scaledToFill() } placeholder: { Color.clear }
-                        .frame(height: 250).clipped().grayscale(1).allowsHitTesting(false).padding(.horizontal, -22)
+                        .frame(height: 250).clipped().allowsHitTesting(false).padding(.horizontal, -22)
                         .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16), .init(color: .black, location: 0.64), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
                 }
                 VStack(alignment: .leading, spacing: 8) {
@@ -1114,7 +1109,7 @@ private struct TripRecap: View {
                                 Text((note?.line ?? "").isEmpty ? "写一句这天…" : (note?.line ?? "")).font(TripInk.serif(14)).foregroundStyle((note?.line ?? "").isEmpty ? TripInk.g3 : TripInk.ink).lineSpacing(6)
                                 Spacer()
                                 if let p = note?.photo, !p.isEmpty {
-                                    AsyncImage(url: AlcoveAPI.fullURL("/\(p)")) { i in i.resizable().scaledToFill() } placeholder: { Color.clear }.frame(width: 34, height: 34).clipped().grayscale(1)
+                                    AsyncImage(url: AlcoveAPI.fullURL("/\(p)")) { i in i.resizable().scaledToFill() } placeholder: { Color.clear }.frame(width: 34, height: 34).clipped()
                                 }
                             }
                         }
@@ -1248,7 +1243,7 @@ private struct TripSheetView: View {
                     let j = await store.upload(data, kind: kindName)
                     if kindName == "cover" {
                         if (j["ok"] as? Bool) == true {
-                            store.say((j["colors"] as? [String] ?? []).isEmpty ? "封面换好了" : "封面换好了，颜色也取好了")
+                            store.say("封面换好了")
                             await store.reload()
                         }
                     } else if let p = j["path"] as? String { img = p; store.say("传好了") }
@@ -1367,26 +1362,6 @@ private struct TripSheetView: View {
                 TripRow { Text("换封面照片").font(TripInk.serif(14)).foregroundStyle(TripInk.ink); Spacer() }
             }
             .buttonStyle(.plain)
-            if let t, t.colors.isEmpty {
-                Hair()
-                Text(t.cover.isEmpty ? "放了封面以后，这里会从照片里挑颜色" : "这张封面挑不出颜色（黑白，或者都是黄、棕这类暖色），现在是黑白")
-                    .font(TripInk.serif(12)).foregroundStyle(TripInk.g1).padding(.top, 14)
-            }
-            if let t, !t.colors.isEmpty {
-                Hair()
-                Mono("这次的颜色 · 从封面里挑的").padding(.top, 14).padding(.bottom, 10)
-                HStack(spacing: 14) {
-                    ForEach(t.colors, id: \.self) { col in
-                        Button { Task { await store.post("tint", ["id": t.id, "color": col]); await done() } } label: {
-                            Circle().fill(Color(hexString: col) ?? .gray).frame(width: 28, height: 28)
-                                .overlay(Circle().stroke(TripInk.ink, lineWidth: t.tint == col ? 1 : 0).padding(-3))
-                        }
-                    }
-                    Button { Task { await store.post("tint", ["id": t.id, "color": ""]); await done() } } label: {
-                        Text("黑白").font(TripInk.serif(12)).foregroundStyle(t.tint.isEmpty ? TripInk.ink : TripInk.g1)
-                    }
-                }
-            }
         }
     }
 
