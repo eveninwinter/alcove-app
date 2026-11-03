@@ -147,6 +147,12 @@ private struct Mono: View {
     var body: some View { Text(text.uppercased()).font(TripInk.mono(size)).tracking(0.6).foregroundStyle(color) }
 }
 
+/// 侧边栏房间外面整页 ignoresSafeArea，这里拿到的安全区是 0：灵动岛和 Home 横条要自己问 app 主窗让开
+enum TripSafe {
+    static var top: CGFloat { max(FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0, 20) }
+    static var bottom: CGFloat { max(FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0, 10) }
+}
+
 private struct Hair: View { var body: some View { Rectangle().fill(TripInk.hl).frame(height: 0.5) } }
 
 /// 背景素材：服务器上的灰度图，正片叠底＋渐隐，颜色跟这次旅行走
@@ -225,11 +231,12 @@ private struct TripPage<Content: View, Bar: View>: View {
                     content
                 }
                 .padding(.horizontal, 22)
-                .padding(.bottom, 90)
+                .padding(.top, TripSafe.top)
+                .padding(.bottom, 90 + TripSafe.bottom)
             }
             .scrollIndicators(.hidden)
             bar
-                .padding(.horizontal, 22).padding(.top, 14).padding(.bottom, 6)
+                .padding(.horizontal, 22).padding(.top, 14).padding(.bottom, TripSafe.bottom + 4)
                 .frame(maxWidth: .infinity)
                 .background(LinearGradient(colors: [TripInk.bg(tint).opacity(0), TripInk.bg(tint)], startPoint: .top, endPoint: .init(x: 0.5, y: 0.35)).ignoresSafeArea())
         }
@@ -330,7 +337,7 @@ struct TripRoomView: View {
                 VStack { Spacer()
                     Text(store.toast).font(TripInk.serif(12)).foregroundStyle(TripInk.plainBG)
                         .padding(.horizontal, 14).padding(.vertical, 7).background(Capsule().fill(TripInk.ink.opacity(0.9)))
-                        .padding(.bottom, 80)
+                        .padding(.bottom, 80 + TripSafe.bottom)
                 }.transition(.opacity).allowsHitTesting(false)
             }
         }
@@ -424,9 +431,10 @@ private struct TripClockList: View {
                         Spacer()
                         Mono("\(store.trips.count) TRIPS")
                     }
-                    .padding(.top, 18).padding(.bottom, 6)
+                    .padding(.top, 18).padding(.bottom, TripSafe.bottom + 4)
                 }
                 .padding(.horizontal, 22)
+                .padding(.top, TripSafe.top)
 
                 labels(W: W, H: H)
             }
