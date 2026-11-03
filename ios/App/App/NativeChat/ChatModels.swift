@@ -854,13 +854,19 @@ struct RecallItem {
                 let rest = String(h[end.upperBound...]).trimmingCharacters(in: .whitespaces)
                 let day = rest.range(of: #"\d{4}-\d{2}-\d{2}"#, options: .regularExpression).map { String(rest[$0]) } ?? ""
                 if section == "图" {
-                    // 0928 她要的：图那段卡片右边带小图，左边只留标题＋「她当时」，他记的/他当时说在前端省掉
+                    // 0928 她要的：图那段卡片右边带小图；1103 她改：照片被想起一定要带字，他当时说/他记的也显示，空的那行（多半是「她当时：」）不出
                     title = label
                     meta = day
                     if let p = rest.split(separator: " ").first(where: { $0.hasPrefix("/") }) {
                         thumb = RecallCard.thumbPath(String(p))
                     }
-                    body = body.components(separatedBy: "\n").filter { $0.hasPrefix("她当时") }.joined(separator: "\n")
+                    body = body.components(separatedBy: "\n")
+                        .map { $0.trimmingCharacters(in: .whitespaces) }
+                        .filter { line in
+                            guard let colon = line.firstIndex(of: "：") else { return !line.isEmpty }
+                            return !line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces).isEmpty
+                        }
+                        .joined(separator: "\n")
                 } else {
                     title = label.hasPrefix("原话") ? "原话" : label
                     meta = day
