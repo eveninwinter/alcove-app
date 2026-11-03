@@ -21,7 +21,7 @@ private struct RoundtableTailYKey: PreferenceKey {
 struct RoundtableMessage: Identifiable, Equatable {
     let id: Int
     let ts: String
-    let role: String        // user / assistant / gpt / muse（1030 Muse 入席）
+    let role: String        // user / assistant / gpt / muse（1030 Muse 入席）/ workroom（1103 工作室入席）/ system（上限提示）
     let sender: String
     let text: String
     let attachmentURL: String?
@@ -50,6 +50,54 @@ struct RoundtableMessage: Identifiable, Equatable {
     }
 }
 
+// 1103 #4683 她：圆桌改成信息主题那样、不跟主聊天走；每个人一种气泡颜色、字号单独调、气泡跟着字号走
+enum RTStyle {
+    static let fontKey = "rtFontSize"
+    static let defaultFont = 16
+    static func colorKey(_ role: String) -> String { "rtBubbleColor.\(role)" }
+    static func defaultHex(_ role: String) -> String {
+        switch role {
+        case "user":      return "#0C0C0E"
+        case "assistant": return "#DEDEE2"
+        case "gpt":       return "#D6E6FA"
+        case "muse":      return "#FAE0EC"
+        case "workroom":  return "#E5E0F8"
+        default:          return "#DEDEE2"
+        }
+    }
+    static func hex(_ role: String) -> String {
+        let v = UserDefaults.standard.string(forKey: colorKey(role)) ?? ""
+        return v.isEmpty ? defaultHex(role) : v
+    }
+    static func color(_ hex: String) -> Color {
+        let (r, g, b) = rgb(hex)
+        return Color(red: r, green: g, blue: b)
+    }
+    static func rgb(_ hex: String) -> (Double, Double, Double) {
+        let h = hex.trimmingCharacters(in: CharacterSet(charactersIn: "# "))
+        guard h.count == 6, let v = UInt32(h, radix: 16) else { return (0.87, 0.87, 0.89) }
+        return (Double((v >> 16) & 0xFF) / 255, Double((v >> 8) & 0xFF) / 255, Double(v & 0xFF) / 255)
+    }
+    /// 字色按气泡底色深浅自己配（不借主题的字色）
+    static func textOn(_ hex: String) -> Color {
+        let (r, g, b) = rgb(hex)
+        return 0.299 * r + 0.587 * g + 0.114 * b < 0.6 ? .white : Color(red: 0.08, green: 0.08, blue: 0.09)
+    }
+    static func hexString(_ color: Color) -> String {
+        var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+        UIColor(color).getRed(&r, green: &g, blue: &b, alpha: &a)
+        return String(format: "#%02X%02X%02X", Int(round(r * 255)), Int(round(g * 255)), Int(round(b * 255)))
+    }
+    /// 白天 / 黑夜只认全屋按钮
+    static func houseDark(_ appearance: String, themeName: String) -> Bool {
+        switch appearance {
+        case "dark": return true
+        case "light": return false
+        default: return AlcoveAppearance.isDark(themeName)
+        }
+    }
+}
+
 struct RoundtableMember: Identifiable, Equatable {
     var id: String { role }
     let name: String
@@ -67,6 +115,9 @@ final class RoundtableStore: ObservableObject {
     @Published var heldCount = 0
     @Published var blockAssistant = false
     @Published var blockGpt = false
+    // 1103 #4683 对话上限开关：开着才有上限，上限几轮她定
+    @Published var limitOn = true
+    @Published var limitMax = 6
     @Published var loadingOlder = false
     @Published var hasMoreOlder = true
 
@@ -138,6 +189,23 @@ final class RoundtableStore: ObservableObject {
         older.forEach { byID[$0.id] = $0 }
         messages = byID.values.sorted { $0.id < $1.id }
         return oldestID
+    }
+
+    func loadLimit() async {
+        guard let obj = try? await AlcoveAPI.getRaw("/api/roundtable/limit"),
+              let lim = obj["limit"] as? [String: Any] else { return }
+        limitOn = lim["on"] as? Bool ?? true
+        limitMax = (lim["max"] as? NSNumber)?.intValue ?? 6
+    }
+
+    func setLimit(on: Bool? = nil, max: Int? = nil) async {
+        var body: [String: Any] = [:]
+        if let on { limitOn = on; body["on"] = on }
+        if let max { limitMax = max; body["max"] = max }
+        guard let obj = try? await AlcoveAPI.postRaw("/api/roundtable/limit", body: body),
+              let lim = obj["limit"] as? [String: Any] else { return }
+        limitOn = lim["on"] as? Bool ?? limitOn
+        limitMax = (lim["max"] as? NSNumber)?.intValue ?? limitMax
     }
 
     func setBlock(role: String, enabled: Bool) async {
@@ -256,6 +324,7 @@ struct RoundtableView: View {
     @State private var cachedRTAvatarAssistant: UIImage?
     @State private var cachedRTAvatarGpt: UIImage?
     @State private var cachedRTAvatarMuse: UIImage?
+    @State private var cachedRTAvatarWorkroom: UIImage?
     @Namespace private var photoTransition
     @StateObject private var recorder = VoiceRecorder()
     @FocusState private var focused: Bool
@@ -265,6 +334,8 @@ struct RoundtableView: View {
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
     @AppStorage("rtAvatarMuse") private var rtAvatarMuse = ""
+    @AppStorage("rtAvatarWorkroom") private var rtAvatarWorkroom = ""
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("rtWallpaper") private var rtWallpaper = ""
     @AppStorage("rtWallpaperHaven") private var rtWallpaperHaven = ""
     @AppStorage("rtWallpaperMidnight") private var rtWallpaperMidnight = ""
@@ -273,16 +344,12 @@ struct RoundtableView: View {
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
-    private var theme: AlcoveTheme { .named(themeName) }
+    // 1103 #4683 她：圆桌不跟着主聊天的主题走，一律信息主题那套；白天黑夜只认全屋按钮
+    private var houseDark: Bool { RTStyle.houseDark(houseAppearance, themeName: themeName) }
+    private var theme: AlcoveTheme { .named(houseDark ? "imessage-dark" : "imessage") }
+    /// 壁纸也是圆桌自己的：白天一张、黑夜一张
     private var activeRTWallpaper: String {
-        switch themeName {
-        // 0827：信息主题以前没有自己的槽，深浅两态共用白天那一格，
-        // 所以圆桌壁纸怎么切都不动。黑夜的信息主题借黑夜玻璃那一格。
-        case "midnight", "imessage-dark": return rtWallpaperMidnight
-        case "paper": return rtWallpaperPaper
-        case "paper-dark": return rtWallpaperPaperDark
-        default: return rtWallpaperHaven.isEmpty ? rtWallpaper : rtWallpaperHaven
-        }
+        houseDark ? rtWallpaperMidnight : (rtWallpaperHaven.isEmpty ? rtWallpaper : rtWallpaperHaven)
     }
 
 
@@ -291,7 +358,6 @@ struct RoundtableView: View {
     }
 
     private var wallpaperDescriptor: ChatWallpaperDescriptor {
-        if theme.isKakao { return chatWall.descriptor }
         if let image = cachedRTWallpaper {
             return ChatWallpaperDescriptor(source: .image(image))
         }
@@ -343,6 +409,8 @@ struct RoundtableView: View {
         .onChange(of: rtAvatarAssistant) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarGpt) { _ in refreshRTImageCache() }
         .onChange(of: rtAvatarMuse) { _ in refreshRTImageCache() }
+        .onChange(of: rtAvatarWorkroom) { _ in refreshRTImageCache() }
+        .onChange(of: houseAppearance) { _ in refreshRTImageCache() }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
                 if let prepared = UploadImage.prepare(image) { pendingImages.append(prepared) }
@@ -489,6 +557,7 @@ struct RoundtableView: View {
         case "assistant": return cachedRTAvatarAssistant
         case "gpt":       return cachedRTAvatarGpt
         case "muse":      return cachedRTAvatarMuse
+        case "workroom":  return cachedRTAvatarWorkroom
         default:          return cachedRTAvatarUser
         }
     }
@@ -506,6 +575,7 @@ struct RoundtableView: View {
         cachedRTAvatarAssistant = decodeStoredImage(rtAvatarAssistant)
         cachedRTAvatarGpt = decodeStoredImage(rtAvatarGpt)
         cachedRTAvatarMuse = decodeStoredImage(rtAvatarMuse)
+        cachedRTAvatarWorkroom = decodeStoredImage(rtAvatarWorkroom)
     }
 
     private func initialFor(_ role: String) -> String {
@@ -513,6 +583,7 @@ struct RoundtableView: View {
         case "assistant": return "璟"
         case "gpt":       return "G"
         case "muse":      return "M"
+        case "workroom":  return "工"
         default:          return "霁"
         }
     }
@@ -839,7 +910,7 @@ struct RoundtableView: View {
 
     // ── @ 栏：一行，点一下往框里加「@名字 」，再点一下拿掉。
     // 插的是后端认的正名（改了圆桌显示名也照样叫得到人）；后端也认拼音 @chenjing @hedu。
-    private static let mentionTags = ["陈璟", "何渡", "Muse"]
+    private static let mentionTags = ["陈璟", "何渡", "Muse", "工作室"]
 
     private func draftHasMention(_ tag: String) -> Bool {
         draft.range(of: "@" + tag, options: .caseInsensitive) != nil
@@ -1257,11 +1328,15 @@ private struct RoundtableRow: View {
     @AppStorage("rtAvatarAssistant") private var rtAvatarAssistant = ""
     @AppStorage("rtAvatarGpt") private var rtAvatarGpt = ""
     @AppStorage("rtAvatarMuse") private var rtAvatarMuse = ""
+    @AppStorage("rtAvatarWorkroom") private var rtAvatarWorkroom = ""
     @AppStorage("rtNameUser") private var rtNameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var rtNameAssistant = "陈璟"
     @AppStorage("rtNameGpt") private var rtNameGpt = "何渡"
     @AppStorage("rtNameMuse") private var rtNameMuse = "Muse"
-    @AppStorage("chatFontSize") private var fontSize = 14
+    @AppStorage("rtNameWorkroom") private var rtNameWorkroom = "工作室"
+    // 1103：圆桌字号单独调（不再借聊天页的 chatFontSize），气泡内边距、圆角跟着字号走
+    @AppStorage(RTStyle.fontKey) private var fontSize = RTStyle.defaultFont
+    @AppStorage("rtColorStamp") private var colorStamp = 0.0
 
     private var avatarImage: UIImage? {
         let raw: String
@@ -1269,6 +1344,7 @@ private struct RoundtableRow: View {
         case "assistant": raw = rtAvatarAssistant
         case "gpt":       raw = rtAvatarGpt
         case "muse":      raw = rtAvatarMuse
+        case "workroom":  raw = rtAvatarWorkroom
         default:          raw = rtAvatarUser
         }
         guard !raw.isEmpty else { return nil }
@@ -1282,6 +1358,7 @@ private struct RoundtableRow: View {
         case "assistant": return rtNameAssistant
         case "gpt":       return rtNameGpt
         case "muse":      return rtNameMuse
+        case "workroom":  return rtNameWorkroom
         default:          return rtNameUser
         }
     }
@@ -1291,6 +1368,7 @@ private struct RoundtableRow: View {
         case "assistant": return "璟"
         case "gpt": return "G"
         case "muse": return "M"
+        case "workroom": return "工"
         default: return "霁"
         }
     }
@@ -1313,6 +1391,7 @@ private struct RoundtableRow: View {
         case "assistant": return Color(red: 0.45, green: 0.60, blue: 0.85)
         case "gpt": return Color(red: 0.35, green: 0.70, blue: 0.58)
         case "muse": return Color(red: 0.62, green: 0.55, blue: 0.82)
+        case "workroom": return Color(red: 0.59, green: 0.51, blue: 0.82)
         default: return Color(red: 0.88, green: 0.52, blue: 0.65)
         }
     }
@@ -1321,9 +1400,24 @@ private struct RoundtableRow: View {
     private var isUser: Bool { msg.role == "user" }
 
     var body: some View {
+        if msg.role == "system" {
+            // 1103 对话上限的提示：居中一行小灰字，不带头像
+            Text(msg.text)
+                .font(.system(size: 11))
+                .foregroundColor(theme.textDim)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .padding(.horizontal, 24)
+                .padding(.vertical, 4)
+        } else {
+            row
+        }
+    }
+
+    private var row: some View {
         HStack(alignment: .top, spacing: 9) {
             if isUser {
-                Spacer(minLength: 48)
+                Spacer(minLength: 36)
             } else {
                 avatarSlot
             }
@@ -1374,34 +1468,23 @@ private struct RoundtableRow: View {
                         .padding(.horizontal, 12)
                 }
             }
-            if isUser { avatarSlot } else { Spacer(minLength: 48) }
+            if isUser { avatarSlot } else { Spacer(minLength: 36) }
         }
     }
 
+    // 1103 #4683：信息主题那样的实心气泡，每个人自己的颜色；字号变了内边距、圆角一起变
     @ViewBuilder private var bubbleBody: some View {
-        let line = Text(alcoveMarkdown(msg.text))
-            .font(KakaoPackStore.shared.chatFont(CGFloat(fontSize)))
-            .lineSpacing(5)
-        if theme.isKakao {
-            KakaoBubbleView(isUser: isUser, first: showAvatar) {
-                line
-                    .foregroundColor(isUser ? (theme.textUser ?? theme.text) : (theme.textAI ?? theme.text))
-                    .textSelection(.enabled)
-            }
-        } else if theme.isPaper && !isUser {
-            line
-                .foregroundColor(theme.textAI ?? theme.text)
-                .textSelection(.enabled)
-                .padding(.vertical, 2)
-        } else {
-            line
-                .foregroundColor(isUser ? (theme.textUser ?? (theme.isMessages ? .white : theme.text))
-                                        : (theme.textAI ?? theme.text))
-                .textSelection(.enabled)
-                .padding(.horizontal, 14)
-                .padding(.vertical, 10)
-                .modifier(RoundtableBubbleShape(theme: theme, isUser: isUser))
-        }
+        let fs = CGFloat(fontSize)
+        let hex = RTStyle.hex(msg.role)
+        let _ = colorStamp
+        Text(alcoveMarkdown(msg.text))
+            .font(KakaoPackStore.shared.chatFont(fs))
+            .lineSpacing(fs * 0.28)
+            .foregroundColor(RTStyle.textOn(hex))
+            .textSelection(.enabled)
+            .padding(.horizontal, fs * 0.85)
+            .padding(.vertical, fs * 0.6)
+            .background(RoundedRectangle(cornerRadius: fs * 1.25, style: .continuous).fill(RTStyle.color(hex)))
     }
 
     private var hiddenLabel: String {
@@ -1439,7 +1522,7 @@ private struct RoundtableRow: View {
     // Kakao 用主题包的气泡图（一串第一条用带图案的 01 图），信息主题实心圆角，纸页她实心、别人只有字。字体跟全局走。
     private var bubble: some View {
         bubbleBody
-            .contentShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+            .contentShape(RoundedRectangle(cornerRadius: CGFloat(fontSize) * 1.25, style: .continuous))
             .contextMenu {
                 Button {
                     UIPasteboard.general.string = msg.text
@@ -2029,6 +2112,11 @@ private struct RTSettingsView: View {
     @AppStorage("rtAvatarAssistant") private var avMe = ""
     @AppStorage("rtAvatarGpt") private var avGpt = ""
     @AppStorage("rtAvatarMuse") private var avMuse = ""
+    @AppStorage("rtAvatarWorkroom") private var avWorkroom = ""
+    @AppStorage("rtNameWorkroom") private var nameWorkroom = "工作室"
+    @AppStorage(RTStyle.fontKey) private var rtFontSize = RTStyle.defaultFont
+    @AppStorage("rtColorStamp") private var colorStamp = 0.0
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @AppStorage("rtNameUser") private var nameUser = "陈霁"
     @AppStorage("rtNameAssistant") private var nameMe = "陈璟"
     @AppStorage("rtNameGpt") private var nameGpt = "何渡"
@@ -2046,6 +2134,7 @@ private struct RTSettingsView: View {
     @State private var pickMe: PhotosPickerItem?
     @State private var pickGpt: PhotosPickerItem?
     @State private var pickMuse: PhotosPickerItem?
+    @State private var pickWorkroom: PhotosPickerItem?
     @State private var pickWall: PhotosPickerItem?
 
     var body: some View {
@@ -2068,7 +2157,7 @@ private struct RTSettingsView: View {
                         .buttonStyle(.plain)
                     }
 
-                    section("四个人") {
+                    section("圆桌里的人") {
                         personRow(role: "user", name: $nameUser, data: $avUser,
                                   pick: $pickUser, fallback: "霁")
                         personRow(role: "assistant", name: $nameMe, data: $avMe,
@@ -2077,6 +2166,62 @@ private struct RTSettingsView: View {
                                   pick: $pickGpt, fallback: "渡")
                         personRow(role: "muse", name: $nameMuse, data: $avMuse,
                                   pick: $pickMuse, fallback: "M")
+                        personRow(role: "workroom", name: $nameWorkroom, data: $avWorkroom,
+                                  pick: $pickWorkroom, fallback: "工")
+                    }
+
+                    // 1103 #4683：字号单独调，气泡跟着字号变大变小
+                    section("字体大小") {
+                        HStack(spacing: 12) {
+                            Text("A").font(.system(size: 13))
+                            Slider(value: Binding(get: { Double(rtFontSize) },
+                                                  set: { rtFontSize = Int($0.rounded()) }),
+                                   in: 12...26, step: 1)
+                                .tint(theme.fyAccent)
+                            Text("A").font(.system(size: 22))
+                            Text("\(rtFontSize)")
+                                .font(.system(size: 13, design: .monospaced))
+                                .foregroundColor(theme.textDim)
+                                .frame(width: 26)
+                        }
+                        Text("气泡会跟着字号一起变大")
+                            .font(KakaoPackStore.shared.chatFont(CGFloat(rtFontSize)))
+                            .foregroundColor(RTStyle.textOn(RTStyle.hex("assistant")))
+                            .padding(.horizontal, CGFloat(rtFontSize) * 0.85)
+                            .padding(.vertical, CGFloat(rtFontSize) * 0.6)
+                            .background(RoundedRectangle(cornerRadius: CGFloat(rtFontSize) * 1.25, style: .continuous)
+                                .fill(RTStyle.color(RTStyle.hex("assistant"))))
+                    }
+
+                    // 1103 #4683：每个人一种气泡颜色
+                    section("气泡颜色") {
+                        colorRow("user", nameUser)
+                        colorRow("assistant", nameMe)
+                        colorRow("gpt", nameGpt)
+                        colorRow("muse", nameMuse)
+                        colorRow("workroom", nameWorkroom)
+                    }
+
+                    // 1103 #4683：对话上限。开着才有上限；超了那个发言的人会收到「这一轮别再艾特了」
+                    section("对话上限") {
+                        Toggle("开启对话上限", isOn: Binding(
+                            get: { store.limitOn },
+                            set: { v in Task { await store.setLimit(on: v) } }))
+                            .font(.system(size: 14))
+                            .tint(theme.fyAccent)
+                        if store.limitOn {
+                            Stepper(value: Binding(
+                                get: { store.limitMax },
+                                set: { v in Task { await store.setLimit(max: v) } }), in: 1...50) {
+                                Text("AI 之间最多 \(store.limitMax) 轮")
+                                    .font(.system(size: 14))
+                            }
+                        }
+                        Text(store.limitOn
+                             ? "从你上次说话算起，AI 互相 @ 超过这个轮数，那次 @ 就不叫人，桌上提醒发言的人这一轮别再艾特。你一开口就重新算。"
+                             : "关着就不设上限，AI 之间可以一直互相 @。")
+                            .font(.system(size: 11))
+                            .foregroundColor(theme.textDim)
                     }
 
                     section("屏蔽") {
@@ -2084,7 +2229,7 @@ private struct RTSettingsView: View {
                         blockToggle("屏蔽何渡", role: "gpt", isOn: store.blockGpt)
                     }
 
-                    section("壁纸") {
+                    section(houseDark ? "壁纸 · 黑夜" : "壁纸 · 白天") {
                         HStack(spacing: 12) {
                             RoundedRectangle(cornerRadius: 10, style: .continuous)
                                 .fill(theme.textDim.opacity(0.12))
@@ -2118,6 +2263,34 @@ private struct RTSettingsView: View {
             }
         }
         .foregroundColor(theme.text)
+        .task { await store.loadLimit() }
+    }
+
+    private func colorRow(_ role: String, _ name: String) -> some View {
+        let _ = colorStamp
+        let hex = RTStyle.hex(role)
+        return HStack(spacing: 12) {
+            Text(name.isEmpty ? role : name)
+                .font(.system(size: 13))
+                .foregroundColor(RTStyle.textOn(hex))
+                .padding(.horizontal, 12).padding(.vertical, 7)
+                .background(Capsule().fill(RTStyle.color(hex)))
+            Spacer()
+            ColorPicker("", selection: Binding(
+                get: { RTStyle.color(RTStyle.hex(role)) },
+                set: { c in
+                    UserDefaults.standard.set(RTStyle.hexString(c), forKey: RTStyle.colorKey(role))
+                    colorStamp = Date().timeIntervalSince1970
+                }), supportsOpacity: false)
+                .labelsHidden()
+            if UserDefaults.standard.string(forKey: RTStyle.colorKey(role)) != nil {
+                Button {
+                    UserDefaults.standard.removeObject(forKey: RTStyle.colorKey(role))
+                    colorStamp = Date().timeIntervalSince1970
+                } label: { label("默认") }
+                    .buttonStyle(.plain)
+            }
+        }
     }
 
     private func blockToggle(_ title: String, role: String, isOn: Bool) -> some View {
@@ -2184,21 +2357,17 @@ private struct RTSettingsView: View {
         return Data(base64Encoded: b64).flatMap(UIImage.init(data:))
     }
 
+    // 1103：圆桌壁纸不跟聊天主题，白天一张、黑夜一张，按全屋按钮当下是哪个就改哪张
+    private var houseDark: Bool { RTStyle.houseDark(houseAppearance, themeName: themeName) }
+
     private var activeWallpaper: String {
-        switch themeName {
-        case "midnight", "imessage-dark": return wallpaperMidnight
-        case "paper": return wallpaperPaper
-        case "paper-dark": return wallpaperPaperDark
-        default: return wallpaperHaven.isEmpty ? wallpaper : wallpaperHaven
-        }
+        houseDark ? wallpaperMidnight : (wallpaperHaven.isEmpty ? wallpaper : wallpaperHaven)
     }
 
     private func setActiveWallpaper(_ value: String) {
-        switch themeName {
-        case "midnight", "imessage-dark": wallpaperMidnight = value
-        case "paper": wallpaperPaper = value
-        case "paper-dark": wallpaperPaperDark = value
-        default:
+        if houseDark {
+            wallpaperMidnight = value
+        } else {
             wallpaperHaven = value
             wallpaper = ""
         }
@@ -2227,6 +2396,7 @@ private struct RTSettingsView: View {
                 case "assistant": avMe = b64
                 case "gpt":       avGpt = b64
                 case "muse":      avMuse = b64
+                case "workroom":  avWorkroom = b64
                 case "wall":      setActiveWallpaper(b64)
                 default: break
                 }
