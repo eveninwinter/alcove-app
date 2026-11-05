@@ -389,7 +389,7 @@ struct TripRoomView: View {
     @ViewBuilder private func tripPage(_ t: Trip) -> some View {
         let back = { route = .home }
         switch route {
-        case .home: TripHome(t: t, back: { route = .list; store.trip = nil; Task { await store.loadList() } }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true })
+        case .home: TripHome(t: t, back: { route = .list; store.trip = nil; Task { await store.loadList() } }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, soon: { store.say("参考图还没做") })
         case .pack: TripPack(t: t, tab: $packTab, back: back, store: store, sheet: $sheet, toBoard: { route = .board })
         case .board: TripBoard(t: t, back: back, toPack: { route = .pack })
         case .day: TripDay(t: t, day: $day, back: back, sheet: $sheet)
@@ -532,79 +532,159 @@ private struct TripClockList: View {
 // MARK: 这一趟
 
 private struct TripHome: View {
+    // 1105 #4758–4769 她定的拼贴版：一整张夜樱画（纸格子已经拼好、花枝漫到纸上，底图放服务器 /trip/img/voyage.jpg）
+    // 上面按画布 852×1846 的坐标摆字、摆点按区；效果图 texted6 一比一。中文衬线（宋体）、英文 Pinyon、数字 Cormorant（时间戳那款），倒计时用细一档 Light
     let t: Trip
     var back: () -> Void
     var menu: () -> Void
     var go: (TripRoute) -> Void
     var pickCover: () -> Void
+    var soon: () -> Void
+
+    private static let W: CGFloat = 852, H: CGFloat = 1846, Z: CGFloat = 1.15
+    private static let ink = Color(red: 52/255, green: 52/255, blue: 56/255)
+    private static let g1 = Color(red: 110/255, green: 110/255, blue: 116/255)
+    private static let g3 = Color(red: 150/255, green: 150/255, blue: 156/255)
 
     var body: some View {
+        GeometryReader { geo in
+            let k = max(geo.size.width / Self.W, geo.size.height / Self.H)
+            canvas(k)
+                .frame(width: Self.W * k, height: Self.H * k)
+                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+        }
+        .ignoresSafeArea()
+        .background(Color(red: 0.11, green: 0.11, blue: 0.12).ignoresSafeArea())
+        .overlay(alignment: .topLeading) {
+            Button(action: back) {
+                Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular)).foregroundStyle(.white.opacity(0.85))
+                    .frame(width: 44, height: 44).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .padding(.leading, 6).padding(.top, TripSafe.top)
+        }
+    }
+
+    @ViewBuilder private func canvas(_ k: CGFloat) -> some View {
         let s = t.sum, today = TripText.ymdBJ(Date())
-        let cd: (Int, String) = s.status == "before" ? (TripText.days(today, t.start), "DAYS TO GO")
-            : s.status == "during" ? (TripText.days(t.start, today) + 1, "DAY · 第几天") : (TripText.days(t.end, today), "DAYS SINCE · 回来")
-        TripPage(title: "Voyage", tint: t.tint, back: back, menu: menu, foot: ("\(s.days) 天 · \(s.items) 样 · \(s.wishes) 处想去", "off we go…")) {
-            ZStack(alignment: .top) {
-                TripMat(name: "mountain", tint: t.tint, opacity: 0.3).frame(height: 150).padding(.horizontal, -20)
-                    .mask(LinearGradient(colors: [.clear, .black, .clear], startPoint: .top, endPoint: .bottom))
-                    .offset(y: 230)
-                cover
-            }
-            .frame(height: 300).padding(.horizontal, -22)
-            HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 0) {
-                    Text(t.name).font(TripInk.serif(40)).foregroundStyle(TripInk.ink)
-                    Mono("\(t.nameEn) · \(TripText.md(t.start)) — \(TripText.md(t.end))").padding(.top, 8)
-                    Text("第 \(String(format: "%03d", t.id)) 次 · \(s.days) 天 \(max(s.days - 1, 0)) 晚").font(TripInk.serif(10)).foregroundStyle(TripInk.g1).padding(.top, 4)
-                }
-                Spacer()
-                VStack(alignment: .trailing, spacing: 0) {
-                    Text("\(cd.0)").font(TripInk.serif(46)).foregroundStyle(TripInk.ink)
-                    Mono(cd.1).padding(.top, 6)
-                }
-            }
-            .padding(.top, -6)
-            VStack(spacing: 0) {
-                tocRow("01", "准备清单", "\(s.done) / \(s.items)", .pack, dim: false)
-                tocRow("02", "日程", "\(s.days) 天", .day, dim: false)
-                tocRow("03", "登机牌", t.packedAt.isEmpty ? "还没勾完" : "已解锁", .board, dim: t.packedAt.isEmpty)
-                tocRow("04", "想去", "\(s.wishes) 处", .wish, dim: false)
-                tocRow("05", "票据", "\(s.tickets) 张", .tick, dim: false)
-                tocRow("06", "花销", "¥\(TripText.money(s.spent))", .spend, dim: false)
-                tocRow("07", "回顾", s.status == "after" ? "看看" : "回来以后", .recap, dim: s.status != "after")
-                Hair()
-            }
-            .padding(.top, 22)
-            if !t.packedAt.isEmpty && !t.stub.isEmpty {
-                Text("「\(t.stub)」 — 璟").font(TripInk.serif(12)).foregroundStyle(TripInk.g1).lineSpacing(6).padding(.top, 22)
-            }
-        } bar: { EmptyView() }
-    }
-
-    @ViewBuilder private var cover: some View {
-        if t.cover.isEmpty {
-            Button(action: pickCover) {
-                ZStack { LinearGradient(colors: [Color(white: 0.925), Color(white: 0.955)], startPoint: .top, endPoint: .bottom); Mono("＋ 放一张封面照片") }
-            }
-            .frame(height: 300)
-        } else {
-            AsyncImage(url: AlcoveAPI.fullURL("/\(t.cover)")) { img in img.resizable().scaledToFill() } placeholder: { Color.clear }
-                .frame(height: 300).clipped()
-                .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.16), .init(color: .black, location: 0.64), .init(color: .clear, location: 1)], startPoint: .top, endPoint: .bottom))
-                // 1103 #4727：scaledToFill 的图 clipped 只裁画面不裁点按范围，竖图伸上去盖住顶栏（返回、两道横线点不动）
+        let cd: (Int, String) = s.status == "before" ? (TripText.days(today, t.start), "days to go")
+            : s.status == "during" ? (TripText.days(t.start, today) + 1, "day") : (TripText.days(t.end, today), "days since")
+        let Z = Self.Z
+        ZStack(alignment: .topLeading) {
+            CachedImage(url: AlcoveAPI.fullURL("/trip/img/voyage.jpg?v=1")) { img in img.resizable() } placeholder: { Color(red: 0.11, green: 0.11, blue: 0.12) }
+                .frame(width: Self.W * k, height: Self.H * k)
                 .allowsHitTesting(false)
+
+            // 点按区：照格子，空格子不接（ViewBuilder 一层最多十个，分组装）
+            Group {
+            tap(575, 85, 852, 348, k, menu)
+            tap(728, 640, 852, 795, k) { go(.pack) }
+            tap(357, 1088, 532, 1345, k) { go(.day) }
+            tap(532, 950, 655, 1345, k) { go(.board) }
+            tap(655, 880, 758, 1345, k) { go(.wish) }
+            tap(758, 795, 852, 1345, k) { go(.tick) }
+            tap(190, 1345, 515, 1520, k) { go(.spend) }
+            tap(515, 1345, 852, 1615, k) { go(.recap) }
+            tap(630, 1615, 852, 1755, k, soon)
+            }
+
+            Group {
+                // 右上台阶：地名
+                put(Text("Voyage").font(TripInk.pin(52 * k)).foregroundColor(Self.g1), 670, 96, k)
+                Text(t.name).font(TripInk.serif(60 * k)).foregroundColor(Self.ink).lineLimit(1).minimumScaleFactor(0.4)
+                    .frame(width: (852 - 590 - 12) * k, alignment: .leading)
+                    .frame(width: 0, height: 0, alignment: .topLeading).position(x: 590 * k, y: 196 * k).allowsHitTesting(false)
+                put(mix("\(TripText.md(t.start)) — \(TripText.md(t.end))", 19 * k).foregroundColor(Self.g1), 592, 282, k)
+                put(mix("第 \(String(format: "%03d", t.id)) 次 · \(s.days) 天 \(max(s.days - 1, 0)) 晚", 14 * k).foregroundColor(Self.g3), 592, 312, k)
+                // 中间大格：倒计时
+                put(Text("\(cd.0)").font(.custom("CormorantGaramond-Light", size: 220 * k)).foregroundColor(Self.ink), 452, 520, k,
+                    Alignment(horizontal: .leading, vertical: .lastTextBaseline))
+                put(Text(cd.1).font(TripInk.pin(44 * k)).foregroundColor(Self.g1), 836, 586, k,
+                    Alignment(horizontal: .trailing, vertical: .lastTextBaseline))
+            }
+            Group {
+                // 01 准备清单
+                put(mix("01", 10 * Z * k).foregroundColor(Self.g3), 740, 654, k)
+                put(Text("准备清单").font(TripInk.serif(16 * Z * k)).foregroundColor(Self.ink), 740, 674, k)
+                put(Text("Packing").font(TripInk.pin(20 * Z * k)).foregroundColor(Self.g1), 740, 706, k)
+                put(mix("\(s.done) / \(s.items)", 12 * Z * k).foregroundColor(Self.g1), 740, 768, k)
+                // 02 日程（横排）
+                put(mix("02", 10 * Z * k).foregroundColor(Self.g3), 377, 1106, k)
+                put(Text("日程").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 377, 1126, k)
+                put(Text("Days").font(TripInk.pin(22 * Z * k)).foregroundColor(Self.g1), 377, 1162, k)
+                put(mix("\(s.days) 天", 12 * Z * k).foregroundColor(Self.g1), 377, 1300, k)
+            }
+            Group {
+                column("03", "登机牌", "Boarding", 18, x: 593, k: k)
+                put(Text(t.packedAt.isEmpty ? "还没勾完" : "已解锁").font(TripInk.serif(11 * Z * k)).foregroundColor(t.packedAt.isEmpty ? Self.g3 : Self.g1), 593, 1300, k, .top)
+                column("04", "想去", "Wishes", 20, x: 706, k: k)
+                put(mix("\(s.wishes) 处", 12 * Z * k).foregroundColor(Self.g1), 706, 1300, k, .top)
+                column("05", "票据", "Tickets", 18, x: 805, k: k)
+                put(mix("\(s.tickets) 张", 12 * Z * k).foregroundColor(Self.g1), 805, 1300, k, .top)
+            }
+            Group {
+                // 06 花销
+                put(mix("06", 10 * Z * k).foregroundColor(Self.g3), 210, 1362, k)
+                put(Text("花销").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 210, 1384, k)
+                put(Text("Spending").font(TripInk.pin(24 * Z * k)).foregroundColor(Self.g1), 282, 1378, k)
+                put(mix("¥ \(TripText.money(s.spent))", 15 * Z * k).foregroundColor(Self.ink), 495, 1482, k, .topTrailing)
+                // 07 回顾
+                put(mix("07", 10 * Z * k).foregroundColor(Self.g3), 535, 1362, k)
+                put(Text("回顾").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 535, 1384, k)
+                put(Text("Memories").font(TripInk.pin(26 * Z * k)).foregroundColor(Self.g1), 535, 1422, k)
+                put(Text(s.status == "after" ? "看看" : "回来以后").font(TripInk.serif(12 * Z * k)).foregroundColor(Self.g3), 832, 1580, k, .topTrailing)
+            }
+            Group {
+                // 08 参考图
+                put(mix("08", 10 * Z * k).foregroundColor(Self.g3), 650, 1632, k)
+                put(Text("参考图").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 650, 1654, k)
+                put(Text("Inspiration").font(TripInk.pin(24 * Z * k)).foregroundColor(Self.g1), 650, 1692, k)
+            }
+            .allowsHitTesting(false)
         }
     }
 
-    private func tocRow(_ no: String, _ title: String, _ value: String, _ r: TripRoute, dim: Bool) -> some View {
-        Button { go(r) } label: {
-            TripRow {
-                Text(no).font(TripInk.mono(9)).foregroundStyle(TripInk.g3).frame(width: 20, alignment: .leading)
-                Text(title).font(TripInk.serif(14)).foregroundStyle(TripInk.ink)
-                Spacer()
-                Text(value).font(TripInk.serif(10)).foregroundStyle(dim ? TripInk.g3 : TripInk.g1)
+    /// 字按画布坐标摆：(x, y) 是字的左上角（或 a 指定的那个角/基线）
+    private func put<V: View>(_ v: V, _ x: CGFloat, _ y: CGFloat, _ k: CGFloat, _ a: Alignment = .topLeading) -> some View {
+        v.fixedSize().frame(width: 0, height: 0, alignment: a).position(x: x * k, y: y * k).allowsHitTesting(false)
+    }
+
+    /// 窄长格：编号、竖排中文、花体英文，一列居中
+    private func column(_ no: String, _ zh: String, _ en: String, _ enSize: CGFloat, x: CGFloat, k: CGFloat) -> some View {
+        let Z = Self.Z, size = 18 * Z
+        return ZStack(alignment: .topLeading) {
+            put(mix(no, 10 * Z * k).foregroundColor(Self.g3), x, 1030, k, .top)
+            ForEach(Array(zh.enumerated()), id: \.offset) { i, ch in
+                put(Text(String(ch)).font(TripInk.serif(size * k)).foregroundColor(Self.ink), x, 1054 + CGFloat(i) * size * 1.15, k, .top)
             }
+            put(Text(en).font(TripInk.pin(enSize * Z * k)).foregroundColor(Self.g1), x, zh.count > 2 ? 1200 : 1140, k, .top)
         }
-        .buttonStyle(.plain)
+    }
+
+    private func tap(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat, _ k: CGFloat, _ act: @escaping () -> Void) -> some View {
+        Color.clear.contentShape(Rectangle())
+            .frame(width: (x1 - x0) * k, height: (y1 - y0) * k)
+            .onTapGesture(perform: act)
+            .offset(x: x0 * k, y: y0 * k)
+    }
+
+    /// 中文衬线、数字和标点换 Cormorant（时间戳那款，老式数字）；数字字面小，放大 1.2 跟中文一样高
+    private func mix(_ str: String, _ size: CGFloat) -> Text {
+        let numSet = Set("0123456789.,/—¥ ")
+        var out = Text("")
+        var run = "", runIsNum: Bool? = nil
+        func flush() {
+            guard let isNum = runIsNum, !run.isEmpty else { return }
+            out = out + Text(run).font(isNum ? .custom("CormorantGaramond-Medium", size: size * 1.2) : TripInk.serif(size))
+            run = ""
+        }
+        for ch in str {
+            let isNum = numSet.contains(ch)
+            if runIsNum != isNum { flush(); runIsNum = isNum }
+            run.append(ch)
+        }
+        flush()
+        return out
     }
 }
 

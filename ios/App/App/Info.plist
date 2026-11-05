@@ -17,6 +17,7 @@
 		<string>PinyonScript-Regular.ttf</string>
 		<string>CormorantGaramond-Medium.ttf</string>
 		<string>CormorantGaramond-MediumItalic.ttf</string>
+		<string>CormorantGaramond-Light.ttf</string>
 	</array>
 	<key>CFBundleDisplayName</key>
 	<string>Alcove</string>
