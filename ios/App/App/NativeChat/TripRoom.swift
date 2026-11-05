@@ -604,7 +604,7 @@ private struct TripHome: View {
             : s.status == "during" ? (TripText.days(t.start, today) + 1, "day") : (TripText.days(t.end, today), "days since")
         let Z = Self.Z
         ZStack(alignment: .topLeading) {
-            CachedImage(url: AlcoveAPI.fullURL("/trip/img/voyage2.jpg")) { img in img.resizable() } placeholder: { Color(red: 0.11, green: 0.11, blue: 0.12) }
+            CachedImage(url: AlcoveAPI.fullURL("/trip/img/voyage3.jpg")) { img in img.resizable() } placeholder: { Color(red: 0.11, green: 0.11, blue: 0.12) }
                 .frame(width: Self.W * k, height: Self.H * k)
                 .allowsHitTesting(false)
 
