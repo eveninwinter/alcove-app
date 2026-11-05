@@ -625,7 +625,8 @@ private struct TripHome: View {
                 // 右上台阶：地名
                 put(Text("Voyage").font(TripInk.pin(52 * k)).foregroundColor(Self.g1), 670, 96, k)
                 Text(t.name).font(TripInk.serif(60 * k)).foregroundColor(Self.ink).lineLimit(1).minimumScaleFactor(0.4)
-                    .frame(width: (852 - 590 - 12) * k, alignment: .leading)
+                    // 1105 她「地名为什么那么小」：外面那层 0 高的框把高度 0 传进来，minimumScaleFactor 就一路缩到 0.4；给它自己的高度
+                    .frame(width: (852 - 590 - 12) * k, height: 84 * k, alignment: .topLeading)
                     .frame(width: 0, height: 0, alignment: .topLeading).position(x: 590 * k, y: 196 * k).allowsHitTesting(false)
                 put(mix("\(TripText.md(t.start)) — \(TripText.md(t.end))", 19 * k).foregroundColor(Self.g1), 592, 282, k)
                 put(mix("第 \(String(format: "%03d", t.id)) 次 · \(s.days) 天 \(max(s.days - 1, 0)) 晚", 14 * k).foregroundColor(Self.g3), 592, 312, k)
