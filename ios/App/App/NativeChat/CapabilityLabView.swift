@@ -197,25 +197,30 @@ enum AlcoveLiveActivityController {
     /// 0922 任务#2587 她报的「岛一天自己没好几次」：把开/结束/被系统收/前后台连时间记到后端
     /// /island/log（落 logs/island.jsonl），看两天记录再定原因。记不上就算了，绝不影响岛本身。
     static func report(_ event: String, _ detail: [String: Any] = [:]) {
-        var body: [String: Any] = ["event": event,
-                                   "count": Activity<AlcoveLabAttributes>.activities.count]
+        var body: [String: Any] = ["event": event]
         for (k, v) in detail { body[k] = v }
-        Task { _ = try? await NativeHouseAPI.object("/island/log", method: "POST", body: body) }
+        // 1105：数岛（activities）也是同步等系统的，别在主线程上数
+        let payload = body
+        Task.detached(priority: .utility) {
+            var b = payload
+            b["count"] = Activity<AlcoveLabAttributes>.activities.count
+            _ = try? await NativeHouseAPI.object("/island/log", method: "POST", body: b)
+        }
     }
 
     /// 每块活动挂一个观察者：系统把它结束/收走/标陈旧的时候记一笔（带活了多久）
-    private static func watch(_ activity: Activity<AlcoveLabAttributes>) {
+    private static func watch(_ activity: Activity<AlcoveLabAttributes>, started: Date? = nil) {
         guard !watched.contains(activity.id) else { return }
         watched.insert(activity.id)
+        let started = started ?? activity.content.state.startedAt
         // 1014：每块岛的推送号码交给服务器，app 被划掉以后服务器照样能刷它
         Task {
             for await token in activity.pushTokenUpdates {
                 RemotePush.register(kind: "liveactivity", token: token,
                                     extra: ["activity_id": activity.id,
-                                            "started_at": activity.content.state.startedAt.timeIntervalSince1970])
+                                            "started_at": started.timeIntervalSince1970])
             }
         }
-        let started = activity.content.state.startedAt
         Task {
             for await state in activity.activityStateUpdates {
                 let age = Int(Date().timeIntervalSince(started))
@@ -258,7 +263,13 @@ enum AlcoveLiveActivityController {
                     _ = await start()
                     continue
                 }
-                await watchAll()
+                // 1105：只把还没挂观察者的新岛交回主线程挂上；清点和读开始时间都在这边做完
+                for activity in activities {
+                    let id = activity.id
+                    if await MainActor.run(body: { watched.contains(id) }) { continue }
+                    let started = activity.content.state.startedAt
+                    await watch(activity, started: started)
+                }
                 // 0922 任务#2585 她报的「胶囊有时自己消失、不更新」：
                 // ① 系统给一次实时活动最多 8 小时，到点就自己没了。快到点（7.5h）App 还醒着就先结束再开一块新的。
                 // ② 原来只在心率变了才写；现在每 15 拍（一分钟）不管变没变都写一次，防止某一块漏掉。
