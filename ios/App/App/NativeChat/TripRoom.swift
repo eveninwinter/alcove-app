@@ -341,6 +341,7 @@ struct TripRoomView: View {
     @State private var sheet: TripSheet?
     @State private var coverItem: PhotosPickerItem?
     @State private var pickingCover = false
+    @State private var listLoaded = false
     @State private var inspFrom: TripRoute = .list      // 参考图从哪进来就回哪
     @State private var inspPlace: String?               // 从某一趟主页进来：直接停在同名地点
 
@@ -358,16 +359,18 @@ struct TripRoomView: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: store.toast)
-        .task { WindowFont.requestSongti(); await store.loadList() }
+        // 1105 她：拼贴页替掉「与此同时」那页——一进旅行直接是正在进行 / 最近要去的那趟；一趟都没有才露出钟那页
+        .task { WindowFont.requestSongti(); await store.loadList(); await openDefault() }
         .sheet(item: $sheet) { sh in
             TripSheetView(kind: sh, store: store, day: $day, packTab: packTab, wishTab: wishTab,
-                          onPickCover: { pickingCover = true }, onDeleted: { route = .list; store.trip = nil; Task { await store.loadList() } },
+                          onPickCover: { pickingCover = true }, onDeleted: { route = .list; store.trip = nil; Task { await store.loadList(); await openDefault() } },
                           onCreated: { id in Task { await open(id) } })
                 .presentationDetents([.medium, .large])
                 .presentationBackground(TripInk.paper)
         }
         .onReceive(NotificationCenter.default.publisher(for: .tripAskEdit)) { _ in sheet = .editTrip }
         .onReceive(NotificationCenter.default.publisher(for: .tripAskDelete)) { _ in sheet = .delTrip }
+        .onReceive(NotificationCenter.default.publisher(for: .tripAskNew)) { _ in sheet = .newTrip }
         .onChange(of: coverItem) { _, item in
             guard let item else { return }
             Task {
@@ -384,13 +387,27 @@ struct TripRoomView: View {
     @ViewBuilder private var page: some View {
         switch route {
         case .list:
+            if !listLoaded { Color(red: 0.11, green: 0.11, blue: 0.12).ignoresSafeArea() } else {
             TripClockList(store: store, close: { dismiss() }, open: { id in Task { await open(id) } }, newTrip: { sheet = .newTrip },
                           insp: { inspFrom = .list; inspPlace = nil; route = .insp })
+            }
         case .insp:
             TripInspiration(startPlace: inspPlace, back: { route = inspFrom })
         default:
             if let t = store.trip { tripPage(t) } else { TripInk.plainBG.ignoresSafeArea() }
         }
+    }
+
+    /// 正在进行的 > 最近要出发的 > 最近回来的
+    private func openDefault() async {
+        let order = ["during": 0, "before": 1, "after": 2]
+        let pick = store.trips.sorted {
+            let a = order[$0.sum.status] ?? 3, b = order[$1.sum.status] ?? 3
+            if a != b { return a < b }
+            return $0.sum.status == "after" ? $0.start > $1.start : $0.start < $1.start
+        }.first
+        if let pick { await open(pick.id); if store.trip == nil { route = .list } }   // 没连上就退回钟那页，至少有返回键
+        listLoaded = true
     }
 
     private func open(_ id: Int) async {
@@ -402,7 +419,7 @@ struct TripRoomView: View {
     @ViewBuilder private func tripPage(_ t: Trip) -> some View {
         let back = { route = .home }
         switch route {
-        case .home: TripHome(t: t, back: { route = .list; store.trip = nil; Task { await store.loadList() } }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, toInsp: { inspFrom = .home; inspPlace = t.name; route = .insp })
+        case .home: TripHome(t: t, back: { dismiss() }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, toInsp: { inspFrom = .home; inspPlace = t.name; route = .insp })
         case .pack: TripPack(t: t, tab: $packTab, back: back, store: store, sheet: $sheet, toBoard: { route = .board })
         case .board: TripBoard(t: t, back: back, toPack: { route = .pack })
         case .day: TripDay(t: t, day: $day, back: back, sheet: $sheet)
@@ -1458,6 +1475,16 @@ private struct TripSheetView: View {
                 TripRow { Text("换封面照片").font(TripInk.serif(14)).foregroundStyle(TripInk.ink); Spacer() }
             }
             .buttonStyle(.plain)
+            // 1105 钟那页不再是入口了：换一趟、新建都从这里
+            ForEach(store.trips.filter { $0.id != t?.id }) { o in
+                Button { dismiss(); onCreated(o.id) } label: {
+                    TripRow { Text("换到「\(o.name)」").font(TripInk.serif(14)).foregroundStyle(TripInk.ink); Spacer()
+                        Text(TripText.md(o.start)).font(.custom("CormorantGaramond-Medium", size: 13)).foregroundStyle(TripInk.g1) }
+                }.buttonStyle(.plain)
+            }
+            Button { dismiss(); DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { NotificationCenter.default.post(name: .tripAskNew, object: nil) } } label: {
+                TripRow { Text("＋ 新的一次旅行").font(TripInk.serif(14)).foregroundStyle(TripInk.ink); Spacer() }
+            }.buttonStyle(.plain)
         }
     }
 
@@ -1707,6 +1734,7 @@ private struct TripSheetView: View {
 extension Notification.Name {
     static let tripAskEdit = Notification.Name("trip.askEdit")
     static let tripAskDelete = Notification.Name("trip.askDelete")
+    static let tripAskNew = Notification.Name("trip.askNew")
 }
 
 // MARK: - 参考图（1105 #4758 / #4771）
