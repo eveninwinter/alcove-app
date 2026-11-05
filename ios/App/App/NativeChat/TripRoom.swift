@@ -604,7 +604,7 @@ private struct TripHome: View {
             : s.status == "during" ? (TripText.days(t.start, today) + 1, "day") : (TripText.days(t.end, today), "days since")
         let Z = Self.Z
         ZStack(alignment: .topLeading) {
-            CachedImage(url: AlcoveAPI.fullURL("/trip/img/voyage.jpg?v=1")) { img in img.resizable() } placeholder: { Color(red: 0.11, green: 0.11, blue: 0.12) }
+            CachedImage(url: AlcoveAPI.fullURL("/trip/img/voyage2.jpg")) { img in img.resizable() } placeholder: { Color(red: 0.11, green: 0.11, blue: 0.12) }
                 .frame(width: Self.W * k, height: Self.H * k)
                 .allowsHitTesting(false)
 
@@ -1780,8 +1780,7 @@ private struct TripInspiration: View {
     var body: some View {
         TripPage(title: "Inspiration", tint: "", back: back, plus: { picking = true },
                  foot: ("\(photos.count) 张 · \(places.count) 处", "someday, there")) {
-            Text("参考图").font(TripInk.serif(11)).foregroundStyle(TripInk.g1).frame(maxWidth: .infinity).padding(.top, 2)
-            placeTabs.padding(.top, 18)
+            placeTabs.padding(.top, 8)       // 1105 她：顶上「参考图」几个小字去掉
             HStack(spacing: 0) {
                 ForEach(Array([("all", "全部"), ("person", "人物"), ("scene", "景色")].enumerated()), id: \.offset) { i, o in
                     if i > 0 { Text("/").font(.custom("CormorantGaramond-Medium", size: 13)).foregroundStyle(TripInk.g3).padding(.horizontal, 6) }
