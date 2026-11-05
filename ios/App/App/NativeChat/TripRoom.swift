@@ -164,6 +164,7 @@ private struct TripHeader: View {
     let title: String
     var back: () -> Void
     var menu: (() -> Void)? = nil
+    var plus: (() -> Void)? = nil
     var body: some View {
         ZStack {
             Text(title).font(TripInk.pin(25)).foregroundStyle(TripInk.ink)
@@ -174,6 +175,12 @@ private struct TripHeader: View {
                 }
                 .buttonStyle(.plain)
                 Spacer()
+                if let plus {      // 1105 参考图：右上一个「＋」加图
+                    Button(action: plus) {
+                        Text("＋").font(TripInk.serif(20)).foregroundStyle(TripInk.ink).frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
                 if let menu {
                     Button(action: menu) {
                         VStack(spacing: 6) { Rectangle().frame(width: 22, height: 1); Rectangle().frame(width: 22, height: 1) }
@@ -205,6 +212,7 @@ private struct TripPage<Content: View, Bar: View>: View {
     let tint: String
     var back: () -> Void
     var menu: (() -> Void)? = nil
+    var plus: (() -> Void)? = nil
     var foot: (String, String)? = nil
     @ViewBuilder var content: Content
     @ViewBuilder var bar: Bar
@@ -223,7 +231,7 @@ private struct TripPage<Content: View, Bar: View>: View {
         }
         .overlay(alignment: .top) {
             VStack(spacing: 0) {
-                TripHeader(title: title, back: back, menu: menu)
+                TripHeader(title: title, back: back, menu: menu, plus: plus)
                     .padding(.horizontal, 22).padding(.top, TripSafe.top)
                     .background(bg)
                 LinearGradient(colors: [bg, bg.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 16).allowsHitTesting(false)
@@ -300,7 +308,7 @@ final class TripStore: ObservableObject {
 
 // MARK: 入口
 
-enum TripRoute { case list, home, pack, board, day, wish, tick, spend, recap }
+enum TripRoute { case list, home, pack, board, day, wish, tick, spend, recap, insp }
 
 enum TripSheet: Identifiable {
     case newTrip, editTrip, menu, delTrip, item(Int?), template, stop(Int?), fromWish, wish(Int?), ticket(Int?), spend, spendRow(Int), dayNote(String)
@@ -333,6 +341,8 @@ struct TripRoomView: View {
     @State private var sheet: TripSheet?
     @State private var coverItem: PhotosPickerItem?
     @State private var pickingCover = false
+    @State private var inspFrom: TripRoute = .list      // 参考图从哪进来就回哪
+    @State private var inspPlace: String?               // 从某一趟主页进来：直接停在同名地点
 
     var body: some View {
         ZStack {
@@ -374,7 +384,10 @@ struct TripRoomView: View {
     @ViewBuilder private var page: some View {
         switch route {
         case .list:
-            TripClockList(store: store, close: { dismiss() }, open: { id in Task { await open(id) } }, newTrip: { sheet = .newTrip })
+            TripClockList(store: store, close: { dismiss() }, open: { id in Task { await open(id) } }, newTrip: { sheet = .newTrip },
+                          insp: { inspFrom = .list; inspPlace = nil; route = .insp })
+        case .insp:
+            TripInspiration(startPlace: inspPlace, back: { route = inspFrom })
         default:
             if let t = store.trip { tripPage(t) } else { TripInk.plainBG.ignoresSafeArea() }
         }
@@ -389,7 +402,7 @@ struct TripRoomView: View {
     @ViewBuilder private func tripPage(_ t: Trip) -> some View {
         let back = { route = .home }
         switch route {
-        case .home: TripHome(t: t, back: { route = .list; store.trip = nil; Task { await store.loadList() } }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, soon: { store.say("参考图还没做") })
+        case .home: TripHome(t: t, back: { route = .list; store.trip = nil; Task { await store.loadList() } }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, toInsp: { inspFrom = .home; inspPlace = t.name; route = .insp })
         case .pack: TripPack(t: t, tab: $packTab, back: back, store: store, sheet: $sheet, toBoard: { route = .board })
         case .board: TripBoard(t: t, back: back, toPack: { route = .pack })
         case .day: TripDay(t: t, day: $day, back: back, sheet: $sheet)
@@ -397,7 +410,7 @@ struct TripRoomView: View {
         case .tick: TripTickets(t: t, back: back, sheet: $sheet)
         case .spend: TripSpending(t: t, back: back, sheet: $sheet)
         case .recap: TripRecap(t: t, back: back, sheet: $sheet)
-        case .list: EmptyView()
+        case .list, .insp: EmptyView()
         }
     }
 }
@@ -409,6 +422,7 @@ private struct TripClockList: View {
     var close: () -> Void
     var open: (Int) -> Void
     var newTrip: () -> Void
+    var insp: () -> Void
 
     var body: some View {
         GeometryReader { geo in
@@ -434,6 +448,8 @@ private struct TripClockList: View {
                     HStack {
                         Button(action: newTrip) { Text("＋ 新的一次旅行").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }
                         Spacer()
+                        Button(action: insp) { Text("参考图").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }   // 1105 #4771
+                            .padding(.trailing, 14)
                         Mono("\(store.trips.count) TRIPS")
                     }
                     .padding(.top, 18).padding(.bottom, TripSafe.bottom + 4)
@@ -532,14 +548,14 @@ private struct TripClockList: View {
 // MARK: 这一趟
 
 private struct TripHome: View {
-    // 1105 #4758–4769 她定的拼贴版：一整张夜樱画（纸格子已经拼好、花枝漫到纸上，底图放服务器 /trip/img/voyage.jpg）
+    // 1105 #4758–4769 她定的拼贴版（08 参考图点进去直接停在这趟的地名上）：一整张夜樱画（纸格子已经拼好、花枝漫到纸上，底图放服务器 /trip/img/voyage.jpg）
     // 上面按画布 852×1846 的坐标摆字、摆点按区；效果图 texted6 一比一。中文衬线（宋体）、英文 Pinyon、数字 Cormorant（时间戳那款），倒计时用细一档 Light
     let t: Trip
     var back: () -> Void
     var menu: () -> Void
     var go: (TripRoute) -> Void
     var pickCover: () -> Void
-    var soon: () -> Void
+    var toInsp: () -> Void
 
     private static let W: CGFloat = 852, H: CGFloat = 1846, Z: CGFloat = 1.15
     private static let ink = Color(red: 52/255, green: 52/255, blue: 56/255)
@@ -585,7 +601,7 @@ private struct TripHome: View {
             tap(758, 795, 852, 1345, k) { go(.tick) }
             tap(190, 1345, 515, 1520, k) { go(.spend) }
             tap(515, 1345, 852, 1615, k) { go(.recap) }
-            tap(630, 1615, 852, 1755, k, soon)
+            tap(630, 1615, 852, 1755, k, toInsp)
             }
 
             Group {
@@ -1691,4 +1707,342 @@ private struct TripSheetView: View {
 extension Notification.Name {
     static let tripAskEdit = Notification.Name("trip.askEdit")
     static let tripAskDelete = Notification.Name("trip.askDelete")
+}
+
+// MARK: - 参考图（1105 #4758 / #4771）
+// 她收别人拍的雪山、旅行图，随时拿出来看。地点她自己随时建（不跟行程绑），最后一个「其他」；人物 / 景色上传时她自己选。
+// 只给她：陈璟那边不接（她：「这个不关他的事」）。后端 trip_api.insp_*，图存 trip/up/（长边 2400，放大看得清）。
+// 样子照 1105 效果图：Inspiration 标题、一排地点横滑、全部 / 人物 / 景色、两列按原比例瀑布流、不裁不染色。
+
+struct InspPlace: Identifiable, Equatable { let id: Int; let name: String; let n: Int }
+struct InspPhoto: Identifiable, Equatable {
+    let id: Int; let placeId: Int; let kind: String; let url: String; let w: Int; let h: Int
+    /// 宽 / 高；拿不到尺寸当方的
+    var aspect: CGFloat { w > 0 && h > 0 ? CGFloat(w) / CGFloat(h) : 1 }
+}
+
+private struct TripInspiration: View {
+    var startPlace: String?
+    var back: () -> Void
+
+    @State private var places: [InspPlace] = []
+    @State private var photos: [InspPhoto] = []
+    @State private var sel: Int?                 // nil 全部；0 其他；>0 某个地点
+    @State private var kind = "all"              // all / person / scene
+    @State private var loaded = false
+    @State private var picking = false
+    @State private var picks: [PhotosPickerItem] = []
+    @State private var pending: [Data] = []      // 选好了，等她定放哪
+    @State private var showUpload = false
+    @State private var viewing: InspPhoto?
+    @State private var delPhoto: InspPhoto?
+    @State private var askDel = false
+    @State private var renaming: InspPlace?
+    @State private var askRename = false
+    @State private var renameText = ""
+    @State private var toast = ""
+
+    private var shown: [InspPhoto] {
+        photos.filter { p in
+            (sel == nil || p.placeId == sel!) && (kind == "all" || p.kind == kind)
+        }
+    }
+
+    var body: some View {
+        TripPage(title: "Inspiration", tint: "", back: back, plus: { picking = true },
+                 foot: ("\(photos.count) 张 · \(places.count) 处", "someday, there")) {
+            Text("参考图").font(TripInk.serif(11)).foregroundStyle(TripInk.g1).frame(maxWidth: .infinity).padding(.top, 2)
+            placeTabs.padding(.top, 18)
+            HStack(spacing: 0) {
+                ForEach(Array([("all", "全部"), ("person", "人物"), ("scene", "景色")].enumerated()), id: \.offset) { i, o in
+                    if i > 0 { Text("/").font(.custom("CormorantGaramond-Medium", size: 13)).foregroundStyle(TripInk.g3).padding(.horizontal, 6) }
+                    Button { kind = o.0 } label: {
+                        Text(o.1).font(TripInk.serif(11)).foregroundStyle(kind == o.0 ? TripInk.ink : TripInk.g3)
+                    }
+                    .buttonStyle(.plain)
+                }
+                Spacer()
+                Text("\(shown.count)").font(.custom("CormorantGaramond-Medium", size: 15)).foregroundStyle(TripInk.g1)
+            }
+            .padding(.top, 14)
+            Hair().padding(.top, 10)
+            if shown.isEmpty {
+                Text(loaded ? (photos.isEmpty ? "看到喜欢的图，点下面放进来" : "这里还没有") : "")
+                    .font(TripInk.serif(13)).foregroundStyle(TripInk.g3).frame(maxWidth: .infinity).padding(.vertical, 60)
+            } else {
+                masonry.padding(.top, 12)
+            }
+        } bar: {
+            HStack { Button { picking = true } label: { Text("＋ 放几张进来").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }; Spacer() }
+        }
+        .overlay {
+            if !toast.isEmpty {
+                VStack { Spacer()
+                    Text(toast).font(TripInk.serif(12)).foregroundStyle(TripInk.plainBG)
+                        .padding(.horizontal, 14).padding(.vertical, 7).background(Capsule().fill(TripInk.ink.opacity(0.9)))
+                        .padding(.bottom, 110 + TripSafe.bottom)
+                }
+                .allowsHitTesting(false)
+            }
+        }
+        .photosPicker(isPresented: $picking, selection: $picks, maxSelectionCount: nil, selectionBehavior: .ordered, matching: .images)
+        .onChange(of: picks) { _, items in
+            guard !items.isEmpty else { return }
+            Task {
+                var datas: [Data] = []
+                for it in items { if let d = try? await it.loadTransferable(type: Data.self) { datas.append(d) } }
+                picks = []
+                guard !datas.isEmpty else { say("没读到图"); return }
+                pending = datas
+                showUpload = true
+            }
+        }
+        .sheet(isPresented: $showUpload) {
+            InspUploadSheet(count: pending.count, places: places, startPlace: sel,
+                            create: { name in await createPlace(name) },
+                            done: { pid, k in showUpload = false; Task { await upload(pid, k) } })
+                .presentationDetents([.medium])
+                .presentationBackground(TripInk.paper)
+        }
+        .fullScreenCover(item: $viewing) { p in
+            InspViewer(list: shown, start: p, close: { viewing = nil })
+        }
+        .confirmationDialog("删掉这张？", isPresented: $askDel, titleVisibility: .visible) {
+            Button("删掉", role: .destructive) { if let p = delPhoto { Task { await edit(["id": p.id, "delete": true]) } } }
+        }
+        .alert("改名", isPresented: $askRename) {
+            TextField("地点", text: $renameText)
+            Button("好") { if let pl = renaming { Task { await placePost(["id": pl.id, "name": renameText]) } } }
+            Button("算了", role: .cancel) {}
+        }
+        .task { await load() }
+    }
+
+    // 地点一排：全部 · 各地点 · 其他；长按某个地点出菜单改名 / 删掉
+    private var placeTabs: some View {
+        ScrollViewReader { proxy in
+            ScrollView(.horizontal) {
+                HStack(spacing: 18) {
+                    tab("全部", nil)
+                    ForEach(places) { pl in
+                        tab(pl.name, pl.id).id(pl.id)
+                            .contextMenu {
+                                Button("改名") { renaming = pl; renameText = pl.name; askRename = true }
+                                Button("删掉这个地点（图挪进「其他」）", role: .destructive) {
+                                    Task { await placePost(["id": pl.id, "delete": true]); if sel == pl.id { sel = nil } }
+                                }
+                            }
+                    }
+                    tab("其他", 0)
+                }
+            }
+            .scrollIndicators(.hidden)
+            .onChange(of: sel) { _, v in if let v, v > 0 { withAnimation { proxy.scrollTo(v, anchor: .center) } } }
+        }
+    }
+
+    private func tab(_ name: String, _ id: Int?) -> some View {
+        Button { sel = id } label: {
+            Text(name).font(TripInk.serif(13.5)).foregroundStyle(sel == id ? TripInk.ink : TripInk.g3)
+                .padding(.bottom, 5)
+                .overlay(alignment: .bottom) { if sel == id { Rectangle().fill(TripInk.ink).frame(height: 0.7) } }
+        }
+        .buttonStyle(.plain)
+    }
+
+    // 两列瀑布流：按原图宽高比，哪列矮放哪列
+    private var masonry: some View {
+        var a: [InspPhoto] = [], b: [InspPhoto] = []
+        var ha: CGFloat = 0, hb: CGFloat = 0
+        for p in shown {
+            if ha <= hb { a.append(p); ha += 1 / p.aspect + 0.05 } else { b.append(p); hb += 1 / p.aspect + 0.05 }
+        }
+        return HStack(alignment: .top, spacing: 8) {
+            VStack(spacing: 8) { ForEach(a) { tile($0) } }.frame(maxWidth: .infinity)
+            VStack(spacing: 8) { ForEach(b) { tile($0) } }.frame(maxWidth: .infinity)
+        }
+    }
+
+    private func tile(_ p: InspPhoto) -> some View {
+        Color.black.opacity(0.04)
+            .aspectRatio(p.aspect, contentMode: .fit)
+            .overlay {
+                CachedImage(url: AlcoveAPI.fullURL(p.url)) { $0.resizable().scaledToFill() } placeholder: { Color.clear }
+                    .allowsHitTesting(false)       // 填满裁切的图点按范围不裁，别让它盖住别的
+            }
+            .clipped()
+            .contentShape(Rectangle())
+            .onTapGesture { viewing = p }
+            .contextMenu {
+                Menu("挪到…") {
+                    ForEach(places) { pl in Button(pl.name) { Task { await edit(["id": p.id, "place_id": pl.id]) } } }
+                    Button("其他") { Task { await edit(["id": p.id, "place_id": 0]) } }
+                }
+                Button(p.kind == "person" ? "改成景色" : "改成人物") {
+                    Task { await edit(["id": p.id, "kind": p.kind == "person" ? "scene" : "person"]) }
+                }
+                Button("删掉", role: .destructive) { delPhoto = p; askDel = true }
+            }
+    }
+
+    // MARK: 数据
+    private func load() async {
+        guard let j = try? await AlcoveAPI.getRaw("/api/trip/insp/list") else { say("连不上"); return }
+        places = (j["places"] as? [[String: Any]] ?? []).map { InspPlace(id: n($0, "id"), name: s($0, "name"), n: n($0, "n")) }
+        photos = (j["photos"] as? [[String: Any]] ?? []).map {
+            InspPhoto(id: n($0, "id"), placeId: n($0, "place_id"), kind: s($0, "kind"), url: s($0, "url"), w: n($0, "w"), h: n($0, "h"))
+        }
+        if !loaded, let name = startPlace, let hit = places.first(where: { $0.name == name }) { sel = hit.id }
+        loaded = true
+    }
+
+    private func edit(_ body: [String: Any]) async {
+        _ = try? await AlcoveAPI.postRaw("/api/trip/insp/photo", body: body)
+        await load()
+    }
+
+    private func placePost(_ body: [String: Any]) async {
+        if let j = try? await AlcoveAPI.postRaw("/api/trip/insp/place", body: body), (j["ok"] as? Bool) == false, let e = j["error"] as? String { say(e) }
+        await load()
+    }
+
+    private func createPlace(_ name: String) async -> Int? {
+        guard let j = try? await AlcoveAPI.postRaw("/api/trip/insp/place", body: ["name": name]) else { say("连不上"); return nil }
+        if (j["ok"] as? Bool) == false { say((j["error"] as? String) ?? "没建成"); return nil }
+        await load()
+        return (j["id"] as? NSNumber)?.intValue
+    }
+
+    /// 一张张传：长边缩到 2400 再传（放大看得清，又不至于太慢）
+    private func upload(_ placeId: Int, _ k: String) async {
+        let datas = pending; pending = []
+        var ok = 0
+        for (i, d) in datas.enumerated() {
+            say("上传中 \(i + 1) / \(datas.count)", hold: true)
+            var body = d
+            if let ui = UIImage(data: d) {
+                let r = min(1, 2400 / max(ui.size.width, ui.size.height))
+                let size = CGSize(width: ui.size.width * r, height: ui.size.height * r)
+                let fmt = UIGraphicsImageRendererFormat(); fmt.scale = 1
+                body = UIGraphicsImageRenderer(size: size, format: fmt).image { _ in ui.draw(in: CGRect(origin: .zero, size: size)) }
+                    .jpegData(compressionQuality: 0.86) ?? d
+            }
+            var req = URLRequest(url: AlcoveAPI.fullURL("/api/trip/upload?kind=insp&place=\(placeId)&cat=\(k)&ext=jpg"))
+            req.httpMethod = "POST"
+            req.setValue("image/jpeg", forHTTPHeaderField: "Content-Type")
+            req.httpBody = body
+            if let res = try? await AlcoveAPI.session.data(for: req),
+               let j = try? JSONSerialization.jsonObject(with: res.0) as? [String: Any], (j["ok"] as? Bool) == true { ok += 1 }
+        }
+        await load()
+        sel = placeId
+        say(ok == datas.count ? "放好了 \(ok) 张" : "放好 \(ok) 张，\(datas.count - ok) 张没传上去")
+    }
+
+    private func say(_ t: String, hold: Bool = false) {
+        toast = t
+        guard !hold else { return }
+        Task { try? await Task.sleep(nanoseconds: 1_800_000_000); if toast == t { toast = "" } }
+    }
+}
+
+/// 选完图：给这一批一起定地点、人物还是景色
+private struct InspUploadSheet: View {
+    let count: Int
+    let places: [InspPlace]
+    var startPlace: Int?
+    var create: (String) async -> Int?
+    var done: (Int, String) -> Void
+    @State private var place = 0
+    @State private var kind = "scene"
+    @State private var newName = ""
+    @State private var extra: [InspPlace] = []
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("放进哪里").font(TripInk.serif(17)).foregroundStyle(TripInk.ink)
+                Spacer()
+                Text("\(count) 张").font(TripInk.serif(11)).foregroundStyle(TripInk.g1)
+            }
+            .padding(.bottom, 16)
+            Mono("PLACE · 地点")
+            ScrollView(.horizontal) {
+                HStack(spacing: 8) {
+                    ForEach(places + extra) { pl in chip(pl.name, on: place == pl.id) { place = pl.id } }
+                    chip("其他", on: place == 0) { place = 0 }
+                }
+            }
+            .scrollIndicators(.hidden)
+            .padding(.top, 6)
+            HStack(spacing: 10) {
+                TextField("新地点，比如 四姑娘山", text: $newName).font(TripInk.serif(14))
+                Button {
+                    let name = newName.trimmingCharacters(in: .whitespaces)
+                    guard !name.isEmpty else { return }
+                    Task {
+                        if let id = await create(name) {
+                            if !places.contains(where: { $0.id == id }) && !extra.contains(where: { $0.id == id }) { extra.append(InspPlace(id: id, name: name, n: 0)) }
+                            place = id; newName = ""
+                        }
+                    }
+                } label: { Text("建").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, 12)
+            Rectangle().fill(Color.black.opacity(0.3)).frame(height: 0.6).padding(.top, 6)
+            Mono("人物 / 景色").padding(.top, 18)
+            HStack(spacing: 8) {
+                chip("人物", on: kind == "person") { kind = "person" }
+                chip("景色", on: kind == "scene") { kind = "scene" }
+            }
+            .padding(.top, 6)
+            Spacer()
+            HStack { Spacer(); TripButton(title: "放进来", solid: true) { done(place, kind) } }
+        }
+        .padding(22)
+        .onAppear { if let p = startPlace { place = p } }
+    }
+
+    private func chip(_ t: String, on: Bool, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            Text(t).font(TripInk.serif(12)).padding(.horizontal, 11).padding(.vertical, 4)
+                .foregroundStyle(on ? TripInk.paper : TripInk.g1)
+                .background(Capsule().fill(on ? TripInk.ink : Color.clear))
+                .overlay(Capsule().stroke(on ? TripInk.ink : Color.black.opacity(0.3), lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
+    }
+}
+
+/// 大图：左右滑、双指放大，单击关
+private struct InspViewer: View {
+    let list: [InspPhoto]
+    let start: InspPhoto
+    var close: () -> Void
+    @State private var cur = 0
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            TabView(selection: $cur) {
+                ForEach(Array(list.enumerated()), id: \.element.id) { i, p in
+                    ZoomContainer(onSingleTap: close) {
+                        CachedImage(url: AlcoveAPI.fullURL(p.url)) { $0.resizable().scaledToFit() } placeholder: { ProgressView().tint(.white) }
+                            .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    }
+                    .ignoresSafeArea()
+                    .tag(i)
+                }
+            }
+            .tabViewStyle(.page(indexDisplayMode: .never))
+            .ignoresSafeArea()
+            VStack {
+                Spacer()
+                Text("\(cur + 1) / \(list.count)").font(.custom("CormorantGaramond-Medium", size: 14)).foregroundStyle(.white.opacity(0.7))
+                    .padding(.bottom, TripSafe.bottom + 8)
+            }
+            .allowsHitTesting(false)
+        }
+        .onAppear { cur = list.firstIndex(of: start) ?? 0 }
+    }
 }
