@@ -238,7 +238,10 @@ enum AlcoveLiveActivityController {
 
     private static func ensurePulseUpdates() {
         guard pulseTask == nil else { return }
-        pulseTask = Task {
+        // 1105 #4804 崩溃记录（App-2026-11-05-201508，0x8BADF00D）：这个循环原来跑在主线程上，每 4 秒读写一次实时活动，
+        // ActivityKit 里面是同步等系统的。App 在后台、系统正好要关它时，主线程卡在这一步 5 秒没关上，被看门狗强杀。
+        // 改成在后台线程跑（detached）：读写实时活动不再占主线程；要动主线程的东西（记日志、重建岛）才跳回去。
+        pulseTask = Task.detached(priority: .utility) {
             var tick = 0
             while !Task.isCancelled {
                 try? await Task.sleep(nanoseconds: 4_000_000_000)
@@ -251,18 +254,18 @@ enum AlcoveLiveActivityController {
                 let activities = Activity<AlcoveLabAttributes>.activities
                 if activities.isEmpty {
                     // 开关仍开着但活动被 iOS 清掉：App 还活着时直接重建。
-                    report("gone_while_awake")
+                    await report("gone_while_awake")
                     _ = await start()
                     continue
                 }
-                watchAll()
+                await watchAll()
                 // 0922 任务#2585 她报的「胶囊有时自己消失、不更新」：
                 // ① 系统给一次实时活动最多 8 小时，到点就自己没了。快到点（7.5h）App 还醒着就先结束再开一块新的。
                 // ② 原来只在心率变了才写；现在每 15 拍（一分钟）不管变没变都写一次，防止某一块漏掉。
                 // ③ 原来 start()/sync() 只写 activities.first，多出来的那块永远是旧字——这里和下面都改成全写。
                 let expired = activities.filter { Date().timeIntervalSince($0.content.state.startedAt) > 7.5 * 3600 }
                 if !expired.isEmpty {
-                    report("expire_recreate", ["n": expired.count])
+                    await report("expire_recreate", ["n": expired.count])
                     for activity in expired { await activity.end(nil, dismissalPolicy: .immediate) }
                     _ = await start()
                     continue
@@ -275,7 +278,7 @@ enum AlcoveLiveActivityController {
                     await activity.update(ActivityContent(state: state, staleDate: nil))
                 }
             }
-            pulseTask = nil
+            await MainActor.run { pulseTask = nil }
         }
     }
 
