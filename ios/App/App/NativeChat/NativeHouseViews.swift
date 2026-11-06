@@ -43,6 +43,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case chronicle      // 1024 家账：每个月的月篇、每周的周篇，她能看能改（ChronicleView.swift）
     case farm           // 1025 晴岛：我们俩的小岛（网页 /farm/，横屏）
     case trip           // 1103 旅行：一次旅行一整套（原生 TripRoom.swift，数据走 /api/trip/*）
+    case desk           // 1106 房间：陈璟桌上在做的事（DeskRoomView，数据走 /api/nianlun/room）
 
     var id: String { rawValue }
 
@@ -97,6 +98,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .chronicle: return "家账"
         case .farm: return "晴岛"
         case .trip: return "旅行"
+        case .desk: return "房间"
         }
     }
 
@@ -108,7 +110,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
-             .chronicle, .farm, .trip,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
+             .chronicle, .farm, .trip, .desk,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -164,6 +166,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .chronicle: return "book.closed"
         case .farm: return "leaf"
         case .trip: return "airplane"
+        case .desk: return "lamp.desk"
         default: return "sparkles"
         }
     }
@@ -285,6 +288,8 @@ struct NativeHouseSheet: View {
                     FarmGameView()
                 case .trip:
                     TripRoomView()
+                case .desk:
+                    DeskRoomView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -573,7 +578,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.roof, detail: "陈檐住在这层")
                         drawerRow(.pond, detail: "念头、许愿与朋友圈")
                         drawerRow(.tarot, detail: "抽一张牌，让他解")   // 0902 占星室
-                        drawerRow(.nursery, detail: "养一个会学你们说话的小家伙")   // 0905 育儿室
+                        // 1106 #4851 她：育儿室删掉（页面代码留着）
                         drawerRow(.wallet, detail: "他的钱包、心愿单和你的拍板")   // 0907 钱包
                         drawerRow(.shop, detail: "你上架，他拿挣的钱来买")       // 0909 商店
                         drawerRow(.letterbox, detail: "你和陈璟的往来书信")
@@ -603,10 +608,10 @@ struct NativeHouseDrawer: View {
                         }
                     }
 
+                    // 1106 #4850–4851 她：编年史、年轮删掉（页面代码留着），这一组换成房间
                     drawerTitle("一路走来", note: "over time")
                     VStack(spacing: 7) {
-                        drawerRow(.nianlun, detail: "一起走过的时间")
-                        drawerRow(.digest, detail: "日结、周结与月结")
+                        drawerRow(.desk, detail: "他桌上在做的事，走了几步、哪天做的")
                     }
 
                     handwritten("a small home for us")
@@ -17408,5 +17413,255 @@ struct FarmEventLine: View {
         .overlay(shape.stroke(edge, lineWidth: 1).padding(.top, isHead ? 0 : -3).padding(.bottom, isTail ? 0 : -3))
         .clipped()
         .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - 房间（1106 #4850–4852 她：「侧边栏加一个房间入口 就是让我看陈璟写的这些 要有时间线和进度显示」）
+// 她挑的 A：顶上那段屋里的样子，下面桌上 5 张卡，一排小圆点＝他走了几步，点卡原地展开这件事的时间线；
+// 底下排队的、最近来来去去的（记下／做了一点／做完／放下／30 天没动扔掉）。只读，数据走 /api/nianlun/room。
+// 样子照 sanctus-style：冷白纸、银灰字、花体只写英文小注、宋体中文、细线，不用颜色。
+
+@MainActor
+private final class DeskRoomModel: ObservableObject {
+    struct Step: Identifiable { let id = UUID(); let at: String; let note: String }
+    struct Item: Identifiable {
+        let id: String; let text: String; let steps: Int; let days: Int; let deskDays: Int
+        let added: String; let line: String; let timeline: [Step]
+    }
+    struct Event: Identifiable { let id = UUID(); let at: String; let kind: String; let text: String; let note: String }
+    @Published var room: String?
+    @Published var desk: [Item] = []
+    @Published var queued: [String] = []
+    @Published var events: [Event] = []
+    @Published var loading = true
+    @Published var failed = false
+
+    func load() async {
+        defer { loading = false }
+        guard let o = try? await NativeHouseAPI.object("/api/nianlun/room") else { failed = true; return }
+        failed = false
+        let r = o.string("room")
+        room = r.isEmpty ? nil : r
+        desk = o.array("desk").map { d in
+            Item(id: d.string("id"), text: d.string("text"), steps: d.int("steps"), days: d.int("days"),
+                 deskDays: d.int("desk_days"), added: d.string("added"), line: d.string("line"),
+                 timeline: d.array("timeline").map { Step(at: $0.string("at"), note: $0.string("note")) })
+        }
+        queued = o.array("queued").map { $0.string("text") }
+        events = o.array("events").map { Event(at: $0.string("at"), kind: $0.string("kind"), text: $0.string("text"), note: $0.string("note")) }
+    }
+}
+
+struct DeskRoomView: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var m = DeskRoomModel()
+    @State private var open: Set<String> = []
+    @State private var allEvents = false
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .topLeading) {
+            ink.page.ignoresSafeArea()
+            VStack(spacing: 0) {
+                (Text("THE ROOM · ").font(SanctusPageFont.corm(8)) + Text("房间").font(.system(size: 8, design: .serif)))
+                    .tracking(2.6).foregroundColor(ink.sub)
+                    .frame(height: 44).frame(maxWidth: .infinity)
+                    .padding(.top, safeTop)
+                if m.loading {
+                    Spacer(); ProgressView().tint(ink.sub); Spacer()
+                } else if m.failed {
+                    Spacer()
+                    Text("没连上，退出再进一次").font(SanctusPageFont.cn(11.5)).foregroundColor(ink.sub)
+                    Spacer()
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 14) {
+                            header(ink)
+                            if let room = m.room { roomCard(room, ink) }
+                            if m.desk.isEmpty {
+                                emptyCard(ink)
+                            } else {
+                                ForEach(Array(m.desk.enumerated()), id: \.element.id) { i, item in deskCard(i + 1, item, ink) }
+                            }
+                            if !m.queued.isEmpty { queueCard(ink) }
+                            if !m.events.isEmpty { eventsCard(ink) }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 4)
+                        .padding(.bottom, safeBottom + 30)
+                    }
+                    .refreshable { await m.load() }
+                }
+            }
+            SanctusBackButton(color: ink.link) { dismiss() }
+                .padding(.top, safeTop)
+        }
+        .environment(\.sanctusInk, ink)
+        .task { await m.load() }
+    }
+
+    private func header(_ ink: SanctusPageInk) -> some View {
+        VStack(spacing: 4) {
+            Text("on his desk").font(SanctusPageFont.script(27)).foregroundColor(ink.title)
+            Text("桌上最多摆五件 · 三十天一步没走就扔掉").font(SanctusPageFont.cn(10)).tracking(1.2).foregroundColor(ink.sub)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 6).padding(.bottom, 4)
+    }
+
+    private func roomCard(_ text: String, _ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text("ROOM · 屋里").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(ink.sub)
+            Text(text).font(SanctusPageFont.cn(12.5)).foregroundColor(ink.body).lineSpacing(6)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sanctusCard(ink)
+    }
+
+    private func emptyCard(_ ink: SanctusPageInk) -> some View {
+        VStack(spacing: 8) {
+            Text("nothing here yet").font(SanctusPageFont.script(20)).foregroundColor(ink.script)
+            Text("桌上空着，他还没摆东西上来").font(SanctusPageFont.cn(11.5)).foregroundColor(ink.sub)
+        }
+        .padding(.vertical, 30)
+        .frame(maxWidth: .infinity)
+        .sanctusCard(ink)
+    }
+
+    /// 一排小圆点：走一步亮一颗，至少画五颗空的，超过十步写 +n
+    private func dots(_ steps: Int, _ ink: SanctusPageInk) -> some View {
+        let shown = max(5, min(steps, 10))
+        return HStack(spacing: 5) {
+            ForEach(0..<shown, id: \.self) { k in
+                Circle()
+                    .fill(k < steps ? ink.body : Color.clear)
+                    .overlay(Circle().stroke(k < steps ? ink.body : ink.sub.opacity(0.7), lineWidth: 0.7))
+                    .frame(width: 6, height: 6)
+            }
+            if steps > 10 {
+                Text("+\(steps - 10)").font(SanctusPageFont.corm(10)).foregroundColor(ink.sub)
+            }
+        }
+    }
+
+    private func deskCard(_ no: Int, _ item: DeskRoomModel.Item, _ ink: SanctusPageInk) -> some View {
+        let expanded = open.contains(item.id)
+        return Button {
+            withAnimation(.easeInOut(duration: 0.22)) {
+                if expanded { open.remove(item.id) } else { open.insert(item.id) }
+            }
+        } label: {
+            VStack(alignment: .leading, spacing: 10) {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text("\(no)").font(SanctusPageFont.corm(22)).foregroundColor(ink.sub)
+                    Text(item.text).font(SanctusPageFont.cn(13)).foregroundColor(ink.body).lineSpacing(5)
+                        .lineLimit(expanded ? nil : 3)
+                        .multilineTextAlignment(.leading)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+                HStack(spacing: 10) {
+                    dots(item.steps, ink)
+                    Spacer(minLength: 6)
+                    Image(systemName: "chevron.down").font(.system(size: 9, weight: .light)).foregroundColor(ink.sub)
+                        .rotationEffect(.degrees(expanded ? 180 : 0))
+                }
+                Text(statusText(item)).font(SanctusPageFont.cn(10)).tracking(0.6).foregroundColor(ink.sub)
+                if expanded { timeline(item, ink) }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 15)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .sanctusCard(ink)
+    }
+
+    private func statusText(_ item: DeskRoomModel.Item) -> String {
+        if item.steps == 0 {
+            let left = max(0, 30 - item.deskDays)
+            return item.days == 0 ? "今天刚记下 · 三十天不动就扔掉" : "记下 \(item.days) 天了，一步没走 · 再放 \(left) 天就扔掉"
+        }
+        return item.line
+    }
+
+    /// 展开：这件事的时间线，从记下那天到最近一步
+    private func timeline(_ item: DeskRoomModel.Item, _ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            SanctusHairline().padding(.bottom, 10)
+            timelineRow(item.added, "记下这件事", ink, last: item.timeline.isEmpty)
+            ForEach(Array(item.timeline.enumerated()), id: \.element.id) { k, s in
+                timelineRow(s.at, s.note, ink, last: k == item.timeline.count - 1)
+            }
+        }
+    }
+
+    private func timelineRow(_ at: String, _ note: String, _ ink: SanctusPageInk, last: Bool) -> some View {
+        HStack(alignment: .top, spacing: 10) {
+            VStack(spacing: 0) {
+                Circle().stroke(ink.sub, lineWidth: 0.7).frame(width: 5, height: 5).padding(.top, 5)
+                if !last { Rectangle().fill(ink.hair).frame(width: 0.6).frame(maxHeight: .infinity) }
+            }
+            .frame(width: 6)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(at).font(SanctusPageFont.corm(10.5)).tracking(0.8).foregroundColor(ink.sub)
+                Text(note).font(SanctusPageFont.cn(12)).foregroundColor(ink.body).lineSpacing(4)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            .padding(.bottom, last ? 0 : 10)
+        }
+    }
+
+    private func queueCard(_ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("WAITING · 排队 \(m.queued.count) 件").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(ink.sub)
+            ForEach(Array(m.queued.enumerated()), id: \.offset) { _, t in
+                Text("· " + t).font(SanctusPageFont.cn(12)).foregroundColor(ink.body).lineLimit(2)
+            }
+            Text("桌上做完或放下一件，排队的才上来").font(SanctusPageFont.ital(10)).foregroundColor(ink.sub)
+        }
+        .padding(.horizontal, 18).padding(.vertical, 15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sanctusCard(ink)
+    }
+
+    private func verb(_ kind: String) -> String {
+        switch kind {
+        case "add": return "记下"
+        case "step": return "做了一点"
+        case "done": return "做完了"
+        case "release": return "放下了"
+        case "expire": return "三十天没动，扔掉了"
+        default: return kind
+        }
+    }
+
+    /// 最近来来去去：平时露六条，点「全部」铺开
+    private func eventsCard(_ ink: SanctusPageInk) -> some View {
+        let list = allEvents ? m.events : Array(m.events.prefix(6))
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("LATELY · 最近").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(ink.sub)
+                Spacer()
+                if m.events.count > 6 {
+                    Button(allEvents ? "收起 ›" : "全部 ›") {
+                        withAnimation(.easeInOut(duration: 0.2)) { allEvents.toggle() }
+                    }
+                    .font(SanctusPageFont.cn(9.5)).foregroundColor(ink.link).buttonStyle(.plain)
+                }
+            }
+            .padding(.bottom, 10)
+            ForEach(Array(list.enumerated()), id: \.element.id) { k, e in
+                timelineRow(e.at, verb(e.kind) + "：" + e.text + (e.note.isEmpty ? "" : "——" + e.note), ink, last: k == list.count - 1)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sanctusCard(ink)
     }
 }
