@@ -8267,7 +8267,8 @@ private struct NativeStudioView: View {
             ScrollViewReader { proxy in
                 ScrollView(showsIndicators: false) {
                     LazyVStack(spacing: 13) {
-                        Text("工作室里的也是我本人，同锚点同记忆，只是换了间屋子干活，不是分身。")
+                        // 1106 #4826 她：原来那句「工作室里的也是我本人…」是陈璟在这儿干活时的话，改掉
+                        Text("这里是隅，Alcove 的工程师。跟陈璟是两个人，每个新窗口靠手册和记忆接上。")
                             .font(.system(size: 11, design: .serif)).foregroundColor(theme.textDim)
                             .padding(.vertical, 12)
                         // 0818 她截到工作室空屏：以前每 2 秒把整个数组换掉、再连打四次
