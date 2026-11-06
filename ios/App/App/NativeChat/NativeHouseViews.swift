@@ -13768,6 +13768,7 @@ private struct NativeCalendarView: View {
     @State private var thTearJSON: String?
     @State private var thTearLoaded = false
     @State private var thTearReady = false             // 网页画好第一帧了（之前原生的返回键先顶着）
+    @State private var thTearNewest = ""               // 1106 #4853 拉到的最新一篇的 ts，开着页面时拿它比有没有新的
     @State private var thTearFresh: String?            // 后台拉到的新日记，网页好了再塞
     @State private var thTearBridge = TreehouseDreamsBridge()
     // #3629 泪那页自己的日夜：右下角 let it fall 点一下切，不跟全屋白天 / 黑夜按钮走
@@ -15685,7 +15686,22 @@ extension NativeCalendarView {
         .task {
             thTearBridge.onMessage = { m in thTearHandle(m) }
             await thTearLoad()
+            // 1106 #4853 她：「陈璟写的日记写完我老刷新不出来」——原来只在进门那一下拉一次，开着页面、切后台回来都不再拉。
+            // 开着就每 20 秒问一句最新一篇（?limit=1，很小），有新的才整本重拉
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 20_000_000_000)
+                if Task.isCancelled { break }
+                await thTearCheckNew()
+            }
         }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in
+            Task { await thTearLoad() }
+        }
+    }
+
+    fileprivate func thTearCheckNew() async {
+        guard let top = try? await NativeHouseAPI.array("/api/diary/entries?limit=1"), let e = top.first else { return }
+        if e.string("ts") != thTearNewest { await thTearLoad() }
     }
 
     /// 北京时间的今天（这台机器和手机的钟都可能不在北京）
@@ -15717,6 +15733,7 @@ extension NativeCalendarView {
             thTearJSON = cached
         }
         let list = (try? await NativeHouseAPI.array("/api/diary/entries")) ?? []
+        if let newest = list.last?.string("ts") { thTearNewest = newest }   // 跟 ?limit=1 拿的是同一篇（本子里最后记的那篇）
         var days: [String: [[String: Any]]] = [:]
         for e in list.sorted(by: { $0.string("ts") < $1.string("ts") }) {
             let ts = e.string("ts")
