@@ -1300,3 +1300,400 @@ private struct FavoriteThreadSheet: View {
         }
     }
 }
+
+// MARK: - 工作室搜索（1106 #4825 她：「顶栏右上角也做一个跟主聊天差不多的搜索 我也可以搜」）
+// 样子照上面主聊天那页（同一套 Sanctus 零件：磨砂卡、月历一周／整月、结果按人按五分钟并卡），
+// 只是没有 kept 那页和多选收藏。点一条交给工作室页去跳：在屏上就滚过去，不在就拉它前后那一截。
+// 接口：/api/work/search、/api/work/calendar、/api/work/around（workroom.py）。
+
+/// 工作室里我的名字：顶栏和搜索结果都从这儿拿，改名只改这一处
+enum StudioIdentity {
+    static let name = "隅"
+}
+
+struct StudioSearchHit: Identifiable {
+    let id: Int
+    let ts: String
+    let role: String
+    let text: String
+    let attachmentType: String
+    let filename: String
+    let date: Date
+
+    private static let isoFrac: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime, .withFractionalSeconds]; return f
+    }()
+    private static let isoPlain: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter(); f.formatOptions = [.withInternetDateTime]; return f
+    }()
+
+    init(_ json: [String: Any]) {
+        id = json.int("id")
+        ts = json.string("ts")
+        role = json.string("role")
+        text = json.string("text")
+        attachmentType = json.string("attachment_type")
+        filename = json.string("attachment_filename")
+        date = Self.isoFrac.date(from: ts) ?? Self.isoPlain.date(from: ts) ?? .distantPast
+    }
+
+    var shown: String {
+        if !text.isEmpty { return text }
+        if attachmentType == "image" { return filename.isEmpty ? "图片" : filename }
+        return filename
+    }
+
+    var badge: String? {
+        if attachmentType == "image" { return "IMAGE" }
+        if attachmentType == "file" { return "FILE" }
+        if text.contains("http://") || text.contains("https://") { return "LINK" }
+        return nil
+    }
+}
+
+struct StudioSearchView: View {
+    var onJump: (Int) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @AppStorage("userName") private var userName = "Luna"
+
+    @State private var query = ""
+    @State private var results: [StudioSearchHit] = []
+    @State private var filterType = "all"
+    @State private var searching = false
+    @State private var searched = false
+    @State private var selectedDay = ""
+    @State private var month = Date()
+    @State private var focus = Date()
+    @State private var showMonth = false
+    @State private var dayCounts: [String: Int] = [:]
+    @State private var loadedMonths: Set<String> = []
+
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+    private let types: [(String, String)] = [
+        ("all", "全部"), ("text", "文字"), ("image", "图片"), ("file", "文件"), ("link", "链接")
+    ]
+    private let calendar = Calendar(identifier: .gregorian)
+    private let weekdays = ["日", "一", "二", "三", "四", "五", "六"]
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .bottom) {
+            SFBackdrop(ink: ink)
+            VStack(spacing: 0) {
+                header(ink).padding(.top, SF.safeTop + 14)
+                Text("SEARCH · 搜索").font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
+                    .padding(.top, 8)
+                ZStack(alignment: .topTrailing) {
+                    SFLocket(ink: ink).offset(x: 6, y: 2)
+                    VStack(alignment: .leading, spacing: 4) {
+                        searchField(ink)
+                        SFFilterRow(ink: ink, options: types, selection: $filterType, spread: true) { _ in
+                            Task { await search() }
+                        }
+                        .padding(.horizontal, 9)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(.trailing, 130)
+                    .padding(.top, 34)
+                }
+                .padding(.horizontal, 18)
+                list(ink)
+            }
+        }
+        .task { await loadMonth(Date()) }
+    }
+
+    private func header(_ ink: SanctusCardInk) -> some View {
+        ZStack {
+            Text("search").font(SF.script(31))
+                .foregroundColor(ink.dark ? ink.script : Color(red: 0.31, green: 0.325, blue: 0.37))
+                .offset(y: 2)
+            HStack {
+                Button { dismiss() } label: {
+                    Image(systemName: "chevron.left").font(.system(size: 13, weight: .light)).foregroundColor(ink.script)
+                        .frame(width: 29, height: 29)
+                        .background((ink.dark ? Color.white.opacity(0.08) : Color.white.opacity(0.6)), in: Circle())
+                        .overlay(Circle().stroke(ink.edge, lineWidth: 0.7))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+            }
+            .padding(.horizontal, 14)
+        }
+        .frame(height: 44)
+    }
+
+    private func searchField(_ ink: SanctusCardInk) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: "magnifyingglass").font(.system(size: 12, weight: .light)).foregroundColor(ink.sub)
+            TextField("", text: $query, prompt: Text("搜工作室记录").foregroundColor(ink.sub))
+                .font(SF.song(11.5)).tracking(1.2)
+                .foregroundColor(ink.body)
+                .submitLabel(.search)
+                .onSubmit { Task { await search() } }
+            if searching {
+                ProgressView().scaleEffect(0.6).tint(ink.sub)
+            } else if !query.isEmpty {
+                Button { query = ""; results = []; searched = false } label: {
+                    Image(systemName: "xmark.circle.fill").font(.system(size: 12)).foregroundColor(ink.sub)
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 14)
+        .frame(height: 34)
+        .background((ink.dark ? Color.white.opacity(0.06) : Color.white.opacity(0.62)), in: Capsule())
+        .overlay(Capsule().stroke(ink.edge, lineWidth: 0.7))
+        .overlay(Capsule().stroke(ink.frame, lineWidth: 0.5).padding(-0.6))
+    }
+
+    private func list(_ ink: SanctusCardInk) -> some View {
+        ScrollView(showsIndicators: false) {
+            LazyVStack(spacing: 12) {
+                if !searched || !selectedDay.isEmpty { calendarCard(ink) }
+                if !selectedDay.isEmpty {
+                    HStack(alignment: .firstTextBaseline) {
+                        (Text(dayDots(selectedDay)).font(SF.corm(13)).tracking(1.2)
+                         + Text(" · " + weekdayName(selectedDay)).font(SF.song(11)).tracking(1.6))
+                            .foregroundColor(ink.body)
+                        Spacer()
+                        Text("\(results.count) messages").font(SF.ital(10.4)).foregroundColor(ink.sub)
+                    }
+                    .padding(.horizontal, 4).padding(.top, 6)
+                }
+                ForEach(groups) { g in group(g.items, ink: ink) }
+                if searched && results.isEmpty && !searching {
+                    Text(query.isEmpty ? "这一类还没有" : "没有找到")
+                        .font(SF.song(11)).tracking(1.2).foregroundColor(ink.sub)
+                        .padding(.top, 40)
+                }
+                Color.clear.frame(height: SF.safeBottom + 70)
+            }
+            .padding(.horizontal, 18)
+            .padding(.top, 10)
+        }
+    }
+
+    // 同一个人、隔不到五分钟、同一天的连着放成一张卡
+    private struct HitGroup: Identifiable {
+        let id: Int
+        let items: [StudioSearchHit]
+    }
+
+    private var groups: [HitGroup] {
+        var out: [[StudioSearchHit]] = []
+        for m in results {
+            if let last = out.last?.last, last.role == m.role,
+               abs(m.date.timeIntervalSince(last.date)) < 300,
+               calendar.isDate(m.date, inSameDayAs: last.date) {
+                out[out.count - 1].append(m)
+            } else {
+                out.append([m])
+            }
+        }
+        return out.map { HitGroup(id: $0[0].id, items: $0) }
+    }
+
+    private func group(_ items: [StudioSearchHit], ink: SanctusCardInk) -> some View {
+        let first = items[0]
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(first.role == "user" ? userName : StudioIdentity.name).font(SF.ital(12.4)).foregroundColor(ink.script)
+                Spacer()
+                Text(selectedDay.isEmpty ? sfStamp(first.ts) : String(first.ts.dropFirst(11).prefix(5)))
+                    .font(SF.corm(8.3)).tracking(1.6).foregroundColor(ink.sub)
+            }
+            VStack(alignment: .leading, spacing: 7) {
+                ForEach(items) { m in line(m, ink: ink) }
+            }
+            .padding(.top, 9)
+        }
+        .padding(.horizontal, 18).padding(.top, 15).padding(.bottom, 15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .modifier(SFGlass(ink: ink))
+    }
+
+    private func line(_ m: StudioSearchHit, ink: SanctusCardInk) -> some View {
+        Button {
+            onJump(m.id)
+            dismiss()
+        } label: {
+            VStack(alignment: .leading, spacing: 3) {
+                if let kind = m.badge {
+                    Text(kind).font(SF.corm(6.6)).tracking(1.6).foregroundColor(ink.link)
+                        .padding(.horizontal, 5).padding(.vertical, 0.5)
+                        .overlay(Capsule().stroke(ink.pill, lineWidth: 0.6))
+                }
+                if !m.shown.isEmpty {
+                    Text(m.shown).font(SF.song(12)).tracking(0.6).foregroundColor(ink.body)
+                        .lineSpacing(5).lineLimit(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    // —— 月历：平时一周，「整月 ›」铺开（跟主聊天那页同一个样子）——
+    private func calendarCard(_ ink: SanctusCardInk) -> some View {
+        VStack(spacing: 0) {
+            HStack {
+                if showMonth {
+                    Button { changeMonth(-1) } label: {
+                        Image(systemName: "chevron.left").font(.system(size: 10, weight: .light)).foregroundColor(ink.link)
+                            .frame(width: 26, height: 26).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+                Text(monthTitle(showMonth ? month : focus)).font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
+                if showMonth {
+                    Button { changeMonth(1) } label: {
+                        Image(systemName: "chevron.right").font(.system(size: 10, weight: .light)).foregroundColor(ink.link)
+                            .frame(width: 26, height: 26).contentShape(Rectangle())
+                    }.buttonStyle(.plain)
+                }
+                Spacer()
+                Button {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        showMonth.toggle()
+                        if showMonth { month = focus }
+                    }
+                } label: {
+                    Text(showMonth ? "收起 ›" : "整月 ›").font(SF.song(8.7)).tracking(1.6).foregroundColor(ink.link)
+                        .padding(.vertical, 6).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .frame(height: 26)
+            HStack(spacing: 0) {
+                ForEach(weekdays, id: \.self) { w in
+                    Text(w).font(SF.song(7.9)).tracking(0.8).foregroundColor(ink.sub).frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.top, 8)
+            let cells = showMonth ? monthCells : weekCells
+            LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 0), count: 7), spacing: 4) {
+                ForEach(Array(cells.enumerated()), id: \.offset) { _, date in
+                    if let date { dayCell(date, ink: ink) } else { Color.clear.frame(height: 46) }
+                }
+            }
+            .padding(.top, 2)
+        }
+        .padding(.horizontal, 16).padding(.top, 12).padding(.bottom, 10)
+        .modifier(SFGlass(ink: ink))
+    }
+
+    private func dayCell(_ date: Date, ink: SanctusCardInk) -> some View {
+        let key = dayKey(date)
+        let count = dayCounts[key]
+        let on = key == selectedDay
+        return Button {
+            focus = date
+            Task { await showDay(key) }
+        } label: {
+            VStack(spacing: 0) {
+                Text("\(calendar.component(.day, from: date))")
+                    .font(SF.corm(19))
+                    .foregroundColor(count == nil ? ink.sub.opacity(0.6) : ink.body)
+                    .frame(width: 30, height: 30)
+                    .overlay(Circle().stroke(on ? ink.script.opacity(0.7) : .clear, lineWidth: 0.7))
+                Text(count.map { "\($0)" } ?? " ").font(SF.ital(7.9)).foregroundColor(ink.sub)
+            }
+            .frame(maxWidth: .infinity, minHeight: 46)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(count == nil)
+    }
+
+    private var weekCells: [Date?] {
+        let start = calendar.date(byAdding: .day, value: -(calendar.component(.weekday, from: focus) - 1), to: focus) ?? focus
+        return (0..<7).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }.map(Optional.some)
+    }
+
+    private var monthCells: [Date?] {
+        guard let interval = calendar.dateInterval(of: .month, for: month),
+              let days = calendar.range(of: .day, in: .month, for: month) else { return [] }
+        let offset = calendar.component(.weekday, from: interval.start) - 1
+        return Array(repeating: nil, count: offset)
+            + days.compactMap { calendar.date(byAdding: .day, value: $0 - 1, to: interval.start) }
+                  .map(Optional.some)
+    }
+
+    private func monthTitle(_ d: Date) -> String {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_US"); f.dateFormat = "MMMM · yyyy"
+        return f.string(from: d).uppercased()
+    }
+
+    private func dayKey(_ date: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        return f.string(from: date)
+    }
+
+    private func monthKey(_ date: Date) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM"; f.timeZone = .current
+        return f.string(from: date)
+    }
+
+    private func dayDots(_ key: String) -> String {
+        guard key.count >= 10 else { return key }
+        return "\(key.dropFirst(5).prefix(2)).\(key.dropFirst(8).prefix(2))"
+    }
+
+    private func weekdayName(_ key: String) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = .current
+        guard let d = f.date(from: key) else { return "" }
+        return "周" + weekdays[calendar.component(.weekday, from: d) - 1]
+    }
+
+    private func changeMonth(_ delta: Int) {
+        if let d = calendar.date(byAdding: .month, value: delta, to: month) {
+            month = d
+            Task { await loadMonth(d) }
+        }
+    }
+
+    @MainActor private func loadMonth(_ d: Date) async {
+        var keys = [monthKey(d)]
+        for c in weekCells.compactMap({ $0 }) where !keys.contains(monthKey(c)) { keys.append(monthKey(c)) }
+        for k in keys where !loadedMonths.contains(k) {
+            let obj = (try? await NativeHouseAPI.object("/api/work/calendar?month=\(k)")) ?? [:]
+            for row in obj.array("days") { dayCounts[row.string("day")] = row.int("count") }
+            loadedMonths.insert(k)
+        }
+    }
+
+    @MainActor private func fetch(q: String = "", day: String = "", type: String = "", limit: Int) async -> [StudioSearchHit] {
+        var c = URLComponents()
+        c.queryItems = [URLQueryItem(name: "q", value: q), URLQueryItem(name: "day", value: day),
+                        URLQueryItem(name: "type", value: type == "all" ? "" : type),
+                        URLQueryItem(name: "limit", value: String(limit))]
+        let obj = (try? await NativeHouseAPI.object("/api/work/search?" + (c.percentEncodedQuery ?? ""))) ?? [:]
+        return obj.array("records").map(StudioSearchHit.init)
+    }
+
+    @MainActor private func search() async {
+        let q = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !q.isEmpty || filterType != "all" else {
+            results = []; searched = false; selectedDay = ""; return
+        }
+        searching = true
+        defer { searching = false }
+        results = await fetch(q: q, type: filterType, limit: 800)
+        selectedDay = ""
+        searched = true
+    }
+
+    @MainActor private func showDay(_ day: String) async {
+        searching = true
+        defer { searching = false }
+        filterType = "all"
+        query = ""
+        results = await fetch(day: day, limit: 2000)
+        selectedDay = day
+        searched = true
+        await loadMonth(focus)
+    }
+}

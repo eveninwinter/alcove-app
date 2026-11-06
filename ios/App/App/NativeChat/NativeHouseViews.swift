@@ -8143,6 +8143,13 @@ private struct NativeStudioView: View {
     @State private var photoViewer: StudioPhotoTarget?
     @State private var showPhotoPicker = false
     @State private var showFilePicker = false
+    // 1106 #4825 她：顶栏右上角加搜索（跟主聊天那页差不多）。点一条结果：在屏上就滚过去闪一下；
+    // 不在屏上就拉它前后那一截进来（historyMode：这时不再往后追新消息，底下出「回到最新」）
+    @State private var showSearch = false
+    @State private var historyMode = false
+    @State private var jumping = false
+    @State private var scrollRequest: Int?
+    @State private var flashID: Int?
     @Environment(\.dismiss) private var dismiss
     @AppStorage("alcoveTheme") private var themeName = "haven"
     private var theme: AlcoveTheme { .panelNamed(themeName) }
@@ -8291,7 +8298,14 @@ private struct NativeStudioView: View {
                                 } else {
                                     messageBubble(item.primary, head: head, showTime: showTime)
                                 }
-                            }.id("studio-message-\(item.id)")
+                            }
+                            .background {
+                                RoundedRectangle(cornerRadius: 16)
+                                    .fill(theme.fyAccent.opacity(flashID == item.id ? 0.16 : 0))
+                                    .padding(-4)
+                                    .animation(.easeInOut(duration: 0.35), value: flashID)
+                            }
+                            .id("studio-message-\(item.id)")
                         }
                         if let current = status["current_task"] as? [String: Any] {
                             HStack(spacing: 7) { ProgressView().scaleEffect(0.7); Text("正在处理 · \(current.string("title"))") }
@@ -8311,7 +8325,24 @@ private struct NativeStudioView: View {
                     NotificationCenter.default.post(name: .studioDropKeyboard, object: nil)
                 })
                 .onChange(of: messages.last?.int("id") ?? 0) { _ in
+                    guard !historyMode && !jumping else { return }
                     withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo("studio-tail", anchor: .bottom) }
+                }
+                .onChange(of: scrollRequest) { target in
+                    guard let target else { return }
+                    withAnimation(.easeInOut(duration: 0.25)) { proxy.scrollTo("studio-message-\(target)", anchor: .center) }
+                }
+                .overlay(alignment: .bottom) {
+                    if historyMode {
+                        Button { Task { await backToLatest() } } label: {
+                            Label("回到最新", systemImage: "arrow.down")
+                                .font(.system(size: 12, design: .serif))
+                                .padding(.horizontal, 14).padding(.vertical, 8)
+                                .background(.ultraThinMaterial, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.bottom, 10)
+                    }
                 }
             }
             inputBar
@@ -8323,6 +8354,9 @@ private struct NativeStudioView: View {
         .foregroundColor(theme.text)
         .overlay { if loading { ProgressView().tint(theme.fyAccent) } }
         .fullScreenCover(isPresented: $showTerminal) { TerminalView(initialSession: "work", availableSessions: ["work"]) }
+        .fullScreenCover(isPresented: $showSearch) {
+            StudioSearchView(onJump: { id in Task { await jump(to: id) } })
+        }
         .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
         .sheet(isPresented: $showPhotoPicker) {
             PhotoLibraryPicker(maxCount: 9) { images in
@@ -8361,7 +8395,7 @@ private struct NativeStudioView: View {
             }
                 .buttonStyle(.plain).accessibilityLabel("返回总控台")
             VStack(alignment: .leading, spacing: 2) {
-                Text("工作室").font(.system(size: 20, weight: .semibold, design: .serif))
+                Text(StudioIdentity.name).font(.system(size: 20, weight: .semibold, design: .serif))
                 HStack(spacing: 5) {
                     Circle().fill(stateColor).frame(width: 6, height: 6)
                     Text(stateText)
@@ -8369,6 +8403,9 @@ private struct NativeStudioView: View {
                 }.font(.system(size: 9.5)).foregroundColor(theme.textDim)
             }
             Spacer()
+            Button { showSearch = true } label: {
+                Image(systemName: "magnifyingglass").frame(width: 38, height: 38).contentShape(Rectangle())
+            }.buttonStyle(.plain).accessibilityLabel("搜索工作室记录")
             Button { showActions = true } label: {
                 Image(systemName: "ellipsis.circle").frame(width: 38, height: 38).contentShape(Rectangle())
             }.buttonStyle(.plain).accessibilityLabel("工作室操作")
@@ -8632,7 +8669,9 @@ private struct NativeStudioView: View {
     @MainActor private func refresh() async {
         let lastID = messages.last?.int("id") ?? 0
         let messagePath = lastID > 0 ? "/api/work/messages?since=\(lastID)" : "/api/work/messages"
-        async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m = try? NativeHouseAPI.object(messagePath)
+        // 翻老记录的时候不往后追（不然会把那一截到现在的几千条全拉下来），点「回到最新」再接上
+        let wantMessages = !historyMode
+        async let s = try? NativeHouseAPI.object("/api/work/status"); async let t = try? NativeHouseAPI.object("/api/work/tasks"); async let m: [String: Any]? = wantMessages ? (try? NativeHouseAPI.object(messagePath)) : nil
         let (newStatus, newTasks, newMessages) = await (s, t, m)
         // 没变就不赋值——每 2 秒整包替换会白白触发整页重算（0829 闪屏成因之一）
         if let newStatus, !(newStatus as NSDictionary).isEqual(to: status) { status = newStatus }
@@ -8640,7 +8679,7 @@ private struct NativeStudioView: View {
             let list = Array(newTasks.array("tasks").reversed())
             if !(list as NSArray).isEqual(to: tasks) { tasks = list }
         }
-        if let newMessages {
+        if let newMessages, !historyMode {
             let incoming = newMessages.array("messages")
             if lastID == 0 {
                 messages = incoming
@@ -8708,6 +8747,33 @@ private struct NativeStudioView: View {
         }
         await refresh()
     }
+    /// 搜索结果点进来：在屏上就直接滚；不在就拉它前后那一截（拉到的那截已经接上最新就不算翻老记录）
+    @MainActor private func jump(to id: Int) async {
+        jumping = true
+        defer { jumping = false }
+        if !messages.contains(where: { $0.int("id") == id }) {
+            guard let obj = try? await NativeHouseAPI.object("/api/work/around?id=\(id)") else { return }
+            let rows = obj.array("messages")
+            guard !rows.isEmpty else { return }
+            historyMode = !(obj["reaches_latest"] as? Bool ?? false)
+            messages = rows
+        }
+        // 等搜索页收起、列表排好再滚
+        try? await Task.sleep(nanoseconds: 400_000_000)
+        let target = displayItems.first { $0.group.contains { $0.int("id") == id } }?.id ?? id
+        scrollRequest = nil
+        scrollRequest = target
+        flashID = target
+        try? await Task.sleep(nanoseconds: 1_600_000_000)
+        if flashID == target { flashID = nil }
+    }
+
+    @MainActor private func backToLatest() async {
+        historyMode = false
+        messages = []
+        await refresh()
+    }
+
     @MainActor private func action(_ task: [String: Any], _ action: String) async { guard (try? await NativeHouseAPI.object("/api/work/task/\(task.int("id"))/\(action)", method: "POST", body: [:])) != nil else { return }; await refresh() }
     @MainActor private func deliver(_ task: [String: Any]) async {
         guard let response = try? await NativeHouseAPI.objectIncludingHTTPError("/api/work/deliver", method: "POST", body: ["task_id": task.int("id")]) else {
