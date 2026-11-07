@@ -1913,13 +1913,14 @@ private struct RTConsoleView: View {
                         .frame(maxWidth: .infinity, alignment: .leading)
                 }
                 if !l.detail.isEmpty {
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        Text(l.detail)
-                            .font(.system(size: 10.5, design: .monospaced))
-                            .foregroundColor(l.status == "failed" ? .red : theme.textDim.opacity(0.82))
-                            .textSelection(.enabled)
-                    }
-                    .padding(8)
+                    // 1107 她：输出在框里从上往下折行，别往右滑
+                    Text(l.detail)
+                        .font(.system(size: 10.5, design: .monospaced))
+                        .foregroundColor(l.status == "failed" ? .red : theme.textDim.opacity(0.82))
+                        .textSelection(.enabled)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .padding(8)
                     .background(RoundedRectangle(cornerRadius: 7).fill(Color.black.opacity(0.16)))
                 }
             }
