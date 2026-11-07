@@ -197,7 +197,7 @@ final class HealthPageModel: ObservableObject {
 
     // MARK: 小米（后端 /api/health/mi）
 
-    private func loadMi() {
+    func loadMi() {
         var req = URLRequest(url: AlcoveAPI.fullURL("/api/health/mi"))
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.setValue(Bundle.main.object(forInfoDictionaryKey: "AlcoveLocToken") as? String ?? "", forHTTPHeaderField: "X-Auth-Token")
@@ -419,6 +419,7 @@ struct HealthRoomView: View {
     @StateObject private var m = HealthPageModel()
     @State private var open: HPCard?
     @State private var pickedWorkout: UUID?
+    private let tick = Timer.publish(every: 60, on: .main, in: .common).autoconnect()
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -462,6 +463,10 @@ struct HealthRoomView: View {
             .accessibilityLabel("返回")
         }
         .onAppear { m.load() }
+        // 1107 她「根本不更新啊」：原来只在进门那一下读一次。开着的时候每分钟再问一次后端（服务器 5 分钟从小米拉一趟），
+        // 从后台切回来马上全读一遍
+        .onReceive(tick) { _ in m.loadMi() }
+        .onReceive(NotificationCenter.default.publisher(for: UIApplication.willEnterForegroundNotification)) { _ in m.load() }
     }
 
     // MARK: 页头
