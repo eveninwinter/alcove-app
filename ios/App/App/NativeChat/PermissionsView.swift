@@ -55,7 +55,7 @@ struct PermissionsView: View {
                     // 1019：有付费账号了，健康能读了（HealthReporter）。苹果不让 App 知道读权限给没给，
                     // 所以问过以后只能写「已设置」，点「设置」去系统里看
                     card(icon: "heart.fill", title: "健康",
-                         desc: "步数、睡眠、经期；戴上手表以后还有心率、血氧",
+                         desc: "经期、体重、喝水、正念（心率、睡眠这些 1107 起走小米手表，不用这个）",
                          status: healthStatus, action: healthStatus == "不可用" ? nil : requestHealth)
                     card(icon: "moon.fill", title: "专注模式",
                          desc: "需要苹果特殊签名，侧载暂不支持",
