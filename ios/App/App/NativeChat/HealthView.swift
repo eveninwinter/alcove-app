@@ -13,6 +13,10 @@ import CoreMotion
 // 1024 #4262–4264 她 AirPods Pro 3 到了：加第六张「运动」（moved，翅膀）。效果图 mock-health/d.html 她「可以」：
 // 今天每一次（时长 · 千卡 · 心率 平均/最高），点哪次在那行下面展开这次的心率线（虚线平均、蓝点最高）；这一周每天几分钟。
 // 原来身体卡里那段「今天的运动」挪过来了，身体卡只留体重、喝水、正念。
+// 1107 #4871 她戴上小米手表：「以后不走苹果健康读了全部数据都走小米，缺的也按照小米有的加」。
+// 心率、静息、血氧、压力、睡眠分段、活动、运动改从后端 /api/health/mi 拿（mi_sync.py 每 15 分钟从小米云拉）；
+// 苹果健康只剩小米没有的：经期、体重、喝水、正念。步数、距离、楼层、每小时步数用手机计步（她 1019 定的）。
+// 小米不给的走路心率、心率变异性、呼吸那几行拿掉了；心率卡展开加了血氧线和压力。
 
 enum HPCard: String, CaseIterable, Identifiable {
     case today, sleep, heart, cycle, body, workout
@@ -106,6 +110,14 @@ struct HPCycle {
     let flowDays: Set<Date>
 }
 
+/// 每小时步数：二十几个计步查询各自在后台线程回来，攒在这儿
+final class HPHourBox {
+    private var v = Array(repeating: 0.0, count: 24)
+    private let lock = NSLock()
+    func set(_ i: Int, _ n: Double) { lock.lock(); if i >= 0 && i < 24 { v[i] = n }; lock.unlock() }
+    var values: [Double] { lock.lock(); defer { lock.unlock() }; return v }
+}
+
 final class HealthPageModel: ObservableObject {
     @Published var steps: Int?
     @Published var distanceKm: Double?
@@ -122,10 +134,16 @@ final class HealthPageModel: ObservableObject {
     @Published var hrAvg: Double?
     @Published var hrCurve: [CGPoint] = []   // x：今天 0 点到现在的位置（0…1），y：那半小时的平均心率
     @Published var resting: Double?
-    @Published var walkingHR: Double?
-    @Published var hrv: Double?
     @Published var spo2: Double?
-    @Published var resp: Double?
+    @Published var spo2At: Date?
+    @Published var spo2Min: Double?
+    @Published var spo2Max: Double?
+    @Published var spo2Curve: [CGPoint] = []   // 同 hrCurve，十分钟一个点
+    @Published var stressAvg: Double?
+    @Published var stressMin: Double?
+    @Published var stressMax: Double?
+    @Published var stressBands: [(name: String, minutes: Double)] = []   // 放松 / 轻度 / 中度 / 重度 各几分钟
+    @Published var miAt: Date?   // 后端那次从小米云拉的时间
     @Published var cycle: HPCycle?
     @Published var workouts: [HPWorkout] = []
     @Published var workoutWeek: [HPMinuteBar] = []
@@ -142,6 +160,7 @@ final class HealthPageModel: ObservableObject {
     func load() {
         loadedAt = Date()
         loadPedometer()
+        loadMi()
         guard available else { return }
         // 问过的类型系统不再弹，直接回来；没问过的（直接从侧边栏进来）这里弹一次
         store.requestAuthorization(toShare: nil, read: HealthReporter.readTypes) { [weak self] _, _ in
@@ -159,6 +178,148 @@ final class HealthPageModel: ObservableObject {
                 if let m = d.distance?.doubleValue { self.distanceKm = m / 1000 }
                 if let f = d.floorsAscended?.intValue { self.floors = f }
             }
+        }
+        // 每小时的步数也用手机计步（原来从苹果健康拿，1107 起不走苹果健康）
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: now)
+        let box = HPHourBox()
+        let group = DispatchGroup()
+        for i in 0...cal.component(.hour, from: now) {
+            guard let a = cal.date(byAdding: .hour, value: i, to: dayStart) else { continue }
+            group.enter()
+            pedometer.queryPedometerData(from: a, to: min(now, a.addingTimeInterval(3600))) { d, _ in
+                if let n = d?.numberOfSteps.doubleValue { box.set(i, n) }
+                group.leave()
+            }
+        }
+        group.notify(queue: .main) { [weak self] in self?.hourly = box.values }
+    }
+
+    // MARK: 小米（后端 /api/health/mi）
+
+    private func loadMi() {
+        var req = URLRequest(url: AlcoveAPI.fullURL("/api/health/mi"))
+        req.cachePolicy = .reloadIgnoringLocalCacheData
+        req.setValue(Bundle.main.object(forInfoDictionaryKey: "AlcoveLocToken") as? String ?? "", forHTTPHeaderField: "X-Auth-Token")
+        URLSession.shared.dataTask(with: req) { [weak self] data, _, _ in
+            guard let data = data,
+                  let d = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
+                  d["ok"] as? Bool == true else { return }
+            DispatchQueue.main.async { self?.applyMi(d) }
+        }.resume()
+    }
+
+    private static func num(_ x: Any?) -> Double? { (x as? NSNumber)?.doubleValue }
+
+    private func applyMi(_ d: [String: Any]) {
+        let num = HealthPageModel.num
+        func dict(_ k: String) -> [String: Any] { d[k] as? [String: Any] ?? [:] }
+        func pairs(_ k: String) -> [(Date, Double)] {
+            (d[k] as? [[Any]] ?? []).compactMap { p -> (Date, Double)? in
+                guard p.count == 2, let t = num(p[0]), let v = num(p[1]) else { return nil }
+                return (Date(timeIntervalSince1970: t), v)
+            }
+        }
+        let now = Date()
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: now)
+        let span = max(1, now.timeIntervalSince(dayStart))
+        func curve(_ pts: [(Date, Double)]) -> [CGPoint] {
+            pts.filter { $0.0 >= dayStart }.map { CGPoint(x: min(1, $0.0.timeIntervalSince(dayStart) / span), y: $0.1) }
+        }
+        if let t = d["synced_at"] as? String { miAt = ISO8601DateFormatter().date(from: t) }
+        let hr = pairs("hr_series")
+        // 这份要是昨天的（过了零点还没拉到今天的），今天的数一律空着，别把昨天的当今天
+        let f = DateFormatter()
+        f.dateFormat = "yyyy-MM-dd"
+        if (d["date"] as? String) == f.string(from: now) {
+            hrLatest = hr.last?.1
+            hrLatestAt = hr.last?.0
+            hrCurve = curve(hr)
+            let h = dict("hr_daily")
+            hrMin = num(h["min_bpm"]); hrMax = num(h["max_bpm"]); hrAvg = num(h["avg_bpm"])
+            resting = num(h["resting_bpm"])
+            let sp = pairs("spo2_series")
+            spo2 = sp.last?.1
+            spo2At = sp.last?.0
+            spo2Curve = curve(sp)
+            let s = dict("spo2_daily")
+            spo2Min = num(s["min_spo2_pct"]); spo2Max = num(s["max_spo2_pct"])
+            let st = dict("stress_daily")
+            stressAvg = num(st["avg_stress_level"]); stressMin = num(st["min_stress_level"]); stressMax = num(st["max_stress_level"])
+            stressBands = [("放松", "relaxed_min"), ("轻度", "mild_min"), ("中度", "moderate_min"), ("重度", "severe_min")]
+                .map { (name: $0.0, minutes: num(st[$0.1]) ?? 0) }
+            let a = dict("activity")
+            activeKcal = num(a["active_kcal"])
+            exerciseMin = num(a["activity_min"])
+        }
+        applySleep(HealthPageModel.miNights(d["sleep"] as? [[String: Any]] ?? []))
+        applyWorkouts(d["workouts"] as? [[String: Any]] ?? [], hr)
+    }
+
+    /// 小米的睡眠一天一条，里面一段段 session（一觉，或者午睡），每段带 deep / light / rem / awake 分段。
+    /// 换成页面原来那套 HPNight：kind 4 深睡、3 浅睡（苹果那时叫核心）、5 快速眼动、2 醒着、1 没分段
+    static func miNights(_ days: [[String: Any]]) -> [HPNight] {
+        let kinds = ["deep": 4, "light": 3, "rem": 5, "awake": 2]
+        var out: [HPNight] = []
+        for day in days {
+            for s in day["sessions"] as? [[String: Any]] ?? [] {
+                guard let a = num(s["start_epoch_s"]), let b = num(s["end_epoch_s"]), b > a else { continue }
+                let asleep = (num(s["asleep_min"]) ?? 0) * 60
+                guard asleep >= 1800 else { continue }   // 半小时以下的不算一觉
+                let dur = b - a
+                let segs = (s["stages"] as? [[String: Any]] ?? []).compactMap { x -> HPSeg? in
+                    guard let p = num(x["start_epoch_s"]), let q = num(x["end_epoch_s"]) else { return nil }
+                    return HPSeg(a: (p - a) / dur, b: (q - a) / dur, kind: kinds[x["stage"] as? String ?? ""] ?? 1)
+                }
+                func mins(_ k: String) -> TimeInterval { (num(s[k]) ?? 0) * 60 }
+                out.append(HPNight(start: Date(timeIntervalSince1970: a), end: Date(timeIntervalSince1970: b),
+                                   asleep: asleep, inBed: 0, staged: segs.contains { $0.kind != 1 },
+                                   segs: segs.isEmpty ? [HPSeg(a: 0, b: 1, kind: 1)] : segs,
+                                   deep: mins("deep_min"), core: mins("light_min"), rem: mins("rem_min"), awake: mins("awake_min")))
+            }
+        }
+        return out.sorted { $0.start < $1.start }
+    }
+
+    static func sportName(_ s: String?) -> String {
+        switch s {
+        case "running": return "跑步"
+        case "biking": return "骑车"
+        case "stair_climbing_machine": return "爬楼机"
+        case "strength_training": return "力量训练"
+        default: return "运动"   // 小米还有好多种，mifit 只认出这四种，别的一律叫运动
+        }
+    }
+
+    /// 运动：拿这一周的，今天的列出来，七天按天加起来画柱子。
+    /// 小米的运动摘要里只有平均、最高心率，没有心率线，就拿当天十分钟一条的心率凑这次运动时间里的点
+    private func applyWorkouts(_ ws: [[String: Any]], _ hr: [(Date, Double)]) {
+        let num = HealthPageModel.num
+        let cal = Calendar.current
+        let dayStart = cal.startOfDay(for: Date())
+        let all: [HPWorkout] = ws.compactMap { w -> HPWorkout? in
+            guard let a = num(w["start_epoch_s"]) else { return nil }
+            let start = Date(timeIntervalSince1970: a)
+            let secs = num(w["duration_s"]) ?? max(0, (num(w["end_epoch_s"]) ?? a) - a)
+            let end = num(w["end_epoch_s"]).map { Date(timeIntervalSince1970: $0) } ?? start.addingTimeInterval(secs)
+            var x = HPWorkout(name: HealthPageModel.sportName(w["sport"] as? String), minutes: secs / 60,
+                              kcal: num(w["active_kcal"]) ?? num(w["total_kcal"]), start: start, end: end)
+            x.hrAvg = num(w["avg_hr_bpm"])
+            x.hrMax = num(w["max_hr_bpm"])
+            let span = max(1, end.timeIntervalSince(start))
+            x.curve = hr.filter { $0.0 >= start && $0.0 <= end }.map { CGPoint(x: $0.0.timeIntervalSince(start) / span, y: $0.1) }
+            return x
+        }.sorted { $0.start < $1.start }
+        let names = ["日", "一", "二", "三", "四", "五", "六"]
+        workouts = all.filter { $0.start >= dayStart }
+        workoutWeek = (0..<7).reversed().compactMap { i -> HPMinuteBar? in
+            guard let day = cal.date(byAdding: .day, value: -i, to: dayStart) else { return nil }
+            let mins = all.filter { cal.isDate($0.start, inSameDayAs: day) }.reduce(0.0) { $0 + $1.minutes }
+            return HPMinuteBar(id: i, label: names[cal.component(.weekday, from: day) - 1], minutes: mins, isLast: i == 0)
+        }
+        weekLongest = all.max(by: { $0.minutes < $1.minutes }).map {
+            (minutes: $0.minutes, label: names[cal.component(.weekday, from: $0.start) - 1])
         }
     }
 
@@ -185,76 +346,13 @@ final class HealthPageModel: ObservableObject {
         })
     }
 
-    /// 从 from 到现在，每 minutes 分钟一格：累计的取和、心率这种取平均
-    private func series(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, cumulative: Bool, minutes: Int, from: Date,
-                        _ set: @escaping ([(Date, Double)]) -> Void) {
-        guard let t = qt(id) else { return }
-        var step = DateComponents()
-        step.minute = minutes
-        let now = Date()
-        let query = HKStatisticsCollectionQuery(quantityType: t,
-                                                quantitySamplePredicate: HKQuery.predicateForSamples(withStart: from, end: now, options: []),
-                                                options: cumulative ? .cumulativeSum : .discreteAverage,
-                                                anchorDate: from, intervalComponents: step)
-        query.initialResultsHandler = { _, results, _ in
-            var out: [(Date, Double)] = []
-            results?.enumerateStatistics(from: from, to: now) { s, _ in
-                let quantity = cumulative ? s.sumQuantity() : s.averageQuantity()
-                if let v = quantity?.doubleValue(for: unit) { out.append((s.startDate, v)) }
-            }
-            let result = out
-            DispatchQueue.main.async { set(result) }
-        }
-        store.execute(query)
-    }
-
+    /// 苹果健康里只读小米没有的：喝水、正念、体重、经期（1107 起别的都走小米）
     private func query() {
         let now = Date()
-        let cal = Calendar.current
-        let dayStart = cal.startOfDay(for: now)
-        let today = HKQuery.predicateForSamples(withStart: dayStart, end: now, options: .strictStartDate)
-        let bpm = HKUnit.count().unitDivided(by: HKUnit.minute())
+        let today = HKQuery.predicateForSamples(withStart: Calendar.current.startOfDay(for: now), end: now, options: .strictStartDate)
 
-        sum(.activeEnergyBurned, .kilocalorie(), today) { [weak self] v in self?.activeKcal = v }
-        sum(.appleExerciseTime, .minute(), today) { [weak self] v in self?.exerciseMin = v }
         sum(.dietaryWater, .literUnit(with: .milli), today) { [weak self] v in self?.water = v }
-        series(.stepCount, .count(), cumulative: true, minutes: 60, from: dayStart) { [weak self] pts in
-            var h = Array(repeating: 0.0, count: 24)
-            for (d, v) in pts {
-                let i = cal.component(.hour, from: d)
-                if i >= 0 && i < 24 { h[i] += v }
-            }
-            self?.hourly = h
-        }
-
-        latest(.heartRate, bpm, days: 1) { [weak self] v, d in self?.hrLatest = v; self?.hrLatestAt = d }
-        latest(.restingHeartRate, bpm, days: 3) { [weak self] v, _ in self?.resting = v }
-        latest(.walkingHeartRateAverage, bpm, days: 3) { [weak self] v, _ in self?.walkingHR = v }
-        latest(.heartRateVariabilitySDNN, .secondUnit(with: .milli), days: 3) { [weak self] v, _ in self?.hrv = v }
-        latest(.oxygenSaturation, .percent(), days: 3) { [weak self] v, _ in self?.spo2 = v * 100 }
-        latest(.respiratoryRate, bpm, days: 3) { [weak self] v, _ in self?.resp = v }
         latest(.bodyMass, .gramUnit(with: .kilo), days: 90) { [weak self] v, _ in self?.weight = v }
-        if let t = qt(.heartRate) {
-            store.execute(HKStatisticsQuery(quantityType: t, quantitySamplePredicate: today,
-                                            options: [.discreteAverage, .discreteMin, .discreteMax]) { [weak self] _, s, _ in
-                let avg = s?.averageQuantity()?.doubleValue(for: bpm)
-                let lo = s?.minimumQuantity()?.doubleValue(for: bpm)
-                let hi = s?.maximumQuantity()?.doubleValue(for: bpm)
-                DispatchQueue.main.async { self?.hrAvg = avg; self?.hrMin = lo; self?.hrMax = hi }
-            })
-        }
-        series(.heartRate, bpm, cumulative: false, minutes: 30, from: dayStart) { [weak self] pts in
-            let span = max(1, now.timeIntervalSince(dayStart))
-            self?.hrCurve = pts.map { CGPoint(x: min(1, $0.0.timeIntervalSince(dayStart) / span), y: $0.1) }
-        }
-
-        if let st = HKObjectType.categoryType(forIdentifier: .sleepAnalysis) {
-            let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-8.5 * 86400), end: now, options: [])
-            store.execute(HKSampleQuery(sampleType: st, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { [weak self] _, ss, _ in
-                let nights = HealthPageModel.nights((ss as? [HKCategorySample]) ?? [])
-                DispatchQueue.main.async { self?.applySleep(nights) }
-            })
-        }
         if let ft = HKObjectType.categoryType(forIdentifier: .menstrualFlow) {
             let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-200 * 86400), end: now, options: [])
             store.execute(HKSampleQuery(sampleType: ft, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: nil) { [weak self] _, ss, _ in
@@ -268,125 +366,9 @@ final class HealthPageModel: ObservableObject {
                 DispatchQueue.main.async { self?.mindful = total > 0 ? total / 60 : nil }
             })
         }
-        // 运动：拿这一周的，今天的列出来，七天按天加起来画柱子
-        let energy = HKQuantityType(.activeEnergyBurned)
-        let weekStart = cal.date(byAdding: .day, value: -6, to: dayStart) ?? dayStart
-        store.execute(HKSampleQuery(sampleType: HKObjectType.workoutType(),
-                                    predicate: HKQuery.predicateForSamples(withStart: weekStart, end: now, options: []),
-                                    limit: HKObjectQueryNoLimit,
-                                    sortDescriptors: [NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)]) { [weak self] _, ss, _ in
-            let all = (ss as? [HKWorkout]) ?? []
-            let list = all.filter { $0.startDate >= dayStart }.map { w in
-                HPWorkout(name: HealthReporter.workoutName(w.workoutActivityType), minutes: w.duration / 60,
-                          kcal: w.statistics(for: energy)?.sumQuantity()?.doubleValue(for: .kilocalorie()),
-                          start: w.startDate, end: w.endDate)
-            }
-            let names = ["日", "一", "二", "三", "四", "五", "六"]
-            let bars = (0..<7).reversed().compactMap { i -> HPMinuteBar? in
-                guard let day = cal.date(byAdding: .day, value: -i, to: dayStart) else { return nil }
-                let mins = all.filter { cal.isDate($0.startDate, inSameDayAs: day) }.reduce(0.0) { $0 + $1.duration / 60 }
-                return HPMinuteBar(id: i, label: names[cal.component(.weekday, from: day) - 1], minutes: mins, isLast: i == 0)
-            }
-            let longest = all.max(by: { $0.duration < $1.duration }).map {
-                (minutes: $0.duration / 60, label: names[cal.component(.weekday, from: $0.startDate) - 1])
-            }
-            DispatchQueue.main.async {
-                guard let self = self else { return }
-                self.workouts = list
-                self.workoutWeek = bars
-                self.weekLongest = longest
-                for w in list { self.workoutHeart(w, bpm) }
-            }
-        })
-    }
-
-    /// 一次运动里的心率：平均、最高（哪一刻）、整条线。点太多就按时间分 120 段取平均
-    private func workoutHeart(_ w: HPWorkout, _ bpm: HKUnit) {
-        guard let t = qt(.heartRate) else { return }
-        let pred = HKQuery.predicateForSamples(withStart: w.start, end: w.end, options: [])
-        let sort = NSSortDescriptor(key: HKSampleSortIdentifierStartDate, ascending: true)
-        store.execute(HKSampleQuery(sampleType: t, predicate: pred, limit: HKObjectQueryNoLimit, sortDescriptors: [sort]) { [weak self] _, ss, _ in
-            let pts = ((ss as? [HKQuantitySample]) ?? []).map { ($0.startDate, $0.quantity.doubleValue(for: bpm)) }
-            guard !pts.isEmpty else { return }
-            let span = max(1, w.end.timeIntervalSince(w.start))
-            let avg = pts.reduce(0.0) { $0 + $1.1 } / Double(pts.count)
-            let top = pts.max(by: { $0.1 < $1.1 })!
-            var curve: [CGPoint] = []
-            if pts.count <= 120 {
-                curve = pts.map { CGPoint(x: min(1, max(0, $0.0.timeIntervalSince(w.start) / span)), y: $0.1) }
-            } else {
-                var buckets = Array(repeating: (0.0, 0), count: 120)
-                for (d, v) in pts {
-                    let i = min(119, max(0, Int(d.timeIntervalSince(w.start) / span * 120)))
-                    buckets[i].0 += v
-                    buckets[i].1 += 1
-                }
-                curve = buckets.enumerated().compactMap { i, b in
-                    b.1 > 0 ? CGPoint(x: (Double(i) + 0.5) / 120, y: b.0 / Double(b.1)) : nil
-                }
-            }
-            DispatchQueue.main.async {
-                guard let self = self, let i = self.workouts.firstIndex(where: { $0.id == w.id }) else { return }
-                self.workouts[i].hrAvg = avg
-                self.workouts[i].hrMax = top.1
-                self.workouts[i].hrMaxAt = top.0
-                self.workouts[i].curve = curve
-            }
-        })
     }
 
     // MARK: 睡眠
-
-    private static func union(_ spans: [(Date, Date)]) -> TimeInterval {
-        var total: TimeInterval = 0
-        var cur: (Date, Date)?
-        for x in spans.sorted(by: { $0.0 < $1.0 }) {
-            if let c = cur, x.0 <= c.1 {
-                cur = (c.0, max(c.1, x.1))
-            } else {
-                if let c = cur { total += c.1.timeIntervalSince(c.0) }
-                cur = x
-            }
-        }
-        if let c = cur { total += c.1.timeIntervalSince(c.0) }
-        return total
-    }
-
-    /// 相邻两条隔超过 3 小时算另一觉；手机和手表各写一份的按并集算
-    static func nights(_ all: [HKCategorySample]) -> [HPNight] {
-        var sessions: [[HKCategorySample]] = []
-        var cur: [HKCategorySample] = []
-        var end = Date.distantPast
-        for x in all.sorted(by: { $0.startDate < $1.startDate }) {
-            if cur.isEmpty || x.startDate.timeIntervalSince(end) <= 3 * 3600 {
-                cur.append(x)
-                end = max(end, x.endDate)
-            } else {
-                sessions.append(cur)
-                cur = [x]
-                end = x.endDate
-            }
-        }
-        if !cur.isEmpty { sessions.append(cur) }
-        return sessions.compactMap(makeNight)
-    }
-
-    private static func makeNight(_ s: [HKCategorySample]) -> HPNight? {
-        guard let start = s.map({ $0.startDate }).min(), let end = s.map({ $0.endDate }).max(), end > start else { return nil }
-        func span(_ v: Set<Int>) -> TimeInterval { union(s.filter { v.contains($0.value) }.map { ($0.startDate, $0.endDate) }) }
-        let staged = s.contains { [3, 4, 5].contains($0.value) }
-        let asleep = span([1, 3, 4, 5])
-        let inBed = span([0])
-        guard max(asleep, inBed) >= 1800 else { return nil }   // 半小时以下的不算一觉
-        let dur = end.timeIntervalSince(start)
-        let kinds: Set<Int> = staged ? [2, 3, 4, 5] : [0, 1, 2]
-        // 没分段时「在床上」垫底、「睡着」盖在上面
-        let segs = s.filter { kinds.contains($0.value) }
-            .sorted { ($0.value == 0 ? 0 : 1) < ($1.value == 0 ? 0 : 1) }
-            .map { HPSeg(a: $0.startDate.timeIntervalSince(start) / dur, b: $0.endDate.timeIntervalSince(start) / dur, kind: $0.value) }
-        return HPNight(start: start, end: end, asleep: asleep, inBed: inBed, staged: staged, segs: segs,
-                       deep: span([4]), core: span([3]), rem: span([5]), awake: span([2]))
-    }
 
     private func applySleep(_ nights: [HPNight]) {
         night = nights.last
@@ -505,7 +487,7 @@ struct HealthRoomView: View {
             Text("be well").font(SanctusCardFont.script(36)).foregroundColor(ink.dark ? HP.rgb(0xE4E4E7) : HP.rgb(0x2A2A2E))
             (Text("HEALTH · ").font(SanctusPageFont.corm(8.5)) + Text("健康").font(.system(size: 8.5, design: .serif)))
                 .tracking(2.6).foregroundColor(ink.kicker).padding(.top, 9)
-            Text("from apple health · \(m.loadedAt.map(HP.clock) ?? "")")
+            Text("from your mi watch · \((m.miAt ?? m.loadedAt).map(HP.clock) ?? "")")
                 .font(SanctusCardFont.ital(10.5)).foregroundColor(ink.sub).padding(.top, 5)
         }
         .frame(maxWidth: .infinity)
@@ -830,7 +812,7 @@ struct HealthRoomView: View {
                     .padding(.top, 6)
                     HPSleepLegend(night: n, ink: ink).padding(.top, 10)
                 } else {
-                    Text("健康里还没有睡眠记录。打开健康 App 的「睡眠」，设一个睡觉时间，手机就会开始记。")
+                    Text("还没有睡眠记录。戴着小米手表睡一晚，这里就有几点睡、几点醒，深睡、浅睡、快速眼动各多久。")
                         .font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub).lineSpacing(4).padding(.top, 12)
                 }
                 SanctusHair(ink: ink).padding(.top, 14)
@@ -859,17 +841,30 @@ struct HealthRoomView: View {
                     HPCurve(points: m.hrCurve, ink: ink).frame(height: 70).padding(.top, 14)
                 } else {
                     big("—", "bpm", ink, size: 40)
-                    Text("戴上苹果手表以后，这里会有心率、静息心率、血氧和心率变异性，不用再改。")
+                    Text("今天手表的数据还没拉到。小米运动健康跟手表同步过以后，十五分钟内这里就有。")
                         .font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub).lineSpacing(4).padding(.top, 10)
                 }
                 HPFacts(ink: ink, rows: [
                     ("静息心率", ["", m.resting.map(HP.int) ?? "—", ""]),
-                    ("走路时平均", ["", m.walkingHR.map(HP.int) ?? "—", ""]),
-                    ("心率变异性", ["", m.hrv.map(HP.int) ?? "—", " 毫秒"]),
-                    ("血氧", ["", m.spo2.map(HP.int) ?? "—", "%"]),
-                    ("呼吸", ["", m.resp.map(HP.int) ?? "—", " 次/分"]),
                 ]).padding(.top, 12)
-                foot("from your watch", "收起 －", ink) { toggle(nil) }
+                // 1107：小米有、苹果那时没有的两样——血氧一天的线、压力
+                SanctusHair(ink: ink).padding(.top, 14)
+                (Text("BLOOD OXYGEN · ").font(SanctusCardFont.kicker()) + Text("血氧").font(.system(size: 7.5, design: .serif)))
+                    .tracking(2.25).foregroundColor(ink.kicker).padding(.top, 14)
+                big(m.spo2.map(HP.int) ?? "—", "%" + (m.spo2At.map { " · " + HP.clock($0) } ?? ""), ink, size: 30)
+                mix(["今天 ", m.spo2Min.map(HP.int) ?? "—", " — ", m.spo2Max.map(HP.int) ?? "—", "%"], ink).padding(.top, 6)
+                if m.spo2Curve.count >= 2 {
+                    HPCurve(points: m.spo2Curve, ink: ink, dot: false).frame(height: 44).padding(.top, 10)
+                }
+                SanctusHair(ink: ink).padding(.top, 14)
+                (Text("STRESS · ").font(SanctusCardFont.kicker()) + Text("压力").font(.system(size: 7.5, design: .serif)))
+                    .tracking(2.25).foregroundColor(ink.kicker).padding(.top, 14)
+                big(m.stressAvg.map(HP.int) ?? "—", "today · of 100", ink, size: 30)
+                mix(["最低 ", m.stressMin.map(HP.int) ?? "—", " · 最高 ", m.stressMax.map(HP.int) ?? "—", " · 越高越紧绷"], ink).padding(.top, 6)
+                if !m.stressBands.isEmpty {
+                    HPFacts(ink: ink, rows: m.stressBands.map { ($0.name, ["", HP.int($0.minutes), " 分钟"]) }).padding(.top, 8)
+                }
+                foot("from your mi watch", "收起 －", ink) { toggle(nil) }
             }
         }
     }
@@ -927,7 +922,7 @@ struct HealthRoomView: View {
                 head(.workout, ink, opened: true)
                 if m.workouts.isEmpty {
                     big("—", "minutes today", ink, size: 40)
-                    Text("今天还没运动。戴着 AirPods Pro 3 或手表，在「健身」App 里开始一次体能训练，练完这里就有这次的时长、消耗和心率。")
+                    Text("今天还没运动。在小米手表上开始一次运动，练完这里就有这次的时长、消耗和心率。")
                         .font(.system(size: 11.5, design: .serif)).foregroundColor(ink.sub).lineSpacing(4).padding(.top, 10)
                         .frame(maxWidth: 230, alignment: .leading)
                 } else {
@@ -992,7 +987,7 @@ struct HealthRoomView: View {
             }
             .padding(.top, 12).padding(.bottom, 6)
         } else {
-            Text("这次没测到心率（戴着 AirPods Pro 3 或手表运动才有）")
+            Text("这次的心率线画不出来（手表平时十分钟才记一次心率，运动太短就没几个点）")
                 .font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .padding(.vertical, 10)
@@ -1130,7 +1125,7 @@ struct HPSleepLegend: View {
     let ink: SanctusCardInk
     var body: some View {
         let items: [(Int, String, TimeInterval)] = night.staged
-            ? [(4, "深睡", night.deep), (3, "核心", night.core), (5, "快速眼动", night.rem), (2, "醒着", night.awake)]
+            ? [(4, "深睡", night.deep), (3, "浅睡", night.core), (5, "快速眼动", night.rem), (2, "醒着", night.awake)]
             : [(0, "在床上", night.inBed), (1, "睡着", night.asleep)]
         HStack(spacing: 12) {
             ForEach(Array(items.filter { $0.2 > 0 }.enumerated()), id: \.offset) { _, it in
@@ -1199,6 +1194,7 @@ struct HPHourBars: View {
 struct HPCurve: View {
     let points: [CGPoint]
     let ink: SanctusCardInk
+    var dot = true   // 末尾那颗电光蓝；一页只许一处，心率线用了，血氧线就不点
     var body: some View {
         GeometryReader { g in
             let ys = points.map { $0.y }
@@ -1214,7 +1210,7 @@ struct HPCurve: View {
                 }
                 .stroke(HP.rgb(0x6F7480, 0.75), style: StrokeStyle(lineWidth: 1, lineJoin: .round))
             }
-            if let last = points.last {
+            if dot, let last = points.last {
                 Circle().fill(ink.dark ? HP.rgb(0x3A55FF) : HP.rgb(0x0B1BFF))
                     .frame(width: 5, height: 5)
                     .position(pos(last))
