@@ -442,7 +442,8 @@ final class HealthReporter {
         func latest(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, _ key: String, scale: Double = 1, within days: Double) {
             guard let t = HealthReporter.q(id) else { return }
             group.enter()
-            let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-days * 86400), end: now, options: [])
+            // 手表 App 写进健康的样本，时间可能比现在还晚（1107 小米 09:45 写的心率记成 10:00），只查到「现在」会漏，往后放一天
+            let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-days * 86400), end: now.addingTimeInterval(86400), options: [])
             let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
             let query = HKSampleQuery(sampleType: t, predicate: pred, limit: 1, sortDescriptors: [sort]) { _, samples, _ in
                 if let s = samples?.first as? HKQuantitySample {

@@ -175,7 +175,8 @@ final class HealthPageModel: ObservableObject {
     private func latest(_ id: HKQuantityTypeIdentifier, _ unit: HKUnit, days: Double, _ set: @escaping (Double, Date) -> Void) {
         guard let t = qt(id) else { return }
         let now = Date()
-        let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-days * 86400), end: now, options: [])
+        // 手表 App 写进健康的样本，时间可能比现在还晚（1107 小米 09:45 写的心率记成 10:00），只查到「现在」会漏，往后放一天
+        let pred = HKQuery.predicateForSamples(withStart: now.addingTimeInterval(-days * 86400), end: now.addingTimeInterval(86400), options: [])
         let sort = NSSortDescriptor(key: HKSampleSortIdentifierEndDate, ascending: false)
         store.execute(HKSampleQuery(sampleType: t, predicate: pred, limit: 1, sortDescriptors: [sort]) { _, ss, _ in
             guard let s = ss?.first as? HKQuantitySample else { return }
