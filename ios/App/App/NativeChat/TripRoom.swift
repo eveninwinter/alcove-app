@@ -30,9 +30,9 @@ struct TripSum {
 }
 struct TripItem: Identifiable { let id: Int; let grp, text, note, who, whoDone: String; let done: Bool
     init(_ d: [String: Any]) { id = n(d, "id"); grp = s(d, "grp"); text = s(d, "text"); note = s(d, "note"); who = s(d, "who"); whoDone = s(d, "who_done"); done = n(d, "done") == 1 } }
-struct TripStop: Identifiable { let id: Int; let day, time, title, how, dur, note, addr, hisLine, hisAt: String
+struct TripStop: Identifiable { let id: Int; let day, time, title, how, dur, note, addr, route, hisLine, hisAt: String
     init(_ d: [String: Any]) { id = n(d, "id"); day = s(d, "day"); time = s(d, "time"); title = s(d, "title"); how = s(d, "how"); dur = s(d, "dur")
-        note = s(d, "note"); addr = s(d, "addr"); hisLine = s(d, "his_line"); hisAt = s(d, "his_at") } }
+        note = s(d, "note"); addr = s(d, "addr"); route = s(d, "route"); hisLine = s(d, "his_line"); hisAt = s(d, "his_at") } }
 struct TripWish: Identifiable { let id: Int; let cat, name, note, who: String; let stopId: Int?
     init(_ d: [String: Any]) { id = n(d, "id"); cat = s(d, "cat"); name = s(d, "name"); note = s(d, "note"); who = s(d, "who"); stopId = on(d, "stop_id") } }
 struct TripTicket: Identifiable { let id: Int; let kind, title, l1, l2, code, img, at: String
@@ -650,7 +650,8 @@ private struct TripHome: View {
             }
             Group {
                 column("03", "登机牌", "Boarding", 18, x: 593, k: k)
-                put(Text(t.packedAt.isEmpty ? "还没勾完" : "已解锁").font(TripInk.serif(11 * Z * k)).foregroundColor(t.packedAt.isEmpty ? Self.g3 : Self.g1), 593, 1300, k, .top)
+                // 1108 #4910 她：登机牌不用全勾完才能看。这格改成报清单进度
+                put(Text(t.packedAt.isEmpty ? "清单 \(s.done)/\(s.items)" : "万事俱备").font(TripInk.serif(11 * Z * k)).foregroundColor(Self.g1), 593, 1300, k, .top)
                 column("04", "想去", "Wishes", 20, x: 706, k: k)
                 put(mix("\(s.wishes) 处", 12 * Z * k).foregroundColor(Self.g1), 706, 1300, k, .top)
                 column("05", "票据", "Tickets", 18, x: 805, k: k)
@@ -849,23 +850,26 @@ private struct TripBoard: View {
     var body: some View {
         let s = t.sum
         TripPage(title: "Boarding", tint: t.tint, back: back, menu: nil) {
+            // 1108 #4910 她：「登机牌这个不需要全部勾完才能看」——票一直在，顶上只报清单进度
             if t.packedAt.isEmpty {
-                VStack(spacing: 12) {
-                    Text("清单全勾完，这张票才会出来").font(TripInk.serif(13)).foregroundStyle(TripInk.g3)
-                    Mono("还差 \(s.items - s.done) 样")
-                    Button(action: toPack) { Mono("去清单 ›", color: TripInk.ink) }.padding(.top, 4)
-                }
-                .frame(maxWidth: .infinity).padding(.top, 140)
+                Button(action: toPack) { Mono("清单 \(s.done) / \(s.items) · 还差 \(s.items - s.done) 样 · 去清单 ›") }
+                    .buttonStyle(.plain).frame(maxWidth: .infinity).padding(.top, 10).padding(.bottom, 18)
             } else {
                 Mono("\(s.items) / \(s.items) · ALL PACKED · 万事俱备").frame(maxWidth: .infinity).padding(.top, 10).padding(.bottom, 18)
-                pass
-                Rectangle().stroke(style: StrokeStyle(lineWidth: 0.5, dash: [3, 3])).foregroundStyle(Color.black.opacity(0.35)).frame(height: 0.5).padding(.horizontal, 8)
-                stub
-                Text("勾完那天 · \(TripText.md(String(t.packedAt.prefix(10))))").font(TripInk.serif(10)).foregroundStyle(TripInk.g1).frame(maxWidth: .infinity).padding(.top, 18)
-                TripMat(name: "mountain", tint: t.tint, opacity: 0.55).frame(height: 150).padding(.horizontal, -32)
-                    .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
-                    .padding(.top, 20)
             }
+            // 1108 #4915 她「登机牌都出」：票据里每张机票各出一张，按起飞时间排；一张机票都没登记就还是原来那张
+            let flights = t.tickets.filter { $0.kind == "flight" }
+            if flights.isEmpty { pass } else {
+                VStack(spacing: 16) { ForEach(Array(flights.enumerated()), id: \.element.id) { i, k in flightPass(k, no: i + 1) } }
+            }
+            Rectangle().stroke(style: StrokeStyle(lineWidth: 0.5, dash: [3, 3])).foregroundStyle(Color.black.opacity(0.35)).frame(height: 0.5).padding(.horizontal, 8)
+            stub
+            if !t.packedAt.isEmpty {
+                Text("勾完那天 · \(TripText.md(String(t.packedAt.prefix(10))))").font(TripInk.serif(10)).foregroundStyle(TripInk.g1).frame(maxWidth: .infinity).padding(.top, 18)
+            }
+            TripMat(name: "mountain", tint: t.tint, opacity: 0.55).frame(height: 150).padding(.horizontal, -32)
+                .mask(LinearGradient(colors: [.clear, .black, .black, .clear], startPoint: .leading, endPoint: .trailing))
+                .padding(.top, 20)
         } bar: { EmptyView() }
     }
 
@@ -882,6 +886,31 @@ private struct TripBoard: View {
             Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 14) {
                 GridRow { cell("PASSENGERS", "陈霁 & 陈璟"); cell("FLIGHT", t.flight.isEmpty ? "—" : t.flight); cell("DATE", TripText.md(t.start)) }
                 GridRow { cell("BOARDING", t.boarding.isEmpty ? "—" : t.boarding); cell("SEAT", t.seat.isEmpty ? "06·01" : t.seat); cell("GATE", "∞") }
+            }
+        }
+        .padding(20)
+        .background(TripInk.paper)
+        .overlay(Rectangle().stroke(Color.black.opacity(0.22), lineWidth: 0.5))
+    }
+
+    /// 票据里的一张机票出一张登机牌。标题照登记的写法「武汉 → 成都 · CA4044」拆出两头
+    private func flightPass(_ k: TripTicket, no: Int) -> some View {
+        let head = k.title.components(separatedBy: "·").first ?? k.title
+        let ends = head.components(separatedBy: "→").map { $0.trimmingCharacters(in: .whitespaces) }
+        let from = ends.first ?? "", to = ends.count > 1 ? ends[1] : ""
+        let day = String(k.at.prefix(10)), hm = k.at.count >= 16 ? String(k.at.suffix(5)) : "—"
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack { Mono("BOARDING PASS · 登机牌"); Spacer(); Mono("NO. \(String(format: "%03d", t.id))-\(no)") }
+            HStack(alignment: .bottom) {
+                VStack(alignment: .leading, spacing: 6) { Text(from).font(TripInk.serif(40)); Mono(k.l1) }
+                Rectangle().stroke(style: StrokeStyle(lineWidth: 0.5, dash: [2, 2])).frame(height: 0.5).padding(.horizontal, 12).padding(.bottom, 22)
+                VStack(alignment: .trailing, spacing: 6) { Text(to).font(TripInk.serif(40)); Mono(" ") }
+            }
+            .padding(.top, 18)
+            Hair().padding(.top, 18).padding(.bottom, 12)
+            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 14) {
+                GridRow { cell("PASSENGERS", "陈霁 & 陈璟"); cell("FLIGHT", k.code.isEmpty ? "—" : k.code); cell("DATE", day.isEmpty ? "—" : TripText.md(day)) }
+                GridRow { cell("DEPART", hm); cell("SEAT", t.seat.isEmpty ? "06·01" : t.seat); cell("GATE", "∞") }
             }
         }
         .padding(20)
@@ -972,6 +1001,33 @@ private struct TripDay: View {
     }
 
     private func stopRow(_ x: TripStop, past: Bool, now: Bool) -> some View {
+        VStack(spacing: 0) {
+            if !x.route.isEmpty { routeLeg(x, past: past) }
+            stopMain(x, past: past, now: now)
+        }
+    }
+
+    /// 1108 #4915 她：每一站怎么过去——两站之间一段虚线＋怎么走，右边一键开地图导航到这一站
+    private func routeLeg(_ x: TripStop, past: Bool) -> some View {
+        HStack(alignment: .top, spacing: 0) {
+            Rectangle().stroke(style: StrokeStyle(lineWidth: 0.6, dash: [2, 3])).frame(width: 0.6).foregroundStyle(TripInk.g3)
+                .frame(width: 46, alignment: .center).padding(.vertical, 2)
+            VStack(alignment: .leading, spacing: 4) {
+                Mono("ROUTE · 怎么走", size: 8, color: TripInk.g3)
+                Text(x.route).font(TripInk.serif(12)).foregroundStyle(past ? TripInk.g3 : TripInk.g1).lineSpacing(5)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer(minLength: 8)
+            Button {
+                let to = x.addr.isEmpty ? x.title : x.addr
+                if let u = URL(string: "https://maps.apple.com/?daddr=" + (to.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")) { UIApplication.shared.open(u) }
+            } label: { Mono("导航 ›", color: TripInk.ink) }
+            .buttonStyle(.plain)
+        }
+        .padding(.vertical, 8)
+    }
+
+    private func stopMain(_ x: TripStop, past: Bool, now: Bool) -> some View {
         Button { sheet = .stop(x.id) } label: {
             TripRow {
                 Text(x.time.isEmpty ? "—" : x.time).font(TripInk.serif(15)).frame(width: 46, alignment: .leading)
@@ -1329,6 +1385,7 @@ private struct TripSheetView: View {
     @State private var date1 = Date()
     @State private var date2 = Date().addingTimeInterval(4 * 86400)
     @State private var img = ""
+    @State private var rt = ""   // 1108 #4915 日程一站的「怎么走」（从上一站过来）
     @State private var photo: PhotosPickerItem?
     @State private var tplPicks: Set<String> = []
     @State private var tpl: [(String, String)] = []
@@ -1398,7 +1455,7 @@ private struct TripSheetView: View {
         case .item(let id):
             if let id, let it = t?.items.first(where: { $0.id == id }) { a = it.text; b = it.note; pick1 = it.grp } else { pick1 = packTab == "全部" ? "其他" : packTab }
         case .stop(let id):
-            if let id, let x = t?.stops.first(where: { $0.id == id }) { a = x.time; b = x.title; c = x.dur; d = x.addr; e = x.note; pick1 = TripText.how(x.how); pick2 = TripText.md(x.day) }
+            if let id, let x = t?.stops.first(where: { $0.id == id }) { a = x.time; b = x.title; c = x.dur; d = x.addr; e = x.note; rt = x.route; pick1 = TripText.how(x.how); pick2 = TripText.md(x.day) }
             else { pick2 = TripText.md(day) }
         case .wish(let id):
             if let id, let w = t?.wishes.first(where: { $0.id == id }) { a = w.name; b = w.note; pick1 = w.cat } else { pick1 = wishTab == "全部" ? "逛" : wishTab }
@@ -1559,6 +1616,13 @@ private struct TripSheetView: View {
             TripField(label: "去哪 / 做什么", text: $b, placeholder: "锦市场吃晚饭")
             TripChips(label: "怎么去", options: TripText.hows.map { $0.1 }, selected: $pick1)
             HStack(spacing: 14) { TripField(label: "要多久", text: $c, placeholder: "12 分钟"); TripField(label: "地址（导航用）", text: $d) }
+            VStack(alignment: .leading, spacing: 5) {
+                Mono("怎么走（从上一站过来）")
+                TextField("地铁 2 号线换 18 号线，约 2 小时；打车约 200", text: $rt, axis: .vertical).lineLimit(1...5)
+                    .font(TripInk.serif(15)).padding(.vertical, 6)
+                Rectangle().fill(Color.black.opacity(0.3)).frame(height: 0.6)
+            }
+            .padding(.bottom, 12)
             TripField(label: "备注", text: $e)
             TripChips(label: "哪一天", options: days().map(TripText.md), selected: $pick2)
             HStack {
@@ -1576,7 +1640,7 @@ private struct TripSheetView: View {
                         guard !b.trimmingCharacters(in: .whitespaces).isEmpty else { store.say("写一下去哪"); return }
                         let dd = dayFromMD(pick2) ?? day
                         var body: [String: Any] = ["trip_id": t.id, "time": a, "title": b, "how": TripText.hows.first { $0.1 == pick1 }?.0 ?? "",
-                                                   "dur": c, "addr": d, "note": e, "day": dd, "who": "霁"]
+                                                   "dur": c, "addr": d, "note": e, "route": rt, "day": dd, "who": "霁"]
                         if let id { body["op"] = "edit"; body["id"] = id } else { body["op"] = "add" }
                         let j = await store.post("stop", body)
                         if (j["ok"] as? Bool) == true { day = dd; await done() }
