@@ -39,11 +39,30 @@ final class ChatStore: ObservableObject {
             var j = i
             while j < ms.count, ms[j].role == "assistant" { j += 1 }
             let run = Array(ms[i..<j])
-            var keys: [String?] = run.map { ($0.turnID?.isEmpty == false) ? $0.turnID : nil }
-            var last: String? = nil
-            for k in keys.indices { if let t = keys[k] { last = t } else { keys[k] = last } }
-            var next: String? = nil
-            for k in keys.indices.reversed() { if let t = keys[k] { next = t } else { keys[k] = next } }
+            let own: [String?] = run.map { ($0.turnID?.isEmpty == false) ? $0.turnID : nil }
+            var prevAt: [Int?] = Array(repeating: nil, count: run.count)
+            var nextAt: [Int?] = Array(repeating: nil, count: run.count)
+            var p: Int? = nil
+            for k in run.indices { if own[k] != nil { p = k } else { prevAt[k] = p } }
+            var n: Int? = nil
+            for k in run.indices.reversed() { if own[k] != nil { n = k } else { nextAt[k] = n } }
+            // 1109 #4937 她：「拍一拍为啥不显示了」——原来没轮号的一律跟前面那轮走，她拍他那行被挪到他上一轮最前面，
+            // 跑到上面去了，底下看不见。现在：她拍他（pat_outgoing）只跟后面那轮（他回她的）走，后面没有就原地不动；
+            // 他拍她这种没轮号的，跟时间上挨得近的那轮走（他边想边拍，落库比那轮的字早；写在正文里的跟字同一刻进库）。
+            var keys: [String?] = own
+            for k in run.indices where own[k] == nil {
+                let pk = prevAt[k], nk = nextAt[k]
+                if run[k].msgType == "pat_outgoing" { keys[k] = nk.flatMap { own[$0] }; continue }
+                switch (pk, nk) {
+                case let (a?, b?):
+                    let da = abs(run[k].date.timeIntervalSince(run[a].date))
+                    let db = abs(run[b].date.timeIntervalSince(run[k].date))
+                    keys[k] = own[da <= db ? a : b]
+                case let (a?, nil): keys[k] = own[a]
+                case let (nil, b?): keys[k] = own[b]
+                default: keys[k] = nil
+                }
+            }
             var k = 0
             while k < run.count {
                 var e = k
