@@ -230,6 +230,10 @@ struct ChatView: View {
         .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenRoomPicker)) { _ in
             showRoomPicker = true
         }
+        // 1109 #4938 她：「我的拍一拍要立马出现」——拍完后端一回话就马上拉一次，不等下一轮轮询（闲着时要等 8 秒）
+        .onReceive(NotificationCenter.default.publisher(for: .alcovePatSent)) { _ in
+            Task { await store.pollNow() }
+        }
         // 房间跟着开关走：开关拨到哪边，看的就是哪间（api 是只看不拨，留在原地）
         .onChange(of: activeChatChannel) { ch in
             if store.room != "api" && store.room != ch { store.switchRoom(ch) }

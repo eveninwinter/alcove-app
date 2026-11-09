@@ -1095,8 +1095,16 @@ final class PatStore: ObservableObject {
         var body: [String: Any] = ["actor": "chenji",
                                    "assistant_name": UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"]
         if let actionID { body["action_id"] = actionID } else { body["double"] = true }
-        Task { _ = try? await NativeHouseAPI.object("/api/pat/send", method: "POST", body: body) }
+        Task {
+            _ = try? await NativeHouseAPI.object("/api/pat/send", method: "POST", body: body)
+            await MainActor.run { NotificationCenter.default.post(name: .alcovePatSent, object: nil) }
+        }
     }
+}
+
+extension Notification.Name {
+    /// 1109 #4938：她拍一拍发出去了，聊天页马上拉一次，那行立刻出来
+    static let alcovePatSent = Notification.Name("alcove.patSent")
 }
 
 /// 头像被碰的那一下。先用很短的缓动把形状推过去，再交给欠阻尼弹簧自己弹回来——回弹和余震都是弹簧算的，所以顺。

@@ -28,7 +28,7 @@ final class ChatStore: ObservableObject {
         return t.contains("[MEMORY_CARD]") || t.contains("[POND_CARD]") || t.contains("[INSIDE]") || t.hasPrefix("[MUSIC_CARD]")
     }
 
-    /// 一段连着的他的消息（中间没有她的）里，按轮号分组；没轮号的（拍一拍行）跟前面那轮走，前面没有就跟后面那轮。
+    /// 一段连着的他的消息（中间没有她的）里，按轮号分组；没轮号的（拍一拍行）怎么认轮见下面 1109 那段。
     /// 每组里卡片挪到最前，别的照原顺序。
     nonisolated static func cardsFirst(_ ms: [ChatMessage]) -> [ChatMessage] {
         var out: [ChatMessage] = []
@@ -58,7 +58,9 @@ final class ChatStore: ObservableObject {
                     let da = abs(run[k].date.timeIntervalSince(run[a].date))
                     let db = abs(run[b].date.timeIntervalSince(run[k].date))
                     keys[k] = own[da <= db ? a : b]
-                case let (a?, nil): keys[k] = own[a]
+                // 后面还没有轮（他正在想、还没落字）：只有跟前面那轮几乎同时进库的（正文里写的 pat()）才并过去，
+                // 不然先原地待着，别先跳到上一轮顶上、等他说完再跳下来
+                case let (a?, nil): keys[k] = abs(run[k].date.timeIntervalSince(run[a].date)) <= 10 ? own[a] : nil
                 case let (nil, b?): keys[k] = own[b]
                 default: keys[k] = nil
                 }
@@ -828,6 +830,9 @@ final class ChatStore: ObservableObject {
             }
         }
     }
+
+    /// 1109 #4938：她拍完一下马上拉一次（ChatView 收到 alcovePatSent 调这个）
+    func pollNow() async { await pollOnce() }
 
     private func pollOnce() async {
         do {
