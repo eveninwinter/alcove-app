@@ -93,7 +93,8 @@ struct ChatView: View {
     @State private var showSDKShadow = false
     @State private var showChannelPanel = false
     @State private var activeChatChannel = "cli"
-    @State private var showRoomPicker = false        // 0919 左上角的门：挑房间
+    @State private var showRoomPicker = false        // 0919 左上角的门：挑房间（1110 起是左侧栏）
+    @State private var showApiRelay = false          // 1110 侧栏里点「API 中转站」
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
@@ -146,6 +147,10 @@ struct ChatView: View {
     /// 该不该跟着滚到最新：人在底部，或者这次打字框是在底部时点开的。
     private var shouldFollowTail: Bool {
         atBottom || (inputFocused && wasAtBottomWhenFocused)
+    }
+
+    private func closeRoomSidebar() {
+        withAnimation(.easeOut(duration: 0.22)) { showRoomPicker = false }
     }
 
     var body: some View {
@@ -219,16 +224,25 @@ struct ChatView: View {
                 .presentationDragIndicator(.visible)
         }
         // 0919 她要的三个房间：门打开挑一间。cli / sdk 就是拨开关（同时换房间），api 只换房间先看着
-        .sheet(isPresented: $showRoomPicker) {
-            ChatRoomPicker(activeChannel: $activeChatChannel, currentRoom: store.room,
-                           onPickRoom: { store.switchRoom($0) },
-                           onOpenChannelPanel: { showRoomPicker = false; showChannelPanel = true })
+        // 1110 #4950 她：左上角的门改成从左边拉出来的侧边栏，四分之一竖屏宽；里面放原来那几样，下面是陈璟和隅两个号的额度
+        .overlay {
+            if showRoomPicker {
+                ChatRoomSidebar(activeChannel: $activeChatChannel, currentRoom: store.room,
+                                onPickRoom: { store.switchRoom($0) },
+                                onOpenChannelPanel: { closeRoomSidebar(); showChannelPanel = true },
+                                onOpenRelay: { closeRoomSidebar(); showApiRelay = true },
+                                onClose: closeRoomSidebar)
+                    .transition(.move(edge: .leading))
+            }
+        }
+        .sheet(isPresented: $showApiRelay) {
+            NavigationStack { ApiRelayPanel() }
                 .modifier(HouseColorScheme())
-                .presentationDetents([.height(320), .medium])
+                .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenRoomPicker)) { _ in
-            showRoomPicker = true
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) { showRoomPicker = true }
         }
         // 1109 #4938 她：「我的拍一拍要立马出现」——拍完后端一回话就马上拉一次，不等下一轮轮询（闲着时要等 8 秒）
         .onReceive(NotificationCenter.default.publisher(for: .alcovePatSent)) { _ in
@@ -2839,79 +2853,189 @@ extension Notification.Name {
 
 /// 0919 她要的三个房间：tmux（cli）/ SDK / API。开关还是那一个，挑 cli 或 sdk 就拨开关，
 /// 聊天页只拉那间的记录；api 后端还没做，先只能看。
-private struct ChatRoomPicker: View {
+/// 1110 #4950 她：原来那张弹上来的表改成从左边拉出来的侧边栏，四分之一竖屏宽；
+/// 上面放原来那几样（三个房间、通道设置、API 中转站），下面陈璟和隅两个号的额度，每人最下面一句订阅哪天到期。
+private struct ChatRoomSidebar: View {
     @Binding var activeChannel: String
     let currentRoom: String
     let onPickRoom: (String) -> Void
     let onOpenChannelPanel: () -> Void
-    @Environment(\.dismiss) private var dismiss
+    let onOpenRelay: () -> Void
+    let onClose: () -> Void
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     @State private var working = ""
     @State private var message = ""
     @State private var handoffTurns = 12
+    @State private var accounts: [[String: Any]] = []
+    @State private var dragX: CGFloat = 0
 
-    private let rooms: [(id: String, name: String, icon: String, note: String)] = [
-        ("cli", "tmux", "terminal", "老路，hook 和工具最全"),
-        ("sdk", "SDK", "bolt.horizontal", "常驻会话，回得快"),
-        ("api", "API", "antenna.radiowaves.left.and.right", "纯 API 走中转站，跟上面两间不相干"),
+    private let rooms: [(id: String, name: String, icon: String)] = [
+        ("cli", "tmux", "terminal"),
+        ("sdk", "SDK", "bolt.horizontal"),
+        ("api", "API", "antenna.radiowaves.left.and.right"),
     ]
 
+    // 深浅只认全屋那对按钮
+    private var dark: Bool { _ = houseAppearance; return AlcoveAppearance.isDark }
+    private var paper: Color { dark ? Color(red: 0.149, green: 0.149, blue: 0.165) : Color(red: 0.984, green: 0.984, blue: 0.980) }
+    private var ink: Color { dark ? Color(red: 0.89, green: 0.894, blue: 0.91) : Color(red: 0.165, green: 0.165, blue: 0.18) }
+    private var sub: Color { dark ? Color(red: 0.545, green: 0.561, blue: 0.6) : Color(red: 0.604, green: 0.62, blue: 0.659) }
+    private var hair: Color { dark ? Color.white.opacity(0.14) : Color(red: 0.588, green: 0.604, blue: 0.643).opacity(0.45) }
+    private var track: Color { dark ? Color.white.opacity(0.10) : Color(red: 0.588, green: 0.604, blue: 0.643).opacity(0.20) }
+    private var barFill: Color { dark ? Color(red: 0.765, green: 0.776, blue: 0.808) : Color(red: 0.435, green: 0.455, blue: 0.502) }
+
     var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    ForEach(rooms, id: \.id) { r in
-                        Button { Task { await pick(r.id) } } label: {
-                            HStack(spacing: 12) {
-                                Image(systemName: r.icon).frame(width: 22)
-                                VStack(alignment: .leading, spacing: 2) {
-                                    Text(r.name).font(.system(size: 16, weight: .medium))
-                                    Text(r.note).font(.system(size: 12)).foregroundStyle(.secondary)
-                                }
-                                Spacer()
-                                if working == r.id { ProgressView().controlSize(.small) }
-                                else if currentRoom == r.id {
-                                    Image(systemName: "checkmark").font(.system(size: 14, weight: .semibold))
-                                        .foregroundStyle(.tint)
-                                }
-                                if activeChannel == r.id {
-                                    Text("开关在这").font(.system(size: 11)).foregroundStyle(.secondary)
-                                        .padding(.horizontal, 6).padding(.vertical, 2)
-                                        .background(Color.secondary.opacity(0.15), in: Capsule())
-                                }
-                            }
-                            .contentShape(Rectangle())
-                        }
-                        .buttonStyle(.plain)
-                        .disabled(!working.isEmpty)
-                    }
-                } footer: {
-                    Text(message.isEmpty ? "挑 tmux 或 SDK 会把开关一起拨过去，带 \(handoffTurns) 轮接着聊。" : message)
-                        .foregroundStyle(message.contains("失败") ? .red : .secondary)
-                }
-                Section {
-                    Button { onOpenChannelPanel() } label: {
-                        Label("通道设置", systemImage: "slider.horizontal.3")
-                    }
-                    NavigationLink { ApiRelayPanel() } label: {
-                        Label("API 中转站", systemImage: "antenna.radiowaves.left.and.right")
-                    }
-                }
+        GeometryReader { geo in
+            let w = max(100, geo.size.width * 0.25)
+            ZStack(alignment: .leading) {
+                Color.black.opacity(dark ? 0.18 : 0.06)
+                    .contentShape(Rectangle())
+                    .onTapGesture { onClose() }
+                panel(width: w, topInset: geo.safeAreaInsets.top, bottomInset: geo.safeAreaInsets.bottom)
+                    .frame(width: w)
+                    .frame(maxHeight: .infinity)
+                    .background(paper.ignoresSafeArea())
+                    .overlay(alignment: .trailing) { Rectangle().fill(hair).frame(width: 0.5) }
+                    .offset(x: min(0, dragX))
+                    .gesture(DragGesture(minimumDistance: 12)
+                        .onChanged { dragX = $0.translation.width }
+                        .onEnded { v in
+                            if v.translation.width < -w * 0.3 || v.predictedEndTranslation.width < -w * 0.6 { onClose() }
+                            withAnimation(.easeOut(duration: 0.2)) { dragX = 0 }
+                        })
             }
-            .navigationTitle("房间")
-            .navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .topBarTrailing) { Button("完成") { dismiss() } } }
-            .task {
-                if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status"),
-                   let cfg = obj["config"] as? [String: Any],
-                   let n = (cfg["handoff_turns"] as? NSNumber)?.intValue, n > 0 { handoffTurns = n }
-            }
+            .ignoresSafeArea()
+        }
+        .task {
+            WindowFont.requestSongti()
+            if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status"),
+               let cfg = obj["config"] as? [String: Any],
+               let n = (cfg["handoff_turns"] as? NSNumber)?.intValue, n > 0 { handoffTurns = n }
+        }
+        .task {
+            if let obj = try? await NativeHouseAPI.object("/api/usage/accounts"),
+               let list = obj["accounts"] as? [[String: Any]] { accounts = list }
         }
     }
+
+    private func panel(width: CGFloat, topInset: CGFloat, bottomInset: CGFloat) -> some View {
+        ScrollView(showsIndicators: false) {
+            VStack(alignment: .leading, spacing: 0) {
+                kicker("ROOM · 房间").padding(.bottom, 10)
+                ForEach(rooms, id: \.id) { r in roomRow(r) }
+                if !message.isEmpty {
+                    Text(message).font(WindowFont.swiftUI(9.5)).foregroundColor(sub)
+                        .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
+                }
+                hairline.padding(.vertical, 12)
+                linkRow("通道设置", icon: "slider.horizontal.3", action: onOpenChannelPanel)
+                linkRow("API 中转站", icon: "antenna.radiowaves.left.and.right", action: onOpenRelay)
+                hairline.padding(.vertical, 12)
+                kicker("USAGE · 额度").padding(.bottom, 8)
+                if accounts.isEmpty {
+                    ProgressView().controlSize(.small).tint(sub).padding(.vertical, 6)
+                }
+                ForEach(Array(accounts.enumerated()), id: \.offset) { i, a in
+                    accountBlock(a)
+                    if i < accounts.count - 1 { Color.clear.frame(height: 16) }
+                }
+            }
+            .padding(.horizontal, 11)
+            .padding(.top, topInset + 14)
+            .padding(.bottom, bottomInset + 20)
+            .frame(width: width, alignment: .leading)
+        }
+    }
+
+    private func kicker(_ t: String) -> some View {
+        Text(t).font(.custom("CormorantGaramond-Medium", size: 8)).tracking(1.6).foregroundColor(sub).lineLimit(1)
+    }
+
+    private var hairline: some View {
+        Rectangle().fill(LinearGradient(colors: [hair.opacity(0), hair, hair, hair.opacity(0)],
+                                        startPoint: .leading, endPoint: .trailing)).frame(height: 0.5)
+    }
+
+    private func roomRow(_ r: (id: String, name: String, icon: String)) -> some View {
+        Button { Task { await pick(r.id) } } label: {
+            HStack(spacing: 6) {
+                Image(systemName: r.icon).font(.system(size: 11)).frame(width: 15)
+                Text(r.name).font(.system(size: 13, weight: currentRoom == r.id ? .semibold : .regular))
+                Spacer(minLength: 0)
+                if working == r.id { ProgressView().controlSize(.mini) }
+                else if currentRoom == r.id { Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)) }
+                else if activeChannel == r.id { Circle().fill(sub).frame(width: 4, height: 4) }   // 开关拨在这间
+            }
+            .foregroundColor(currentRoom == r.id ? ink : sub)
+            .padding(.vertical, 8)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!working.isEmpty)
+    }
+
+    private func linkRow(_ t: String, icon: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon).font(.system(size: 10)).frame(width: 15)
+                Text(t).font(WindowFont.swiftUI(11.5)).lineLimit(1).minimumScaleFactor(0.8)
+                Spacer(minLength: 0)
+            }
+            .foregroundColor(ink)
+            .padding(.vertical, 7)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func accountBlock(_ a: [String: Any]) -> some View {
+        let who = a["who"] as? String ?? ""
+        let five = a["five_hour"] as? [String: Any]
+        let seven = a["seven_day"] as? [String: Any]
+        let renew = a["renew"] as? [String: Any]
+        return VStack(alignment: .leading, spacing: 7) {
+            Text(who).font(WindowFont.swiftUI(13, bold: true)).foregroundColor(ink)
+            meter("5 小时", five)
+            meter("7 天", seven)
+            Text(renewLine(renew)).font(WindowFont.swiftUI(9.5)).foregroundColor(sub)
+                .fixedSize(horizontal: false, vertical: true)
+        }
+    }
+
+    /// 一根细条：还剩多少（她看的是还能用多少）
+    private func meter(_ label: String, _ w: [String: Any]?) -> some View {
+        let used = num(w?["used_percent"])
+        let left = max(0, 100 - used)
+        return VStack(alignment: .leading, spacing: 3) {
+            HStack(alignment: .firstTextBaseline, spacing: 2) {
+                Text(label).font(WindowFont.swiftUI(10)).foregroundColor(sub)
+                Spacer(minLength: 0)
+                Text(w == nil ? "—" : "\(left)%").font(.custom("CormorantGaramond-Medium", size: 13)).foregroundColor(ink)
+            }
+            GeometryReader { g in
+                ZStack(alignment: .leading) {
+                    Capsule().fill(track)
+                    Capsule().fill(barFill).frame(width: g.size.width * CGFloat(left) / 100)
+                }
+            }
+            .frame(height: 2.5)
+        }
+    }
+
+    private func renewLine(_ r: [String: Any]?) -> String {
+        guard let r, let next = r["next"] as? String else { return "订阅到期日还不知道" }
+        let parts = next.split(separator: "-")
+        let md = parts.count == 3 ? "\(Int(parts[1]) ?? 0) 月 \(Int(parts[2]) ?? 0) 号" : next
+        let left = num(r["days_left"])
+        return left == 0 ? "订阅今天续费" : "订阅 \(md) 续，还剩 \(left) 天"
+    }
+
+    private func num(_ v: Any?) -> Int { (v as? Int) ?? Int((v as? Double) ?? 0) }
 
     @MainActor private func pick(_ id: String) async {
         message = ""
         if id == "api" || id == activeChannel {
-            onPickRoom(id); dismiss(); return
+            onPickRoom(id); onClose(); return
         }
         working = id
         do {
@@ -2925,7 +3049,7 @@ private struct ChatRoomPicker: View {
             activeChannel = obj["channel"] as? String ?? id
             onPickRoom(activeChannel)
             working = ""
-            dismiss()
+            onClose()
         } catch {
             working = ""
             message = "切换失败：\(error.localizedDescription)"
