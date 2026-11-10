@@ -231,7 +231,7 @@ struct ChatView: View {
                 Color.black.opacity(AlcoveAppearance.isDark ? 0.16 : 0.06)
                     .ignoresSafeArea()
                     .allowsHitTesting(false)
-                    .transition(.opacity.animation(.easeInOut(duration: 0.45)))
+                    .transition(.opacity)   // 1110 #4965 她：背景原地淡、不跟着滑，时间跟侧边栏一样（开 0.34 弹性、关 0.22）
             }
         }
         .overlay {
