@@ -150,7 +150,7 @@ struct ChatView: View {
     }
 
     private func closeRoomSidebar() {
-        withAnimation(.easeInOut(duration: 0.3)) { showRoomPicker = false }
+        withAnimation(.easeOut(duration: 0.22)) { showRoomPicker = false }
     }
 
     var body: some View {
@@ -227,9 +227,11 @@ struct ChatView: View {
         // 1110 #4950 她：左上角的门改成从左边拉出来的侧边栏，四分之一竖屏宽；里面放原来那几样，下面是陈璟和隅两个号的额度
         .overlay {
             if showRoomPicker {
-                Color.black.opacity(AlcoveAppearance.isDark ? 0.045 : 0.025)
+                // 1110 #4963 她：压暗的背景要原地慢慢出来，不许跟着栏一块从左边跳出来
+                Color.black.opacity(AlcoveAppearance.isDark ? 0.16 : 0.06)
                     .ignoresSafeArea()
-                    .transition(.opacity)
+                    .allowsHitTesting(false)
+                    .transition(.opacity.animation(.easeInOut(duration: 0.45)))
             }
         }
         .overlay {
@@ -239,8 +241,8 @@ struct ChatView: View {
                                 onOpenChannelPanel: { closeRoomSidebar(); showChannelPanel = true },
                                 onOpenRelay: { closeRoomSidebar(); showApiRelay = true },
                                 onClose: closeRoomSidebar)
-                    // 1110 #4961 她：「出来的方式原地慢慢」——不从左边滑进来，就在原地慢慢浮出来
-                    .transition(.opacity)
+                    // 栏本身照旧从左边滑进来；原地慢慢的是后面压暗那层（1110 #4963）
+                    .transition(.move(edge: .leading))
             }
         }
         .sheet(isPresented: $showApiRelay) {
@@ -250,7 +252,7 @@ struct ChatView: View {
                 .presentationDragIndicator(.visible)
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenRoomPicker)) { _ in
-            withAnimation(.easeInOut(duration: 0.4)) { showRoomPicker = true }
+            withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) { showRoomPicker = true }
         }
         // 1109 #4938 她：「我的拍一拍要立马出现」——拍完后端一回话就马上拉一次，不等下一轮轮询（闲着时要等 8 秒）
         .onReceive(NotificationCenter.default.publisher(for: .alcovePatSent)) { _ in
