@@ -2892,7 +2892,8 @@ private struct ChatRoomSidebar: View {
         GeometryReader { geo in
             let w = min(200, max(150, geo.size.width * 0.41))
             ZStack(alignment: .leading) {
-                Color.black.opacity(dark ? 0.16 : 0.04)
+                // 1110 #4958 她：点开时那层黑遮罩不要。右边空着的地方照样点一下就关，只是不压暗
+                Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { onClose() }
                 panel(width: w, topInset: geo.safeAreaInsets.top, bottomInset: geo.safeAreaInsets.bottom)
