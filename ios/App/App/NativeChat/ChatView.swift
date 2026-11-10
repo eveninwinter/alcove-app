@@ -2853,8 +2853,9 @@ extension Notification.Name {
 
 /// 0919 她要的三个房间：tmux（cli）/ SDK / API。开关还是那一个，挑 cli 或 sdk 就拨开关，
 /// 聊天页只拉那间的记录；api 后端还没做，先只能看。
-/// 1110 #4950 她：原来那张弹上来的表改成从左边拉出来的侧边栏，四分之一竖屏宽；
-/// 上面放原来那几样（三个房间、通道设置、API 中转站），下面陈璟和隅两个号的额度，每人最下面一句订阅哪天到期。
+/// 1110 #4950–4954 她：原来那张弹上来的表改成从左边拉出来的侧边栏。照她点头的第三版预览
+/// （sanctus-kit/mock-usage/sidebar3.png）：约五分之二屏宽，半透磨砂透出壁纸，英文和数字用时间戳那套 Cormorant，
+/// 中文宋体字距拉开；上面三个房间、通道设置、API 中转站，下面陈璟和隅两个号的 5h / 7 days 还剩多少＋重置时间＋renews。
 private struct ChatRoomSidebar: View {
     @Binding var activeChannel: String
     let currentRoom: String
@@ -2869,33 +2870,36 @@ private struct ChatRoomSidebar: View {
     @State private var accounts: [[String: Any]] = []
     @State private var dragX: CGFloat = 0
 
-    private let rooms: [(id: String, name: String, icon: String)] = [
-        ("cli", "tmux", "terminal"),
-        ("sdk", "SDK", "bolt.horizontal"),
-        ("api", "API", "antenna.radiowaves.left.and.right"),
-    ]
+    private let rooms: [(id: String, name: String)] = [("cli", "tmux"), ("sdk", "SDK"), ("api", "API")]
+    private static let corm = "CormorantGaramond-Medium"
+    private static let cormI = "CormorantGaramondItalic-MediumItalic"
 
     // 深浅只认全屋那对按钮
     private var dark: Bool { _ = houseAppearance; return AlcoveAppearance.isDark }
-    private var paper: Color { dark ? Color(red: 0.149, green: 0.149, blue: 0.165) : Color(red: 0.984, green: 0.984, blue: 0.980) }
-    private var ink: Color { dark ? Color(red: 0.89, green: 0.894, blue: 0.91) : Color(red: 0.165, green: 0.165, blue: 0.18) }
-    private var sub: Color { dark ? Color(red: 0.545, green: 0.561, blue: 0.6) : Color(red: 0.604, green: 0.62, blue: 0.659) }
-    private var hair: Color { dark ? Color.white.opacity(0.14) : Color(red: 0.588, green: 0.604, blue: 0.643).opacity(0.45) }
-    private var track: Color { dark ? Color.white.opacity(0.10) : Color(red: 0.588, green: 0.604, blue: 0.643).opacity(0.20) }
-    private var barFill: Color { dark ? Color(red: 0.765, green: 0.776, blue: 0.808) : Color(red: 0.435, green: 0.455, blue: 0.502) }
+    private func rgb(_ r: Double, _ g: Double, _ b: Double) -> Color { Color(red: r / 255, green: g / 255, blue: b / 255) }
+    private var ink: Color { dark ? rgb(228, 228, 231) : rgb(42, 42, 46) }
+    private var body2: Color { dark ? rgb(227, 228, 232) : rgb(62, 64, 72) }
+    private var sub: Color { dark ? rgb(139, 143, 153) : rgb(154, 158, 168) }
+    private var link: Color { dark ? rgb(163, 167, 176) : rgb(125, 129, 140) }
+    private var labelInk: Color { dark ? rgb(195, 198, 206) : rgb(111, 116, 128) }
+    private var hair: Color { dark ? Color.white.opacity(0.14) : rgb(150, 154, 164).opacity(0.45) }
+    private var track: Color { dark ? Color.white.opacity(0.10) : rgb(150, 154, 164).opacity(0.22) }
+    private var barFill: Color { dark ? rgb(195, 198, 206) : rgb(111, 116, 128) }
+    private var veil: Color { dark ? rgb(38, 38, 44).opacity(0.62) : Color.white.opacity(0.58) }
+    private var edge: Color { dark ? Color.white.opacity(0.10) : Color.white.opacity(0.9) }
 
     var body: some View {
         GeometryReader { geo in
-            let w = max(100, geo.size.width * 0.25)
+            let w = min(200, max(150, geo.size.width * 0.41))
             ZStack(alignment: .leading) {
-                Color.black.opacity(dark ? 0.18 : 0.06)
+                Color.black.opacity(dark ? 0.16 : 0.04)
                     .contentShape(Rectangle())
                     .onTapGesture { onClose() }
                 panel(width: w, topInset: geo.safeAreaInsets.top, bottomInset: geo.safeAreaInsets.bottom)
                     .frame(width: w)
                     .frame(maxHeight: .infinity)
-                    .background(paper.ignoresSafeArea())
-                    .overlay(alignment: .trailing) { Rectangle().fill(hair).frame(width: 0.5) }
+                    .background(ZStack { Rectangle().fill(.ultraThinMaterial); veil }.ignoresSafeArea())
+                    .overlay(alignment: .trailing) { Rectangle().fill(edge).frame(width: 1) }
                     .offset(x: min(0, dragX))
                     .gesture(DragGesture(minimumDistance: 12)
                         .onChanged { dragX = $0.translation.width }
@@ -2921,34 +2925,34 @@ private struct ChatRoomSidebar: View {
     private func panel(width: CGFloat, topInset: CGFloat, bottomInset: CGFloat) -> some View {
         ScrollView(showsIndicators: false) {
             VStack(alignment: .leading, spacing: 0) {
-                kicker("ROOM · 房间").padding(.bottom, 10)
+                kicker("ROOM · 房间").padding(.bottom, 8)
                 ForEach(rooms, id: \.id) { r in roomRow(r) }
                 if !message.isEmpty {
-                    Text(message).font(WindowFont.swiftUI(9.5)).foregroundColor(sub)
+                    Text(message).font(WindowFont.swiftUI(10)).foregroundColor(sub)
                         .fixedSize(horizontal: false, vertical: true).padding(.top, 4)
                 }
-                hairline.padding(.vertical, 12)
-                linkRow("通道设置", icon: "slider.horizontal.3", action: onOpenChannelPanel)
-                linkRow("API 中转站", icon: "antenna.radiowaves.left.and.right", action: onOpenRelay)
-                hairline.padding(.vertical, 12)
-                kicker("USAGE · 额度").padding(.bottom, 8)
+                hairline.padding(.vertical, 14)
+                linkRow("通道设置", action: onOpenChannelPanel)
+                linkRow("API 中转站", action: onOpenRelay)
+                hairline.padding(.vertical, 14)
+                kicker("ALLOWANCE").padding(.bottom, 12)
                 if accounts.isEmpty {
                     ProgressView().controlSize(.small).tint(sub).padding(.vertical, 6)
                 }
                 ForEach(Array(accounts.enumerated()), id: \.offset) { i, a in
                     accountBlock(a)
-                    if i < accounts.count - 1 { Color.clear.frame(height: 16) }
+                    if i < accounts.count - 1 { Color.clear.frame(height: 22) }
                 }
             }
-            .padding(.horizontal, 11)
-            .padding(.top, topInset + 14)
-            .padding(.bottom, bottomInset + 20)
+            .padding(.horizontal, 16)
+            .padding(.top, topInset + 17)
+            .padding(.bottom, bottomInset + 24)
             .frame(width: width, alignment: .leading)
         }
     }
 
     private func kicker(_ t: String) -> some View {
-        Text(t).font(.custom("CormorantGaramond-Medium", size: 8)).tracking(1.6).foregroundColor(sub).lineLimit(1)
+        Text(t).font(.custom(Self.corm, size: 9)).tracking(2.4).foregroundColor(sub).lineLimit(1)
     }
 
     private var hairline: some View {
@@ -2956,33 +2960,32 @@ private struct ChatRoomSidebar: View {
                                         startPoint: .leading, endPoint: .trailing)).frame(height: 0.5)
     }
 
-    private func roomRow(_ r: (id: String, name: String, icon: String)) -> some View {
+    private func roomRow(_ r: (id: String, name: String)) -> some View {
         Button { Task { await pick(r.id) } } label: {
-            HStack(spacing: 6) {
-                Image(systemName: r.icon).font(.system(size: 11)).frame(width: 15)
-                Text(r.name).font(.system(size: 13, weight: currentRoom == r.id ? .semibold : .regular))
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(r.name).font(.custom(Self.corm, size: 17)).tracking(1)
+                    .foregroundColor(currentRoom == r.id ? ink : sub)
                 Spacer(minLength: 0)
                 if working == r.id { ProgressView().controlSize(.mini) }
-                else if currentRoom == r.id { Image(systemName: "checkmark").font(.system(size: 10, weight: .semibold)) }
-                else if activeChannel == r.id { Circle().fill(sub).frame(width: 4, height: 4) }   // 开关拨在这间
+                else if currentRoom == r.id {
+                    Text("here").font(.custom(Self.cormI, size: 11)).foregroundColor(sub)
+                }
             }
-            .foregroundColor(currentRoom == r.id ? ink : sub)
-            .padding(.vertical, 8)
+            .padding(.vertical, 9)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .disabled(!working.isEmpty)
     }
 
-    private func linkRow(_ t: String, icon: String, action: @escaping () -> Void) -> some View {
+    private func linkRow(_ t: String, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: 6) {
-                Image(systemName: icon).font(.system(size: 10)).frame(width: 15)
-                Text(t).font(WindowFont.swiftUI(11.5)).lineLimit(1).minimumScaleFactor(0.8)
+            HStack(spacing: 4) {
+                Text(t).font(WindowFont.swiftUI(12.5)).tracking(1.5).foregroundColor(body2).lineLimit(1)
+                Text("›").font(.system(size: 12)).foregroundColor(link)
                 Spacer(minLength: 0)
             }
-            .foregroundColor(ink)
-            .padding(.vertical, 7)
+            .padding(.vertical, 8)
             .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -2990,27 +2993,31 @@ private struct ChatRoomSidebar: View {
 
     private func accountBlock(_ a: [String: Any]) -> some View {
         let who = a["who"] as? String ?? ""
-        let five = a["five_hour"] as? [String: Any]
-        let seven = a["seven_day"] as? [String: Any]
-        let renew = a["renew"] as? [String: Any]
-        return VStack(alignment: .leading, spacing: 7) {
-            Text(who).font(WindowFont.swiftUI(13, bold: true)).foregroundColor(ink)
-            meter("5 小时", five)
-            meter("7 天", seven)
-            Text(renewLine(renew)).font(WindowFont.swiftUI(9.5)).foregroundColor(sub)
-                .fixedSize(horizontal: false, vertical: true)
+        let acct = a["account"] as? String ?? ""
+        let short = acct == "overjingji" ? "over" : (acct == "chenjichenjing" ? "chenji" : acct)
+        return VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                Text(spaced(who)).font(WindowFont.swiftUI(14)).tracking(4).foregroundColor(ink)
+                if !short.isEmpty { Text(short).font(.custom(Self.cormI, size: 11)).foregroundColor(sub) }
+            }
+            .padding(.bottom, 9)
+            meter("5h", a["five_hour"] as? [String: Any]).padding(.bottom, 9)
+            meter("7 days", a["seven_day"] as? [String: Any]).padding(.bottom, 9)
+            renewLine(a["renew"] as? [String: Any])
         }
     }
 
-    /// 一根细条：还剩多少（她看的是还能用多少）
-    private func meter(_ label: String, _ w: [String: Any]?) -> some View {
-        let used = num(w?["used_percent"])
-        let left = max(0, 100 - used)
-        return VStack(alignment: .leading, spacing: 3) {
+    /// 「陈璟」照顶栏那样字中间空一格；一个字的不动
+    private func spaced(_ s: String) -> String { s.count > 1 ? s.map(String.init).joined(separator: " ") : s }
+
+    /// 一根细条：还剩多少，底下一行什么时候重置
+    private func meter(_ name: String, _ w: [String: Any]?) -> some View {
+        let left = max(0, 100 - num(w?["used_percent"]))
+        return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
-                Text(label).font(WindowFont.swiftUI(10)).foregroundColor(sub)
+                Text(name).font(.custom(Self.corm, size: 13)).tracking(0.5).foregroundColor(labelInk)
                 Spacer(minLength: 0)
-                Text(w == nil ? "—" : "\(left)%").font(.custom("CormorantGaramond-Medium", size: 13)).foregroundColor(ink)
+                Text(w == nil ? "—" : "\(left)%").font(.custom(Self.corm, size: 17)).foregroundColor(ink)
             }
             GeometryReader { g in
                 ZStack(alignment: .leading) {
@@ -3018,16 +3025,36 @@ private struct ChatRoomSidebar: View {
                     Capsule().fill(barFill).frame(width: g.size.width * CGFloat(left) / 100)
                 }
             }
-            .frame(height: 2.5)
+            .frame(height: 2)
+            .padding(.top, 4)
+            Text("resets " + resetText(w)).font(.custom(Self.cormI, size: 10.5)).foregroundColor(sub)
+                .padding(.top, 3)
         }
     }
 
-    private func renewLine(_ r: [String: Any]?) -> String {
-        guard let r, let next = r["next"] as? String else { return "订阅到期日还不知道" }
-        let parts = next.split(separator: "-")
-        let md = parts.count == 3 ? "\(Int(parts[1]) ?? 0) 月 \(Int(parts[2]) ?? 0) 号" : next
+    private static let beijing = TimeZone(identifier: "Asia/Shanghai") ?? .current
+
+    /// 今天的只写几点；别的日子写「11.17 · 04:00」
+    private func resetText(_ w: [String: Any]?) -> String {
+        let at = num(w?["reset_at"])
+        guard at > 0 else { return "—" }
+        let d = Date(timeIntervalSince1970: TimeInterval(at))
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = Self.beijing
+        let f = DateFormatter(); f.timeZone = Self.beijing; f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = cal.isDateInToday(d) ? "HH:mm" : "MM.dd · HH:mm"
+        return f.string(from: d)
+    }
+
+    private func renewLine(_ r: [String: Any]?) -> some View {
+        guard let r, let next = r["next"] as? String else {
+            return Text("renews —").font(.custom(Self.cormI, size: 11.5)).foregroundColor(link)
+        }
+        let p = next.split(separator: "-")
+        let md = p.count == 3 ? "\(p[1]).\(p[2])" : next
         let left = num(r["days_left"])
-        return left == 0 ? "订阅今天续费" : "订阅 \(md) 续，还剩 \(left) 天"
+        let tail = left == 0 ? " · today" : (left == 1 ? " · 1 day left" : " · \(left) days left")
+        return Text("renews \(md)").font(.custom(Self.cormI, size: 11.5)).foregroundColor(link)
+            + Text(tail).font(.custom(Self.cormI, size: 11.5)).foregroundColor(sub)
     }
 
     private func num(_ v: Any?) -> Int { (v as? Int) ?? Int((v as? Double) ?? 0) }
