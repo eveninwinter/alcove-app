@@ -179,6 +179,9 @@ struct ChatView: View {
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.frostedWallFrame, frostedWall)
         }
+        // 1110 #4959 她：「你看侧边栏怎么做的」——照右边那个家的侧栏：开着时后面整页糊 5、一层很淡的暗原地淡入，只有栏本身从边上滑进来
+        .blur(radius: showRoomPicker ? 5.0 : 0)
+        .animation(.easeOut(duration: 0.22), value: showRoomPicker)
         .overlay {
             if showEmbroidery { EmbroideryView(isPresented: $showEmbroidery) }
         }
@@ -225,6 +228,13 @@ struct ChatView: View {
         }
         // 0919 她要的三个房间：门打开挑一间。cli / sdk 就是拨开关（同时换房间），api 只换房间先看着
         // 1110 #4950 她：左上角的门改成从左边拉出来的侧边栏，四分之一竖屏宽；里面放原来那几样，下面是陈璟和隅两个号的额度
+        .overlay {
+            if showRoomPicker {
+                Color.black.opacity(AlcoveAppearance.isDark ? 0.045 : 0.025)
+                    .ignoresSafeArea()
+                    .transition(.opacity)
+            }
+        }
         .overlay {
             if showRoomPicker {
                 ChatRoomSidebar(activeChannel: $activeChatChannel, currentRoom: store.room,
@@ -2892,7 +2902,7 @@ private struct ChatRoomSidebar: View {
         GeometryReader { geo in
             let w = min(200, max(150, geo.size.width * 0.41))
             ZStack(alignment: .leading) {
-                // 1110 #4958 她：点开时那层黑遮罩不要。右边空着的地方照样点一下就关，只是不压暗
+                // 右边空着的地方点一下就关；压暗那层在 ChatView 里单独淡入（1110 #4959，原来跟着栏一起从左边滑进来）
                 Color.clear
                     .contentShape(Rectangle())
                     .onTapGesture { onClose() }
