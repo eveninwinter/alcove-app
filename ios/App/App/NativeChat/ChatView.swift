@@ -150,7 +150,7 @@ struct ChatView: View {
     }
 
     private func closeRoomSidebar() {
-        withAnimation(.easeOut(duration: 0.22)) { showRoomPicker = false }
+        withAnimation(.easeInOut(duration: 0.3)) { showRoomPicker = false }
     }
 
     var body: some View {
@@ -179,9 +179,6 @@ struct ChatView: View {
             .environment(\.chatWallpaperViewportSize, root.size)
             .environment(\.frostedWallFrame, frostedWall)
         }
-        // 1110 #4959 她：「你看侧边栏怎么做的」——照右边那个家的侧栏：开着时后面整页糊 5、一层很淡的暗原地淡入，只有栏本身从边上滑进来
-        .blur(radius: showRoomPicker ? 5.0 : 0)
-        .animation(.easeOut(duration: 0.22), value: showRoomPicker)
         .overlay {
             if showEmbroidery { EmbroideryView(isPresented: $showEmbroidery) }
         }
@@ -242,7 +239,8 @@ struct ChatView: View {
                                 onOpenChannelPanel: { closeRoomSidebar(); showChannelPanel = true },
                                 onOpenRelay: { closeRoomSidebar(); showApiRelay = true },
                                 onClose: closeRoomSidebar)
-                    .transition(.move(edge: .leading))
+                    // 1110 #4961 她：「出来的方式原地慢慢」——不从左边滑进来，就在原地慢慢浮出来
+                    .transition(.opacity)
             }
         }
         .sheet(isPresented: $showApiRelay) {
@@ -252,7 +250,7 @@ struct ChatView: View {
                 .presentationDragIndicator(.visible)
         }
         .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenRoomPicker)) { _ in
-            withAnimation(.spring(response: 0.34, dampingFraction: 0.9)) { showRoomPicker = true }
+            withAnimation(.easeInOut(duration: 0.4)) { showRoomPicker = true }
         }
         // 1109 #4938 她：「我的拍一拍要立马出现」——拍完后端一回话就马上拉一次，不等下一轮轮询（闲着时要等 8 秒）
         .onReceive(NotificationCenter.default.publisher(for: .alcovePatSent)) { _ in
