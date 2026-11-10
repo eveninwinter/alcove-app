@@ -3024,9 +3024,9 @@ private struct ChatRoomSidebar: View {
     /// 「陈璟」照顶栏那样字中间空一格；一个字的不动
     private func spaced(_ s: String) -> String { s.count > 1 ? s.map(String.init).joined(separator: " ") : s }
 
-    /// 一根细条：还剩多少，底下一行什么时候重置
+    /// 一根细条：用了多少（1110 #4994 她：「谁要你写剩多少了」——数字和条都按用掉的算），底下一行什么时候重置
     private func meter(_ name: String, _ w: [String: Any]?) -> some View {
-        let left = max(0, 100 - num(w?["used_percent"]))
+        let left = min(100, max(0, num(w?["used_percent"])))   // 名字留着没改：现在装的是「用了多少」
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 2) {
                 Text(name).font(.custom(Self.corm, size: 13)).tracking(0.5).foregroundColor(labelInk)
