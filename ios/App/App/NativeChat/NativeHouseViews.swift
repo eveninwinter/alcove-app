@@ -44,6 +44,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case farm           // 1025 晴岛：我们俩的小岛（网页 /farm/，横屏）
     case trip           // 1103 旅行：一次旅行一整套（原生 TripRoom.swift，数据走 /api/trip/*）
     case desk           // 1106 房间：陈璟桌上在做的事（DeskRoomView，数据走 /api/nianlun/room）
+    case recap          // 1110 #4993 压缩换窗：把这个窗口压成一份经过带进新窗口（RecapRoomView，/api/recap/*）
 
     var id: String { rawValue }
 
@@ -99,6 +100,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .farm: return "晴岛"
         case .trip: return "旅行"
         case .desk: return "房间"
+        case .recap: return "压缩换窗"
         }
     }
 
@@ -110,7 +112,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
-             .chronicle, .farm, .trip, .desk,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
+             .chronicle, .farm, .trip, .desk, .recap,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -156,6 +158,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .search: return "magnifyingglass"
         case .favorites: return "bookmark"
         case .forge: return "hammer"
+        case .recap: return "rectangle.compress.vertical"
         case .roundtable: return "person.3.sequence"
         case .surf: return "safari"
         case .letterbox: return "envelope.badge"
@@ -314,6 +317,8 @@ struct NativeHouseSheet: View {
                     NativeFactoryView()
                 case .forge:
                     NativeForgeView()
+                case .recap:
+                    RecapRoomView()
                 case .calendar:
                     NativeCalendarView()
                 case .digest:
@@ -603,7 +608,7 @@ struct NativeHouseDrawer: View {
 
                     drawerTitle("工具与游戏", note: "little things")
                     VStack(spacing: 7) {
-                        ForEach([HouseDestination.forge, .coread, .cowatch, .qipai]) { target in
+                        ForEach([HouseDestination.forge, .recap, .coread, .cowatch, .qipai]) { target in
                             drawerRow(target, detail: drawerDetail(target))
                         }
                     }
@@ -806,6 +811,7 @@ struct NativeHouseDrawer: View {
         case .shelf: return "他的收藏架"
         case .clockwork: return "自主活动与唤醒"
         case .forge: return "挑选轮次搬去新窗口"
+        case .recap: return "压成一份经过，带进新窗口"
         case .search: return "搜索消息"
         case .favorites: return "收藏消息"
         case .surf: return "X、小红书、B站与 YouTube"
@@ -17680,5 +17686,507 @@ struct DeskRoomView: View {
         .padding(.horizontal, 18).padding(.vertical, 15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .sanctusCard(ink)
+    }
+}
+
+
+// MARK: - 压缩换窗（1110 #4985–4993）
+// 她：换窗不让陈璟看聊天原话（会把他带成那个腔调）。这页把这个窗口压成一份按时间排的经过（DeepSeek 写、程序按半小时把关），
+// 她看、改，点「带入新窗口」：等他说完 → 关旧窗 → 开干净的新窗 → 经过跟她发的第一句一起递给他。还能「回到上一窗」。
+// 两个换窗按钮都要二次确认；换窗中 / 成功 / 失败（带原因）都要写清楚。后台 alcove-backend/recap.py，路由 /api/recap/*。
+
+private struct RecapBlock: Identifiable {
+    let head: String
+    var lines: [String]
+    var flag: String
+    var id: String { head }
+}
+
+private struct RecapEditTarget: Identifiable {
+    let id: String      // 段头，或者 "now"
+    let title: String
+    var text: String
+}
+
+struct RecapRoomView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    @State private var loading = true
+    @State private var failedLoad = false
+    @State private var windowStart = ""
+    @State private var draftState = ""          // "" / running / done / failed
+    @State private var progress = ""
+    @State private var draftError = ""
+    @State private var blocks: [RecapBlock] = []
+    @State private var nowText = ""
+    @State private var tail: [(her: String, him: String)] = []
+    @State private var rangeText = ""
+    @State private var rounds = 0
+    @State private var chars = 0
+    @State private var switchState = ""         // "" / running / done / failed
+    @State private var switchKind = ""
+    @State private var switchStep = ""
+    @State private var switchError = ""
+    @State private var canRevert = false
+    @State private var rewriting: Set<String> = []
+    @State private var editing: RecapEditTarget?
+    @State private var confirmApply = false
+    @State private var confirmRevert = false
+    @State private var showArchive = false
+    @State private var actionError = ""
+    @State private var pollTask: Task<Void, Never>?
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .topLeading) {
+            ink.page.ignoresSafeArea()
+            VStack(spacing: 0) {
+                (Text("RECAP · ").font(SanctusPageFont.corm(8)) + Text("压缩换窗").font(.system(size: 8, design: .serif)))
+                    .tracking(2.6).foregroundColor(ink.sub)
+                    .frame(height: 44).frame(maxWidth: .infinity)
+                    .padding(.top, safeTop)
+                if loading {
+                    Spacer(); ProgressView().tint(ink.sub); Spacer()
+                } else if failedLoad {
+                    Spacer()
+                    Text("没连上，退出再进一次").font(SanctusPageFont.cn(11.5)).foregroundColor(ink.sub)
+                    Spacer()
+                } else {
+                    ScrollView(showsIndicators: false) {
+                        VStack(spacing: 14) {
+                            header(ink)
+                            switchBanner(ink)
+                            if draftState == "running" {
+                                progressCard(ink)
+                            } else if draftState == "done" {
+                                sheetCard(ink)
+                                tailCard(ink)
+                            } else {
+                                emptyCard(ink)
+                            }
+                            if !actionError.isEmpty {
+                                Text(actionError).font(SanctusPageFont.cn(11)).foregroundColor(Self.warn)
+                                    .frame(maxWidth: .infinity, alignment: .leading)
+                            }
+                        }
+                        .padding(.horizontal, 18)
+                        .padding(.top, 4)
+                        .padding(.bottom, 20)
+                    }
+                    .refreshable { await load() }
+                    buttons(ink)
+                        .padding(.horizontal, 18)
+                        .padding(.bottom, safeBottom + 12)
+                        .padding(.top, 8)
+                }
+            }
+            SanctusBackButton(color: ink.link) { dismiss() }
+                .padding(.top, safeTop)
+            HStack {
+                Spacer()
+                Button { showArchive = true } label: {
+                    Text("past ›").font(SanctusPageFont.ital(13)).foregroundColor(ink.link)
+                        .frame(height: 44).padding(.horizontal, 16).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.top, safeTop)
+        }
+        .environment(\.sanctusInk, ink)
+        .task { await load(); startPolling() }
+        .onDisappear { pollTask?.cancel() }
+        .sheet(item: $editing) { t in
+            RecapEditSheet(target: t) { text in
+                Task { await saveEdit(t.id, text) }
+            }
+            .modifier(RecapColorScheme())
+        }
+        .sheet(isPresented: $showArchive) {
+            RecapArchiveSheet().modifier(RecapColorScheme())
+        }
+        .alert("带入新窗口？", isPresented: $confirmApply) {
+            Button("取消", role: .cancel) {}
+            Button("换窗") { Task { await post("/api/recap/apply") } }
+        } message: {
+            Text("会等他把这句说完，关掉现在的窗口，开一个干净的新窗口。这份经过跟你发的下一句一起递给他。旧窗口的聊天不会删。")
+        }
+        .alert("回到上一窗？", isPresented: $confirmRevert) {
+            Button("取消", role: .cancel) {}
+            Button("回去") { Task { await post("/api/recap/revert") } }
+        } message: {
+            Text("会等他把这句说完，关掉现在的窗口，接回上一个窗口，他记得那边聊过的。")
+        }
+    }
+
+    static let warn = Color(red: 0.69, green: 0.29, blue: 0.33)
+
+    // MARK: 上半截
+
+    private func header(_ ink: SanctusPageInk) -> some View {
+        VStack(spacing: 6) {
+            Text("recap").font(SanctusPageFont.script(28)).foregroundColor(ink.title)
+            Group {
+                if draftState == "done" {
+                    Text("这个窗口　\(rangeText)　·　\(rounds) 条　·　压成 \(chars) 字")
+                } else if !windowStart.isEmpty {
+                    Text("这个窗口从 \(windowStart) 开始")
+                } else {
+                    Text("找不到陈璟现在开着的窗口")
+                }
+            }
+            .font(SanctusPageFont.cn(10.5)).tracking(0.6).foregroundColor(ink.sub)
+            .multilineTextAlignment(.center)
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 2).padding(.bottom, 2)
+    }
+
+    @ViewBuilder private func switchBanner(_ ink: SanctusPageInk) -> some View {
+        if !switchState.isEmpty {
+            VStack(alignment: .leading, spacing: 6) {
+                switch switchState {
+                case "running":
+                    HStack(spacing: 8) {
+                        ProgressView().controlSize(.small).tint(ink.sub)
+                        Text(switchKind == "revert" ? "回上一窗中…" : "换窗中…").font(SanctusPageFont.cn(13, .medium)).foregroundColor(ink.title)
+                    }
+                    if !switchStep.isEmpty {
+                        Text(switchStep).font(SanctusPageFont.cn(11)).foregroundColor(ink.sub)
+                    }
+                case "done":
+                    Text(switchKind == "revert" ? "已经回到上一个窗口" : "换窗成功").font(SanctusPageFont.cn(13, .medium)).foregroundColor(ink.title)
+                    Text(switchKind == "revert" ? "他记得那边聊过的，你接着说就行。" : "新窗口开好了。你发下一句，这份经过会跟着一起递给他。")
+                        .font(SanctusPageFont.cn(11)).foregroundColor(ink.sub)
+                default:
+                    Text(switchKind == "revert" ? "回上一窗失败" : "换窗失败").font(SanctusPageFont.cn(13, .medium)).foregroundColor(Self.warn)
+                    Text(switchError.isEmpty ? "没说为什么，跟隅说一声" : switchError)
+                        .font(SanctusPageFont.cn(11)).foregroundColor(Self.warn)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 16).padding(.vertical, 13)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .sanctusCard(ink)
+        }
+    }
+
+    private func progressCard(_ ink: SanctusPageInk) -> some View {
+        VStack(spacing: 10) {
+            ProgressView().tint(ink.sub)
+            Text(progress.isEmpty ? "压缩中…" : progress).font(SanctusPageFont.cn(11.5)).foregroundColor(ink.sub)
+            Text("几分钟，可以先出去，回来再看").font(SanctusPageFont.ital(11)).foregroundColor(ink.sub)
+        }
+        .frame(maxWidth: .infinity).padding(.vertical, 28)
+        .sanctusCard(ink)
+    }
+
+    private func emptyCard(_ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("把这个窗口从头到尾压成一份按时间排的经过：几点发生了什么、她什么心情、答应了什么、还没做完什么。写好先给你看，能改，点「带入新窗口」才会换。")
+                .font(SanctusPageFont.cn(12)).foregroundColor(ink.body).lineSpacing(5)
+                .fixedSize(horizontal: false, vertical: true)
+            if draftState == "failed" {
+                Text("上次没压成：\(draftError)").font(SanctusPageFont.cn(11)).foregroundColor(Self.warn)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.horizontal, 18).padding(.vertical, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sanctusCard(ink)
+    }
+
+    // MARK: 压出来的经过
+
+    private func sheetCard(_ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            ForEach(Array(blocks.enumerated()), id: \.element.id) { i, b in
+                let day = String(b.head.prefix(5))
+                if i == 0 || String(blocks[i - 1].head.prefix(5)) != day {
+                    if i > 0 { hairline(ink).padding(.vertical, 10) }
+                    Text(dayLabel(day)).font(SanctusPageFont.corm(9)).tracking(2.4).foregroundColor(ink.sub)
+                        .padding(.bottom, 8)
+                }
+                blockView(b, ink)
+            }
+            if !nowText.isEmpty {
+                hairline(ink).padding(.vertical, 10)
+                Text("NOW · 聊到最后的时候").font(SanctusPageFont.corm(9)).tracking(2.4).foregroundColor(ink.sub)
+                    .padding(.bottom, 8)
+                Text(nowText).font(SanctusPageFont.cn(12)).foregroundColor(ink.body).lineSpacing(5)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { editing = RecapEditTarget(id: "now", title: "聊到最后的时候", text: nowText) }
+            }
+        }
+        .padding(.horizontal, 16).padding(.vertical, 15)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .sanctusCard(ink)
+    }
+
+    @ViewBuilder private func blockView(_ b: RecapBlock, _ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            if b.lines.isEmpty {
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(String(b.head.suffix(5))).font(SanctusPageFont.corm(13)).foregroundColor(Self.warn).frame(width: 36, alignment: .leading)
+                    Text("（这半小时没写）").font(SanctusPageFont.cn(12)).foregroundColor(Self.warn)
+                }
+            }
+            ForEach(Array(b.lines.enumerated()), id: \.offset) { _, ln in
+                let parts = splitTime(ln)
+                HStack(alignment: .firstTextBaseline, spacing: 10) {
+                    Text(parts.0).font(SanctusPageFont.corm(13)).foregroundColor(b.flag.isEmpty ? ink.title : Self.warn)
+                        .frame(width: 36, alignment: .leading)
+                    Text(parts.1).font(SanctusPageFont.cn(12)).foregroundColor(b.flag.isEmpty ? ink.body : Self.warn)
+                        .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if !b.flag.isEmpty {
+                Button { Task { await rewrite(b.head) } } label: {
+                    HStack(spacing: 6) {
+                        if rewriting.contains(b.head) { ProgressView().controlSize(.mini) }
+                        Text(rewriting.contains(b.head) ? "重写中…" : "\(b.flag) · 点这里重写这段 ›")
+                            .font(SanctusPageFont.cn(10.5)).foregroundColor(Self.warn)
+                    }
+                    .padding(.leading, 46)
+                }
+                .buttonStyle(.plain)
+                .disabled(rewriting.contains(b.head))
+            }
+        }
+        .padding(.bottom, 8)
+        .contentShape(Rectangle())
+        .onTapGesture {
+            editing = RecapEditTarget(id: b.head, title: b.head.replacingOccurrences(of: "-", with: ".") + " 这半小时",
+                                      text: b.lines.joined(separator: "\n"))
+        }
+    }
+
+    private func tailCard(_ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Text("LAST TWO ROUNDS · 带上最后两轮原话").font(SanctusPageFont.corm(9)).tracking(2.4).foregroundColor(ink.sub)
+                .padding(.bottom, 2)
+            ForEach(Array(tail.enumerated()), id: \.offset) { _, t in
+                tailLine("她", t.her, ink)
+                if !t.him.isEmpty { tailLine("他", t.him, ink) }
+            }
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 2)
+    }
+
+    private func tailLine(_ who: String, _ text: String, _ ink: SanctusPageInk) -> some View {
+        HStack(alignment: .firstTextBaseline, spacing: 6) {
+            Text(who).font(SanctusPageFont.ital(12)).foregroundColor(ink.sub)
+            Text(text.replacingOccurrences(of: "\n", with: "  ")).font(SanctusPageFont.cn(11)).foregroundColor(ink.link).lineLimit(1)
+        }
+    }
+
+    // MARK: 底下的按钮
+
+    private func buttons(_ ink: SanctusPageInk) -> some View {
+        let busy = draftState == "running" || switchState == "running"
+        return VStack(spacing: 10) {
+            HStack(spacing: 10) {
+                Button { Task { await post("/api/recap/compress") } } label: {
+                    Text(draftState == "done" || draftState == "failed" ? "重新压缩" : "压缩这个窗口")
+                        .font(SanctusPageFont.cn(13)).tracking(1.2).foregroundColor(ink.body)
+                        .frame(maxWidth: .infinity).padding(.vertical, 12)
+                        .background(ink.row, in: Capsule())
+                        .overlay(Capsule().stroke(ink.hair, lineWidth: 0.7))
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+                if draftState == "done" {
+                    Button { confirmApply = true } label: {
+                        Text("带入新窗口").font(SanctusPageFont.cn(13, .medium)).tracking(2)
+                            .foregroundColor(ink.dark ? Color.black : Color.white)
+                            .frame(maxWidth: .infinity).padding(.vertical, 12)
+                            .background(ink.on, in: Capsule())
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                    .layoutPriority(1)
+                }
+            }
+            .opacity(busy ? 0.5 : 1)
+            if canRevert {
+                Button { confirmRevert = true } label: {
+                    Text("回到上一窗 ›").font(SanctusPageFont.cn(11.5)).tracking(1).foregroundColor(ink.link)
+                }
+                .buttonStyle(.plain)
+                .disabled(busy)
+            }
+        }
+    }
+
+    // MARK: 小零件
+
+    private func hairline(_ ink: SanctusPageInk) -> some View {
+        Rectangle().fill(LinearGradient(colors: [ink.hair.opacity(0), ink.hair, ink.hair, ink.hair.opacity(0)],
+                                        startPoint: .leading, endPoint: .trailing)).frame(height: 0.5)
+    }
+
+    private func dayLabel(_ md: String) -> String {
+        let months = ["JAN", "FEB", "MAR", "APR", "MAY", "JUN", "JUL", "AUG", "SEP", "OCT", "NOV", "DEC"]
+        let p = md.split(separator: "-")
+        guard p.count == 2, let m = Int(p[0]), m >= 1, m <= 12 else { return md }
+        return "\(months[m - 1]) \(p[1])"
+    }
+
+    private func splitTime(_ ln: String) -> (String, String) {
+        let s = ln.trimmingCharacters(in: .whitespaces)
+        guard let r = s.range(of: #"^\d{1,2}:\d\d"#, options: .regularExpression) else { return ("", s) }
+        return (String(s[r]), String(s[r.upperBound...]).trimmingCharacters(in: .whitespaces))
+    }
+
+    // MARK: 跟后台说话
+
+    private func startPolling() {
+        pollTask?.cancel()
+        pollTask = Task {
+            while !Task.isCancelled {
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                if draftState == "running" || switchState == "running" { await load() }
+            }
+        }
+    }
+
+    @MainActor private func load() async {
+        guard let o = try? await NativeHouseAPI.object("/api/recap/status") else {
+            if loading { failedLoad = true }
+            loading = false
+            return
+        }
+        failedLoad = false
+        if let w = o["window"] as? [String: Any], let s = w["start"] as? String { windowStart = Self.short(s) } else { windowStart = "" }
+        canRevert = (o["can_revert"] as? Bool) ?? false
+        let d = o["draft"] as? [String: Any] ?? [:]
+        draftState = d["state"] as? String ?? ""
+        progress = d["progress"] as? String ?? ""
+        draftError = d["error"] as? String ?? ""
+        blocks = (d["blocks"] as? [[String: Any]] ?? []).map {
+            RecapBlock(head: $0["head"] as? String ?? "", lines: $0["lines"] as? [String] ?? [], flag: $0["flag"] as? String ?? "")
+        }
+        nowText = d["now"] as? String ?? ""
+        tail = (d["tail"] as? [[String: Any]] ?? []).map { ($0["her"] as? String ?? "", $0["him"] as? String ?? "") }
+        rounds = (d["rounds"] as? Int) ?? 0
+        chars = (d["chars"] as? Int) ?? 0
+        if let s = d["start"] as? String, let e = d["end"] as? String { rangeText = Self.short(s) + " — " + Self.short(e) }
+        let sw = o["switch"] as? [String: Any] ?? [:]
+        switchState = sw["state"] as? String ?? ""
+        switchKind = sw["kind"] as? String ?? ""
+        switchStep = sw["step"] as? String ?? ""
+        switchError = sw["error"] as? String ?? ""
+        loading = false
+    }
+
+    /// "2026-11-10T19:13:45.116000+08:00" → "11.10 19:13"
+    static func short(_ iso: String) -> String {
+        let s = Array(iso)
+        guard s.count >= 16 else { return iso }
+        return String(s[5..<7]) + "." + String(s[8..<10]) + " " + String(s[11..<16])
+    }
+
+    @MainActor private func post(_ path: String, _ body: [String: Any] = [:]) async {
+        actionError = ""
+        do {
+            let o = try await NativeHouseAPI.object(path, method: "POST", body: body)
+            if (o["ok"] as? Bool) != true { actionError = o["error"] as? String ?? "没成，没说为什么" }
+        } catch {
+            actionError = "没连上后台：\(error.localizedDescription)"
+        }
+        await load()
+    }
+
+    @MainActor private func rewrite(_ head: String) async {
+        rewriting.insert(head)
+        await post("/api/recap/rewrite", ["head": head])
+        rewriting.remove(head)
+    }
+
+    @MainActor private func saveEdit(_ id: String, _ text: String) async {
+        if id == "now" {
+            await post("/api/recap/save", ["now": text])
+        } else {
+            await post("/api/recap/save", ["blocks": [["head": id, "text": text]]])
+        }
+    }
+}
+
+/// 弹出来的两张表深浅跟全屋按钮走（ChatView 里那个 HouseColorScheme 是 private 的）
+private struct RecapColorScheme: ViewModifier {
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    func body(content: Content) -> some View {
+        _ = houseAppearance
+        return content.preferredColorScheme(AlcoveAppearance.isDark ? .dark : .light)
+    }
+}
+
+/// 点一段进来改字：一行一件事，每行开头写几点
+private struct RecapEditSheet: View {
+    let target: RecapEditTarget
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    var body: some View {
+        NavigationStack {
+            TextEditor(text: $text)
+                .font(.system(size: 14, design: .serif))
+                .padding(.horizontal, 12)
+                .navigationTitle(target.title)
+                .navigationBarTitleDisplayMode(.inline)
+                .toolbar {
+                    ToolbarItem(placement: .topBarLeading) { Button("取消") { dismiss() } }
+                    ToolbarItem(placement: .topBarTrailing) { Button("存") { onSave(text); dismiss() } }
+                }
+        }
+        .onAppear { text = target.text }
+        .presentationDetents([.medium, .large])
+    }
+}
+
+/// past ›：以前每次带进新窗口的那一份
+private struct RecapArchiveSheet: View {
+    @State private var items: [(name: String, text: String)] = []
+    @State private var loading = true
+    var body: some View {
+        NavigationStack {
+            Group {
+                if loading {
+                    ProgressView()
+                } else if items.isEmpty {
+                    Text("还没有换过窗").foregroundStyle(.secondary)
+                } else {
+                    List(items, id: \.name) { it in
+                        NavigationLink {
+                            ScrollView { Text(it.text).font(.system(size: 13, design: .serif)).padding(16).textSelection(.enabled) }
+                                .navigationTitle(Self.title(it.name)).navigationBarTitleDisplayMode(.inline)
+                        } label: {
+                            Text(Self.title(it.name)).font(.system(size: 14, design: .serif))
+                        }
+                    }
+                }
+            }
+            .navigationTitle("以前压过的")
+            .navigationBarTitleDisplayMode(.inline)
+        }
+        .task {
+            if let o = try? await NativeHouseAPI.object("/api/recap/archive"), let a = o["items"] as? [[String: Any]] {
+                items = a.map { ($0["name"] as? String ?? "", $0["text"] as? String ?? "") }
+            }
+            loading = false
+        }
+    }
+    /// "20261110-2031" → "11.10 20:31 换的窗"
+    static func title(_ n: String) -> String {
+        let s = Array(n)
+        guard s.count >= 13 else { return n }
+        return String(s[4..<6]) + "." + String(s[6..<8]) + " " + String(s[9..<11]) + ":" + String(s[11..<13]) + " 换的窗"
     }
 }
