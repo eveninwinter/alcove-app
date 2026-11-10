@@ -2994,11 +2994,14 @@ private struct ChatRoomSidebar: View {
     private func accountBlock(_ a: [String: Any]) -> some View {
         let who = a["who"] as? String ?? ""
         let acct = a["account"] as? String ?? ""
-        let short = acct == "overjingji" ? "over" : (acct == "chenjichenjing" ? "chenji" : acct)
+        let short = acct   // 1110 #4957 她：号名写全（overjingji / chenjichenjing）
         return VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .firstTextBaseline, spacing: 6) {
                 Text(spaced(who)).font(WindowFont.swiftUI(14)).tracking(4).foregroundColor(ink)
-                if !short.isEmpty { Text(short).font(.custom(Self.cormI, size: 11)).foregroundColor(sub) }
+                if !short.isEmpty {
+                    Text(short).font(.custom(Self.cormI, size: 11)).foregroundColor(sub)
+                        .lineLimit(1).minimumScaleFactor(0.8)
+                }
             }
             .padding(.bottom, 9)
             meter("5h", a["five_hour"] as? [String: Any]).padding(.bottom, 9)
