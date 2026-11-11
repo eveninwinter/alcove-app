@@ -17699,6 +17699,7 @@ private struct RecapBlock: Identifiable {
     let head: String
     var lines: [String]
     var flag: String
+    var early = false      // 1111 #5004 今天更早的窗口（一小时一段、写得粗）
     var id: String { head }
 }
 
@@ -17739,6 +17740,8 @@ struct RecapRoomView: View {
     @State private var showArchive = false
     @State private var actionError = ""
     @State private var pollTask: Task<Void, Never>?
+    /// 1111 #5004 她：一天换好几次窗，按时间压——默认从今天第一句压到现在，跨几个窗都带上
+    @AppStorage("recapIncludeToday") private var includeToday = true
 
     var body: some View {
         let ink = self.ink
@@ -17831,7 +17834,7 @@ struct RecapRoomView: View {
             Text("recap").font(SanctusPageFont.script(28)).foregroundColor(ink.title)
             Group {
                 if draftState == "done" {
-                    Text("这个窗口　\(rangeText)　·　\(rounds) 条　·　压成 \(chars) 字")
+                    Text("压的范围　\(rangeText)　·　\(rounds) 条　·　压成 \(chars) 字")
                 } else if !windowStart.isEmpty {
                     Text("这个窗口从 \(windowStart) 开始")
                 } else {
@@ -17905,8 +17908,15 @@ struct RecapRoomView: View {
         VStack(alignment: .leading, spacing: 0) {
             ForEach(Array(blocks.enumerated()), id: \.element.id) { i, b in
                 let day = String(b.head.prefix(5))
-                if i == 0 || String(blocks[i - 1].head.prefix(5)) != day {
+                let newPart = blocks.contains(where: { $0.early }) && (i == 0 || blocks[i - 1].early != b.early)
+                if newPart {
                     if i > 0 { hairline(ink).padding(.vertical, 10) }
+                    Text(b.early ? "EARLIER TODAY · 今天更早的窗口" : "THIS WINDOW · 这个窗口")
+                        .font(SanctusPageFont.corm(9)).tracking(2.4).foregroundColor(ink.title)
+                        .padding(.bottom, 8)
+                }
+                if newPart || i == 0 || String(blocks[i - 1].head.prefix(5)) != day {
+                    if i > 0 && !newPart { hairline(ink).padding(.vertical, 10) }
                     Text(dayLabel(day)).font(SanctusPageFont.corm(9)).tracking(2.4).foregroundColor(ink.sub)
                         .padding(.bottom, 8)
                 }
@@ -17992,8 +18002,16 @@ struct RecapRoomView: View {
     private func buttons(_ ink: SanctusPageInk) -> some View {
         let busy = draftState == "running" || switchState == "running"
         return VStack(spacing: 10) {
+            if !busy {
+                HStack {
+                    Text("带上今天更早的窗口").font(SanctusPageFont.cn(11.5)).foregroundColor(ink.body)
+                    Spacer(minLength: 0)
+                    Toggle("", isOn: $includeToday).labelsHidden().tint(ink.on).scaleEffect(0.8)
+                }
+                .padding(.horizontal, 4)
+            }
             HStack(spacing: 10) {
-                Button { Task { await post("/api/recap/compress") } } label: {
+                Button { Task { await post("/api/recap/compress", ["include_today": includeToday]) } } label: {
                     Text(draftState == "done" || draftState == "failed" ? "重新压缩" : "压缩这个窗口")
                         .font(SanctusPageFont.cn(13)).tracking(1.2).foregroundColor(ink.body)
                         .frame(maxWidth: .infinity).padding(.vertical, 12)
@@ -18070,7 +18088,8 @@ struct RecapRoomView: View {
         progress = d["progress"] as? String ?? ""
         draftError = d["error"] as? String ?? ""
         blocks = (d["blocks"] as? [[String: Any]] ?? []).map {
-            RecapBlock(head: $0["head"] as? String ?? "", lines: $0["lines"] as? [String] ?? [], flag: $0["flag"] as? String ?? "")
+            RecapBlock(head: $0["head"] as? String ?? "", lines: $0["lines"] as? [String] ?? [], flag: $0["flag"] as? String ?? "",
+                       early: ($0["early"] as? Bool) ?? false)
         }
         nowText = d["now"] as? String ?? ""
         tail = (d["tail"] as? [[String: Any]] ?? []).map { ($0["her"] as? String ?? "", $0["him"] as? String ?? "") }
