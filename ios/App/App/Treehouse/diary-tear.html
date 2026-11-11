@@ -911,7 +911,10 @@
     Object.assign(DIARY, d);
     DAY_KEYS.splice(0, DAY_KEYS.length, ...Object.keys(DIARY).sort());
     recount(); lastLabel = '';
-    if (!userPicked && DIARY[TODAY_KEY] && curKey !== TODAY_KEY) selectDay(TODAY_KEY);
+    // 1111 #5006 她：「9.10.11 三天都刷不出来」——原来只有今天有日记才跳；今天还没写（他晚上十点多才写）就一直停在缓存里那天。
+    // 没自己点过别的日子：跳到今天，今天没有就跳到今天以前最新的那一天
+    const target = DIARY[TODAY_KEY] ? TODAY_KEY : (DAY_KEYS.filter(k => k <= TODAY_KEY).pop() || curKey);
+    if (!userPicked && target && curKey !== target) selectDay(target);
     else if (JSON.stringify(DIARY[curKey] || []) !== before) { pendingKey = curKey; if (!draining) { draining = true; drainT = T; } }
     if (!cal.hidden) renderCal();
   };
