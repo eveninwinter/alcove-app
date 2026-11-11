@@ -1014,7 +1014,11 @@ final class ChatStore: ObservableObject {
                 // 隐藏中的那条显示的本来就是壳，跳过；其余只有正文真变了才换。
                 // 0923 她报「他发图两次都没进来」：图是收轮后服务端才并进这段话的 inline_images，
                 // 正文一个字没变。要是 app 恰好在那一秒前先拿到了这段话，之后只比正文就永远换不上带图那版。
-                if !isHidden(rec), out[idx].text != rec.text || out[idx].inlineImages != rec.inlineImages { out[idx] = rec }
+                // 1111 #5005 她：「下午的追问全都没有 trace 和 mind」——追问那几句半路就落库显示了，收轮时思绪、工具记录才补挂上来，
+                // 字一个没变，原来这里不换，时间戳那行就一直空着。思绪 / 原生思考 / 工具记录有变化也换（一轮也就补这一次）
+                let procChanged = out[idx].thinking != rec.thinking || out[idx].nativeThinking != rec.nativeThinking
+                    || out[idx].activity.count != rec.activity.count || out[idx].segments.count != rec.segments.count
+                if !isHidden(rec), out[idx].text != rec.text || out[idx].inlineImages != rec.inlineImages || procChanged { out[idx] = rec }
                 continue
             }
             // 0819 她报的：发一张图出来两张。乐观插入用的是本地时间戳，
