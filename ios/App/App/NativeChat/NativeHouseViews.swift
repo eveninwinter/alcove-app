@@ -18011,7 +18011,6 @@ struct RecapRoomView: View {
                     }
                     .buttonStyle(.plain)
                     .disabled(busy)
-                    .layoutPriority(1)
                 }
             }
             .opacity(busy ? 0.5 : 1)
