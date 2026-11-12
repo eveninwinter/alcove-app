@@ -228,6 +228,20 @@ private struct BenchInk {
     var addFill: Color { dark ? Color.white.opacity(0.05) : Color.white.opacity(0.7) }
 }
 
+/// 1112 #5033 她：「背景直接跟着主聊天壁纸走」——铺聊天页那一张（她换壁纸、调模糊都跟着），不另外糊、不压白
+private struct BenchBackdrop: View {
+    let base: Color
+    @ObservedObject private var wall = ChatWallpaperStore.shared
+    var body: some View {
+        ZStack {
+            base
+            ChatWallpaperRenderer(descriptor: wall.descriptor)
+        }
+        .ignoresSafeArea()
+        .allowsHitTesting(false)     // 填满再裁的大图会挡点按，整层不接手指
+    }
+}
+
 // MARK: 页面
 
 struct BenchRoomView: View {
@@ -249,7 +263,7 @@ struct BenchRoomView: View {
         let ink = self.ink
         let b = BenchInk(page: ink)
         ZStack(alignment: .topLeading) {
-            ink.page.ignoresSafeArea()
+            BenchBackdrop(base: ink.page)
             VStack(spacing: 0) {
                 (Text("WORKBENCH · ").font(SanctusPageFont.corm(8.5)) + Text("工作台").font(.system(size: 8.5, design: .serif)))
                     .tracking(2.7).foregroundColor(ink.sub)
