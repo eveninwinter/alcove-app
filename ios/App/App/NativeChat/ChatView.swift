@@ -1852,6 +1852,7 @@ struct ChatView: View {
                                         .scaledToFill()
                                         .frame(width: 64, height: 64)
                                         .clipShape(RoundedRectangle(cornerRadius: 10))
+                                        .contentShape(RoundedRectangle(cornerRadius: 10))
                                         .onTapGesture { previewImage = item.thumb }
                                     Button {
                                         pendingImages.remove(at: idx)
@@ -5879,6 +5880,8 @@ struct MessageRow: View {
         }
         .frame(width: 124, height: 124)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        // 1112 她：竖图点按范围溢出方框，盖住上面那行 trace、连空白都能点开大图——clipShape 只裁画面不裁点按
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .chatPhotoRim()
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
