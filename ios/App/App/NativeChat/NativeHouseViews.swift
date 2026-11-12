@@ -44,6 +44,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case farm           // 1025 晴岛：我们俩的小岛（网页 /farm/，横屏）
     case trip           // 1103 旅行：一次旅行一整套（原生 TripRoom.swift，数据走 /api/trip/*）
     case desk           // 1106 房间：陈璟桌上在做的事（DeskRoomView，数据走 /api/nianlun/room）
+    case bench          // 1112 工作台：她上班的文件，分区放着一直在（BenchRoom.swift，数据走 /api/bench/*）
     case recap          // 1110 #4993 压缩换窗：把这个窗口压成一份经过带进新窗口（RecapRoomView，/api/recap/*）
 
     var id: String { rawValue }
@@ -100,6 +101,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .farm: return "晴岛"
         case .trip: return "旅行"
         case .desk: return "房间"
+        case .bench: return "工作台"
         case .recap: return "压缩换窗"
         }
     }
@@ -112,7 +114,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
-             .chronicle, .farm, .trip, .desk, .recap,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
+             .chronicle, .farm, .trip, .desk, .recap, .bench,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -170,6 +172,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .farm: return "leaf"
         case .trip: return "airplane"
         case .desk: return "lamp.desk"
+        case .bench: return "tray.full"
         default: return "sparkles"
         }
     }
@@ -293,6 +296,8 @@ struct NativeHouseSheet: View {
                     TripRoomView()
                 case .desk:
                     DeskRoomView()
+                case .bench:
+                    BenchRoomView()
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -570,6 +575,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.chat, detail: "回到你们正在说的话")
                         drawerRow(.roundtable, detail: roundtableUnread > 0 ? "\(roundtableUnread) 条新消息" : "三个人的桌边")
                         drawerRow(.terminal, detail: "看看他正在做什么")
+                        drawerRow(.bench, detail: "上班的表、图和文档，放进来就一直在")   // 1112 工作台
                         drawerRow(.settings, detail: "主题、权限与小屋设置")
                         drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
                         drawerRow(.farm, detail: "我们俩的小岛，雨停了就出门玩")   // 1025 她要放出厂设置下面
