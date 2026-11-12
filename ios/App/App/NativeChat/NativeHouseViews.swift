@@ -575,7 +575,6 @@ struct NativeHouseDrawer: View {
                         drawerRow(.chat, detail: "回到你们正在说的话")
                         drawerRow(.roundtable, detail: roundtableUnread > 0 ? "\(roundtableUnread) 条新消息" : "三个人的桌边")
                         drawerRow(.terminal, detail: "看看他正在做什么")
-                        drawerRow(.bench, detail: "上班的表、图和文档，放进来就一直在")   // 1112 工作台
                         drawerRow(.settings, detail: "主题、权限与小屋设置")
                         drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
                         drawerRow(.farm, detail: "我们俩的小岛，雨停了就出门玩")   // 1025 她要放出厂设置下面
@@ -702,12 +701,13 @@ struct NativeHouseDrawer: View {
             }
             .buttonStyle(.plain)
 
-            // 1112 她：额度搬到聊天页左边侧栏了，这块换成进工作室（原来的 Usage 页不再有入口）
-            Button { select(.studio) } label: {
+            // 1112 她：额度搬到聊天页左边侧栏了，这块换成工作台的入口（原来的 Usage 页不再有入口）。
+            // #5034 我先听成「工作室」换错了，她：「我不是说了右上角入口吗」——工作台只有这一个入口，不另外加行
+            Button { select(.bench) } label: {
                 VStack(spacing: 7) {
-                    Image(systemName: "hammer")
+                    Image(systemName: "tray.full")
                         .font(.system(size: 15, weight: .regular))
-                    Text("工作室")
+                    Text("工作台")
                 }
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(theme.textDim)
