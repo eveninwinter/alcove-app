@@ -138,7 +138,9 @@ final class BenchStore: ObservableObject {
         if data.count > 80_000_000 { return (false, "超过 80M，太大了") }
         var comp = URLComponents(url: AlcoveAPI.fullURL("/api/bench/upload"), resolvingAgainstBaseURL: true)
         comp?.queryItems = [URLQueryItem(name: "folder", value: folder), URLQueryItem(name: "name", value: name)]
-        comp?.percentEncodedQuery = comp?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        // 名字里的加号要自己转（不转会被服务器读成空格）；先取出来再写回，一句里又读又写同一个变量编不过
+        let query = comp?.percentEncodedQuery?.replacingOccurrences(of: "+", with: "%2B")
+        comp?.percentEncodedQuery = query
         guard let url = comp?.url else { return (false, "名字不对") }
         var req = URLRequest(url: url)
         req.httpMethod = "POST"
