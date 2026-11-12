@@ -45,6 +45,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
     }
 
     func application(_ application: UIApplication, didFinishLaunchingWithOptions launchOptions: [UIApplication.LaunchOptionsKey: Any]?) -> Bool {
+        AlcoveAPI.installKeyCookie()   // 1112 #5044 锁门：开 App 先把钥匙 cookie 放好，图片、语音、网页都靠它
         // 0827 一个按钮管全屋：旧的“跟随系统”在这里落定成白天或黑夜，
         // 之后全 app 只认 houseInterfaceAppearance 这一个值。
         AlcoveAppearance.migrate(systemDark: UITraitCollection.current.userInterfaceStyle == .dark)

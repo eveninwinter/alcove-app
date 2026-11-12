@@ -1,12 +1,34 @@
 import Foundation
+import WebKit
 
 // Alcove 后端网络层。所有请求走 https://alcove.ob-memory.uk，
 // 鉴权由服务端代理层注入，客户端无需登录态。
 enum AlcoveAPI {
     static let base = URL(string: "https://alcove.ob-memory.uk")!
 
+    /// 1112 #5044 锁门：外网进来的请求后台都要这把钥匙（CI 从 GitHub Secrets 注入 Info.plist 的 AlcoveLocToken，跟位置上报同一把）。
+    /// 我们自己的请求带在头里；AsyncImage、播放器、网页这些不走我们 session 的，靠同名 cookie 带过去
+    static let appKey: String = (Bundle.main.object(forInfoDictionaryKey: "AlcoveLocToken") as? String ?? "")
+        .trimmingCharacters(in: .whitespacesAndNewlines)
+
+    /// 开 App 时调一次：系统 cookie 库和网页（WKWebView）的 cookie 库各放一份钥匙
+    static func installKeyCookie() {
+        guard !appKey.isEmpty, let host = base.host,
+              let cookie = HTTPCookie(properties: [
+                .domain: host, .path: "/", .name: "alcove_key", .value: appKey,
+                .secure: "TRUE", .expires: Date(timeIntervalSinceNow: 10 * 365 * 86400),
+              ]) else { return }
+        HTTPCookieStorage.shared.cookieAcceptPolicy = .always
+        HTTPCookieStorage.shared.setCookie(cookie)
+        DispatchQueue.main.async {
+            WKWebsiteDataStore.default().httpCookieStore.setCookie(cookie)
+        }
+    }
+
     static let session: URLSession = {
+        installKeyCookie()
         let cfg = URLSessionConfiguration.default
+        if !appKey.isEmpty { cfg.httpAdditionalHeaders = ["X-Alcove-Key": appKey] }
         cfg.timeoutIntervalForRequest = 35
         cfg.waitsForConnectivity = true
         return URLSession(configuration: cfg)
