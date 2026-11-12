@@ -39,6 +39,7 @@
 		CB00000000000000101601A1 /* StickerMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101601A2 /* StickerMask.swift */; };
 		CB00000000000000110301A1 /* TripRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000110301A2 /* TripRoom.swift */; };
 		CB00000000000000111201A1 /* BenchRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111201A2 /* BenchRoom.swift */; };
+		CB00000000000000111202A1 /* PondPublic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111202A2 /* PondPublic.swift */; };
 		CB00000000000000101901A1 /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101901A2 /* HealthView.swift */; };
 		CB00000000000000102401A1 /* ChronicleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000102401A2 /* ChronicleView.swift */; };
 		9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */; };
@@ -182,6 +183,7 @@
 		CB00000000000000101601A2 /* StickerMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerMask.swift; sourceTree = "<group>"; };
 		CB00000000000000110301A2 /* TripRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000111201A2 /* BenchRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchRoom.swift; sourceTree = "<group>"; };
+		CB00000000000000111202A2 /* PondPublic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondPublic.swift; sourceTree = "<group>"; };
 		CB00000000000000101901A2 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
 		CB00000000000000102401A2 /* ChronicleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChronicleView.swift; sourceTree = "<group>"; };
 		9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WalletRoomView.swift; sourceTree = "<group>"; };
@@ -342,6 +344,7 @@
 				CB00000000000000101601A2 /* StickerMask.swift */,
 				CB00000000000000110301A2 /* TripRoom.swift */,
 				CB00000000000000111201A2 /* BenchRoom.swift */,
+				CB00000000000000111202A2 /* PondPublic.swift */,
 				CB00000000000000101901A2 /* HealthView.swift */,
 				CB00000000000000102401A2 /* ChronicleView.swift */,
 				9A11C0DE00114F8CA3D60D22 /* WalletRoomView.swift */,
@@ -584,6 +587,7 @@
 				CB00000000000000101601A1 /* StickerMask.swift in Sources */,
 				CB00000000000000110301A1 /* TripRoom.swift in Sources */,
 				CB00000000000000111201A1 /* BenchRoom.swift in Sources */,
+				CB00000000000000111202A1 /* PondPublic.swift in Sources */,
 				CB00000000000000101901A1 /* HealthView.swift in Sources */,
 				CB00000000000000102401A1 /* ChronicleView.swift in Sources */,
 				9A11C0DE00114F8CA3D60D11 /* WalletRoomView.swift in Sources */,

@@ -103,7 +103,7 @@ private enum PondFilter: String, CaseIterable {
 // - 底色 EEEFF1（跟 Sanctus 一样深、去掉一点黄），深浅只认全屋按钮。
 // - #4332 她「除了图片 其他地方边框圆角」：链接卡、赞评论框、赞/评论条圆角 9，「··」7；图片、头像不动。
 
-private struct PondInk {
+struct PondInk {   // 1112 公开那边（PondPublic.swift）也用，去掉 private
     let dark: Bool
     private func rgb(_ hex: Int, _ a: Double = 1) -> Color {
         Color(red: Double((hex >> 16) & 0xFF) / 255, green: Double((hex >> 8) & 0xFF) / 255, blue: Double(hex & 0xFF) / 255, opacity: a)
@@ -129,7 +129,7 @@ private struct PondInk {
 }
 
 /// 头像：跟聊天页同一份（设置里换的那两张）；没设就一个字
-private struct PondAvatar: View {
+struct PondAvatar: View {
     let isHers: Bool
     var size: CGFloat = 40
     var radius: CGFloat = 8
@@ -175,6 +175,11 @@ struct NativePondView: View {
     @State private var composing = false
     @State private var replyingTo: PondItem?
     @State private var menuFor: String?
+    // 1112 #5040–5043 她：「檐下做切换 一个私密就我和陈璟 一个公开」——公开＝联邦朋友圈，整块在 PondPublic.swift
+    @AppStorage("pondSide") private var side = "private"
+    @StateObject private var eaves = EavesModel()
+    @State private var composingPublic = false
+    private var isPublic: Bool { side == "public" }
 
     private var ink: PondInk { _ = houseAppearance; return PondInk(dark: AlcoveAppearance.isDark) }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -187,13 +192,17 @@ struct NativePondView: View {
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
                     cover(ink)
-                    subBar(ink)
-                    content(ink)
+                    if isPublic {
+                        EavesSection(ink: ink, model: eaves, composing: $composingPublic)
+                    } else {
+                        subBar(ink)
+                        content(ink)
+                    }
                     Color.clear.frame(height: safeBottom + 30)
                 }
             }
             .ignoresSafeArea(edges: .top)
-            .refreshable { await load() }
+            .refreshable { if isPublic { await eaves.loadAll() } else { await load() } }
             topButtons(ink)
         }
         .task { await load() }
@@ -230,7 +239,7 @@ struct NativePondView: View {
             HStack(alignment: .bottom, spacing: 12) {
                 VStack(alignment: .trailing, spacing: 6) {
                     Text("under the eaves").font(SanctusPageFont.script(31)).foregroundColor(ink.ink)
-                    Text("ji & jing, side by side").font(SanctusPageFont.ital(11)).foregroundColor(ink.script)
+                    Text(isPublic ? "open to friends" : "ji & jing, side by side").font(SanctusPageFont.ital(11)).foregroundColor(ink.script)
                 }
                 .padding(.bottom, 26)
                 ZStack(alignment: .bottomLeading) {
@@ -260,7 +269,7 @@ struct NativePondView: View {
             .padding(.leading, 6)
             .accessibilityLabel("返回")
             Spacer()
-            Button { composing = true } label: {
+            Button { if isPublic { composingPublic = true } else { composing = true } } label: {
                 Image(systemName: "plus").font(.system(size: 14, weight: .light))
                     .foregroundColor(ink.script)
                     .frame(width: 30, height: 30)
@@ -272,7 +281,32 @@ struct NativePondView: View {
             .padding(.trailing, 9)
             .accessibilityLabel("放一条")
         }
+        // 胶囊按整屏正中摆（#5042 她：「为什么没在正中间」——夹在两个不一样宽的按钮中间会偏）
+        .overlay(alignment: .center) { sideSwitch(ink) }
         .padding(.top, safeTop)
+    }
+
+    /// 私密｜公开：选中的那格实心墨色
+    private func sideSwitch(_ ink: PondInk) -> some View {
+        HStack(spacing: 0) {
+            ForEach([("private", "私密"), ("public", "公开")], id: \.0) { value, label in
+                let on = side == value
+                Button {
+                    menuFor = nil
+                    withAnimation(.easeInOut(duration: 0.18)) { side = value }
+                } label: {
+                    Text(label).font(.system(size: 11, design: .serif)).tracking(2.4)
+                        .foregroundColor(on ? Color.white : ink.link)
+                        .padding(.leading, 15).padding(.trailing, 13).padding(.vertical, 5)
+                        .background(Capsule().fill(on ? ink.menu : Color.clear))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(2)
+        .background(Capsule().fill(ink.dark ? Color.black.opacity(0.25) : Color.white.opacity(0.55)))
+        .overlay(Capsule().stroke(ink.script.opacity(0.55), lineWidth: 0.8))
     }
 
     // MARK: 封面下面一行：眉标＋全部/许愿/念头
@@ -659,7 +693,7 @@ private struct PondMomentRow: View {
     }
 }
 
-private struct PondCaret: Shape {
+struct PondCaret: Shape {
     func path(in r: CGRect) -> Path {
         var p = Path()
         p.move(to: CGPoint(x: r.minX, y: r.maxY))
