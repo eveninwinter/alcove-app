@@ -696,11 +696,12 @@ struct NativeHouseDrawer: View {
             }
             .buttonStyle(.plain)
 
-            Button { select(.usage) } label: {
+            // 1112 她：额度搬到聊天页左边侧栏了，这块换成进工作室（原来的 Usage 页不再有入口）
+            Button { select(.studio) } label: {
                 VStack(spacing: 7) {
-                    Text(model.fiveHourLine)
-                    Divider().overlay(theme.glassBorder)
-                    Text(model.sevenDayLine)
+                    Image(systemName: "hammer")
+                        .font(.system(size: 15, weight: .regular))
+                    Text("工作室")
                 }
                 .font(.system(size: 11, weight: .medium, design: .rounded))
                 .foregroundColor(theme.textDim)

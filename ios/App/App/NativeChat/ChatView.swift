@@ -3018,6 +3018,8 @@ private struct ChatRoomSidebar: View {
             .padding(.bottom, 9)
             meter("5h", a["five_hour"] as? [String: Any]).padding(.bottom, 9)
             meter("7 days", a["seven_day"] as? [String: Any]).padding(.bottom, 9)
+            // 1112 她：Fable 的周额度也放进来，两个号都显示；后端查不到这个号的 Fable 时照样留一行「—」
+            meter("fable", a["fable_weekly"] as? [String: Any]).padding(.bottom, 9)
             renewLine(a["renew"] as? [String: Any])
         }
     }
