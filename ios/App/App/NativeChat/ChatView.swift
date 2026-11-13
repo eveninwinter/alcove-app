@@ -30,10 +30,10 @@ struct ChatView: View {
     /// 1001 贴表情：正被长按的那条（整屏那层盖在上面）；点了「选择文字」的那条（只有它能逐字选）
     @State private var reactTarget: ReactTarget?
     @State private var selectingTs: String?
-    // 0925「编辑」：正在编辑哪条（她那条的 ts）和输入框里的字
-    @State private var editingTs: String?
+    // 0925「编辑」→ 1113 #5230 她：「这一轮回复都可以编辑」：正在编辑的那一轮她的气泡（ts，按顺序）和每条框里的字
+    @State private var editRound: [String] = []
+    @State private var editDrafts: [String: String] = [:]
     @State private var rerollConfirmShown = false   // 0928 她要的：点重来先问一句是否（误触过一次，见下面 alert）
-    @State private var editDraft = ""
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
     @State private var pendingImages: [(thumb: UIImage, data: Data, ext: String)] = []
@@ -1043,18 +1043,48 @@ struct ChatView: View {
     /// 0925 她要的「编辑」：只给她自己的文字气泡（CLI 房间、没在翻历史、已经落库的）。
     /// 跟 rerollAction 一样抽成函数，别在 MessageRow 那一长串参数里内联，编译器扛不住
     private func editAction(for message: ChatMessage) -> (() -> Void)? {
-        guard message.role == "user", store.room == "cli", !store.isViewingHistory, !message.pending,
-              (message.msgType ?? "text") == "text", (message.attachmentUrl ?? "").isEmpty,
-              !message.isSticker, !message.isAudio, !message.displayText.isEmpty else { return nil }
+        guard isEditableText(message), store.room == "cli", !store.isViewingHistory else { return nil }
         return {
-            editDraft = message.displayText
-            editingTs = message.ts
+            // 1113 #5230：点哪条都是整轮编辑——往上往下连着的她的气泡（中间没夹他的）都算这一轮，
+            // 他那边本来就是按「一整轮」退的。这一轮里夹着图 / 表情 / 语音就不让整轮编辑（那些没法原样重发）
+            let msgs = store.messages
+            guard let i = msgs.firstIndex(where: { $0.uid == message.uid }) else { return }
+            var lo = i, hi = i
+            while lo > 0, msgs[lo - 1].role == "user" { lo -= 1 }
+            while hi + 1 < msgs.count, msgs[hi + 1].role == "user" { hi += 1 }
+            let round = Array(msgs[lo...hi])
+            guard round.allSatisfy({ isEditableText($0) }) else {
+                store.editNote = "这一轮里有图片、表情或语音，没法整轮改字。可以长按他的回复用「重来」。"
+                return
+            }
+            editDrafts = Dictionary(round.map { ($0.ts, $0.displayText) }, uniquingKeysWith: { a, _ in a })
+            editRound = round.map { $0.ts }
         }
     }
 
-    private func sendEdit(_ message: ChatMessage) {
-        store.editAndResend(message, newText: editDraft) { ok in
-            if ok { editingTs = nil }
+    private func isEditableText(_ m: ChatMessage) -> Bool {
+        m.role == "user" && !m.pending && (m.msgType ?? "text") == "text" && (m.attachmentUrl ?? "").isEmpty
+            && !m.isSticker && !m.isAudio && !m.displayText.isEmpty
+    }
+
+    private func editDraftBinding(_ ts: String) -> Binding<String> {
+        Binding(get: { editDrafts[ts] ?? "" }, set: { editDrafts[ts] = $0 })
+    }
+
+    private var editRoundHasText: Bool {
+        editRound.contains { !(editDrafts[$0] ?? "").trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
+    }
+
+    private func cancelEdit() {
+        editRound = []
+        editDrafts = [:]
+    }
+
+    private func sendEdit() {
+        let round = editRound.compactMap { ts in store.messages.first(where: { $0.ts == ts && $0.role == "user" }) }
+        guard !round.isEmpty else { cancelEdit(); return }
+        store.editRoundAndResend(round, drafts: round.map { editDrafts[$0.ts] ?? "" }) { ok in
+            if ok { cancelEdit() }
         }
     }
 
@@ -1336,11 +1366,13 @@ struct ChatView: View {
                     onResend: { text in store.sendText(text) },
                     onReroll: rerollAction(for: message),
                     onEdit: editAction(for: message),
-                    isEditing: editingTs == message.ts,
-                    editDraft: $editDraft,
+                    isEditing: editRound.contains(message.ts),
+                    editDraft: editDraftBinding(message.ts),
                     editBusy: store.editingBusy,
-                    onEditCancel: { editingTs = nil },
-                    onEditSend: { sendEdit(message) },
+                    editShowsButtons: editRound.last == message.ts,
+                    editCanSend: editRoundHasText,
+                    onEditCancel: { cancelEdit() },
+                    onEditSend: { sendEdit() },
                     kakaoHead: kakaoHead,
                     kakaoFirstBubble: theme.isKakao ? kakaoFirstBubble(at: index) : kakaoHead,
                     kakaoUnread: message.role == "user" && next == nil,
@@ -4405,6 +4437,9 @@ struct MessageRow: View {
     var isEditing: Bool = false
     var editDraft: Binding<String>? = nil
     var editBusy: Bool = false
+    // 1113 整轮编辑：一轮好几个框，取消 / 发送只挂在最后一个框下面；发不发得出去看整轮是不是全空
+    var editShowsButtons: Bool = true
+    var editCanSend: Bool = true
     var onEditCancel: (() -> Void)? = nil
     var onEditSend: (() -> Void)? = nil
     // 0924 Kakao：这条是不是一串的头（露头像 / 名字 / 01 图）；她最后一条没被他读过就挂个小「1」
@@ -5280,7 +5315,7 @@ struct MessageRow: View {
     private func editBox(_ draft: Binding<String>) -> some View {
         let face = theme.isDark ? Color(red: 28/255, green: 28/255, blue: 30/255) : Color.white
         let ink = theme.isDark ? Color.white : Color.black
-        let empty = draft.wrappedValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let empty = !editCanSend
         return VStack(alignment: .trailing, spacing: 8) {
             TextField("", text: draft, axis: .vertical)
                 .focused($editFocused)
@@ -5296,6 +5331,7 @@ struct MessageRow: View {
                     .stroke(theme.fyAccent, lineWidth: 1.2))
                 .disabled(editBusy)
                 .onAppear { DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { editFocused = true } }
+            if editShowsButtons {
             HStack(spacing: 10) {
                 Button { onEditCancel?() } label: {
                     Text("取消")
@@ -5321,6 +5357,7 @@ struct MessageRow: View {
             }
             .font(.system(size: 14))
             .buttonStyle(.plain)
+            }
         }
     }
 

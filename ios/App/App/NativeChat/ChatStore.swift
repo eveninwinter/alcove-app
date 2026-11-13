@@ -1168,6 +1168,74 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// 1113 #5230 她：「这一轮回复都可以编辑」「重新编辑之后还是要发送那种拆开的气泡」「编辑后重发就相当于 roll 了重发消息，
+    /// 但不是重发原本的，而是换了修改后的」。整轮：后端从这一轮第一句退（他那边本来就按一整轮退），
+    /// 这边收掉这一轮和下面的气泡，改好的几句照「攒气泡 + 最后一句发出」那条路拆开重发，他当一轮来回。清空的那句就不发了。
+    func editRoundAndResend(_ round: [ChatMessage], drafts: [String], done: @escaping (Bool) -> Void) {
+        guard let first = round.first, !editingBusy else { return }
+        var texts: [String] = []
+        for (m, d) in zip(round, drafts) {
+            var body = d.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !body.isEmpty else { continue }
+            // 原来那句带着引用的，改的只是正文，引用照原样挂回去（格式跟 outgoingText 一样）
+            if m.text.hasPrefix("[QUOTE]"), let end = m.text.range(of: "[/QUOTE]") {
+                body = String(m.text[..<end.upperBound]) + "\n" + body
+            }
+            texts.append(body)
+        }
+        guard !texts.isEmpty else { return }
+        editingBusy = true
+        Task { @MainActor in
+            defer { editingBusy = false }
+            do {
+                try await AlcoveAPI.editRewind(ts: first.ts)
+                if let idx = messages.firstIndex(where: { $0.uid == first.uid }) {
+                    for m in messages[idx...] { deletedMessageTs.insert(m.ts) }
+                    messages.removeSubrange(idx...)
+                }
+                done(true)
+                sendRound(texts)
+            } catch {
+                editNote = error.localizedDescription
+                done(false)
+            }
+        }
+    }
+
+    /// 1113：几句按顺序发——前面的攒着（入屏入库不叫他），最后一句发出去叫他回。一句一句等着发，免得顺序乱
+    func sendRound(_ texts: [String]) {
+        let items = texts.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
+        guard let last = items.last else { return }
+        guard items.count > 1 else { sendText(last); return }
+        wakeHerLocally()
+        let locals = items.map { ChatMessage(localText: $0) }
+        messages.append(contentsOf: locals)
+        heldCount = 0
+        heldGen += 1
+        optimisticTyping()
+        Task { @MainActor in
+            do {
+                for (i, text) in items.enumerated() {
+                    var rec: ChatMessage?
+                    if i < items.count - 1 {
+                        rec = try await AlcoveAPI.sendHold(text: text).record
+                    } else {
+                        let (r, asleep) = try await AlcoveAPI.send(text: text)
+                        rec = r
+                        if asleep { rec?.asleepAtSend = true }
+                    }
+                    if let confirmed = rec, let idx = messages.lastIndex(where: { $0.uid == locals[i].uid }) {
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { messages[idx] = confirmed }
+                    }
+                }
+                if let h = try? await AlcoveAPI.heldCount() { heldCount = h }
+            } catch {
+                connectionError = true
+            }
+        }
+    }
+
     func deleteMessage(_ msg: ChatMessage) {
         deletedMessageTs.insert(msg.ts)
         // 0818 她说删我第一句会把 thought 一起删掉——思绪不是那句话的一部分，是这一轮的。
