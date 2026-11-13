@@ -40,6 +40,7 @@
 		CB00000000000000110301A1 /* TripRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000110301A2 /* TripRoom.swift */; };
 		CB00000000000000111201A1 /* BenchRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111201A2 /* BenchRoom.swift */; };
 		CB00000000000000111301A1 /* AccountRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111301A2 /* AccountRingView.swift */; };
+		CB00000000000000111301B1 /* MoveHouseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111301B2 /* MoveHouseView.swift */; };
 		CB00000000000000111202A1 /* PondPublic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111202A2 /* PondPublic.swift */; };
 		CB00000000000000101901A1 /* HealthView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101901A2 /* HealthView.swift */; };
 		CB00000000000000102401A1 /* ChronicleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000102401A2 /* ChronicleView.swift */; };
@@ -185,6 +186,7 @@
 		CB00000000000000110301A2 /* TripRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000111201A2 /* BenchRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000111301A2 /* AccountRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRingView.swift; sourceTree = "<group>"; };
+		CB00000000000000111301B2 /* MoveHouseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveHouseView.swift; sourceTree = "<group>"; };
 		CB00000000000000111202A2 /* PondPublic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondPublic.swift; sourceTree = "<group>"; };
 		CB00000000000000101901A2 /* HealthView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HealthView.swift; sourceTree = "<group>"; };
 		CB00000000000000102401A2 /* ChronicleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ChronicleView.swift; sourceTree = "<group>"; };
@@ -347,6 +349,7 @@
 				CB00000000000000110301A2 /* TripRoom.swift */,
 				CB00000000000000111201A2 /* BenchRoom.swift */,
 				CB00000000000000111301A2 /* AccountRingView.swift */,
+				CB00000000000000111301B2 /* MoveHouseView.swift */,
 				CB00000000000000111202A2 /* PondPublic.swift */,
 				CB00000000000000101901A2 /* HealthView.swift */,
 				CB00000000000000102401A2 /* ChronicleView.swift */,
@@ -591,6 +594,7 @@
 				CB00000000000000110301A1 /* TripRoom.swift in Sources */,
 				CB00000000000000111201A1 /* BenchRoom.swift in Sources */,
 				CB00000000000000111301A1 /* AccountRingView.swift in Sources */,
+				CB00000000000000111301B1 /* MoveHouseView.swift in Sources */,
 				CB00000000000000111202A1 /* PondPublic.swift in Sources */,
 				CB00000000000000101901A1 /* HealthView.swift in Sources */,
 				CB00000000000000102401A1 /* ChronicleView.swift in Sources */,

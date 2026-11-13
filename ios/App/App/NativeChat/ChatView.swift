@@ -96,6 +96,7 @@ struct ChatView: View {
     @State private var showRoomPicker = false        // 0919 左上角的门：挑房间（1110 起是左侧栏）
     @State private var showApiRelay = false          // 1110 侧栏里点「API 中转站」
     @State private var showAccountRing = false       // 1113 #5075 侧栏额度下面「换号 ›」→ 钥匙串换号页
+    @State private var showMoveHouse = false         // 1113 #5134 换号下面「搬家 ›」→ 搬家页
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
     @State private var paragraphSelectionMode = false
@@ -242,6 +243,7 @@ struct ChatView: View {
                                 onOpenChannelPanel: { closeRoomSidebar(); showChannelPanel = true },
                                 onOpenRelay: { closeRoomSidebar(); showApiRelay = true },
                                 onOpenAccounts: { closeRoomSidebar(); showAccountRing = true },
+                                onOpenMove: { closeRoomSidebar(); showMoveHouse = true },
                                 onClose: closeRoomSidebar)
                     // 栏本身照旧从左边滑进来；原地慢慢的是后面压暗那层（1110 #4963）
                     .transition(.move(edge: .leading))
@@ -249,6 +251,10 @@ struct ChatView: View {
         }
         .fullScreenCover(isPresented: $showAccountRing) {
             AccountRingView()
+                .modifier(HouseColorScheme())
+        }
+        .fullScreenCover(isPresented: $showMoveHouse) {
+            MoveHouseView()
                 .modifier(HouseColorScheme())
         }
         .sheet(isPresented: $showApiRelay) {
@@ -2880,6 +2886,7 @@ private struct ChatRoomSidebar: View {
     let onOpenChannelPanel: () -> Void
     let onOpenRelay: () -> Void
     let onOpenAccounts: () -> Void
+    let onOpenMove: () -> Void
     let onClose: () -> Void
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     @State private var working = ""
@@ -2964,6 +2971,7 @@ private struct ChatRoomSidebar: View {
                 }
                 // 1113 #5072 她：额度这儿加个小小的「换号」，点了弹一整页（钥匙串）
                 linkRow("换号", action: onOpenAccounts).padding(.top, 14)
+                linkRow("搬家", action: onOpenMove)
             }
             .padding(.horizontal, 16)
             .padding(.top, topInset + 17)
