@@ -135,7 +135,7 @@ final class BenchStore: ObservableObject {
 
     /// 传一份；回来的是「成没成、没成的原因」
     func upload(_ data: Data, name: String, folder: String) async -> (Bool, String) {
-        if data.count > 80_000_000 { return (false, "超过 80M，太大了") }
+        if data.count > 99_000_000 { return (false, "超过 99M，太大了：用 QQ 邮箱超大附件发给隅") }   // 1113 #5120 跟后台一起提到 99M（Cloudflare 一次最多 100M）
         var comp = URLComponents(url: AlcoveAPI.fullURL("/api/bench/upload"), resolvingAgainstBaseURL: true)
         comp?.queryItems = [URLQueryItem(name: "folder", value: folder), URLQueryItem(name: "name", value: name)]
         // 名字里的加号要自己转（不转会被服务器读成空格）；先取出来再写回，一句里又读又写同一个变量编不过

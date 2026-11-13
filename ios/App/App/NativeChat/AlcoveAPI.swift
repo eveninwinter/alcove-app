@@ -4,7 +4,12 @@ import WebKit
 // Alcove 后端网络层。所有请求走 https://alcove.ob-memory.uk，
 // 鉴权由服务端代理层注入，客户端无需登录态。
 enum AlcoveAPI {
-    static let base = URL(string: "https://alcove.ob-memory.uk")!
+    static let homeBase = URL(string: "https://alcove.ob-memory.uk")!
+    /// 1113 #5118 搬家「试新家」：打开以后整个 App 连新机器的测试通道（划掉 App 重开生效，钥匙 cookie 跟着新地址装）
+    static let newHomeBase = URL(string: "https://alcove-next.ob-memory.uk")!
+    static let tryNewHomeKey = "alcoveTryNewHome"
+    static var tryingNewHome: Bool { UserDefaults.standard.bool(forKey: tryNewHomeKey) }
+    static var base: URL { tryingNewHome ? newHomeBase : homeBase }
 
     /// 1112 #5044 锁门：外网进来的请求后台都要这把钥匙（CI 从 GitHub Secrets 注入 Info.plist 的 AlcoveLocToken，跟位置上报同一把）。
     /// 我们自己的请求带在头里；AsyncImage、播放器、网页这些不走我们 session 的，靠同名 cookie 带过去
