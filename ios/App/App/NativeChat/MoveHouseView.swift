@@ -150,6 +150,9 @@ struct MoveHouseView: View {
                 .padding(.top, max(safeTop, 20))
             toastLayer(ink)
         }
+        // 1113 #5135 她：「安全区太多了，是不是叠了几层」——全屏弹出来的页面系统本来就让开了刘海和底部，
+        // 我又按工作台那套自己加了一遍 safeTop/safeBottom，叠了两层。整页不让系统让，只留自己那一层（跟工作台一样）
+        .ignoresSafeArea()
         .environment(\.sanctusInk, ink)
         .animation(.easeInOut(duration: 0.2), value: store.toast)
         .task { WindowFont.requestSongti(); await store.load() }
