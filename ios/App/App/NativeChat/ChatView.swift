@@ -7931,33 +7931,66 @@ private struct GhostActivityMessageCard: View {
     }
 }
 
-struct DocumentAttachmentCard: View {   // 1027 #4445 工作室的文件也用这张（点开＝浏览器里打开/下载）
+struct DocumentAttachmentCard: View {   // 1027 #4445 工作室的文件也用这张
+    // 1113 #5127 她点开看到 {"error":"unauthorized"}：原来是 Link 交给 Safari 打开，Safari 没有 App 的钥匙，锁门以后全被前门拦。
+    // 改成 App 自己带着钥匙下到手机临时目录，再用系统预览打开（跟工作台同一个预览，右上角能转发、存到「文件」）。
     let url: URL
     let filename: String
     let theme: AlcoveTheme
+    @State private var loading = false
+    @State private var failed = false
     private var ext: String { (filename as NSString).pathExtension.uppercased() }
 
     var body: some View {
-        Link(destination: url) {
+        Button { Task { await open() } } label: {
             HStack(spacing: 12) {
                 Image(systemName: "doc.text")
                     .font(.system(size: 22, weight: .light)).foregroundColor(theme.fyAccent)
                     .frame(width: 34, height: 42)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(filename).font(.system(size: 13, weight: .medium)).lineLimit(2)
-                    Text(ext.isEmpty ? "文件" : ext + " 文件")
+                    Text(failed ? "没下下来，再点一次" : (ext.isEmpty ? "文件" : ext + " 文件"))
                         .font(.system(size: 10, design: .monospaced)).foregroundColor(theme.textDim)
                 }
                 Spacer(minLength: 8)
-                Image(systemName: "arrow.down.circle").font(.system(size: 17, weight: .light))
-                    .foregroundColor(theme.textDim)
+                if loading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.down.circle").font(.system(size: 17, weight: .light))
+                        .foregroundColor(theme.textDim)
+                }
             }
             .foregroundColor(theme.text)
             .padding(12)
             .frame(maxWidth: 280, alignment: .leading)
             .background(theme.fyCard, in: RoundedRectangle(cornerRadius: theme.isPaper ? 8 : 15, style: .continuous))
             .overlay(RoundedRectangle(cornerRadius: theme.isPaper ? 8 : 15).stroke(theme.fyBorder, lineWidth: 0.8))
-        }.buttonStyle(.plain)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(loading)
+    }
+
+    @MainActor private func open() async {
+        loading = true; failed = false
+        defer { loading = false }
+        let name = filename.isEmpty ? url.lastPathComponent : filename.replacingOccurrences(of: "/", with: "-")
+        let dir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("att-\(abs(url.absoluteString.hashValue))", isDirectory: true)
+        let dst = dir.appendingPathComponent(name)
+        if !FileManager.default.fileExists(atPath: dst.path) {
+            do {
+                let (tmp, resp) = try await AlcoveAPI.session.download(from: url)
+                guard (resp as? HTTPURLResponse)?.statusCode == 200 else { failed = true; return }
+                try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+                try? FileManager.default.removeItem(at: dst)
+                try FileManager.default.moveItem(at: tmp, to: dst)
+            } catch {
+                failed = true
+                return
+            }
+        }
+        BenchQuickLook.shared.show(dst)
     }
 }
 
