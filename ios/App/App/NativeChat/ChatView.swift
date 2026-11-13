@@ -7602,7 +7602,19 @@ struct PondChatMessageCard: View {
     @State private var expanded = false
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: ChatCardInk { _ = houseAppearance; return ChatCardInk(dark: AlcoveAppearance.isDark) }
-    private var foldable: Bool { card.text.count > 36 || card.text.contains("\n") }
+    // 1113 #5089：跟 SanctusPondCard 一样改成真量——按实际宽度排一份全文、一份两行版，全文更高才算被截、才给展开
+    @State private var textW: CGFloat = 0
+    @State private var fullH: CGFloat = 0
+    @State private var clipH: CGFloat = 0
+    private var foldable: Bool { fullH > clipH + 1 }
+    private func measureText(_ limit: Int?) -> some View {
+        Text(card.text)
+            .font(.system(size: 13, design: .serif))
+            .lineSpacing(5)
+            .lineLimit(limit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: max(textW, 1), alignment: .leading)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 9) {
@@ -7620,6 +7632,15 @@ struct PondChatMessageCard: View {
                     .lineLimit(expanded ? nil : 2)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: .infinity, alignment: .leading)
+                    .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { textW = $0 }
+                    .background(alignment: .topLeading) {
+                        ZStack(alignment: .topLeading) {
+                            measureText(nil).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullH = $0 }
+                            measureText(2).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { clipH = $0 }
+                        }
+                        .hidden()
+                        .allowsHitTesting(false)
+                    }
             }
             .padding(.horizontal, 12).padding(.vertical, 11)
             .background(ink.page.opacity(0.9))
@@ -11038,7 +11059,20 @@ struct SanctusPondCard: View {
     @State private var expanded = false
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
-    private var foldable: Bool { card.text.count > 54 || card.text.contains("\n") }
+    // 1113 #5089 她：「檐下卡片有的能展开有的点不动」——原来按字数猜（>54 字或带换行才能点），
+    // 四十几、五十出头的字在 196 宽里已经超过三行被截了「…」，却不让点开。改成真量：
+    // 同样字体、同样宽度各排一份全文和三行版（藏起来），全文比三行高＝真被截了＝能展开。
+    @State private var fullH: CGFloat = 0
+    @State private var clipH: CGFloat = 0
+    private var foldable: Bool { fullH > clipH + 1 }
+    private func measureText(_ limit: Int?) -> some View {
+        Text(card.text)
+            .font(.system(size: 12, design: .serif))
+            .lineSpacing(6.5)
+            .lineLimit(limit)
+            .fixedSize(horizontal: false, vertical: true)
+            .frame(width: 196, alignment: .leading)
+    }
 
     var body: some View {
         let ink = self.ink
@@ -11066,13 +11100,21 @@ struct SanctusPondCard: View {
                     .lineLimit(expanded ? nil : 3)
                     .fixedSize(horizontal: false, vertical: true)
                     .frame(maxWidth: expanded ? .infinity : 196, alignment: .leading)
+                    .background(alignment: .topLeading) {
+                        ZStack(alignment: .topLeading) {
+                            measureText(nil).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { fullH = $0 }
+                            measureText(3).onGeometryChange(for: CGFloat.self) { $0.size.height } action: { clipH = $0 }
+                        }
+                        .hidden()
+                        .allowsHitTesting(false)
+                    }
                     .padding(.top, 8)
                     .contentShape(Rectangle())
-                    .onTapGesture { if foldable { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } }
+                    .onTapGesture { if foldable || expanded { withAnimation(.easeInOut(duration: 0.2)) { expanded.toggle() } } }
                 SanctusHair(ink: ink).padding(.top, 11)
                 HStack(alignment: .firstTextBaseline) {
                     Text("he left one here").font(SanctusCardFont.ital()).foregroundColor(ink.sub)
-                    if foldable {
+                    if foldable || expanded {
                         Text(expanded ? "⌃" : "⌄").font(.system(size: 9)).foregroundColor(ink.sub)
                     }
                     Spacer()

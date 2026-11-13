@@ -8384,9 +8384,10 @@ private struct NativeStudioView: View {
                 }
             }
         }
-        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item]) { result in
-            guard case .success(let url) = result else { return }
-            Task { await uploadFile(url) }
+        // 1113 #5089 她：「选择文件加一个多选发送 跟发图片一样」——一次挑几份，按挑的顺序一份一份发
+        .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
+            guard case .success(let urls) = result, !urls.isEmpty else { return }
+            Task { for url in urls { await uploadFile(url) } }
         }
         .fullScreenCover(item: $photoViewer) { target in
             StudioPhotoViewer(url: target.url) { photoViewer = nil }
