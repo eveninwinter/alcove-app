@@ -1,5 +1,6 @@
 import SwiftUI
 import AVFoundation
+import WebKit
 
 // 搜索与收藏（2026-08-19 她要的四件）：
 //   · 收藏分单条和整段聊天记录——聊天页多选几条就收成一段，选一条还是单条
@@ -680,6 +681,7 @@ struct GlassFavoritesView: View {
     /// 1022 #4175「他收藏的」两种看法：grid 胶片格子 / big 大图往下刷（记住上次选的）
     @AppStorage("favHisMode") private var hisMode = "grid"
     @State private var hisFocus: Int?
+    @State private var showWall = false
 
     private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
     private let filters: [(String, String)] = [
@@ -702,6 +704,19 @@ struct GlassFavoritesView: View {
                 Text("KEPT · 收藏").font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
                     .padding(.top, 8)
                 Text(countLine).font(SF.ital(10)).foregroundColor(ink.sub).padding(.top, 4)
+                // 1114 泡泡：「泡泡 | 单句」，单句就是这一页；点泡泡整页盖上泡泡墙
+                HStack(spacing: 0) {
+                    Button { showWall = true } label: {
+                        Text("泡泡").font(SF.song(11)).tracking(2).foregroundColor(ink.sub)
+                            .padding(.horizontal, 14).padding(.vertical, 4).contentShape(Capsule())
+                    }.buttonStyle(.plain)
+                    Text("单句").font(SF.song(11)).tracking(2).foregroundColor(ink.body)
+                        .padding(.horizontal, 14).padding(.vertical, 4)
+                        .background(ink.dark ? Color.white.opacity(0.12) : Color.white.opacity(0.9), in: Capsule())
+                }
+                .padding(2)
+                .overlay(Capsule().stroke(ink.hair, lineWidth: 0.8))
+                .padding(.top, 10)
                 ZStack(alignment: .topTrailing) {
                     SFLocket(ink: ink).offset(x: 6, y: -6)
                     VStack(alignment: .leading, spacing: 10) {
@@ -733,6 +748,7 @@ struct GlassFavoritesView: View {
         .sheet(item: $opened) { entry in
             FavoriteThreadSheet(entry: entry, userName: userName, assistantName: assistantName)
         }
+        .fullScreenCover(isPresented: $showWall) { KeepsakeWallView() }
     }
 
     private var countLine: String {
@@ -1695,5 +1711,392 @@ struct StudioSearchView: View {
         selectedDay = day
         searched = true
         await loadMonth(focus)
+    }
+}
+
+// MARK: - 1114 #5253–5264 泡泡（keepsake）
+//
+// 她转来 github.com/Cheiineeey/keepsake，要四样：连着前后文存一段＋两栏前情、他自己封、底下楼中楼、久了起雾的泡泡墙；
+// 外加他自唤醒去翻泡、留一句，聊天页出卡。后端 alcove-backend/keepsake.py（挂在收藏表旁边，旧收藏一行不动）。
+//   · 泡泡墙：那个仓库的 three.js 网页（真玻璃），换成 Sanctus 的字和颜色、three 打包进去不走 CDN，
+//     装在 App/Treehouse/keepsake/keepsake.html（打包脚本 /root/rhysel/sanctus-kit/keepsake-build/build.sh）。
+//     网页只画墙；点一颗泡、点「单句」/ 返回都抛给原生（messageHandlers.keepsake）。
+//   · 点开一颗＝原生纸卡 KeepsakeCardView（效果图 sanctus-kit/mock-keepsake/card.html，她点了头）。
+//   · 墙上一下拉会退出的坑（仓库 06·16）：fullScreenCover ＋ interactiveDismissDisabled，只走页面里的「‹」。
+
+extension Notification.Name {
+    /// 聊天页小卡点一下 → ChatView 弹这颗泡的纸卡（object 是泡的编号 Int）
+    static let alcoveOpenKeepsake = Notification.Name("alcoveOpenKeepsake")
+}
+
+struct KeepsakeRef: Identifiable { let id: Int }
+
+private enum KeepsakeAPI {
+    static func list() async -> [[String: Any]] {
+        (try? await AlcoveAPI.getRaw("/api/favorites/keepsake/list"))?["bubbles"] as? [[String: Any]] ?? []
+    }
+    static func get(_ id: Int) async -> [String: Any]? {
+        (try? await AlcoveAPI.getRaw("/api/favorites/keepsake/get?id=\(id)"))?["bubble"] as? [String: Any]
+    }
+    @discardableResult
+    static func post(_ act: String, _ body: [String: Any]) async -> [String: Any]? {
+        try? await NativeHouseAPI.object("/api/favorites/keepsake/\(act)", method: "POST", body: body)
+    }
+}
+
+final class KeepsakeWallBridge: NSObject, WKScriptMessageHandler {
+    var onMessage: ([String: Any]) -> Void = { _ in }
+    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+        guard let d = message.body as? [String: Any] else { return }
+        DispatchQueue.main.async { self.onMessage(d) }
+    }
+}
+
+private struct KeepsakeWallWeb: UIViewRepresentable {
+    let json: String
+    let dark: Bool
+    let bridge: KeepsakeWallBridge
+
+    func makeUIView(context: Context) -> WKWebView {
+        let uc = WKUserContentController()
+        uc.addUserScript(WKUserScript(source: "window.KEEPSAKE_DEMO = \(json); window.KEEPSAKE_DARK = \(dark ? "true" : "false");"
+                                      + (dark ? "document.documentElement.classList.add('dark');" : ""),
+                                      injectionTime: .atDocumentStart, forMainFrameOnly: true))
+        uc.add(bridge, name: "keepsake")
+        let cfg = WKWebViewConfiguration()
+        cfg.userContentController = uc
+        let wv = WKWebView(frame: .zero, configuration: cfg)
+        let paper = dark ? UIColor(red: 0x1B/255, green: 0x1C/255, blue: 0x20/255, alpha: 1)
+                         : UIColor(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255, alpha: 1)
+        wv.isOpaque = false
+        wv.backgroundColor = paper
+        wv.scrollView.backgroundColor = paper
+        wv.scrollView.isScrollEnabled = false
+        wv.scrollView.bounces = false
+        wv.scrollView.contentInsetAdjustmentBehavior = .never
+        wv.allowsLinkPreview = false
+        if let url = Bundle.main.url(forResource: "keepsake", withExtension: "html", subdirectory: "Treehouse/keepsake") {
+            // 字体在上一层（Treehouse/serif-sc.woff2、pinyon.ttf），读权限给到 Treehouse
+            wv.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent().deletingLastPathComponent())
+        }
+        return wv
+    }
+
+    func updateUIView(_ uiView: WKWebView, context: Context) {}
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: ()) {
+        uiView.configuration.userContentController.removeScriptMessageHandler(forName: "keepsake")
+    }
+}
+
+/// 泡泡墙：收藏页顶上点「泡泡」整页盖上来
+struct KeepsakeWallView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var json: String?
+    @State private var opened: KeepsakeRef?
+    @State private var gen = 0
+    @State private var bridge = KeepsakeWallBridge()
+
+    var body: some View {
+        let dark: Bool = { _ = houseAppearance; return AlcoveAppearance.isDark }()
+        ZStack {
+            (dark ? Color(red: 0x1B/255, green: 0x1C/255, blue: 0x20/255) : Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255))
+                .ignoresSafeArea()
+            if let json {
+                KeepsakeWallWeb(json: json, dark: dark, bridge: bridge).id(gen).ignoresSafeArea()
+            } else {
+                ProgressView()
+            }
+        }
+        .interactiveDismissDisabled()
+        .task { await load() }
+        .onAppear {
+            bridge.onMessage = { d in
+                if let key = d["open"] as? String, let id = Int(key.replacingOccurrences(of: "k:", with: "")) {
+                    opened = KeepsakeRef(id: id)
+                } else if d["close"] != nil {
+                    dismiss()
+                }
+            }
+        }
+        .sheet(item: $opened, onDismiss: { Task { await load(); gen += 1 } }) { ref in
+            KeepsakeCardView(fid: ref.id)
+        }
+    }
+
+    /// 后端的泡 → 那个网页认的形状（key / t / who / daysAgo / lines / pre / notes）
+    private func load() async {
+        let rows = await KeepsakeAPI.list()
+        let mapped: [[String: Any]] = rows.map { b in
+            let lines = (b["lines"] as? [[String: Any]] ?? []).map { l -> [String] in
+                [(l["w"] as? String) == "her" ? "you" : "ta", (l["t"] as? String) ?? ""]
+            }
+            return [
+                "key": "k:\((b["id"] as? Int) ?? 0)",
+                "t": (b["title"] as? String) ?? "",
+                "who": (b["who"] as? String) == "her" ? "you" : "ta",
+                "daysAgo": (b["days_since"] as? Int) ?? 0,
+                "tags": [String](), "ctx": [[String]](), "notes": [[String: Any]](),
+                "lines": lines,
+                "pre": ["you": (b["her_pre"] as? String) ?? "", "ta": (b["his_pre"] as? String) ?? ""],
+            ]
+        }
+        let data = (try? JSONSerialization.data(withJSONObject: mapped)) ?? Data("[]".utf8)
+        json = String(data: data, encoding: .utf8) ?? "[]"
+    }
+}
+
+/// 点开一颗泡：纸卡从下面升上来（效果图 card.html）
+struct KeepsakeCardView: View {
+    let fid: Int
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var b: [String: Any]?
+    @State private var draft = ""
+    @State private var keepOnly = false
+    @State private var replyTo: Int?
+    @State private var editingPre = false
+    @State private var preDraft = ""
+    @State private var sending = false
+    @FocusState private var focused: Bool
+
+    private var ink: SanctusCardInk { _ = houseAppearance; return SanctusCardInk() }
+
+    var body: some View {
+        let ink = self.ink
+        ZStack(alignment: .bottom) {
+            (ink.dark ? Color(red: 0x1B/255, green: 0x1C/255, blue: 0x20/255) : Color(red: 0xFA/255, green: 0xFA/255, blue: 0xF9/255))
+                .ignoresSafeArea()
+            if let b {
+                ScrollView(showsIndicators: false) {
+                    VStack(alignment: .leading, spacing: 0) {
+                        head(b, ink)
+                        SFHair(ink: ink).padding(.vertical, 16)
+                        Text("BEFORE · 前情").font(SF.corm(8.5)).tracking(2.9).foregroundColor(ink.kicker).padding(.bottom, 10)
+                        pres(b, ink)
+                        SFHair(ink: ink).padding(.vertical, 16)
+                        lines(b, ink)
+                        SFHair(ink: ink).padding(.vertical, 16)
+                        Text("STILL HERE · 接着说").font(SF.corm(8.5)).tracking(2.9).foregroundColor(ink.kicker).padding(.bottom, 10)
+                        thread(b, ink)
+                        Color.clear.frame(height: 110)
+                    }
+                    .padding(.horizontal, 24)
+                    .padding(.top, 28)
+                }
+                inputBar(ink)
+            } else {
+                ProgressView().frame(maxHeight: .infinity)
+            }
+        }
+        .presentationDragIndicator(.visible)
+        .task {
+            await KeepsakeAPI.post("visit", ["id": fid])   // 点开就算来看过：雾散了
+            b = await KeepsakeAPI.get(fid)
+        }
+    }
+
+    private func s(_ k: String) -> String { (b?[k] as? String) ?? "" }
+
+    private func head(_ b: [String: Any], _ ink: SanctusCardInk) -> some View {
+        let created = s("created")
+        let day = created.count >= 10 ? String(created.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".") : ""
+        let mine = s("who") == "her"
+        let n = (b["count"] as? Int) ?? 0
+        let c = (b["thread"] as? [[String: Any]])?.count ?? 0
+        return HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 6) {
+                Text("KEPT · \(day) · \(mine ? "你存的" : "他存的")").font(SF.corm(8.5)).tracking(2.9).foregroundColor(ink.kicker)
+                Text(s("title")).font(SF.song(21)).tracking(4).foregroundColor(ink.body)
+                Text("kept in glass · \(n) 句" + (c > 0 ? " · 底下聊了 \(c) 句" : "")).font(SF.ital(11)).foregroundColor(ink.sub)
+            }
+            Spacer()
+            VStack(alignment: .trailing, spacing: 2) {
+                Text("\((b["days_since"] as? Int) ?? 0)").font(SF.ital(26)).foregroundColor(ink.sub.opacity(0.55))
+                Text("DAYS IN FOG").font(SF.corm(8)).tracking(2.4).foregroundColor(ink.kicker)
+            }
+        }
+    }
+
+    private func pres(_ b: [String: Any], _ ink: SanctusCardInk) -> some View {
+        HStack(alignment: .top, spacing: 14) {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("HERS · 你").font(SF.corm(8.5)).tracking(2.6).foregroundColor(ink.kicker)
+                if editingPre {
+                    TextField("这段是怎么来的……", text: $preDraft, axis: .vertical)
+                        .font(SF.song(12)).foregroundColor(ink.body).lineLimit(2...8)
+                    HStack(spacing: 12) {
+                        Button("取消") { editingPre = false }.font(SF.song(11)).foregroundColor(ink.sub)
+                        Button("好") {
+                            Task {
+                                await KeepsakeAPI.post("pre", ["id": fid, "text": preDraft])
+                                editingPre = false
+                                self.b = await KeepsakeAPI.get(fid)
+                            }
+                        }.font(SF.song(11)).foregroundColor(ink.body)
+                    }.buttonStyle(.plain)
+                } else {
+                    Text(s("her_pre").isEmpty ? "这段是怎么来的……点这里写" : s("her_pre"))
+                        .font(SF.song(12)).lineSpacing(5)
+                        .foregroundColor(s("her_pre").isEmpty ? ink.sub : ink.body)
+                        .onTapGesture { preDraft = s("her_pre"); editingPre = true }
+                }
+            }
+            .padding(.leading, 10)
+            .overlay(alignment: .leading) { Rectangle().fill(ink.hair).frame(width: 1) }
+            .frame(maxWidth: .infinity, alignment: .leading)
+            VStack(alignment: .leading, spacing: 4) {
+                Text("HIS · 他").font(SF.corm(8.5)).tracking(2.6).foregroundColor(ink.kicker)
+                if !s("his_pre").isEmpty {
+                    Text(s("his_pre")).font(SF.song(12)).lineSpacing(5).foregroundColor(ink.body)
+                } else if (b["ask_his"] as? Bool) == true {
+                    Text("等他写。他下一次说话的时候会看到。").font(SF.song(12)).foregroundColor(ink.sub)
+                } else {
+                    Button {
+                        Task { await KeepsakeAPI.post("ask", ["id": fid, "on": true]); self.b = await KeepsakeAPI.get(fid) }
+                    } label: {
+                        Text("还没写。叫他写经过 ›").font(SF.song(12)).foregroundColor(ink.link)
+                    }.buttonStyle(.plain)
+                }
+            }
+            .padding(.leading, 10)
+            .overlay(alignment: .leading) { Rectangle().fill(ink.script).frame(width: 1) }
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func hm(_ ts: String) -> String {
+        guard let t = ts.split(separator: "T").dropFirst().first else { return "" }
+        return String(t.prefix(5))
+    }
+
+    /// 那一段原样排着：她右他左；时间戳他的在左、她的在右（死规矩）
+    private func lines(_ b: [String: Any], _ ink: SanctusCardInk) -> some View {
+        let ls = b["lines"] as? [[String: Any]] ?? []
+        return VStack(spacing: 7) {
+            ForEach(Array(ls.enumerated()), id: \.offset) { _, l in
+                let her = (l["w"] as? String) == "her"
+                let t = (l["t"] as? String) ?? ""
+                let shown = t.isEmpty ? "[\(Self.attName((l["atype"] as? String) ?? ""))]" : t
+                HStack(alignment: .bottom, spacing: 5) {
+                    if her {
+                        Spacer(minLength: 40)
+                        Text(shown).font(SF.song(12.5)).lineSpacing(4).foregroundColor(ink.body)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(ink.dark ? Color.white.opacity(0.10) : Color(red: 0xE6/255, green: 0xE7/255, blue: 0xEA/255),
+                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                        Text(hm((l["ts"] as? String) ?? "")).font(SF.corm(8.5)).foregroundColor(ink.sub)
+                    } else {
+                        Text(hm((l["ts"] as? String) ?? "")).font(SF.corm(8.5)).foregroundColor(ink.sub)
+                        Text(shown).font(SF.song(12.5)).lineSpacing(4).foregroundColor(ink.body)
+                            .padding(.horizontal, 12).padding(.vertical, 7)
+                            .background(ink.dark ? Color.white.opacity(0.05) : Color.white,
+                                        in: RoundedRectangle(cornerRadius: 16, style: .continuous))
+                            .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(ink.hair, lineWidth: 0.5))
+                        Spacer(minLength: 40)
+                    }
+                }
+            }
+        }
+    }
+
+    private static func attName(_ a: String) -> String { a == "audio" ? "语音" : a == "image" ? "图片" : "附件" }
+
+    private func thread(_ b: [String: Any], _ ink: SanctusCardInk) -> some View {
+        let cs = b["thread"] as? [[String: Any]] ?? []
+        return VStack(alignment: .leading, spacing: 9) {
+            if cs.isEmpty {
+                Text("还没人写。").font(SF.song(12)).foregroundColor(ink.sub)
+            }
+            ForEach(Array(cs.enumerated()), id: \.offset) { _, c in
+                let him = (c["who"] as? String) == "him"
+                let ts = (c["ts"] as? String) ?? ""
+                let day = ts.count >= 10 ? String(ts.dropFirst(5).prefix(5)).replacingOccurrences(of: "-", with: ".") : ""
+                let hidden = (c["sent"] as? Int) == 0
+                (Text("\(him ? "他" : "你") · \(day)\(hidden ? " · 只留在泡里" : "")  ").font(SF.song(9.5)).foregroundColor(ink.sub)
+                 + Text((c["text"] as? String) ?? "").font(SF.song(12)).foregroundColor(ink.body))
+                    .lineSpacing(4)
+                    .padding(.leading, 10)
+                    .overlay(alignment: .leading) { Rectangle().fill(him ? ink.script : ink.hair).frame(width: 1) }
+                    .padding(.leading, c["parent_id"] is Int ? 16 : 0)
+                    .onTapGesture { if him, let id = c["id"] as? Int { replyTo = id; focused = true } }
+            }
+        }
+    }
+
+    private func inputBar(_ ink: SanctusCardInk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(spacing: 10) {
+                if replyTo != nil {
+                    Button { replyTo = nil } label: { Text("回他那句 ×").font(SF.song(10)).foregroundColor(ink.link) }.buttonStyle(.plain)
+                }
+                Button { keepOnly.toggle() } label: {
+                    Text(keepOnly ? "只留在泡里，不发给他" : "发给他看").font(SF.song(10)).foregroundColor(ink.sub)
+                }.buttonStyle(.plain)
+            }
+            .padding(.leading, 16)
+            HStack {
+                TextField("在这颗泡底下写一句…", text: $draft, axis: .vertical)
+                    .font(SF.song(12.5)).foregroundColor(ink.body).lineLimit(1...4).focused($focused)
+                Button {
+                    let text = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !text.isEmpty, !sending else { return }
+                    sending = true
+                    Task {
+                        var body: [String: Any] = ["id": fid, "text": text, "sent": !keepOnly]
+                        if let r = replyTo { body["parent_id"] = r }
+                        if let res = await KeepsakeAPI.post("comment", body), let nb = res["bubble"] as? [String: Any] {
+                            b = nb; draft = ""; replyTo = nil
+                        }
+                        sending = false
+                    }
+                } label: {
+                    Image(systemName: "arrow.up").font(.system(size: 13, weight: .semibold))
+                        .foregroundColor(ink.dark ? .black : .white)
+                        .frame(width: 28, height: 28)
+                        .background(ink.dark ? Color.white.opacity(0.85) : Color(red: 0x2A/255, green: 0x2A/255, blue: 0x2E/255), in: Circle())
+                }
+                .buttonStyle(.plain)
+                .disabled(sending)
+            }
+            .padding(.leading, 16).padding(.trailing, 6).frame(minHeight: 40)
+            .background(ink.dark ? Color.white.opacity(0.06) : Color.white.opacity(0.92), in: Capsule())
+            .overlay(Capsule().stroke(ink.hair, lineWidth: 1))
+        }
+        .padding(.horizontal, 24)
+        .padding(.bottom, 14)
+    }
+}
+
+/// 聊天页小卡：他封了一颗泡 / 回看了一颗留了一句 / 补了前情（后端换下来的 [KEEPSAKE_CARD]）。整行居中，点了弹那颗泡
+struct KeepsakeChatMessageCard: View {
+    let card: KeepsakeChatCard
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    var body: some View {
+        let ink: SanctusCardInk = { _ = houseAppearance; return SanctusCardInk() }()
+        let title = "《\(card.title)》"
+        let headline: String = card.kind == "seal" ? "他封了一颗泡 \(title)"
+            : card.kind == "pre" ? "他给 \(title) 写了前情" : "他回看了 \(title)"
+        let quote = card.kind == "seal" ? (card.story ?? "") : (card.text ?? "")
+        return Button {
+            NotificationCenter.default.post(name: .alcoveOpenKeepsake, object: card.id)
+        } label: {
+            VStack(spacing: 7) {
+                Text("KEEPSAKE · 泡泡").font(SF.corm(8)).tracking(2.9).foregroundColor(ink.kicker)
+                Text(headline).font(SF.song(13)).tracking(1.5).foregroundColor(ink.body)
+                if !quote.isEmpty {
+                    SFHair(ink: ink).frame(width: 120)
+                    Text(quote).font(SF.song(12)).lineSpacing(4).foregroundColor(ink.body.opacity(0.85))
+                        .multilineTextAlignment(.center)
+                }
+                if card.kind == "comment", let d = card.fog_days, d > 3 {
+                    Text("雾了 \(d) 天，现在清了").font(SF.ital(10)).foregroundColor(ink.sub)
+                }
+            }
+            .padding(.horizontal, 22).padding(.vertical, 14)
+            .frame(maxWidth: 280)
+            .modifier(SFGlass(ink: ink))
+        }
+        .buttonStyle(.plain)
     }
 }

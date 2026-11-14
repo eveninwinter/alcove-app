@@ -25,7 +25,7 @@ final class ChatStore: ObservableObject {
         if m.msgType == "pat_incoming" || m.msgType == "pat_outgoing" { return true }
         // 只看标记、不解析（每次 messages 变都要过一遍，几百条）
         let t = m.text
-        return t.contains("[MEMORY_CARD]") || t.contains("[POND_CARD]") || t.contains("[INSIDE]") || t.hasPrefix("[MUSIC_CARD]")
+        return t.contains("[MEMORY_CARD]") || t.contains("[POND_CARD]") || t.contains("[INSIDE]") || t.hasPrefix("[MUSIC_CARD]") || t.contains("[KEEPSAKE_CARD]")
     }
 
     /// 一段连着的他的消息（中间没有她的）里，按轮号分组；没轮号的（拍一拍行）怎么认轮见下面 1109 那段。
@@ -1366,7 +1366,12 @@ final class ChatStore: ObservableObject {
     func favoriteMessages(_ selected: [ChatMessage]) {
         let ordered = selected.sorted { $0.ts < $1.ts }
         guard !ordered.isEmpty else { return }
-        Task { try? await AlcoveAPI.favoriteAdd(ordered) }
+        Task {
+            // 1114 泡泡：多选存成一段＝一颗泡，存好直接弹它的纸卡，写前情、叫他写经过、在底下说一句
+            if let id = (try? await AlcoveAPI.favoriteAdd(ordered)) ?? nil {
+                NotificationCenter.default.post(name: .alcoveOpenKeepsake, object: id)
+            }
+        }
     }
 
     /// 一次发送可以同时带文字和表情：它们是同一轮（共享 turn_id）的两条消息。

@@ -181,6 +181,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(PondChatCard.self, from: data)
     }
 
+    /// 1114 泡泡：他封了一颗 / 回看了一颗留了一句 / 补了前情（后端 keepsake.run_marks 换下来的）→ 聊天页小卡，整行居中
+    var keepsakeCard: KeepsakeChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "KEEPSAKE_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(KeepsakeChatCard.self, from: data)
+    }
+
     /// 1014：他录好一期「只给你听」（alcove-backend/ears.py 投的）→ 聊天页小卡，点了直接进这一期
     var earsCard: EarsChatCard? {
         guard role == "assistant", !pending,
@@ -1064,6 +1072,15 @@ struct FavoriteForwardPayload: Decodable {
     }
 }
 
+
+struct KeepsakeChatCard: Decodable {
+    let kind: String        // seal | comment | pre
+    let id: Int
+    let title: String
+    let text: String?
+    let story: String?
+    let fog_days: Int?
+}
 
 struct PondChatCard: Decodable {
     let id: String

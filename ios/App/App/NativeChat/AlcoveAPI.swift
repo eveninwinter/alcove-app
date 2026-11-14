@@ -630,7 +630,9 @@ enum AlcoveAPI {
     }
 
     /// 0819 她要的：多选几条就收成一段聊天记录，选一条还是单条
-    static func favoriteAdd(_ messages: [ChatMessage], title: String = "") async throws {
+    /// 1114：整段收藏（＝一颗泡）回它的编号，聊天页存完直接弹纸卡写前情
+    @discardableResult
+    static func favoriteAdd(_ messages: [ChatMessage], title: String = "") async throws -> Int? {
         let items: [[String: Any]] = messages.map {
             ["ts": $0.ts, "text": $0.displayText, "role": $0.role,
              "attachment_url": $0.attachmentUrl ?? "",
@@ -638,7 +640,8 @@ enum AlcoveAPI {
         }
         var body: [String: Any] = ["items": items]
         if !title.isEmpty { body["title"] = title }
-        _ = try await postJSON("/api/favorites/add", body: body)
+        let obj = try await postJSON("/api/favorites/add", body: body)
+        return (obj["kind"] as? String) == "thread" ? obj["id"] as? Int : nil
     }
 
     static func forwardFavorites(ids: [Int], requestID: String) async throws -> [String: Any] {

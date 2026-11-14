@@ -33,6 +33,8 @@ struct ChatView: View {
     // 0925「编辑」→ 1113 #5230 她：「这一轮回复都可以编辑」：正在编辑的那一轮她的气泡（ts，按顺序）和每条框里的字
     @State private var editRound: [String] = []
     @State private var editDrafts: [String: String] = [:]
+    // 1114 泡泡：聊天页小卡点开的那颗
+    @State private var keepsakeOpen: KeepsakeRef?
     @State private var rerollConfirmShown = false   // 0928 她要的：点重来先问一句是否（误触过一次，见下面 alert）
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -702,6 +704,10 @@ struct ChatView: View {
             } message: {
                 Text(store.rerollNote ?? "")
             }
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenKeepsake)) { n in
+                if let id = n.object as? Int { keepsakeOpen = KeepsakeRef(id: id) }
+            }
+            .sheet(item: $keepsakeOpen) { ref in KeepsakeCardView(fid: ref.id) }
             .alert("编辑没成", isPresented: editAlertShown) {
                 Button("好", role: .cancel) {}
             } message: {
@@ -1654,6 +1660,7 @@ struct ChatView: View {
         if m.reminderCard != nil { return false }   // 1002 单独一行，上面那串够长了，别再让编译器算超时
         if m.embroideryCard != nil { return false }
         if m.locationCard != nil { return false }   // 1008 位置卡
+        if m.keepsakeCard != nil { return false }   // 1114 泡泡卡
         if m.islandSummary != nil { return false }   // 1025 晴岛小手机卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
@@ -4672,6 +4679,7 @@ struct MessageRow: View {
             || msg.insideText != nil || msg.pondCard != nil || msg.memoryCard != nil || msg.reminderCard != nil
             || msg.postcardCard != nil || msg.earsCard != nil || msg.letterCard != nil
             || msg.islandSummary != nil   // 1025 晴岛小手机卡
+            || msg.keepsakeCard != nil    // 1114 泡泡卡
     }
 
     var body: some View {
@@ -4763,6 +4771,9 @@ struct MessageRow: View {
                     WorkDeliveryMessageCard(card: work, theme: cardTheme)
                 } else if let album = msg.albumSavedCard {
                     AlbumSavedMessageCard(batch: album, theme: cardTheme)
+                } else if let ks = msg.keepsakeCard {
+                    KeepsakeChatMessageCard(card: ks)
+                        .frame(maxWidth: .infinity)
                 } else if let pond = msg.pondCard {
                     if theme.isTreehouse {
                         SanctusPondCard(card: pond)
