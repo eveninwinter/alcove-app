@@ -19,6 +19,9 @@ private struct PondReply: Identifiable {
     let text: String
     let poke: String
     let createdAt: String
+    /// 1114 #5324：回的是哪条评论、那条是谁写的（ji / jing）；普通评论两个都空
+    var replyTo: String = ""
+    var replyToAuthor: String = ""
 }
 
 private struct PondCard {
@@ -72,7 +75,8 @@ private struct PondItem: Identifiable {
         replies = raw.array("replies").map {
             PondReply(id: $0.string("id"), author: $0.string("author"),
                       text: $0.string("text"), poke: $0.string("poke"),
-                      createdAt: $0.string("createdAt"))
+                      createdAt: $0.string("createdAt"),
+                      replyTo: $0.string("replyTo"), replyToAuthor: $0.string("replyToAuthor"))
         }
     }
 }
@@ -174,6 +178,8 @@ struct NativePondView: View {
     @State private var failed = false
     @State private var composing = false
     @State private var replyingTo: PondItem?
+    /// 1114 #5324：点了某条评论＝回那条（朋友圈那样），从「··」点「评论」进来是空的
+    @State private var replyTarget: PondReply?
     @State private var menuFor: String?
     // 1112 #5040–5043 她：「檐下做切换 一个私密就我和陈璟 一个公开」——公开＝联邦朋友圈，整块在 PondPublic.swift
     @AppStorage("pondSide") private var side = "private"
@@ -212,8 +218,9 @@ struct NativePondView: View {
             }
         }
         .sheet(item: $replyingTo) { item in
-            PondReplySheet(ink: ink, item: item) { text in
-                Task { await reply(to: item.id, text: text) }
+            PondReplySheet(ink: ink, item: item, target: replyTarget) { text in
+                let to = replyTarget?.id ?? ""
+                Task { await reply(to: item.id, text: text, replyTo: to) }
             }
         }
     }
@@ -352,7 +359,8 @@ struct NativePondView: View {
                     if i > 0 { Rectangle().fill(ink.frame).frame(height: 0.6) }
                     PondMomentRow(item: item, ink: ink, menuOpen: menuFor == item.id,
                                   onMenu: { withAnimation(.easeOut(duration: 0.15)) { menuFor = menuFor == item.id ? nil : item.id } },
-                                  onReply: { menuFor = nil; replyingTo = item },
+                                  onReply: { menuFor = nil; replyTarget = nil; replyingTo = item },
+                                  onReplyTo: { r in menuFor = nil; replyTarget = r; replyingTo = item },
                                   onLike: { menuFor = nil; Task { await like(item.id) } },
                                   onStatus: { status in Task { await setStatus(item.id, status) } })
                 }
@@ -418,9 +426,10 @@ struct NativePondView: View {
         return object["url"] as? String
     }
 
-    private func reply(to id: String, text: String) async {
-        try? await NativeHouseAPI.post(
-            "/api/pond/reply", body: ["item_id": id, "author": "ji", "text": text])
+    private func reply(to id: String, text: String, replyTo: String = "") async {
+        var body: [String: Any] = ["item_id": id, "author": "ji", "text": text]
+        if !replyTo.isEmpty { body["reply_to"] = replyTo }   // 1114 #5324 回某条评论
+        try? await NativeHouseAPI.post("/api/pond/reply", body: body)
         await load()
     }
 
@@ -450,6 +459,7 @@ private struct PondMomentRow: View {
     let menuOpen: Bool
     var onMenu: () -> Void
     var onReply: () -> Void
+    var onReplyTo: (PondReply) -> Void = { _ in }
     var onLike: () -> Void
     var onStatus: (String) -> Void
 
@@ -664,7 +674,11 @@ private struct PondMomentRow: View {
                 if !item.replies.isEmpty {
                     VStack(alignment: .leading, spacing: 2) {
                         ForEach(Array(item.replies.enumerated()), id: \.element.id) { i, r in
+                            // 1114 #5324：点他的评论＝回他（朋友圈那样）；自己的点了不动
                             replyLine(r, after: i > 0 ? item.replies[i - 1] : nil)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .contentShape(Rectangle())
+                                .onTapGesture { if r.author != "ji" { onReplyTo(r) } }
                         }
                     }
                     .padding(.horizontal, 9).padding(.vertical, 5)
@@ -676,9 +690,12 @@ private struct PondMomentRow: View {
         }
     }
 
-    /// 朋友圈那样「陈璟 回复 陈霁：……」：发这条的人接在对方的回复后面，就算回对方
+    /// 朋友圈那样「陈璟 回复 陈霁：……」。1114 起后端记了回的是哪条（replyToAuthor），有就照它；
+    /// 1114 以前的老评论没记，还按老办法推：发这条的人接在对方的回复后面，就算回对方
     private func replyLine(_ r: PondReply, after prev: PondReply?) -> some View {
-        let to: String? = (prev != nil && prev!.author != r.author && r.author == item.author) ? who(prev!.author) : nil
+        let legacy = r.createdAt < "2026-11-14T18"
+        let to: String? = !r.replyToAuthor.isEmpty ? who(r.replyToAuthor)
+            : ((legacy && prev != nil && prev!.author != r.author && r.author == item.author) ? who(prev!.author) : nil)
         var line = Text(who(r.author)).fontWeight(.medium).foregroundColor(ink.name)
         if let to = to {
             line = line + Text(" 回复 ").foregroundColor(ink.body) + Text(to).fontWeight(.medium).foregroundColor(ink.name)
@@ -972,6 +989,7 @@ private struct PondPendingPhoto: Identifiable {
 private struct PondReplySheet: View {
     let ink: PondInk
     let item: PondItem
+    var target: PondReply? = nil
     var onSubmit: (String) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var text = ""
@@ -979,7 +997,7 @@ private struct PondReplySheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(alignment: .firstTextBaseline) {
-                Text("回一句")
+                Text(target.map { "回复" + ($0.author == "ji" ? "陈霁" : "陈璟") } ?? "回一句")
                     .font(.system(size: 16, weight: .medium, design: .serif))
                     .tracking(2)
                     .foregroundColor(ink.ink)
@@ -994,7 +1012,14 @@ private struct PondReplySheet: View {
                 .foregroundColor(text.isEmpty ? ink.sub : ink.ink)
                 .disabled(text.isEmpty)
             }
-            if !item.text.isEmpty {
+            if let t = target, !t.text.isEmpty {
+                // 回某条评论：上面露的是那条评论，不是整条念头
+                Text(t.text)
+                    .font(.system(size: 12, design: .serif))
+                    .foregroundColor(ink.sub)
+                    .lineSpacing(3)
+                    .lineLimit(3)
+            } else if !item.text.isEmpty {
                 Text(item.text)
                     .font(.system(size: 12, design: .serif))
                     .foregroundColor(ink.sub)
