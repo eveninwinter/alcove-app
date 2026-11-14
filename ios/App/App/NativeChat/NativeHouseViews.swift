@@ -9148,6 +9148,10 @@ private struct NativeWorkbenchView: View {
                 vpsCard
                 agentCard(index: 0, accent: Color(red: 0.70, green: 0.47, blue: 0.52))
                 agentCard(index: 1, accent: Color(red: 0.38, green: 0.57, blue: 0.68))
+                // 1114 #5312 她：「你做一个你的和陈璟的 分开来」——工作室的隅单独一张（后端 agents 第三个）
+                if data.array("agents").count > 2 {
+                    agentCard(index: 2, accent: Color(red: 0.56, green: 0.52, blue: 0.70))
+                }
                 contactDesk
                 taskLedger
                 Text("work goes on, quietly")
@@ -9433,8 +9437,12 @@ private struct NativeWorkbenchView: View {
         let usage = data.object("usage")
         let claude = usage.object("rate_limits")
         let codex = usage.object("codex")
-        let first = index == 0 ? claude.object("five_hour").int("used_percent") : -1
-        let week = index == 0 ? claude.object("seven_day").int("used_percent") : codex.object("primary").int("used_percent")
+        // 1114：后端给每个人带了自己那把钥匙的额度（quota），有就用自己的；老后端没有再照旧
+        let own = agent.object("quota")
+        let first = !own.isEmpty ? own.object("five_hour").int("used_percent")
+            : (index == 0 ? claude.object("five_hour").int("used_percent") : -1)
+        let week = !own.isEmpty ? own.object("seven_day").int("used_percent")
+            : (index == 0 ? claude.object("seven_day").int("used_percent") : codex.object("primary").int("used_percent"))
         return VStack(alignment: .leading, spacing: 11) {
             HStack(spacing: 11) {
                 Group {
@@ -9443,7 +9451,7 @@ private struct NativeWorkbenchView: View {
                     } else {
                         ZStack {
                             Circle().fill(accent.opacity(0.16))
-                            Text(index == 0 ? "璟" : "渡")
+                            Text(index == 0 ? "璟" : index == 1 ? "渡" : "隅")
                                 .font(.system(size: 17, weight: .medium, design: .serif))
                                 .foregroundColor(accent)
                         }
@@ -9473,7 +9481,7 @@ private struct NativeWorkbenchView: View {
                         .foregroundColor(accent)
                 }
                 Spacer()
-                Text(index == 0 ? "engine room" : "bridge work")
+                Text(index == 0 ? "engine room" : index == 1 ? "bridge work" : "the alcove")
                     .font(.custom("Snell Roundhand", size: 15))
                     .foregroundColor(theme.textDim.opacity(0.72))
             }
@@ -9608,6 +9616,7 @@ private struct NativeWorkbenchView: View {
     }
 
     private func workbenchAvatar(index: Int) -> UIImage? {
+        guard index < 2 else { return nil }
         let raw = index == 0 ? rtAvatarAssistant : rtAvatarGpt
         guard !raw.isEmpty else { return nil }
         let pieces = raw.split(separator: ",", maxSplits: 1)
@@ -9631,6 +9640,13 @@ private struct NativeWorkbenchView: View {
     }
 
     private func agentStatus(_ index: Int) -> (label: String, color: Color) {
+        if index == 2 {
+            switch data.array("agents").count > 2 ? data.array("agents")[2].string("status") : "" {
+            case "工作中": return ("工作中", .yellow)
+            case "待命": return ("待命", .green)
+            default: return ("离线", .red)
+            }
+        }
         if index == 0, data.bool("_assistant_asleep") { return ("睡觉中", .gray) }
         let role = index == 0 ? "assistant" : "gpt"
         let member = data.array("_members").first { $0.string("role") == role } ?? [:]
