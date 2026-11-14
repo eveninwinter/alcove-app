@@ -230,8 +230,8 @@ enum AlcoveLiveActivityController {
         }
     }
 
-    private static func watchAll() {
-        for a in Activity<AlcoveLabAttributes>.activities { watch(a) }
+    private static func watchAll() async {
+        for a in await liveActivities() { watch(a) }
     }
 
     private static func currentBPM() async -> Int {
@@ -293,8 +293,20 @@ enum AlcoveLiveActivityController {
         }
     }
 
+    /// 1114 #5243 崩溃记录 App-2026-11-14-081210 / 081216（又是 0x8BADF00D，App 在后台时主线程卡死被看门狗杀）：
+    /// 主线程在一个 Task 里调 ActivityKit，ActivityKit 里面是同步等系统的（dispatch_sync）。这个 enum 是 @MainActor，
+    /// start / ensureRunning / sync / stop 里数岛、问权限都在主线程上同步等——聊天轮询每次都会走 sync()，后台时就可能卡死。
+    /// 1105 只挪走了心跳循环那一处，这次把剩下的都换成下面两个：在后台线程问完再回来。
+    nonisolated private static func liveActivities() async -> [Activity<AlcoveLabAttributes>] {
+        await Task.detached(priority: .utility) { Activity<AlcoveLabAttributes>.activities }.value
+    }
+
+    nonisolated private static func activitiesEnabled() async -> Bool {
+        await Task.detached(priority: .utility) { ActivityAuthorizationInfo().areActivitiesEnabled }.value
+    }
+
     static func start() async -> String {
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else {
+        guard await activitiesEnabled() else {
             return "系统未允许实时活动，请在 iPhone 设置中开启。"
         }
         RemotePush.setIslandEnabled(true)
@@ -305,7 +317,7 @@ enum AlcoveLiveActivityController {
         let state = AlcoveLabAttributes.ContentState(
             message: "等待任务", startedAt: .now, bpm: await currentBPM()
         )
-        let existing = Activity<AlcoveLabAttributes>.activities
+        let existing = await liveActivities()
         if !existing.isEmpty {
             for activity in existing {   // 0922：全写，别只写 first
                 await activity.update(ActivityContent(state: state, staleDate: nil))
@@ -328,9 +340,10 @@ enum AlcoveLiveActivityController {
             // （会回头读 activities 再补试），手点刷新这条却一直在说假话。
             // 回头看一眼真实的活动列表再开口。
             try? await Task.sleep(nanoseconds: 500_000_000)
-            watchAll()
-            report("requested", ["ok": !Activity<AlcoveLabAttributes>.activities.isEmpty])
-            if Activity<AlcoveLabAttributes>.activities.isEmpty {
+            await watchAll()
+            let after = await liveActivities()
+            report("requested", ["ok": !after.isEmpty])
+            if after.isEmpty {
                 scheduleRetry()
                 return "系统收下了请求，但活动没出现——正在补试三次。还是不出来的话：先把这个开关关掉等两秒再开，仍然没有就重启一次手机。"
             }
@@ -344,10 +357,10 @@ enum AlcoveLiveActivityController {
     static func ensureRunning() async {
         guard UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
                 || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else { return }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard await activitiesEnabled() else { return }
         report("foreground")
-        watchAll()
-        let existing = Activity<AlcoveLabAttributes>.activities
+        await watchAll()
+        let existing = await liveActivities()
         if !existing.isEmpty {
             let bpm = await currentBPM()
             for activity in existing where bpm > 0 {   // 0922：回前台每块都刷一遍
@@ -360,7 +373,7 @@ enum AlcoveLiveActivityController {
             let result = await start()
             // 冷启动时 ActivityKit 偶尔尚未接纳首个 request。不要只相信返回文案，
             // 重新读取系统活动列表；仍为空就继续补试，直到真的出现或 App 被挂起。
-            if Activity<AlcoveLabAttributes>.activities.isEmpty,
+            if await liveActivities().isEmpty,
                !result.contains("系统未允许") {
                 scheduleRetry()
             }
@@ -376,7 +389,7 @@ enum AlcoveLiveActivityController {
                 guard !Task.isCancelled,
                       UserDefaults.standard.object(forKey: "liveActivityEnabled") == nil
                         || UserDefaults.standard.bool(forKey: "liveActivityEnabled") else { return }
-                if !Activity<AlcoveLabAttributes>.activities.isEmpty {
+                if !(await liveActivities()).isEmpty {
                     ensurePulseUpdates()
                     return
                 }
@@ -410,7 +423,7 @@ enum AlcoveLiveActivityController {
         let state = AlcoveLabAttributes.ContentState(
             message: message, startedAt: .now, bpm: await currentBPM()
         )
-        let existing = Activity<AlcoveLabAttributes>.activities
+        let existing = await liveActivities()
         if !existing.isEmpty {
             for activity in existing {   // 0922：全写，别只写 first
                 await activity.update(ActivityContent(state: state, staleDate: nil))
@@ -418,7 +431,7 @@ enum AlcoveLiveActivityController {
             ensurePulseUpdates()
             return
         }
-        guard ActivityAuthorizationInfo().areActivitiesEnabled else { return }
+        guard await activitiesEnabled() else { return }
         _ = try? requestIsland(
             attributes: AlcoveLabAttributes(name: UserDefaults.standard.string(forKey: "assistantName") ?? "陈璟"),
             content: ActivityContent(state: state, staleDate: nil)
@@ -463,7 +476,7 @@ enum AlcoveLiveActivityController {
         retryTask = nil
         pulseTask?.cancel()
         pulseTask = nil
-        for activity in Activity<AlcoveLabAttributes>.activities {
+        for activity in await liveActivities() {
             await activity.end(nil, dismissalPolicy: .immediate)
         }
     }
