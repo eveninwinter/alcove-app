@@ -33,8 +33,6 @@ struct ChatView: View {
     // 0925「编辑」→ 1113 #5230 她：「这一轮回复都可以编辑」：正在编辑的那一轮她的气泡（ts，按顺序）和每条框里的字
     @State private var editRound: [String] = []
     @State private var editDrafts: [String: String] = [:]
-    // 1114 泡泡：聊天页小卡点开的那颗
-    @State private var keepsakeOpen: KeepsakeRef?
     @State private var rerollConfirmShown = false   // 0928 她要的：点重来先问一句是否（误触过一次，见下面 alert）
     @State private var showStickers = false
     @State private var photoItems: [PhotosPickerItem] = []
@@ -704,10 +702,6 @@ struct ChatView: View {
             } message: {
                 Text(store.rerollNote ?? "")
             }
-            .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenKeepsake)) { n in
-                if let id = n.object as? Int { keepsakeOpen = KeepsakeRef(id: id) }
-            }
-            .sheet(item: $keepsakeOpen) { ref in KeepsakeCardView(fid: ref.id) }
             .alert("编辑没成", isPresented: editAlertShown) {
                 Button("好", role: .cancel) {}
             } message: {

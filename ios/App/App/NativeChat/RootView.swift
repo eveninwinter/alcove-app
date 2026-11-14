@@ -103,6 +103,7 @@ struct RootView: View {
             )
                 .blur(radius: showHouseDrawer ? 5.0 : 0)
                 .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
+                .modifier(KeepsakeOpener())   // 1114 #5268 泡泡小卡点开的纸卡：挂在这里，ChatView 的 body 链太长编译器算不动
             // 信息主题的顶栏挂在 ChatView 的 safeAreaBar 里（系统才给它画顶部渐进模糊），这里不再叠一份
             if !theme.isMessages {
                 topBar

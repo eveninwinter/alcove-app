@@ -1731,6 +1731,19 @@ extension Notification.Name {
 
 struct KeepsakeRef: Identifiable { let id: Int }
 
+/// 1114 #5268：ChatView 的 body 链太长，直接挂 onReceive + sheet 编译器算不动（「unable to type-check this expression」），
+/// 收进一个 modifier 里，ChatView 只挂一行 .modifier(KeepsakeOpener())
+struct KeepsakeOpener: ViewModifier {
+    @State private var open: KeepsakeRef?
+    func body(content: Content) -> some View {
+        content
+            .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenKeepsake)) { n in
+                if let id = n.object as? Int { open = KeepsakeRef(id: id) }
+            }
+            .sheet(item: $open) { ref in KeepsakeCardView(fid: ref.id) }
+    }
+}
+
 private enum KeepsakeAPI {
     static func list() async -> [[String: Any]] {
         (try? await AlcoveAPI.getRaw("/api/favorites/keepsake/list"))?["bubbles"] as? [[String: Any]] ?? []
