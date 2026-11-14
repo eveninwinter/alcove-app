@@ -5197,6 +5197,18 @@ struct MessageRow: View {
                 bubbleCore
             }
         }
+        // 1114 #5306 她：撞闸那一轮他第一个气泡左上角停一只蝴蝶（发送键同一张图），只标记，别的不管
+        .overlay(alignment: .topLeading) {
+            if msg.safeguardCut && !isUser {
+                Image("TreehouseSendButterfly").resizable().renderingMode(.template).interpolation(.high)
+                    .scaledToFit()
+                    .foregroundColor(theme.textDim)
+                    .frame(width: 26, height: 26)
+                    .rotationEffect(.degrees(-12))
+                    .offset(x: -10, y: -12)
+                    .allowsHitTesting(false)
+            }
+        }
     }
 
     /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边在「看得见的气泡左边」往里缩 4（头像开关都一样）。

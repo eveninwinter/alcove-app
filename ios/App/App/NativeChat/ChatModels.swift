@@ -41,6 +41,8 @@ struct ChatMessage: Identifiable, Equatable {
     var nativeThinking: String?
     var thinkingDuration: Double?
     var heartRate: Int?
+    /// 1114 #5306 她：撞了安全闸的那一轮，门卫在他第一个气泡上盖章（extra.safeguard_cut），左上角停一只蝴蝶
+    var safeguardCut = false
     // 0926 API 房间：这一轮的用量（后端挂在他那轮最后一条上），显示在时间戳那行
     struct ApiUsage: Equatable {
         var input: Int?, cached: Int, output: Int?, secs: Double?, hit: Int?
@@ -336,6 +338,8 @@ struct ChatMessage: Identifiable, Equatable {
         self.nativeThinking = json["native_thinking"] as? String
         if let d = json["thinking_duration"] as? Double { self.thinkingDuration = d }
         else if let i = json["thinking_duration"] as? Int { self.thinkingDuration = Double(i) }
+        if let cut = json["safeguard_cut"] as? Bool { self.safeguardCut = cut }
+        else if let cut = json["safeguard_cut"] as? Int { self.safeguardCut = cut != 0 }
         if let bpm = json["heart_rate"] as? Int { self.heartRate = bpm }
         else if let bpm = json["heart_rate"] as? Double { self.heartRate = Int(bpm) }
         if let u = json["api_usage"] as? [String: Any] {
