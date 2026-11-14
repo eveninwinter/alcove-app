@@ -523,7 +523,8 @@ private struct PondMomentRow: View {
     // 一张放大竖着摆；四张两个一排；其他三个一排方格
     @ViewBuilder private var imageWall: some View {
         if item.images.count == 1 {
-            cell(item.images[0], w: 170, h: 212)
+            // 1114 #5327 她：「檐下发的图根据图本身来延伸」——一张的时候照图自己的长宽比摆（朋友圈那样），多张还是方格
+            PondSingleImage(url: AlcoveAPI.attachmentURL(item.images[0]), ink: ink)
         } else {
             let perRow = item.images.count == 4 ? 2 : 3
             VStack(alignment: .leading, spacing: 4) {
@@ -1068,5 +1069,46 @@ private struct PondReplySheet: View {
         .padding(20)
         .background(ink.sheet.ignoresSafeArea())
         .presentationDetents([.medium])
+    }
+}
+
+
+/// 檐下只有一张图时：先按竖图占位，图到了按它自己的长宽比定框——横图宽 210、竖图高 240，
+/// 太细太长的最短边不小于 90，超出的部分裁掉（朋友圈也是这么收的）
+private struct PondSingleImage: View {
+    let url: URL
+    let ink: PondInk
+    @State private var img: UIImage?
+    private static let cache = NSCache<NSURL, UIImage>()
+
+    var body: some View {
+        let box = Self.fit(img?.size)
+        Color.clear
+            .frame(width: box.width, height: box.height)
+            .overlay {
+                if let img {
+                    Image(uiImage: img).resizable().aspectRatio(contentMode: .fill)
+                } else {
+                    Rectangle().fill(ink.box)
+                }
+            }
+            .clipped()
+            .overlay(Rectangle().stroke(ink.frame, lineWidth: 0.6))
+            .task(id: url) { await load() }
+    }
+
+    static func fit(_ s: CGSize?) -> CGSize {
+        guard let s, s.width > 0, s.height > 0 else { return CGSize(width: 170, height: 212) }
+        let r = s.width / s.height
+        let w: CGFloat = r >= 1 ? 210 : 240 * r
+        let h: CGFloat = r >= 1 ? 210 / r : 240
+        return CGSize(width: max(w, 90), height: max(h, 90))
+    }
+
+    private func load() async {
+        if let hit = Self.cache.object(forKey: url as NSURL) { img = hit; return }
+        guard let (data, _) = try? await URLSession.shared.data(from: url), let ui = UIImage(data: data) else { return }
+        Self.cache.setObject(ui, forKey: url as NSURL)
+        img = ui
     }
 }
