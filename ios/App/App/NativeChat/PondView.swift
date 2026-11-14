@@ -45,7 +45,7 @@ private struct PondItem: Identifiable {
     let likedBy: [String]
     let createdAt: String
     let card: PondCard?
-    let replies: [PondReply]
+    var replies: [PondReply]
 
     var isWish: Bool { kind == "wish" }
     var isHers: Bool { author == "ji" }
@@ -180,6 +180,16 @@ struct NativePondView: View {
     @State private var replyingTo: PondItem?
     /// 1114 #5324：点了某条评论＝回那条（朋友圈那样），从「··」点「评论」进来是空的
     @State private var replyTarget: PondReply?
+    /// 1114 #5326 她：删除跟删聊天气泡一样只从页面拿掉，下拉刷新又回来——只记在这页，不碰后台
+    @State private var hiddenPosts: Set<String> = []
+    @State private var hiddenReplies: Set<String> = []
+    private var visibleItems: [PondItem] {
+        items.filter { !hiddenPosts.contains($0.id) }.map { it in
+            var x = it
+            x.replies.removeAll { hiddenReplies.contains($0.id) }
+            return x
+        }
+    }
     @State private var menuFor: String?
     // 1112 #5040–5043 她：「檐下做切换 一个私密就我和陈璟 一个公开」——公开＝联邦朋友圈，整块在 PondPublic.swift
     @AppStorage("pondSide") private var side = "private"
@@ -208,7 +218,10 @@ struct NativePondView: View {
                 }
             }
             .ignoresSafeArea(edges: .top)
-            .refreshable { if isPublic { await eaves.loadAll() } else { await load() } }
+            .refreshable {
+                hiddenPosts = []; hiddenReplies = []
+                if isPublic { await eaves.loadAll() } else { await load() }
+            }
             topButtons(ink)
         }
         .task { await load() }
@@ -355,12 +368,14 @@ struct NativePondView: View {
             emptyNote(filter == .wish ? "还没许过愿。贴个链接就算一条，一个字都不用写" : "池子是空的", ink)
         } else {
             LazyVStack(spacing: 0) {
-                ForEach(Array(items.enumerated()), id: \.element.id) { i, item in
+                ForEach(Array(visibleItems.enumerated()), id: \.element.id) { i, item in
                     if i > 0 { Rectangle().fill(ink.frame).frame(height: 0.6) }
                     PondMomentRow(item: item, ink: ink, menuOpen: menuFor == item.id,
                                   onMenu: { withAnimation(.easeOut(duration: 0.15)) { menuFor = menuFor == item.id ? nil : item.id } },
                                   onReply: { menuFor = nil; replyTarget = nil; replyingTo = item },
                                   onReplyTo: { r in menuFor = nil; replyTarget = r; replyingTo = item },
+                                  onDelete: { menuFor = nil; withAnimation(.easeOut(duration: 0.2)) { _ = hiddenPosts.insert(item.id) } },
+                                  onDeleteReply: { r in withAnimation(.easeOut(duration: 0.2)) { _ = hiddenReplies.insert(r.id) } },
                                   onLike: { menuFor = nil; Task { await like(item.id) } },
                                   onStatus: { status in Task { await setStatus(item.id, status) } })
                 }
@@ -460,6 +475,8 @@ private struct PondMomentRow: View {
     var onMenu: () -> Void
     var onReply: () -> Void
     var onReplyTo: (PondReply) -> Void = { _ in }
+    var onDelete: () -> Void = {}
+    var onDeleteReply: (PondReply) -> Void = { _ in }
     var onLike: () -> Void
     var onStatus: (String) -> Void
 
@@ -609,6 +626,13 @@ private struct PondMomentRow: View {
                     .font(.system(size: 9.5, design: .serif)).tracking(1).foregroundColor(ink.link)
                     .lineLimit(1)
             }
+            // 1114 #5326 她：时间这排加个垃圾桶（照朋友圈），谁发的都能删，只从页面拿掉
+            Button(action: onDelete) {
+                Image(systemName: "trash").font(.system(size: 11, weight: .regular)).foregroundColor(ink.link)
+                    .frame(width: 24, height: 22).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("删除")
             Spacer(minLength: 0)
             Button(action: onMenu) {
                 HStack(spacing: 4) {
@@ -663,10 +687,12 @@ private struct PondMomentRow: View {
             PondCaret().fill(ink.box).frame(width: 10, height: 5).padding(.leading, 12)
             VStack(alignment: .leading, spacing: 0) {
                 if !item.likedBy.isEmpty {
-                    HStack(spacing: 5) {
-                        Text("♡").font(SanctusPageFont.corm(13)).foregroundColor(ink.link)
-                        Text(item.likedBy.map(who).joined(separator: "，"))
-                            .font(.system(size: 12, design: .serif)).tracking(0.5).foregroundColor(ink.name)
+                    HStack(spacing: 6) {
+                        Text("♡").font(SanctusPageFont.corm(17)).foregroundColor(ink.link).padding(.trailing, 4)
+                        // 1114 #5326 她：点赞照朋友圈，心后面一排方头像，不写名字
+                        ForEach(item.likedBy, id: \.self) { w in
+                            PondAvatar(isHers: w == "ji", size: 24, radius: 5)
+                        }
                     }
                     .padding(.horizontal, 9).padding(.vertical, 5)
                     if !item.replies.isEmpty { Rectangle().fill(ink.hair).frame(height: 0.6).padding(.horizontal, 6) }
@@ -679,6 +705,9 @@ private struct PondMomentRow: View {
                                 .frame(maxWidth: .infinity, alignment: .leading)
                                 .contentShape(Rectangle())
                                 .onTapGesture { if r.author != "ji" { onReplyTo(r) } }
+                                .contextMenu {   // 长按删这条评论（只从页面拿掉，刷新回来）
+                                    Button(role: .destructive) { onDeleteReply(r) } label: { Label("删除", systemImage: "trash") }
+                                }
                         }
                     }
                     .padding(.horizontal, 9).padding(.vertical, 5)
