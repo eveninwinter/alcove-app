@@ -5197,18 +5197,6 @@ struct MessageRow: View {
                 bubbleCore
             }
         }
-        // 1114 #5306 她：撞闸那一轮他第一个气泡左上角停一只蝴蝶（发送键同一张图），只标记，别的不管
-        .overlay(alignment: .topLeading) {
-            if msg.safeguardCut && !isUser {
-                Image("TreehouseSendButterfly").resizable().renderingMode(.template).interpolation(.high)
-                    .scaledToFit()
-                    .foregroundColor(theme.textDim)
-                    .frame(width: 26, height: 26)
-                    .rotationEffect(.degrees(-12))
-                    .offset(x: -10, y: -12)
-                    .allowsHitTesting(false)
-            }
-        }
     }
 
     /// 0924 她定的：Kakao 下思绪块和气泡底下那排小图标，左边在「看得见的气泡左边」往里缩 4（头像开关都一样）。
@@ -5656,9 +5644,12 @@ struct MessageRow: View {
             .padding(.bottom, rowPartGap)
         } else if theme.isTreehouse && roundStamp != nil {
             // 没有思绪的那一轮（或者过程点关着）：时间自己一行
-            thRoundStampText
-                .padding(.leading, thStampInset)
-                .padding(.bottom, rowPartGap)
+            HStack(spacing: 0) {
+                thRoundStampText
+                if thCut { thCutButterfly.padding(.leading, Self.thCutGap) }
+            }
+            .padding(.leading, thStampInset)
+            .padding(.bottom, rowPartGap)
         }
     }
 
@@ -5997,6 +5988,19 @@ struct MessageRow: View {
         }
     }
 
+    /// 1114 #5306–5309 她：撞了安全闸的那一轮（后端在这一轮的消息上盖 safeguard_cut），时间那一行最后停一只蝴蝶（发送键那张）。
+    /// 不画在气泡上；比字稍大（21）；跟前面的距离＝时间到 trace 那段（14 + 竖线 0.8 + 14）
+    private static let thCutGap: CGFloat = 28.8
+    private var thCut: Bool { !isUser && (msg.safeguardCut || pm.safeguardCut) }
+    private var thCutButterfly: some View {
+        Image("TreehouseSendButterfly").resizable().renderingMode(.template).interpolation(.high)
+            .scaledToFit()
+            .frame(width: 21, height: 21)
+            .foregroundColor(TreehouseInk.ink.opacity(0.78))
+            .shadow(color: TreehouseInk.fog.opacity(0.9), radius: 2)
+            .allowsHitTesting(false)
+    }
+
     /// 召回了几条（召回面板里那几张卡）
     private var thRecallCount: Int {
         guard let recall = pRecall else { return 0 }
@@ -6055,6 +6059,7 @@ struct MessageRow: View {
                 }
                 .buttonStyle(.plain)
             }
+            if roundStamp != nil && thCut { thCutButterfly.padding(.leading, Self.thCutGap) }
         }
         .sheet(isPresented: $showRecall) {
             if let recall = pRecall { RecallPop(item: recall).modifier(HouseColorScheme()) }
