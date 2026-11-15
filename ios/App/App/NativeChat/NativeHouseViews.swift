@@ -13800,6 +13800,7 @@ private struct NativeCalendarView: View {
     @State private var thTearReady = false             // 网页画好第一帧了（之前原生的返回键先顶着）
     @State private var thTearNewest = ""               // 1106 #4853 拉到的最新一篇的 ts，开着页面时拿它比有没有新的
     @State private var thTearFresh: String?            // 后台拉到的新日记，网页好了再塞
+    @State private var thTearFullBusy = false          // 1115 整本正在后台拉，别叠着再拉一份
     @State private var thTearBridge = TreehouseDreamsBridge()
     // #3629 泪那页自己的日夜：右下角 let it fall 点一下切，不跟全屋白天 / 黑夜按钮走
     @AppStorage("treehouseDiaryNight") private var thTearNight = false
@@ -15731,7 +15732,7 @@ extension NativeCalendarView {
 
     fileprivate func thTearCheckNew() async {
         guard let top = try? await NativeHouseAPI.array("/api/diary/entries?limit=1"), let e = top.first else { return }
-        if e.string("ts") != thTearNewest { await thTearLoad() }
+        if e.string("ts") != thTearNewest { await thTearLoadRecent() }
     }
 
     /// 北京时间的今天（这台机器和手机的钟都可能不在北京）
@@ -15756,14 +15757,58 @@ extension NativeCalendarView {
         thTearJSON = f
     }
 
+    /// 1115 她：「每次点进去新的就是加载不出来」——进门那一下要把整本（快 200 篇，压完还有四十多万字节）从头拉一遍，
+    /// 她手机那头这么大一包常常半分钟都下不完（后台日志：进门 38 秒还没轮到第一次问新的），新的那几篇就一直卡在缓存里。
+    /// 改成：有缓存先画缓存，马上只拉最近 12 篇（几十 K）补进去；整本放后台慢慢拉，拉到了再对一遍（他改过旧日记靠这个）
+    fileprivate static let thTearRecentLimit = 12
+
     fileprivate func thTearLoad() async {
         WindowFont.requestSongti()
         if thTearJSON == nil, let url = Self.thTearCacheURL,
            let cached = try? String(contentsOf: url, encoding: .utf8), !cached.isEmpty {
             thTearJSON = cached
         }
-        let list = (try? await NativeHouseAPI.array("/api/diary/entries")) ?? []
-        if let newest = list.last?.string("ts") { thTearNewest = newest }   // 跟 ?limit=1 拿的是同一篇（本子里最后记的那篇）
+        if thTearJSON == nil {
+            // 第一次进、手机里还没缓存：没东西可先画，照旧等整本
+            await thTearLoadFull()
+            thTearLoaded = true
+            return
+        }
+        await thTearLoadRecent()
+        thTearLoaded = true
+        Task { await thTearLoadFull() }
+    }
+
+    /// 最近几篇按天并进现有的日记：拉到的每一天整天替换；篇数拉满时最老那天可能只拿到半天，不动它
+    fileprivate func thTearLoadRecent() async {
+        let limit = Self.thTearRecentLimit
+        guard let recent = try? await NativeHouseAPI.array("/api/diary/entries?limit=\(limit)"), !recent.isEmpty else { return }
+        if let newest = recent.first?.string("ts") { thTearNewest = newest }   // ?limit 是新的在前，第一篇＝本子里最后记的那篇
+        var fresh = thTearDays(recent)
+        if recent.count >= limit, let oldest = fresh.keys.min() { fresh.removeValue(forKey: oldest) }
+        guard !fresh.isEmpty else { return }
+        var merged: [String: [[String: Any]]] = [:]
+        if let base = (thTearFresh ?? thTearJSON)?.data(using: .utf8),
+           let old = (try? JSONSerialization.jsonObject(with: base)) as? [String: [[String: Any]]] {
+            merged = old
+        }
+        for (k, v) in fresh { merged[k] = v }
+        thTearApply(merged)
+    }
+
+    fileprivate func thTearLoadFull() async {
+        guard !thTearFullBusy else { return }
+        thTearFullBusy = true
+        defer { thTearFullBusy = false }
+        guard let list = try? await NativeHouseAPI.array("/api/diary/entries"), !list.isEmpty else { return }
+        let newest = list.last?.string("ts") ?? ""
+        // 整本慢，回来的时候小包可能已经拿到更新的一篇了：整本比它旧就不拿来盖
+        if !thTearNewest.isEmpty, newest < thTearNewest { return }
+        thTearNewest = newest
+        thTearApply(thTearDays(list))
+    }
+
+    fileprivate func thTearDays(_ list: [[String: Any]]) -> [String: [[String: Any]]] {
         var days: [String: [[String: Any]]] = [:]
         for e in list.sorted(by: { $0.string("ts") < $1.string("ts") }) {
             let ts = e.string("ts")
@@ -15773,18 +15818,21 @@ extension NativeCalendarView {
             let time = ts.count >= 16 ? String(ts.dropFirst(11).prefix(5)) : ""
             days[String(ts.prefix(10)), default: []].append(["time": time, "title": title, "text": text])
         }
-        if !days.isEmpty,
-           let data = try? JSONSerialization.data(withJSONObject: days),
-           let s = String(data: data, encoding: .utf8) {
-            if let url = Self.thTearCacheURL { try? s.write(to: url, atomically: true, encoding: .utf8) }
-            if thTearJSON == nil {
-                thTearJSON = s
-            } else if s != thTearJSON {
-                thTearFresh = s
-                thTearPushFresh()
-            }
+        return days
+    }
+
+    /// 存缓存、塞进网页（网页还没好就先攒着，好了再塞）
+    fileprivate func thTearApply(_ days: [String: [[String: Any]]]) {
+        guard !days.isEmpty,
+              let data = try? JSONSerialization.data(withJSONObject: days, options: .sortedKeys),
+              let s = String(data: data, encoding: .utf8) else { return }
+        if let url = Self.thTearCacheURL { try? s.write(to: url, atomically: true, encoding: .utf8) }
+        if thTearJSON == nil {
+            thTearJSON = s
+        } else if s != thTearJSON {
+            thTearFresh = s
+            thTearPushFresh()
         }
-        thTearLoaded = true
     }
 
     /// 一篇日记 → 标题＋正文。他写的第一行多半是「10月10日 · 标题」那种抬头：抬头去掉，「·」后面那截当标题
