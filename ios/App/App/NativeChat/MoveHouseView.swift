@@ -529,9 +529,9 @@ struct ExitRoomView: View {
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 26).padding(.top, 12)
                     }
-                    lines("tonight · 今夜探测", store.probe.reversed().prefix(30).map { $0 }, ink).padding(.top, 28)
+                    // 1115 #5354 她：「今夜探测」那块删掉（探测已经停了）
                     if !store.log.isEmpty {
-                        lines("recent · 最近切过", store.log.reversed().prefix(10).map { $0 }, ink).padding(.top, 20)
+                        lines("recent · 最近切过", store.log.reversed().prefix(10).map { $0 }, ink).padding(.top, 28)
                     }
                     Color.clear.frame(height: max(safeBottom, 10) + 24)
                 }
