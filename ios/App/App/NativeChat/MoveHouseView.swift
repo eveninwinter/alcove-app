@@ -416,12 +416,15 @@ private struct MoveCheckSheet: View {
 // 她：「住宅 IP 像今天这样崩溃，我希望有个按钮，跟换号搬家一样做一个房间，切换到直连 VPS」——‼️不许自动跳，只能她手动。
 // 入口：聊天页左侧栏「搬家 ›」下面一行「出口 ›」。后台走前门 /api/usage/exit（alcove-independent/exit_room.py → /root/workroom/出口.sh）：
 //   GET  /api/usage/exit           现在走哪条＋今夜探测＋最近几次操作
-//   POST /api/usage/exit/run       {cmd: 测|住宅|直连}  切住宅前先旁路试通，不通就不切
+//   POST /api/usage/exit/run       {cmd: 测|测线|换线|住宅|直连, line}  切住宅 / 换线前先旁路试通，不通就不动
+// 1115 #5351 加「家宽线路」：PlinX 家宽 Hy2 那几条一条一行，最近一次测的结果，点「用这条」换（出口 IP 不变）
 // 样子照搬家页的零件（同一套纸、卡片、胶囊按钮），没另出效果图。
 
 @MainActor
 final class ExitStore: ObservableObject {
     @Published var mode = ""
+    @Published var line = ""                       // 1115 #5351 现在用的家宽线
+    @Published var lines: [(name: String, test: String)] = []
     @Published var probe: [String] = []
     @Published var log: [String] = []
     @Published var busy = ""          // 正在跑的那个命令
@@ -432,6 +435,10 @@ final class ExitStore: ObservableObject {
 
     private func take(_ j: [String: Any]) {
         if let m = j["mode"] as? String { mode = m }
+        if let l = j["line"] as? String { line = l }
+        if let ls = j["lines"] as? [[String: Any]] {
+            lines = ls.map { (name: $0["name"] as? String ?? "", test: $0["test"] as? String ?? "") }
+        }
         if let p = j["probe"] as? [String] { probe = p }
         if let l = j["log"] as? [String] { log = l }
     }
@@ -443,12 +450,14 @@ final class ExitStore: ObservableObject {
         loaded = true
     }
 
-    func run(_ cmd: String) async {
-        busy = cmd; said = ""
+    func run(_ cmd: String, line: String = "") async {
+        busy = cmd == "换线" ? "换线:" + line : cmd; said = ""
         var r = req("/api/usage/exit/run")
         r.httpMethod = "POST"; r.timeoutInterval = 90
         r.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        r.httpBody = try? JSONSerialization.data(withJSONObject: ["cmd": cmd])
+        var body: [String: Any] = ["cmd": cmd]
+        if !line.isEmpty { body["line"] = line }
+        r.httpBody = try? JSONSerialization.data(withJSONObject: body)
         if let (data, _) = try? await AlcoveAPI.session.data(for: r),
            let j = try? JSONSerialization.jsonObject(with: data) as? [String: Any] {
             take(j)
@@ -465,6 +474,7 @@ struct ExitRoomView: View {
     @StateObject private var store = ExitStore()
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @State private var confirm = ""
+    @State private var confirmLine = ""   // 1115 #5351 要换到哪条家宽线
 
     private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -489,7 +499,7 @@ struct ExitRoomView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .padding(.leading, 28).padding(.top, 2)
                     VStack(spacing: 9) {
-                        wayCard("住宅 IP", sub: "PlinX 家宽 · 162.207.170.103", now: store.mode == "住宅", cmd: "住宅", ink, m)
+                        wayCard("住宅 IP", sub: "162.207.170.103 · " + (store.line.isEmpty ? "PlinX 家宽" : store.line.replacingOccurrences(of: "家宽13-", with: "")), now: store.mode == "住宅", cmd: "住宅", ink, m)
                         wayCard("直连 VPS", sub: "新家 Contabo 机房自己的 IP", now: store.mode == "直连", cmd: "直连", ink, m)
                         if !store.mode.isEmpty && store.mode != "住宅" && store.mode != "直连" {
                             Text("现在是" + store.mode + "，点一边切干净").font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub)
@@ -506,13 +516,14 @@ struct ExitRoomView: View {
                                 .contentShape(Capsule())
                         }
                         .buttonStyle(.plain).disabled(!store.busy.isEmpty)
-                        if !store.busy.isEmpty {
+                        if ["测", "住宅", "直连"].contains(store.busy) {
                             ProgressView().controlSize(.small)
                             Text(store.busy == "测" ? "在试…" : "在切…").font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub)
                         }
                         Spacer(minLength: 0)
                     }
                     .padding(.horizontal, 24).padding(.top, 16)
+                    linesBlock(ink, m).padding(.top, 24)
                     if !store.said.isEmpty {
                         Text(store.said).font(SanctusPageFont.cn(11.5)).foregroundColor(ink.body).lineSpacing(4)
                             .frame(maxWidth: .infinity, alignment: .leading)
@@ -532,6 +543,16 @@ struct ExitRoomView: View {
         .ignoresSafeArea()
         .environment(\.sanctusInk, ink)
         .task { WindowFont.requestSongti(); await store.load() }
+        .confirmationDialog("换到「" + confirmLine + "」？",
+                            isPresented: Binding(get: { !confirmLine.isEmpty }, set: { if !$0 { confirmLine = "" } }),
+                            titleVisibility: .visible) {
+            Button("先试通再换") { let l = confirmLine; Task { await store.run("换线", line: l) } }
+            Button("算了", role: .cancel) {}
+        } message: {
+            Text(store.mode == "住宅"
+                 ? "出口还是同一个住宅 IP，只是换一条路过去。换的那一下陈璟正说着的话可能断一句。"
+                 : "现在是直连，这次只记下来，下次切住宅就走这条。")
+        }
         .confirmationDialog(confirm == "住宅" ? "切到住宅 IP？" : "切到直连？",
                             isPresented: Binding(get: { !confirm.isEmpty }, set: { if !$0 { confirm = "" } }),
                             titleVisibility: .visible) {
@@ -572,6 +593,58 @@ struct ExitRoomView: View {
         .frame(minHeight: 58)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(m.card))
         .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(now ? m.nowEdge : .clear, lineWidth: 0.8))
+    }
+
+    /// 1115 #5351 她：「哪条超时了我自己切别的」——家宽线路一条一行，后面是最近一次测的结果，不是现在这条的有「用这条」
+    private func linesBlock(_ ink: SanctusPageInk, _ m: MoveInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack {
+                Text("lines · 家宽线路").font(SanctusPageFont.ital(12)).foregroundColor(ink.sub)
+                Spacer()
+                Button { Task { await store.run("测线") } } label: {
+                    Text("全部测一下").font(SanctusPageFont.cn(10.5)).tracking(1.2).foregroundColor(ink.body)
+                        .padding(.horizontal, 12).frame(height: 24)
+                        .background(Capsule().fill(m.btnFill))
+                        .overlay(Capsule().stroke(m.edge, lineWidth: 0.8))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain).disabled(!store.busy.isEmpty)
+            }
+            .padding(.bottom, 8)
+            if store.busy == "测线" {
+                HStack(spacing: 6) { ProgressView().controlSize(.small); Text("在测，十几秒").font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub) }
+                    .padding(.bottom, 6)
+            }
+            ForEach(Array(store.lines.enumerated()), id: \.offset) { i, l in
+                if i > 0 { Rectangle().fill(m.edge.opacity(0.4)).frame(height: 0.5) }
+                HStack(spacing: 8) {
+                    Text(l.name.replacingOccurrences(of: "家宽13-", with: ""))
+                        .font(SanctusPageFont.cn(12)).foregroundColor(l.name == store.line ? ink.title : ink.body)
+                        .lineLimit(1)
+                    Spacer(minLength: 4)
+                    Text(l.test).font(SanctusPageFont.cn(10.5))
+                        .foregroundColor(l.test.hasPrefix("不通") ? Color(red: 0.72, green: 0.38, blue: 0.40) : ink.sub)
+                    if store.busy == "换线:" + l.name {
+                        ProgressView().controlSize(.small)
+                    } else if l.name == store.line {
+                        Text("在用").font(SanctusPageFont.cn(10.5)).tracking(1.2).foregroundColor(ink.script).frame(width: 52)
+                    } else {
+                        Button { confirmLine = l.name } label: {
+                            Text("用这条").font(SanctusPageFont.cn(10.5)).tracking(1.2).foregroundColor(ink.body)
+                                .frame(width: 52, height: 24)
+                                .background(Capsule().fill(m.btnFill))
+                                .overlay(Capsule().stroke(m.edge, lineWidth: 0.8))
+                                .contentShape(Capsule())
+                        }
+                        .buttonStyle(.plain).disabled(!store.busy.isEmpty)
+                    }
+                }
+                .frame(minHeight: 38)
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(m.card))
+        .padding(.horizontal, 22)
     }
 
     private func lines(_ head: String, _ rows: [String], _ ink: SanctusPageInk) -> some View {
