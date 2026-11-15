@@ -623,7 +623,7 @@ struct ExitRoomView: View {
                         .lineLimit(1)
                     Spacer(minLength: 4)
                     Text(l.test).font(SanctusPageFont.cn(10.5))
-                        .foregroundColor(l.test.hasPrefix("不通") ? Color(red: 0.72, green: 0.38, blue: 0.40) : ink.sub)
+                        .foregroundColor(l.test.hasPrefix("超时") || l.test.hasPrefix("不通") ? Color(red: 0.72, green: 0.38, blue: 0.40) : ink.sub)
                     if store.busy == "换线:" + l.name {
                         ProgressView().controlSize(.small)
                     } else if l.name == store.line {
