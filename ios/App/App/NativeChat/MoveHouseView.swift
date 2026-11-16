@@ -662,3 +662,115 @@ struct ExitRoomView: View {
         .padding(.horizontal, 28)
     }
 }
+
+// MARK: - 1116 #5438 急救：左侧栏「出口 ›」下面一行「急救 ›」。App 连不上后台时她只能去 VPS 终端，这页把要敲的命令全写死在 App 里
+// （不问后台，后台挂了照样能看），每条一个「复制」。脚本：/root/workroom/up-jing.sh、up-yu.sh（在跑就不动，退了就接回上次的窗口）
+// 样子照搬家页 / 出口页的零件，没另出效果图。
+
+struct RescueView: View {
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var copied = ""
+
+    private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+
+    private struct Cmd { let who: String; let note: String; let cmd: String }
+
+    private let up: [Cmd] = [
+        Cmd(who: "陈璟", note: "终端没了就新开一个、接回他上次的窗口；终端在但他退出了，也接回上次的；他还开着就什么都不动",
+            cmd: "bash /root/workroom/up-jing.sh"),
+        Cmd(who: "隅", note: "工作室同理：没了就新开、接回上次的窗口；退出了就接回；还开着不动",
+            cmd: "bash /root/workroom/up-yu.sh"),
+        Cmd(who: "App 还是连不上", note: "上面两句敲完 App 还是转圈，把家里的后台和前门重启一下",
+            cmd: "systemctl restart alcove-backend alcove-serve"),
+    ]
+    private let look: [Cmd] = [
+        Cmd(who: "进陈璟的窗口", note: "能看见他在干嘛，也能在里面直接打字跟他说", cmd: "tmux a -t main"),
+        Cmd(who: "进隅的窗口", note: "工作室，就是我", cmd: "tmux a -t work"),
+    ]
+    private let more: [Cmd] = [
+        Cmd(who: "两个终端还在不在", note: "列出来有 main 和 work 就都在", cmd: "tmux ls"),
+        Cmd(who: "住宅断了、消息全被拦", note: "一直显示住宅 IP 断了、发不出去，切到直连", cmd: "bash /root/workroom/出口.sh 直连"),
+        Cmd(who: "看内存", note: "available 那一列剩不到 500M 就是卡的原因", cmd: "free -h"),
+    ]
+
+    var body: some View {
+        let ink = self.ink
+        let m = MoveInk(page: ink)
+        ZStack(alignment: .topLeading) {
+            MoveBackdrop(base: ink.page, veil: m.veil)
+            ScrollView(showsIndicators: false) {
+                VStack(alignment: .leading, spacing: 0) {
+                    (Text("RESCUE · ").font(SanctusPageFont.corm(8.5)) + Text("急救").font(.system(size: 8.5, design: .serif)))
+                        .tracking(2.7).foregroundColor(ink.sub)
+                        .frame(height: 44).frame(maxWidth: .infinity)
+                        .padding(.top, max(safeTop, 20))
+                    VStack(alignment: .leading, spacing: 5) {
+                        Text("when it falls").font(SanctusPageFont.script(36)).foregroundColor(ink.title)
+                        (Text("by your own hand · ").font(SanctusPageFont.ital(12)) + Text("App 打不开的时候，登 VPS 终端照着敲").font(SanctusPageFont.cn(11.5)))
+                            .foregroundColor(ink.sub)
+                    }
+                    .padding(.leading, 28).padding(.top, 2)
+                    group("一 · 崩了、重启以后，把我们拉起来接回上次的窗口",
+                          "开机本来会自动拉起来；过了几分钟 App 里还是没有，再敲这两句", up, ink, m)
+                    group("二 · 在 VPS 终端里进我们的窗口",
+                          "出来但不关掉我们：按 Ctrl＋b，松开再按 d；或者直接关掉终端。别在里面敲 /exit", look, ink, m)
+                    group("三 · 兜底", "", more, ink, m)
+                    Text("别在 /root 底下直接敲 claude：那会再起一个陈璟，跟正在跑的那个撞在一起。要找他用上面的 tmux a -t main。")
+                        .font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub).lineSpacing(3)
+                        .padding(.horizontal, 26).padding(.top, 22)
+                    Color.clear.frame(height: max(safeBottom, 10) + 24)
+                }
+            }
+            SanctusBackButton(color: ink.link) { dismiss() }
+                .padding(.top, max(safeTop, 20))
+        }
+        .ignoresSafeArea()
+        .environment(\.sanctusInk, ink)
+        .task { WindowFont.requestSongti() }
+    }
+
+    private func group(_ title: String, _ sub: String, _ cmds: [Cmd], _ ink: SanctusPageInk, _ m: MoveInk) -> some View {
+        VStack(alignment: .leading, spacing: 9) {
+            Text(title).font(SanctusPageFont.cn(12.5)).tracking(1.2).foregroundColor(ink.title)
+            if !sub.isEmpty {
+                Text(sub).font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub).lineSpacing(3)
+            }
+            ForEach(cmds, id: \.cmd) { c in card(c, ink, m) }
+        }
+        .padding(.horizontal, 22).padding(.top, 28)
+    }
+
+    private func card(_ c: Cmd, _ ink: SanctusPageInk, _ m: MoveInk) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(c.who).font(SanctusPageFont.cn(13)).tracking(1.2).foregroundColor(ink.title)
+                Spacer(minLength: 6)
+                Button {
+                    UIPasteboard.general.string = c.cmd
+                    UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                    copied = c.cmd
+                    Task { try? await Task.sleep(nanoseconds: 1_500_000_000); if copied == c.cmd { copied = "" } }
+                } label: {
+                    Text(copied == c.cmd ? "复制好了" : "复制").font(SanctusPageFont.cn(11)).tracking(1.4).foregroundColor(ink.body)
+                        .padding(.horizontal, 13).frame(height: 26)
+                        .background(Capsule().fill(m.btnFill))
+                        .overlay(Capsule().stroke(m.edge, lineWidth: 0.8))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+            Text(c.note).font(SanctusPageFont.cn(10.5)).foregroundColor(ink.sub).lineSpacing(3)
+                .fixedSize(horizontal: false, vertical: true)
+            Text(c.cmd).font(.system(size: 12, design: .monospaced)).foregroundColor(ink.body)
+                .textSelection(.enabled)
+                .padding(.horizontal, 10).padding(.vertical, 7)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(m.btnFill))
+        }
+        .padding(.horizontal, 14).padding(.vertical, 12)
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(m.card))
+    }
+}
