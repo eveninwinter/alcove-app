@@ -268,7 +268,7 @@ struct ChatView: View {
                 .modifier(HouseColorScheme())
         }
         .fullScreenCover(isPresented: $showWakeLog) {
-            WakeTimelineView()
+            WakeHoursView()
                 .modifier(HouseColorScheme())
         }
         .fullScreenCover(isPresented: $showMoveHouse) {

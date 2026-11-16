@@ -823,7 +823,7 @@ final class WakeLogStore: ObservableObject {
     }
 }
 
-struct WakeTimelineView: View {
+struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseViews.swift 里自醒引擎面板早占了这个名，撞名构建失败（5acf924–a357a83）
     @Environment(\.dismiss) private var dismiss
     @StateObject private var store = WakeLogStore()
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
