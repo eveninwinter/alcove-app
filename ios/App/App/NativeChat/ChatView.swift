@@ -98,6 +98,7 @@ struct ChatView: View {
     @State private var showAccountRing = false       // 1113 #5075 侧栏额度下面「换号 ›」→ 钥匙串换号页
     @State private var showExitRoom = false          // 1115 #5331 搬家下面「出口 ›」→ 住宅 IP / 直连 手动切
     @State private var showRescue = false            // 1116 #5438 出口下面「急救 ›」→ App 崩了去 VPS 敲的命令
+    @State private var showWakeLog = false           // 1116 #5450 急救下面「醒着的时候 ›」→ 他自己醒来的时间线
     @State private var showMoveHouse = false         // 1113 #5134 换号下面「搬家 ›」→ 搬家页
     // 0819 她点名的跳转高亮：从搜索/收藏跳过来的那条闪一下再退
     @State private var flashTS: String?
@@ -248,6 +249,7 @@ struct ChatView: View {
                                 onOpenMove: { closeRoomSidebar(); showMoveHouse = true },
                                 onOpenExit: { closeRoomSidebar(); showExitRoom = true },
                                 onOpenRescue: { closeRoomSidebar(); showRescue = true },
+                                onOpenWakeLog: { closeRoomSidebar(); showWakeLog = true },
                                 onClose: closeRoomSidebar)
                     // 栏本身照旧从左边滑进来；原地慢慢的是后面压暗那层（1110 #4963）
                     .transition(.move(edge: .leading))
@@ -263,6 +265,10 @@ struct ChatView: View {
         }
         .fullScreenCover(isPresented: $showRescue) {
             RescueView()
+                .modifier(HouseColorScheme())
+        }
+        .fullScreenCover(isPresented: $showWakeLog) {
+            WakeTimelineView()
                 .modifier(HouseColorScheme())
         }
         .fullScreenCover(isPresented: $showMoveHouse) {
@@ -2934,6 +2940,7 @@ private struct ChatRoomSidebar: View {
     let onOpenMove: () -> Void
     var onOpenExit: () -> Void = {}
     var onOpenRescue: () -> Void = {}
+    var onOpenWakeLog: () -> Void = {}
     let onClose: () -> Void
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = "dark"
     @State private var working = ""
@@ -3021,6 +3028,7 @@ private struct ChatRoomSidebar: View {
                 linkRow("搬家", action: onOpenMove)
                 linkRow("出口", action: onOpenExit)   // 1115 #5331 住宅 IP ↔ 直连，只她手动切
                 linkRow("急救", action: onOpenRescue)   // 1116 #5438 App 崩了去 VPS 终端敲的命令
+                linkRow("醒着的时候", action: onOpenWakeLog)   // 1116 #5450 他自己醒来的时间线
             }
             .padding(.horizontal, 16)
             .padding(.top, topInset + 17)

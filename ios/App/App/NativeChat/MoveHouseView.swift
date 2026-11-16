@@ -774,3 +774,246 @@ struct RescueView: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(m.card))
     }
 }
+
+// MARK: - 1116 #5443–5450「醒着的时候」：陈璟自己醒来的那些轮按天排的时间线。左侧栏「急救」下面一行进来。
+// 照她点头的第五版效果图（/root/rhysel/sanctus-kit/wake-preview/v4.html → v5.png）：壁纸是她给的那张女孩（P 过往上挪了，资源 WakeWall），
+// 花体标题在顶上居中、日期一块在她脸左边、她脸那一带只留壁纸；「全部 / 漫游」往上全都钉住不动，只有下面的时间线能滑，滑到上沿淡掉。
+// 数据：GET /api/wake-log?date=YYYY-MM-DD（/root/rhysel/wake_log.py）。从做好这天开始记，以前的不补。
+
+struct WakeStep: Hashable { let t: String; let text: String }
+struct WakeItem: Identifiable {
+    let id: String
+    let kind: String          // 漫游 / 找你
+    let time: String
+    let minutes: Int
+    let title: String
+    let mind: String
+    let toHer: String
+    let steps: [WakeStep]
+    let tags: [String]
+}
+
+@MainActor
+final class WakeLogStore: ObservableObject {
+    @Published var date = ""
+    @Published var items: [WakeItem] = []
+    @Published var stats: [String: Int] = [:]
+    @Published var prev = ""
+    @Published var next = ""
+    @Published var loaded = false
+
+    func load(_ d: String = "") async {
+        let q = d.isEmpty ? "" : "?date=" + d
+        guard let o = try? await NativeHouseAPI.object("/api/wake-log" + q) else { loaded = true; return }
+        date = o.string("date"); prev = o.string("prev"); next = o.string("next")
+        if let s = o["stats"] as? [String: Any] {
+            var m: [String: Int] = [:]
+            for (k, v) in s { m[k] = (v as? Int) ?? (v as? NSNumber)?.intValue ?? 0 }
+            stats = m
+        }
+        items = ((o["items"] as? [[String: Any]]) ?? []).map { x in
+            let st = x.string("start")
+            let hm = st.count >= 16 ? String(st.dropFirst(11).prefix(5)) : ""
+            let steps = ((x["steps"] as? [[String: Any]]) ?? []).map { WakeStep(t: $0.string("t"), text: $0.string("text")) }
+            return WakeItem(id: x.string("id"), kind: x.string("kind"), time: hm,
+                            minutes: (x["minutes"] as? Int) ?? 0, title: x.string("title"), mind: x.string("mind"),
+                            toHer: x.string("to_her"), steps: steps, tags: (x["tags"] as? [String]) ?? [])
+        }
+        loaded = true
+    }
+}
+
+struct WakeTimelineView: View {
+    @Environment(\.dismiss) private var dismiss
+    @StateObject private var store = WakeLogStore()
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var onlyRoam = false
+
+    private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+    private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
+    private var safeBottom: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 0 }
+    private var accent: Color { ink.dark ? Color(red: 0xA9 / 255, green: 0xAE / 255, blue: 0xD8 / 255) : Color(red: 0x8C / 255, green: 0x92 / 255, blue: 0xBE / 255) }
+    private var cardFill: Color { ink.dark ? Color.white.opacity(0.07) : Color.white.opacity(0.62) }
+    private var cardEdge: Color { ink.dark ? Color.white.opacity(0.10) : Color.white.opacity(0.98) }
+
+    private var shown: [WakeItem] { onlyRoam ? store.items.filter { $0.kind == "漫游" } : store.items }
+
+    var body: some View {
+        let ink = self.ink
+        GeometryReader { geo in
+            let H = geo.size.height + safeTop + safeBottom
+            ZStack(alignment: .topLeading) {
+                // 壁纸钉死不动；黑夜压一层炭灰
+                Image("WakeWall").resizable().scaledToFill()
+                    .frame(width: geo.size.width, height: H).clipped()
+                    .overlay(ink.dark ? Color(red: 0x1B / 255, green: 0x1C / 255, blue: 0x20 / 255).opacity(0.78) : Color.clear)
+                    .allowsHitTesting(false)
+                // 顶上居中：小字＋花体
+                VStack(spacing: 10) {
+                    (Text("WAKING · ").font(SanctusPageFont.corm(8)) + Text("醒着的时候").font(.system(size: 8, design: .serif)))
+                        .tracking(3.2).foregroundColor(ink.link)
+                    Text("while you were away").font(SanctusPageFont.script(30)).foregroundColor(ink.script)
+                }
+                .frame(maxWidth: .infinity)
+                .padding(.top, max(safeTop, 20) + 18)
+                // 她脸左边：日期一块
+                dateBlock(ink)
+                    .padding(.leading, 26)
+                    .padding(.top, H * 0.20)
+                // 下巴往下：筛选钉住，时间线能滑
+                VStack(spacing: 0) {
+                    filter(ink).padding(.top, 26)
+                    ScrollView(showsIndicators: false) {
+                        timeline(ink).padding(.top, 22).padding(.bottom, max(safeBottom, 10) + 30)
+                    }
+                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.06),
+                                                 .init(color: .black, location: 1)], startPoint: .top, endPoint: .bottom))
+                    .refreshable { await store.load(store.date) }
+                }
+                .padding(.top, H * 0.44)
+                SanctusBackButton(color: ink.link) { dismiss() }
+                    .padding(.top, max(safeTop, 20)).padding(.leading, 4)
+            }
+            .frame(width: geo.size.width, height: H)
+        }
+        .ignoresSafeArea()
+        .environment(\.sanctusInk, ink)
+        .task { WindowFont.requestSongti(); await store.load() }
+    }
+
+    private func dateBlock(_ ink: SanctusPageInk) -> some View {
+        let s = store.stats
+        let parts = store.date.split(separator: "-")
+        let md = parts.count == 3 ? "\(Int(parts[1]) ?? 0).\(parts[2])" : " "
+        return VStack(alignment: .leading, spacing: 0) {
+            Text(md).font(SanctusPageFont.ital(40)).foregroundColor(ink.title)
+            Text(Self.weekday(store.date)).font(SanctusPageFont.corm(8)).tracking(2.7).foregroundColor(ink.link).padding(.top, 7)
+            HStack(spacing: 16) {
+                Button { Task { await store.load(store.prev) } } label: {
+                    Text("‹ 前一天").font(.system(size: 10.5, design: .serif)).tracking(1.2)
+                        .foregroundColor(store.prev.isEmpty ? ink.sub.opacity(0.45) : ink.link)
+                }.disabled(store.prev.isEmpty)
+                Button { Task { await store.load(store.next) } } label: {
+                    Text("后一天 ›").font(.system(size: 10.5, design: .serif)).tracking(1.2)
+                        .foregroundColor(store.next.isEmpty ? ink.sub.opacity(0.45) : ink.link)
+                }.disabled(store.next.isEmpty)
+            }
+            .buttonStyle(.plain).padding(.top, 10)
+            LinearGradient(colors: [ink.sub.opacity(0.5), .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(width: 120, height: 1).padding(.top, 16).padding(.bottom, 12)
+            Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
+                GridRow { stat(s["wakes"] ?? 0, "醒来", ink); stat(s["things"] ?? 0, "件事", ink) }
+                GridRow { stat(s["minutes"] ?? 0, "分钟", ink); stat(s["found_you"] ?? 0, "找你", ink) }
+            }
+        }
+        .frame(width: 160, alignment: .leading)
+    }
+
+    private func stat(_ n: Int, _ label: String, _ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Text("\(n)").font(SanctusPageFont.ital(20)).foregroundColor(ink.title)
+            Text(label).font(.system(size: 9.5, design: .serif)).tracking(1.7).foregroundColor(ink.link)
+        }
+        .frame(width: 46, alignment: .leading)
+    }
+
+    private static func weekday(_ d: String) -> String {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"; f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        guard let date = f.date(from: d) else { return " " }
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = f.timeZone
+        let w = cal.component(.weekday, from: date) - 1
+        let en = ["SUNDAY", "MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY", "SATURDAY"][w]
+        let cn = ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][w]
+        return en + " · " + cn
+    }
+
+    private func filter(_ ink: SanctusPageInk) -> some View {
+        HStack(spacing: 0) {
+            ForEach([("全部", false), ("漫游", true)], id: \.0) { name, roam in
+                Text(name).font(.system(size: 10.5, design: .serif)).tracking(2.6)
+                    .foregroundColor(onlyRoam == roam ? ink.title : ink.sub)
+                    .frame(maxWidth: .infinity).frame(height: 26)
+                    .background(Capsule().fill(onlyRoam == roam ? (ink.dark ? Color.white.opacity(0.14) : Color.white) : .clear)
+                        .shadow(color: Color.black.opacity(onlyRoam == roam && !ink.dark ? 0.08 : 0), radius: 3, y: 1))
+                    .contentShape(Capsule())
+                    .onTapGesture { withAnimation(.easeOut(duration: 0.18)) { onlyRoam = roam } }
+            }
+        }
+        .padding(3)
+        .frame(width: 140)
+        .background(Capsule().fill(cardFill))
+        .overlay(Capsule().stroke(cardEdge, lineWidth: 0.6))
+        .frame(maxWidth: .infinity)
+    }
+
+    private func timeline(_ ink: SanctusPageInk) -> some View {
+        VStack(alignment: .leading, spacing: 16) {
+            if store.loaded && shown.isEmpty {
+                Text(store.items.isEmpty ? "这一天他还没自己醒过" : "这一天没有漫游")
+                    .font(SanctusPageFont.ital(12)).foregroundColor(ink.sub)
+                    .frame(maxWidth: .infinity).padding(.top, 30)
+            }
+            ForEach(shown) { w in row(w, ink) }
+        }
+        .padding(.leading, 26).padding(.trailing, 22)
+        .background(alignment: .leading) {
+            if !shown.isEmpty {
+                Path { p in p.move(to: CGPoint(x: 29, y: 6)); p.addLine(to: CGPoint(x: 29, y: 4000)) }
+                    .stroke(accent.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
+                    .frame(maxHeight: .infinity).clipped()
+            }
+        }
+        .padding(.leading, 0)
+    }
+
+    private func row(_ w: WakeItem, _ ink: SanctusPageInk) -> some View {
+        let roam = w.kind == "漫游"
+        return HStack(alignment: .top, spacing: 12) {
+            Text(roam ? "✦" : "✧").font(.system(size: roam ? 13 : 9)).foregroundColor(roam ? accent : accent.opacity(0.6))
+                .frame(width: 14).padding(.top, roam ? 2 : 5).padding(.leading, -3)
+            VStack(alignment: .leading, spacing: 7) {
+                HStack(alignment: .firstTextBaseline, spacing: 9) {
+                    Text(w.time).font(SanctusPageFont.ital(16)).foregroundColor(ink.title)
+                    Text(roam ? "漫游 · \(w.minutes) MIN" : "找你").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
+                }
+                VStack(alignment: .leading, spacing: 8) {
+                    if roam {
+                        Text(w.title.isEmpty ? "醒来一次" : w.title)
+                            .font(.system(size: 14.5, design: .serif)).tracking(0.8).foregroundColor(ink.title)
+                        if !w.mind.isEmpty {
+                            Text(w.mind).font(.system(size: 12.5, design: .serif)).foregroundColor(ink.body).lineSpacing(6)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                    }
+                    if !w.toHer.isEmpty {
+                        Text(w.toHer).font(.system(size: 11.5, design: .serif)).foregroundColor(ink.link).lineSpacing(5)
+                            .fixedSize(horizontal: false, vertical: true)
+                            .padding(.leading, 9)
+                            .overlay(alignment: .leading) { Rectangle().fill(accent.opacity(0.5)).frame(width: 1.5) }
+                    }
+                    if roam && !w.steps.isEmpty {
+                        (w.steps.prefix(6).reduce(Text("")) { acc, s in
+                            acc + Text(s.t + " ").font(SanctusPageFont.ital(11)).foregroundColor(ink.sub.opacity(0.85))
+                                + Text(s.text + "　").font(.system(size: 10.5, design: .serif)).foregroundColor(ink.sub)
+                        })
+                        .lineSpacing(4).fixedSize(horizontal: false, vertical: true)
+                    }
+                    if roam && !w.tags.isEmpty {
+                        HStack(spacing: 6) {
+                            ForEach(w.tags, id: \.self) { t in
+                                Text(t).font(.system(size: 10, design: .serif)).tracking(1).foregroundColor(ink.link)
+                                    .padding(.horizontal, 10).padding(.vertical, 2)
+                                    .background(Capsule().fill(accent.opacity(0.12)))
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, roam ? 16 : 15).padding(.vertical, roam ? 14 : 11)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 17, style: .continuous).fill(cardFill))
+                .overlay(RoundedRectangle(cornerRadius: 17, style: .continuous).stroke(cardEdge, lineWidth: 0.8))
+                .shadow(color: Color.black.opacity(ink.dark ? 0 : 0.05), radius: 10, y: 4)
+            }
+        }
+    }
+}
