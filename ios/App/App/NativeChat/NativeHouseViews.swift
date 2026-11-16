@@ -957,6 +957,8 @@ private struct NativeSettingsView: View {
     // 1012 世界之窗第二期：会真的叫醒他的两样（flags window_alert / old_echo），默认关
     @State private var windowAlertOn = false
     @State private var oldEchoOn = false
+    // 1116 #5413 她：「旁白」开关（flags narration），开＝照旧写，关＝人格里旁白那段拿掉、旁白门不拦；新开窗才生效
+    @State private var narrationOn = true
     @State private var wakeLine: String? = nil
     @State private var wakeEta: String? = nil
     @State private var wakeOdds: String? = nil
@@ -1506,6 +1508,14 @@ private struct NativeSettingsView: View {
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                         .padding(.top, 10)
+                        // 1116 #5413 她：旁白开关。人格是开窗那一刻读进去的，拧完要新开窗才干净
+                        VStack(alignment: .leading, spacing: 4) {
+                            pulseToggle("旁白", "开着照旧写，关了不写", $narrationOn, key: "narration")
+                            Text("关掉：他的说话方式里旁白那段拿掉、没写旁白也不再拦他补；开回来原样放回。拧完要新开一个窗口才生效，正开着的这个窗口不会变。")
+                                .font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .padding(.top, 10)
                     }
                 } }
                 // 0827 她定的：一个按钮管全屋，不跟系统。
@@ -1909,6 +1919,7 @@ private struct NativeSettingsView: View {
               let raw = obj["flags"] as? [String: Any] else { return }
         windowAlertOn = (raw["window_alert"] as? Bool) ?? false
         oldEchoOn = (raw["old_echo"] as? Bool) ?? false
+        narrationOn = (raw["narration"] as? Bool) ?? true
     }
 
     @MainActor private func loadWake() async {
