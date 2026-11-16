@@ -875,13 +875,16 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                 VStack(spacing: 0) {
                     filter(ink).padding(.top, 26)
                     ScrollView(showsIndicators: false) {
-                        timeline(ink).padding(.top, 22).padding(.bottom, max(safeBottom, 10) + 30)
+                        // 1116 #5467 de30f71 改完她还是划不到底：底下再多留一截，最后一张卡一定能完整推上来
+                        timeline(ink).padding(.top, 22).padding(.bottom, max(safeBottom, 10) + 110)
                     }
                     .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.06),
                                                  .init(color: .black, location: 1)], startPoint: .top, endPoint: .bottom))
                     .refreshable { await store.load(store.date) }
                 }
                 .padding(.top, H * 0.44)
+                // 时间线这一块的高度写死成「屏幕底 − 起点」，不靠 ZStack 去推，底边就是屏幕底边
+                .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 SanctusBackButton(color: ink.link) { dismiss() }
                     .padding(.top, max(safeTop, 20)).padding(.leading, 4)
             }
@@ -1020,7 +1023,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                             }
                         }
                     }
-                    ForEach(w.links, id: \.self) { link in
+                    if let link = w.links.first {   // 1116 #5467 一条只要一张卡
                         LinkPreviewCard(url: link, theme: .named(ink.dark ? "imessage-dark" : "imessage"), isUser: false)
                     }
                     if roam && !w.steps.isEmpty {
