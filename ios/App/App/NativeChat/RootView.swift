@@ -1534,6 +1534,7 @@ struct PillBoxSheet: View {
     @State private var editingId: String?          // 长按了哪一颗：上面的框就变成改这颗
     @State private var picked: [String] = []
     @State private var once = ""                   // 「只用这一次」那段
+    @State private var previewId: String?          // 1116 #5451 她：「点击的话为什么没有内容预览」——点了哪颗，底下摆出它写的什么
     @State private var busy = false
     @State private var note = ""
     @FocusState private var typing: Bool
@@ -1612,6 +1613,30 @@ struct PillBoxSheet: View {
                     ForEach(store.items) { p in pillCapsule(p) }
                 }
                 .padding(.top, 10)
+                if let pid = previewId, let p = store.items.first(where: { $0.id == pid }) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        HStack(alignment: .firstTextBaseline) {
+                            Text(p.name).font(.system(size: 12.5, design: .serif)).tracking(1).foregroundColor(ink)
+                            Text(picked.contains(p.id) ? "已选上" : "没选").font(.system(size: 10, design: .serif)).foregroundColor(dim)
+                            Spacer()
+                            Button { withAnimation(.easeOut(duration: 0.15)) { previewId = nil } } label: {
+                                Image(systemName: "xmark").font(.system(size: 10, weight: .light)).foregroundColor(dim)
+                                    .frame(width: 26, height: 22).contentShape(Rectangle())
+                            }.buttonStyle(.plain)
+                        }
+                        ScrollView(showsIndicators: false) {
+                            Text(p.text).font(.system(size: 11.5, design: .serif)).foregroundColor(TreehouseInk.dark.opacity(0.85))
+                                .lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
+                                .fixedSize(horizontal: false, vertical: true)
+                        }
+                        .frame(maxHeight: 170)
+                    }
+                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .background(RoundedRectangle(cornerRadius: 12).fill(TreehouseInk.fog.opacity(0.55)))
+                    .overlay(RoundedRectangle(cornerRadius: 12).stroke(dim.opacity(0.35), lineWidth: 0.6))
+                    .padding(.top, 12)
+                    .transition(.opacity)
+                }
                 if !note.isEmpty {
                     Text(note).font(.system(size: 10.5, design: .serif)).foregroundColor(dim).padding(.top, 10)
                 }
@@ -1683,6 +1708,7 @@ struct PillBoxSheet: View {
                                       style: StrokeStyle(lineWidth: 0.6, dash: p.mine ? [3, 2] : [])))
             .contentShape(Capsule())
             .onTapGesture {
+                withAnimation(.easeOut(duration: 0.15)) { previewId = p.id }
                 if on { picked.removeAll { $0 == p.id } }
                 else if total < PillStore.maxPills { picked.append(p.id) }
                 else { note = "最多 \(PillStore.maxPills) 颗" }
