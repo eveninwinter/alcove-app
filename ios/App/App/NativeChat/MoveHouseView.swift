@@ -776,7 +776,7 @@ struct RescueView: View {
 }
 
 // MARK: - 1116 #5443–5450「醒着的时候」：陈璟自己醒来的那些轮按天排的时间线。左侧栏「急救」下面一行进来。
-// 照她点头的第五版效果图（/root/rhysel/sanctus-kit/wake-preview/v4.html → v5.png）：壁纸是她给的那张女孩（P 过往上挪了，资源 WakeWall），
+// 照她点头的效果图（/root/rhysel/sanctus-kit/wake-preview/v6.html → v6.png，#5450 她要标题和女孩之间再紧一点：图往上挪 21%）：壁纸是她给的那张女孩（资源 WakeWall），
 // 花体标题在顶上居中、日期一块在她脸左边、她脸那一带只留壁纸；「全部 / 漫游」往上全都钉住不动，只有下面的时间线能滑，滑到上沿淡掉。
 // 数据：GET /api/wake-log?date=YYYY-MM-DD（/root/rhysel/wake_log.py）。从做好这天开始记，以前的不补。
 
@@ -855,11 +855,11 @@ struct WakeTimelineView: View {
                     Text("while you were away").font(SanctusPageFont.script(30)).foregroundColor(ink.script)
                 }
                 .frame(maxWidth: .infinity)
-                .padding(.top, max(safeTop, 20) + 18)
+                .padding(.top, max(safeTop, 20) + 14)
                 // 她脸左边：日期一块
                 dateBlock(ink)
                     .padding(.leading, 26)
-                    .padding(.top, H * 0.20)
+                    .padding(.top, H * 0.161)
                 // 下巴往下：筛选钉住，时间线能滑
                 VStack(spacing: 0) {
                     filter(ink).padding(.top, 26)
@@ -870,7 +870,7 @@ struct WakeTimelineView: View {
                                                  .init(color: .black, location: 1)], startPoint: .top, endPoint: .bottom))
                     .refreshable { await store.load(store.date) }
                 }
-                .padding(.top, H * 0.44)
+                .padding(.top, H * 0.40)
                 SanctusBackButton(color: ink.link) { dismiss() }
                     .padding(.top, max(safeTop, 20)).padding(.leading, 4)
             }
