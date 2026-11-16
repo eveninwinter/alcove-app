@@ -807,12 +807,13 @@ final class WakeLogStore: ObservableObject {
     @Published var stats: [String: Int] = [:]
     @Published var prev = ""
     @Published var next = ""
+    @Published var last = ""      // 1116 #5471 这一天他最后一次醒来（HH:mm）
     @Published var loaded = false
 
     func load(_ d: String = "") async {
         let q = d.isEmpty ? "" : "?date=" + d
         guard let o = try? await NativeHouseAPI.object("/api/wake-log" + q) else { loaded = true; return }
-        date = o.string("date"); prev = o.string("prev"); next = o.string("next")
+        date = o.string("date"); prev = o.string("prev"); next = o.string("next"); last = o.string("last")
         if let s = o["stats"] as? [String: Any] {
             var m: [String: Int] = [:]
             for (k, v) in s { m[k] = (v as? Int) ?? (v as? NSNumber)?.intValue ?? 0 }
@@ -921,18 +922,23 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                 .frame(width: 120, height: 1).padding(.top, 16).padding(.bottom, 12)
             Grid(alignment: .leading, horizontalSpacing: 18, verticalSpacing: 6) {
                 GridRow { stat(s["wakes"] ?? 0, "醒来", ink); stat(s["things"] ?? 0, "件事", ink) }
-                GridRow { stat(s["minutes"] ?? 0, "分钟", ink); stat(s["found_you"] ?? 0, "找你", ink) }
+                // 1116 #5471–5473 她：分钟不要了，换成「最近」（他今天最后一次醒来的时间），没醒过就一道横
+                GridRow { stat(store.last.isEmpty ? "—" : store.last, "最近", ink); stat(s["found_you"] ?? 0, "找你", ink) }
             }
         }
         .frame(width: 160, alignment: .leading)
     }
 
     private func stat(_ n: Int, _ label: String, _ ink: SanctusPageInk) -> some View {
+        stat("\(n)", label, ink)
+    }
+
+    private func stat(_ value: String, _ label: String, _ ink: SanctusPageInk) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            Text("\(n)").font(SanctusPageFont.ital(20)).foregroundColor(ink.title)
+            Text(value).font(SanctusPageFont.ital(20)).foregroundColor(ink.title).lineLimit(1).fixedSize()
             Text(label).font(.system(size: 9.5, design: .serif)).tracking(1.7).foregroundColor(ink.link)
         }
-        .frame(width: 46, alignment: .leading)
+        .frame(minWidth: 46, alignment: .leading)   // 「21:43」比两位数宽，这一格自己撑开
     }
 
     private static func weekday(_ d: String) -> String {
