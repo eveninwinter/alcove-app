@@ -854,12 +854,19 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
             // 1116 #5460 外面 ignoresSafeArea 了，geo 本来就是整屏高；H 再加安全区＝多出八十来点，时间线最底下滑不出来。
             // 版式（壁纸、日期、时间线起点）照她看过的样子仍按 H 排，整页只占一屏高、多出来的壁纸裁掉
             let H = geo.size.height + safeTop + safeBottom
+            // 1116 #5475–5476 她：手写花体到人脸之间那截白缩一丢丢——标题不动，人脸、日期、筛选、时间线一起往上提 20
+            let lift: CGFloat = 20
             ZStack(alignment: .topLeading) {
-                // 壁纸钉死不动；黑夜压一层炭灰
-                Image("WakeWall").resizable().scaledToFill()
-                    .frame(width: geo.size.width, height: H).clipped()
-                    .overlay(ink.dark ? Color(red: 0x1B / 255, green: 0x1C / 255, blue: 0x20 / 255).opacity(0.78) : Color.clear)
-                    .allowsHitTesting(false)
+                // 壁纸钉死不动；整张往上提 lift，顶上空出来的那条补壁纸顶边同色的白（图顶 254 白）；黑夜压一层炭灰
+                ZStack(alignment: .top) {
+                    Color(white: 254 / 255)
+                    Image("WakeWall").resizable().scaledToFill()
+                        .frame(width: geo.size.width, height: H).clipped()
+                        .offset(y: -lift)
+                }
+                .frame(width: geo.size.width, height: H).clipped()
+                .overlay(ink.dark ? Color(red: 0x1B / 255, green: 0x1C / 255, blue: 0x20 / 255).opacity(0.78) : Color.clear)
+                .allowsHitTesting(false)
                 // 顶上居中：小字＋花体
                 VStack(spacing: 10) {
                     (Text("WAKING · ").font(SanctusPageFont.corm(8)) + Text("醒着的时候").font(.system(size: 8, design: .serif)))
@@ -871,7 +878,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                 // 她脸左边：日期一块
                 dateBlock(ink)
                     .padding(.leading, 26)
-                    .padding(.top, H * 0.20)
+                    .padding(.top, H * 0.20 - lift)
                 // 下巴往下：筛选钉住，时间线能滑
                 VStack(spacing: 0) {
                     filter(ink).padding(.top, 26)
@@ -883,7 +890,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                                                  .init(color: .black, location: 1)], startPoint: .top, endPoint: .bottom))
                     .refreshable { await store.load(store.date) }
                 }
-                .padding(.top, H * 0.44)
+                .padding(.top, H * 0.44 - lift)
                 // 时间线这一块的高度写死成「屏幕底 − 起点」，不靠 ZStack 去推，底边就是屏幕底边
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 SanctusBackButton(color: ink.link) { dismiss() }
