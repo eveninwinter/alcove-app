@@ -841,6 +841,8 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
     var body: some View {
         let ink = self.ink
         GeometryReader { geo in
+            // 1116 #5460 外面 ignoresSafeArea 了，geo 本来就是整屏高；H 再加安全区＝多出八十来点，时间线最底下滑不出来。
+            // 版式（壁纸、日期、时间线起点）照她看过的样子仍按 H 排，整页只占一屏高、多出来的壁纸裁掉
             let H = geo.size.height + safeTop + safeBottom
             ZStack(alignment: .topLeading) {
                 // 壁纸钉死不动；黑夜压一层炭灰
@@ -874,7 +876,8 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                 SanctusBackButton(color: ink.link) { dismiss() }
                     .padding(.top, max(safeTop, 20)).padding(.leading, 4)
             }
-            .frame(width: geo.size.width, height: H)
+            .frame(width: geo.size.width, height: geo.size.height, alignment: .topLeading)
+            .clipped()
         }
         .ignoresSafeArea()
         .environment(\.sanctusInk, ink)
