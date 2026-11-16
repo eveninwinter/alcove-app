@@ -4943,9 +4943,11 @@ struct MessageRow: View {
                             reactBubble
                         }
                     }
-                    // 正文里有链接：气泡下面长一张小卡片（只有链接的话就只留卡）
-                    if let link = msg.firstLinkURL, msg.musicCard == nil, !msg.isSticker {
-                        LinkPreviewCard(url: link, theme: cardTheme, isUser: isUser)
+                    // 正文里有链接：气泡下面长一张小卡片（只有链接的话就只留卡；1116 #5462 一整条都是链接就每个链接一张，最多 3 张）
+                    if msg.firstLinkURL != nil, msg.musicCard == nil, !msg.isSticker {
+                        ForEach(msg.isBareLink ? msg.linkURLs : [msg.firstLinkURL ?? ""], id: \.self) { link in
+                            LinkPreviewCard(url: link, theme: cardTheme, isUser: isUser)
+                        }
                     }
                   }
                 }

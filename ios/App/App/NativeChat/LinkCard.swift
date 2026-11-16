@@ -78,28 +78,41 @@ final class LinkCardStore: ObservableObject {
 }
 
 extension ChatMessage {
-    /// 正文里第一个链接。有它就在气泡下面长一张卡。
-    var firstLinkURL: String? {
+    /// 正文里的链接（按出现顺序、去重，最多 3 个）
+    var linkURLs: [String] {
         let text = displayText
-        guard text.contains("http") else { return nil }
-        guard let range = text.range(of: #"https?://[^\s<>"'）)]+"#, options: .regularExpression) else { return nil }
-        var s = String(text[range])
-        while let last = s.last, ".,;:!?，。！？、".contains(last) { s.removeLast() }
-        return s
+        guard text.contains("http"), let re = try? NSRegularExpression(pattern: #"https?://[^\s<>"'）)\]]+"#) else { return [] }
+        var out: [String] = []
+        for m in re.matches(in: text, range: NSRange(text.startIndex..., in: text)) {
+            guard let r = Range(m.range, in: text) else { continue }
+            var s = String(text[r])
+            while let last = s.last, ".,;:!?，。！？、".contains(last) { s.removeLast() }
+            if !out.contains(s) { out.append(s) }
+        }
+        return Array(out.prefix(3))
     }
 
-    /// 气泡里的正文：有卡片的话把那行链接藏掉（卡就在下面），别的字照旧
+    /// 正文里第一个链接。有它就在气泡下面长一张卡。
+    var firstLinkURL: String? { linkURLs.first }
+
+    /// 气泡里的正文：有卡片的话把链接藏掉（卡就在下面）；[字](网址) 只留字，别的字照旧
     var textWithoutLink: String {
-        guard let link = firstLinkURL else { return displayText }
-        let stripped = displayText.replacingOccurrences(of: link, with: "")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+        guard firstLinkURL != nil else { return displayText }
+        var t = displayText.replacingOccurrences(of: #"\[([^\]]*)\]\(https?://[^)\s]*\)"#, with: "$1", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"<?https?://[^\s<>"'）)\]]+>?"#, with: "", options: .regularExpression)
+        let stripped = t.trimmingCharacters(in: .whitespacesAndNewlines)
         return stripped.isEmpty ? displayText : stripped
     }
 
-    /// 整条正文就只是一个链接——那就只留卡，不再吐一个光秃秃的链接气泡
+    /// 整条正文就只是链接——那就只留卡，不再吐一个光秃秃的链接气泡。
+    /// 1116 #5462 她：「来源：[标题](网址)、[标题](网址)」这种一整条也算，聊天页只留渲染的小卡片
     var isBareLink: Bool {
-        guard let link = firstLinkURL else { return false }
-        return displayText.trimmingCharacters(in: .whitespacesAndNewlines) == link
+        guard firstLinkURL != nil else { return false }
+        var t = displayText.replacingOccurrences(of: #"\[[^\]]*\]\(https?://[^)\s]*\)"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"<?https?://[^\s<>"'）)\]]+>?"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"^\s*(来源|出处|参考|链接|[Ss]ources?)\s*[：:]"#, with: "", options: .regularExpression)
+        t = t.replacingOccurrences(of: #"[\s、，,;；|·]"#, with: "", options: .regularExpression)
+        return t.isEmpty
     }
 }
 

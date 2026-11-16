@@ -781,6 +781,11 @@ struct RescueView: View {
 // 数据：GET /api/wake-log?date=YYYY-MM-DD（/root/rhysel/wake_log.py）。从做好这天开始记，以前的不补。
 
 struct WakeStep: Hashable { let t: String; let text: String }
+struct WakePhoto: Identifiable {
+    let url: URL
+    var id: String { url.absoluteString }
+}
+
 struct WakeItem: Identifiable {
     let id: String
     let kind: String          // 漫游 / 找你
@@ -791,6 +796,8 @@ struct WakeItem: Identifiable {
     let toHer: String
     let steps: [WakeStep]
     let tags: [String]
+    var links: [String] = []      // 1116 #5461 她：有链接的留渲染小卡片（跟聊天页同一张）
+    var images: [String] = []     // 他这次醒着发给她的图（/attachments/…）
 }
 
 @MainActor
@@ -817,7 +824,8 @@ final class WakeLogStore: ObservableObject {
             let steps = ((x["steps"] as? [[String: Any]]) ?? []).map { WakeStep(t: $0.string("t"), text: $0.string("text")) }
             return WakeItem(id: x.string("id"), kind: x.string("kind"), time: hm,
                             minutes: (x["minutes"] as? Int) ?? 0, title: x.string("title"), mind: x.string("mind"),
-                            toHer: x.string("to_her"), steps: steps, tags: (x["tags"] as? [String]) ?? [])
+                            toHer: x.string("to_her"), steps: steps, tags: (x["tags"] as? [String]) ?? [],
+                            links: (x["links"] as? [String]) ?? [], images: (x["images"] as? [String]) ?? [])
         }
         loaded = true
     }
@@ -828,6 +836,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
     @StateObject private var store = WakeLogStore()
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @State private var onlyRoam = false
+    @State private var viewing: URL?
 
     private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -881,6 +890,9 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
         }
         .ignoresSafeArea()
         .environment(\.sanctusInk, ink)
+        .fullScreenCover(item: Binding(get: { viewing.map { WakePhoto(url: $0) } }, set: { viewing = $0?.url })) { p in
+            ImageViewer(url: p.url) { viewing = nil }
+        }
         .task { WindowFont.requestSongti(); await store.load() }
     }
 
@@ -993,6 +1005,23 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 9)
                             .overlay(alignment: .leading) { Rectangle().fill(accent.opacity(0.5)).frame(width: 1.5) }
+                    }
+                    if !w.images.isEmpty {
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 6) {
+                                ForEach(w.images, id: \.self) { raw in
+                                    let u = AlcoveAPI.attachmentURL(raw)
+                                    CachedImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { Rectangle().fill(accent.opacity(0.12)) }
+                                        .frame(width: 92, height: 92)
+                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                                        .contentShape(Rectangle())
+                                        .onTapGesture { viewing = u }
+                                }
+                            }
+                        }
+                    }
+                    ForEach(w.links, id: \.self) { link in
+                        LinkPreviewCard(url: link, theme: .named(ink.dark ? "imessage-dark" : "imessage"), isUser: false)
                     }
                     if roam && !w.steps.isEmpty {
                         (w.steps.prefix(6).reduce(Text("")) { acc, s in
