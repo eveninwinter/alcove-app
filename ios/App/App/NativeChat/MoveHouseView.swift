@@ -890,7 +890,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                                                  .init(color: .black, location: 1)], startPoint: .top, endPoint: .bottom))
                     .refreshable { await store.load(store.date) }
                 }
-                .padding(.top, H * 0.44 - lift)
+                .padding(.top, H * 0.44 - lift - 16)   // 1116 #5482 她：「全部｜漫游」连同下面往上一点点（预览 c97ab9e8）
                 // 时间线这一块的高度写死成「屏幕底 − 起点」，不靠 ZStack 去推，底边就是屏幕底边
                 .frame(width: geo.size.width, height: geo.size.height, alignment: .top)
                 SanctusBackButton(color: ink.link) { dismiss() }
