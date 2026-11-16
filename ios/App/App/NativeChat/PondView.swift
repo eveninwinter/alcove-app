@@ -220,7 +220,8 @@ struct NativePondView: View {
             .ignoresSafeArea(edges: .top)
             .refreshable {
                 hiddenPosts = []; hiddenReplies = []
-                if isPublic { await eaves.loadAll() } else { await load() }
+                // 1116 公开那边拿到 /me 一刷新，下拉的任务就被 SwiftUI 取消了；单开一个不跟着取消的任务等它跑完
+                if isPublic { await Task { await eaves.loadAll() }.value } else { await load() }
             }
             topButtons(ink)
         }

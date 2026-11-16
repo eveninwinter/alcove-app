@@ -189,6 +189,8 @@ final class EavesModel: ObservableObject {
             try await loadFeed()
             failed = false
         } catch {
+            // 1116 下拉时页面一刷新 SwiftUI 就把这次请求掐了（后台日志全是 Broken pipe），被掐不算没连上
+            if Task.isCancelled || error is CancellationError || (error as? URLError)?.code == .cancelled { return }
             failed = posts.isEmpty
             if !posts.isEmpty { report(error) }
         }
