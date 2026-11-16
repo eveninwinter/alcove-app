@@ -393,18 +393,28 @@ private struct EavesAvatar: View {
         if let mine = model.own.first(where: { $0.id == actor }) {
             PondAvatar(isHers: !mine.isAI, size: size, radius: radius)
         } else {
+            let raw = model.actors[actor]?.avatar ?? ""
             Group {
-                if let img = eavesDecode(model.actors[actor]?.avatar ?? "") {
+                if let img = eavesDecode(raw) {
                     Image(uiImage: img).resizable().scaledToFill()
-                } else {
-                    ZStack {
-                        Color(red: 0xA9 / 255, green: 0xAF / 255, blue: 0xBC / 255)
-                        Text(String(model.name(actor).prefix(1))).font(.system(size: size * 0.38, design: .serif)).foregroundColor(.white)
+                } else if let url = URL(string: raw), url.scheme == "https" {
+                    // 1116 别家服务器的头像给的是签过名的链接（跟动态里的图一样），不是内嵌 JPEG
+                    AsyncImage(url: url) { phase in
+                        if let image = phase.image { image.resizable().scaledToFill() } else { letter }
                     }
+                } else {
+                    letter
                 }
             }
             .frame(width: size, height: size)
             .clipShape(RoundedRectangle(cornerRadius: radius, style: .continuous))
+        }
+    }
+
+    private var letter: some View {
+        ZStack {
+            Color(red: 0xA9 / 255, green: 0xAF / 255, blue: 0xBC / 255)
+            Text(String(model.name(actor).prefix(1))).font(.system(size: size * 0.38, design: .serif)).foregroundColor(.white)
         }
     }
 }
