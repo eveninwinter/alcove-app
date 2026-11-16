@@ -443,6 +443,7 @@ struct RootView: View {
                 // 1010 她那张图：心率数字、电话、音符、菜单之间净空 16–18，菜单离屏幕右边 17。
                 // 电话 / 音符 / 菜单的框左右各多 6 给手指点，所以间距 18 → 5（心率数字跟电话之间补回去）
                 HStack(alignment: .center, spacing: 5) {
+                    TreehousePillButton()   // 1116 #5428 她：药盒入口放顶栏心跳左边
                     TreehouseBpmBadge(icon: treehouseIcon(TreehousePulseIcon(), TreehousePulseIcon.size))
                     Button { activeCall = .outgoing } label: {
                         treehouseIcon(TreehousePhoneIcon(), TreehousePhoneIcon.size)
@@ -470,6 +471,9 @@ struct RootView: View {
             TreehouseContextLine(room: chatRoom)
                 .padding(.horizontal, 16)
                 .padding(.top, 14)   // 1009 晚 她：「进度条往上一丢丢」22 → 14
+                .overlay(alignment: .bottom) {
+                    TreehousePillHint().offset(y: 18)   // 1116 装了药：线下面一行淡字「两颗药 · 跟你下一句走」
+                }
         }
         .frame(height: 84, alignment: .top)
         // 1009 晚 她拿 Kakao 真机截图问「kakao 的上面就是完全不透的呀？」——是的，Kakao 顶栏整块实心，
@@ -1354,5 +1358,336 @@ private struct PatSheet: View {
         let ok = await store.save(list, double: list.contains { $0.id == draftDouble } ? draftDouble : list[0].id)
         saving = false
         if ok { withAnimation(.easeOut(duration: 0.18)) { editing = false } } else { error = "没存上，网不好再按一次" }
+    }
+}
+
+// MARK: - 1116 #5425–5429 药盒（照 pilulier 那个仓库）：顶栏心跳左边一颗药丸，点开挑药 / 写药，按「下一句发送」，
+// 后台在她下一句最前面垫上「[药丸 · 名字] 正文」（alcove-backend/pills.py）。效果图 /root/rhysel/sanctus-kit/pill-preview/
+// 仓库那步「吃完就删」我们做不到：药会留在这一窗，换窗才算吃完。
+
+/// 顶栏药丸：一颗斜着的胶囊、中间一道缝，跟心电线 / 电话同一种 1 像素细线。框 14×14
+struct TreehousePillIcon: Shape {
+    static let size = CGSize(width: 14, height: 14)
+    func path(in rect: CGRect) -> Path {
+        let s = rect.width / Self.size.width
+        let c = CGPoint(x: rect.midX, y: rect.midY)
+        let len: CGFloat = 14.8 * s, w: CGFloat = 6.4 * s
+        var p = Path()
+        p.addRoundedRect(in: CGRect(x: c.x - len / 2, y: c.y - w / 2, width: len, height: w),
+                         cornerSize: CGSize(width: w / 2, height: w / 2))
+        p.move(to: CGPoint(x: c.x, y: c.y - w / 2))
+        p.addLine(to: CGPoint(x: c.x, y: c.y + w / 2))
+        return p.applying(CGAffineTransform(translationX: -c.x, y: -c.y)
+            .concatenating(CGAffineTransform(rotationAngle: -.pi / 4))
+            .concatenating(CGAffineTransform(translationX: c.x, y: c.y)))
+    }
+}
+
+struct PillItem: Identifiable, Equatable {
+    let id: String
+    var name: String
+    var text: String
+    var mine: Bool
+}
+
+@MainActor
+final class PillStore: ObservableObject {
+    static let shared = PillStore()
+    @Published var items: [PillItem] = []
+    @Published var pendingIds: [String] = []
+    @Published var pendingOnce = ""
+    @Published var count = 0
+    static let maxPills = 8
+    private var ticker: Task<Void, Never>?
+
+    /// 顶栏要知道装没装：开着就 10 秒问一次（她一发消息药就吃掉了，图标要跟着变空）
+    func start() {
+        guard ticker == nil else { return }
+        ticker = Task { [weak self] in
+            while !Task.isCancelled {
+                await self?.refresh()
+                try? await Task.sleep(nanoseconds: 10_000_000_000)
+            }
+        }
+    }
+
+    func refresh() async {
+        guard let o = try? await NativeHouseAPI.object("/api/pills") else { return }
+        apply(o)
+    }
+
+    private func apply(_ o: [String: Any]) {
+        if let raw = o["items"] as? [[String: Any]] {
+            items = raw.map { PillItem(id: $0.string("id"), name: $0.string("name"), text: $0.string("text"),
+                                       mine: $0.string("from") == "她") }
+        }
+        let p = o["pending"] as? [String: Any] ?? [:]
+        pendingIds = (p["ids"] as? [String]) ?? []
+        pendingOnce = p.string("once")
+        count = (p["count"] as? Int) ?? 0
+    }
+
+    @discardableResult
+    private func post(_ path: String, _ body: [String: Any]) async -> [String: Any]? {
+        guard let o = try? await NativeHouseAPI.object(path, method: "POST", body: body) else { return nil }
+        apply(o)
+        return o
+    }
+
+    func arm(_ ids: [String], once: String) async -> Bool { await post("/api/pills/arm", ["ids": ids, "once": once]) != nil }
+    func disarm() async { await post("/api/pills/disarm", [:]) }
+    func save(id: String?, name: String, text: String) async -> String? {
+        var b: [String: Any] = ["name": name, "text": text]
+        if let id { b["id"] = id }
+        return (await post("/api/pills/save", b))?.string("id")
+    }
+    func delete(_ id: String) async { await post("/api/pills/delete", ["id": id]) }
+}
+
+/// 顶栏那颗：没装是空的细线胶囊；装了旁边跟一个心率那种老式数字（几颗）。点开药盒，长按清空
+struct TreehousePillButton: View {
+    @ObservedObject private var store = PillStore.shared
+    @State private var open = false
+    var body: some View {
+        HStack(spacing: 4) {
+            TreehousePillIcon()
+                .stroke(style: StrokeStyle(lineWidth: 1, lineCap: .round, lineJoin: .round))
+                .frame(width: TreehousePillIcon.size.width, height: TreehousePillIcon.size.height)
+            if store.count > 0 {
+                Text("\(store.count)").font(.custom("CormorantGaramond-Medium", size: 18))
+                    .offset(y: -0.1255 * 18)
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 44)
+        .contentShape(Rectangle())
+        .onTapGesture { open = true }
+        .onLongPressGesture(minimumDuration: 0.45) {
+            guard store.count > 0 else { return }
+            UIImpactFeedbackGenerator(style: .light).impactOccurred()
+            Task { await store.disarm() }
+        }
+        .animation(.easeInOut(duration: 0.2), value: store.count)
+        .accessibilityLabel(store.count > 0 ? "药盒，装了\(store.count)颗" : "药盒")
+        .task { store.start() }
+        .sheet(isPresented: $open, onDismiss: { Task { await store.refresh() } }) {
+            PillBoxSheet()
+                .presentationDetents([.fraction(0.64), .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackground(TreehouseInk.night ? TreehouseInk.white : Color(red: 0xFB/255, green: 0xFB/255, blue: 0xFA/255))
+        }
+    }
+}
+
+/// 顶栏线下面那行很淡的小字：「两颗药 · 跟你下一句走」
+struct TreehousePillHint: View {
+    @ObservedObject private var store = PillStore.shared
+    private static let cn = ["", "一", "两", "三", "四", "五", "六", "七", "八"]
+    var body: some View {
+        if store.count > 0 {
+            Text("\(Self.cn[min(store.count, 8)])颗药 · 跟你下一句走")
+                .font(.system(size: 10.5, design: .serif)).tracking(1.2)
+                .foregroundColor(TreehouseInk.gray)
+                .padding(.horizontal, 10).padding(.vertical, 2)
+                .background(Capsule().fill(TreehouseInk.fog.opacity(0.75)))
+                .overlay(Capsule().stroke(TreehouseInk.gray.opacity(0.45), lineWidth: 0.6))
+                .transition(.opacity)
+                .allowsHitTesting(false)
+        }
+    }
+}
+
+/// 换行排的小胶囊
+struct PillFlowLayout: Layout {
+    var spacing: CGFloat = 7
+    func sizeThatFits(proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) -> CGSize {
+        let maxW = proposal.width ?? 320
+        var x: CGFloat = 0, y: CGFloat = 0, rowH: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > 0 && x + s.width > maxW { x = 0; y += rowH + spacing; rowH = 0 }
+            x += s.width + spacing; rowH = max(rowH, s.height)
+        }
+        return CGSize(width: maxW, height: y + rowH)
+    }
+    func placeSubviews(in bounds: CGRect, proposal: ProposedViewSize, subviews: Subviews, cache: inout ()) {
+        var x = bounds.minX, y = bounds.minY, rowH: CGFloat = 0
+        for v in subviews {
+            let s = v.sizeThatFits(.unspecified)
+            if x > bounds.minX && x + s.width > bounds.maxX { x = bounds.minX; y += rowH + spacing; rowH = 0 }
+            v.place(at: CGPoint(x: x, y: y), proposal: ProposedViewSize(s))
+            x += s.width + spacing; rowH = max(rowH, s.height)
+        }
+    }
+}
+
+/// 药盒：上面写新药（存进药盒 / 只用这一次），下面盒里的药点选、长按改，底下「下一句发送」
+struct PillBoxSheet: View {
+    @Environment(\.dismiss) private var dismiss
+    @ObservedObject private var store = PillStore.shared
+    @State private var draft = ""
+    @State private var draftName = ""
+    @State private var editingId: String?          // 长按了哪一颗：上面的框就变成改这颗
+    @State private var picked: [String] = []
+    @State private var once = ""                   // 「只用这一次」那段
+    @State private var busy = false
+    @State private var note = ""
+    @FocusState private var typing: Bool
+
+    private var ink: Color { TreehouseInk.ink }
+    private var dim: Color { TreehouseInk.gray }
+    private var total: Int { picked.count + (once.isEmpty ? 0 : 1) }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("the pill box").font(.custom("PinyonScript-Regular", size: 26)).foregroundColor(dim)
+                    Spacer()
+                    Text("PILULIER · 药盒").font(.custom("CormorantGaramond-Medium", size: 9)).tracking(2.4).foregroundColor(dim)
+                }
+                hair.padding(.top, 8)
+                if editingId != nil {
+                    TextField("药名", text: $draftName)
+                        .font(.system(size: 13, design: .serif)).foregroundColor(ink)
+                        .padding(.top, 12)
+                }
+                ZStack(alignment: .topLeading) {
+                    if draft.isEmpty {
+                        Text(editingId == nil ? "写一颗新药：想让他这一轮怎么做…" : "")
+                            .font(.system(size: 13, design: .serif)).foregroundColor(dim.opacity(0.7))
+                            .padding(.horizontal, 5).padding(.vertical, 8)
+                    }
+                    TextEditor(text: $draft)
+                        .font(.system(size: 13, design: .serif)).foregroundColor(ink)
+                        .scrollContentBackground(.hidden)
+                        .focused($typing)
+                        .frame(minHeight: 92, maxHeight: 160)
+                }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 12).fill(TreehouseInk.fog.opacity(0.5)))
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(dim.opacity(0.45), lineWidth: 0.6))
+                .padding(.top, 10)
+                HStack(spacing: 10) {
+                    Spacer()
+                    if let id = editingId {
+                        capsuleButton("删掉") { Task { busy = true; await store.delete(id); picked.removeAll { $0 == id }; resetDraft(); busy = false } }
+                        capsuleButton("取消") { resetDraft() }
+                        capsuleButton("改好了") {
+                            Task { busy = true; _ = await store.save(id: id, name: draftName, text: draft); resetDraft(); busy = false }
+                        }
+                    } else {
+                        capsuleButton("存进药盒") {
+                            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            guard !t.isEmpty else { return }
+                            Task {
+                                busy = true
+                                if let id = await store.save(id: nil, name: "", text: t) {
+                                    if total < PillStore.maxPills && !picked.contains(id) { picked.append(id) }
+                                    draft = ""
+                                } else { note = "没存上，网不好再按一次" }
+                                busy = false
+                            }
+                        }
+                        capsuleButton(once.isEmpty ? "只用这一次" : "只用这一次 ✓", on: !once.isEmpty) {
+                            let t = draft.trimmingCharacters(in: .whitespacesAndNewlines)
+                            if !once.isEmpty && (t.isEmpty || t == once) { once = ""; return }
+                            guard !t.isEmpty, total < PillStore.maxPills || !once.isEmpty else { return }
+                            once = t
+                        }
+                    }
+                }
+                .padding(.top, 10)
+                HStack(spacing: 8) {
+                    Text("IN THE BOX · 盒里的药").font(.custom("CormorantGaramond-Medium", size: 8.5)).tracking(2.2)
+                    Text("点一下选，长按改名、改字、删").font(.system(size: 9, design: .serif))
+                }
+                .foregroundColor(dim)
+                .padding(.top, 16)
+                PillFlowLayout {
+                    ForEach(store.items) { p in pillCapsule(p) }
+                }
+                .padding(.top, 10)
+                if !note.isEmpty {
+                    Text(note).font(.system(size: 10.5, design: .serif)).foregroundColor(dim).padding(.top, 10)
+                }
+                HStack {
+                    Text("\(total) of \(PillStore.maxPills) · 已选\(total)颗")
+                        .font(.custom("CormorantGaramondItalic-MediumItalic", size: 11.5)).foregroundColor(dim)
+                    if store.count > 0 {
+                        Button("清空装好的") { Task { await store.disarm(); picked = []; once = "" } }
+                            .font(.system(size: 10.5, design: .serif)).foregroundColor(dim)
+                            .padding(.leading, 8)
+                    }
+                    Spacer()
+                    Button {
+                        Task {
+                            busy = true
+                            let ok = await store.arm(picked, once: once)
+                            busy = false
+                            if ok { dismiss() } else { note = "没装上，网不好再按一次" }
+                        }
+                    } label: {
+                        Text("下一句发送").font(.system(size: 12, design: .serif)).tracking(1.4)
+                            .foregroundColor(TreehouseInk.fog)
+                            .padding(.horizontal, 16).padding(.vertical, 7)
+                            .background(Capsule().fill(ink))
+                    }
+                    .buttonStyle(.plain)
+                    .disabled(busy)
+                }
+                .padding(.top, 22).padding(.bottom, 24)
+            }
+            .padding(.horizontal, 22).padding(.top, 18)
+        }
+        .scrollDismissesKeyboard(.interactively)
+        .task {
+            await store.refresh()
+            picked = store.pendingIds
+            once = store.pendingOnce
+        }
+    }
+
+    private var hair: some View {
+        LinearGradient(colors: [.clear, dim.opacity(0.45), dim.opacity(0.45), .clear], startPoint: .leading, endPoint: .trailing)
+            .frame(height: 1)
+    }
+
+    private func resetDraft() {
+        editingId = nil; draft = ""; draftName = ""; typing = false
+    }
+
+    private func capsuleButton(_ title: String, on: Bool = false, _ action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Text(title).font(.system(size: 11.5, design: .serif)).tracking(1.2)
+                .foregroundColor(on ? TreehouseInk.fog : dim)
+                .padding(.horizontal, 14).padding(.vertical, 5)
+                .background(Capsule().fill(on ? ink : Color.clear))
+                .overlay(Capsule().stroke(dim.opacity(on ? 0 : 0.55), lineWidth: 0.6))
+        }
+        .buttonStyle(.plain)
+        .disabled(busy)
+    }
+
+    private func pillCapsule(_ p: PillItem) -> some View {
+        let on = picked.contains(p.id)
+        return Text(p.name).font(.system(size: 11.5, design: .serif)).tracking(0.6)
+            .foregroundColor(on ? TreehouseInk.fog : TreehouseInk.dark.opacity(0.8))
+            .padding(.horizontal, 10).padding(.vertical, 4)
+            .background(Capsule().fill(on ? ink : TreehouseInk.fog.opacity(0.5)))
+            .overlay(Capsule().stroke(dim.opacity(on ? 0 : 0.5),
+                                      style: StrokeStyle(lineWidth: 0.6, dash: p.mine ? [3, 2] : [])))
+            .contentShape(Capsule())
+            .onTapGesture {
+                if on { picked.removeAll { $0 == p.id } }
+                else if total < PillStore.maxPills { picked.append(p.id) }
+                else { note = "最多 \(PillStore.maxPills) 颗" }
+            }
+            .onLongPressGesture(minimumDuration: 0.45) {
+                UIImpactFeedbackGenerator(style: .light).impactOccurred()
+                editingId = p.id; draftName = p.name; draft = p.text
+            }
     }
 }
