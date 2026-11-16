@@ -1535,6 +1535,7 @@ struct PillBoxSheet: View {
     @State private var picked: [String] = []
     @State private var once = ""                   // 「只用这一次」那段
     @State private var previewId: String?          // 1116 #5451 她：「点击的话为什么没有内容预览」——点了哪颗，底下摆出它写的什么
+    @State private var folded: Set<String> = []   // 1116 #5453 清单里收成一行的那几颗
     @State private var busy = false
     @State private var note = ""
     @FocusState private var typing: Bool
@@ -1605,7 +1606,7 @@ struct PillBoxSheet: View {
                 .padding(.top, 10)
                 HStack(spacing: 8) {
                     Text("IN THE BOX · 盒里的药").font(.custom("CormorantGaramond-Medium", size: 8.5)).tracking(2.2)
-                    Text("点一下选，长按改名、改字、删").font(.system(size: 9, design: .serif))
+                    Text("点一下先看，再点选上，长按改名、改字、删").font(.system(size: 9, design: .serif))
                 }
                 .foregroundColor(dim)
                 .padding(.top, 16)
@@ -1613,25 +1614,42 @@ struct PillBoxSheet: View {
                     ForEach(store.items) { p in pillCapsule(p) }
                 }
                 .padding(.top, 10)
-                if let pid = previewId, let p = store.items.first(where: { $0.id == pid }) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        HStack(alignment: .firstTextBaseline) {
-                            Text(p.name).font(.system(size: 12.5, design: .serif)).tracking(1).foregroundColor(ink)
-                            Text(picked.contains(p.id) ? "已选上" : "没选").font(.system(size: 10, design: .serif)).foregroundColor(dim)
-                            Spacer()
-                            Button { withAnimation(.easeOut(duration: 0.15)) { previewId = nil } } label: {
-                                Image(systemName: "xmark").font(.system(size: 10, weight: .light)).foregroundColor(dim)
-                                    .frame(width: 26, height: 22).contentShape(Rectangle())
-                            }.buttonStyle(.plain)
+                // 1116 #5452–5453 她：多选的时候也要看得到——底下是「这一句会垫进去的药」清单，按点的顺序一颗一段，
+                // 点药名收成一行；点一颗还没选的，先在最上面露出来给她看，不算选上，再点一下才选
+                if previewId != nil || !picked.isEmpty || !once.isEmpty {
+                    ScrollView(showsIndicators: false) {
+                        VStack(alignment: .leading, spacing: 10) {
+                            if let pid = previewId, !picked.contains(pid), let p = store.items.first(where: { $0.id == pid }) {
+                                pillText(p.name, p.text, note: "先看看 · 再点一下这颗就选上", collapsed: false, onTitle: nil)
+                                    .overlay(alignment: .topTrailing) {
+                                        Button { withAnimation(.easeOut(duration: 0.15)) { previewId = nil } } label: {
+                                            Image(systemName: "xmark").font(.system(size: 10, weight: .light)).foregroundColor(dim)
+                                                .frame(width: 26, height: 22).contentShape(Rectangle())
+                                        }.buttonStyle(.plain)
+                                    }
+                                if !picked.isEmpty || !once.isEmpty { hair }
+                            }
+                            ForEach(picked, id: \.self) { pid in
+                                if let p = store.items.first(where: { $0.id == pid }) {
+                                    pillText(p.name, p.text, note: "", collapsed: folded.contains(pid)) {
+                                        withAnimation(.easeOut(duration: 0.15)) {
+                                            if folded.contains(pid) { folded.remove(pid) } else { folded.insert(pid) }
+                                        }
+                                    }
+                                }
+                            }
+                            if !once.isEmpty {
+                                pillText("这一次", once, note: "只用这一次", collapsed: folded.contains("__once"), onTitle: {
+                                    withAnimation(.easeOut(duration: 0.15)) {
+                                        if folded.contains("__once") { folded.remove("__once") } else { folded.insert("__once") }
+                                    }
+                                })
+                            }
                         }
-                        ScrollView(showsIndicators: false) {
-                            Text(p.text).font(.system(size: 11.5, design: .serif)).foregroundColor(TreehouseInk.dark.opacity(0.85))
-                                .lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
-                                .fixedSize(horizontal: false, vertical: true)
-                        }
-                        .frame(maxHeight: 170)
+                        .padding(.horizontal, 12).padding(.vertical, 10)
                     }
-                    .padding(.horizontal, 12).padding(.vertical, 10)
+                    .frame(maxHeight: 260)
+                    .fixedSize(horizontal: false, vertical: true)
                     .background(RoundedRectangle(cornerRadius: 12).fill(TreehouseInk.fog.opacity(0.55)))
                     .overlay(RoundedRectangle(cornerRadius: 12).stroke(dim.opacity(0.35), lineWidth: 0.6))
                     .padding(.top, 12)
@@ -1677,6 +1695,27 @@ struct PillBoxSheet: View {
         }
     }
 
+    /// 清单里一颗：药名（点它收起 / 展开）＋全文
+    private func pillText(_ name: String, _ text: String, note: String, collapsed: Bool, onTitle: (() -> Void)?) -> some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(name).font(.system(size: 12.5, design: .serif)).tracking(1).foregroundColor(ink)
+                if !note.isEmpty { Text(note).font(.system(size: 9.5, design: .serif)).foregroundColor(dim) }
+                if onTitle != nil {
+                    Image(systemName: collapsed ? "chevron.down" : "chevron.up").font(.system(size: 8, weight: .light)).foregroundColor(dim)
+                }
+                Spacer(minLength: 0)
+            }
+            .contentShape(Rectangle())
+            .onTapGesture { onTitle?() }
+            if !collapsed {
+                Text(text).font(.system(size: 11.5, design: .serif)).foregroundColor(TreehouseInk.dark.opacity(0.85))
+                    .lineSpacing(5).frame(maxWidth: .infinity, alignment: .leading)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+    }
+
     private var hair: some View {
         LinearGradient(colors: [.clear, dim.opacity(0.45), dim.opacity(0.45), .clear], startPoint: .leading, endPoint: .trailing)
             .frame(height: 1)
@@ -1704,14 +1743,21 @@ struct PillBoxSheet: View {
             .foregroundColor(on ? TreehouseInk.fog : TreehouseInk.dark.opacity(0.8))
             .padding(.horizontal, 10).padding(.vertical, 4)
             .background(Capsule().fill(on ? ink : TreehouseInk.fog.opacity(0.5)))
-            .overlay(Capsule().stroke(dim.opacity(on ? 0 : 0.5),
-                                      style: StrokeStyle(lineWidth: 0.6, dash: p.mine ? [3, 2] : [])))
+            .overlay(Capsule().stroke(on ? Color.clear : (previewId == p.id ? ink.opacity(0.75) : dim.opacity(0.5)),
+                                      style: StrokeStyle(lineWidth: previewId == p.id && !on ? 1 : 0.6, dash: p.mine ? [3, 2] : [])))   // 正在看的那颗描深一圈
             .contentShape(Capsule())
             .onTapGesture {
-                withAnimation(.easeOut(duration: 0.15)) { previewId = p.id }
-                if on { picked.removeAll { $0 == p.id } }
-                else if total < PillStore.maxPills { picked.append(p.id) }
-                else { note = "最多 \(PillStore.maxPills) 颗" }
+                // 1116 #5453：没选的先看（露在清单最上面），看着的那颗再点一下才选上；选上的点一下就取消
+                withAnimation(.easeOut(duration: 0.15)) {
+                    if on {
+                        picked.removeAll { $0 == p.id }; folded.remove(p.id)
+                        if previewId == p.id { previewId = nil }
+                    } else if previewId != p.id {
+                        previewId = p.id
+                    } else if total < PillStore.maxPills {
+                        picked.append(p.id); previewId = nil
+                    } else { note = "最多 \(PillStore.maxPills) 颗" }
+                }
             }
             .onLongPressGesture(minimumDuration: 0.45) {
                 UIImpactFeedbackGenerator(style: .light).impactOccurred()
