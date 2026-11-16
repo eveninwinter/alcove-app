@@ -1365,13 +1365,15 @@ private struct PatSheet: View {
 // 后台在她下一句最前面垫上「[药丸 · 名字] 正文」（alcove-backend/pills.py）。效果图 /root/rhysel/sanctus-kit/pill-preview/
 // 仓库那步「吃完就删」我们做不到：药会留在这一窗，换窗才算吃完。
 
-/// 顶栏药丸：一颗斜着的胶囊、中间一道缝，跟心电线 / 电话同一种 1 像素细线。框 14×14
+/// 顶栏药丸：一颗斜着的胶囊、中间一道缝，跟心电线 / 电话同一种 1 像素细线。框 12×12
+/// 1116 #5430 她：「线条颜色不一致、高度不一致」——量了她截图：心电线高 26px、电话 28px（2.4px/pt），
+/// 胶囊缩到 11.6×5，斜过来连线宽正好 26px，跟心电线一样高、中心对齐；颜色不另给，跟顶栏墨色走
 struct TreehousePillIcon: Shape {
-    static let size = CGSize(width: 14, height: 14)
+    static let size = CGSize(width: 12, height: 12)
     func path(in rect: CGRect) -> Path {
         let s = rect.width / Self.size.width
         let c = CGPoint(x: rect.midX, y: rect.midY)
-        let len: CGFloat = 14.8 * s, w: CGFloat = 6.4 * s
+        let len: CGFloat = 11.6 * s, w: CGFloat = 5 * s
         var p = Path()
         p.addRoundedRect(in: CGRect(x: c.x - len / 2, y: c.y - w / 2, width: len, height: w),
                          cornerSize: CGSize(width: w / 2, height: w / 2))
