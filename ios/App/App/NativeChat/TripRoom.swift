@@ -1366,16 +1366,20 @@ private struct TripDay: View {
             .buttonStyle(.plain)
             if open {
                 VStack(alignment: .leading, spacing: 0) {
+                    // 1117 她：长的那步被省略号截了 → 一步写多长就折几行，小圆点对着第一行
                     ForEach(Array(x.steps.enumerated()), id: \.offset) { _, st in
-                        HStack(spacing: 10) {
-                            Circle().stroke(TripInk.g2, lineWidth: 0.8).frame(width: 5, height: 5)
+                        HStack(alignment: .top, spacing: 10) {
+                            Circle().stroke(TripInk.g2, lineWidth: 0.8).frame(width: 5, height: 5).padding(.top, 6)
                             Text(st).font(TripInk.serif(11.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.ink.opacity(0.78))
+                                .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                         }
-                        .frame(height: 22)
+                        .padding(.vertical, 3.5)
                     }
                 }
-                .background(alignment: .leading) {
-                    Rectangle().fill(TripInk.hl).frame(width: 0.7).padding(.vertical, 13).offset(x: 2.15)
+                .background(alignment: .topLeading) {
+                    // 竖线从第一个点连到最后一个点：上头让开 3.5+6+2.5，下头让开最后一行（按一行高约 22 估）
+                    Rectangle().fill(TripInk.hl).frame(width: 0.7).padding(.top, 12).padding(.bottom, 16).offset(x: 2.15)
+                        .frame(maxHeight: .infinity, alignment: .top)
                 }
                 .padding(.leading, 3)
             }
