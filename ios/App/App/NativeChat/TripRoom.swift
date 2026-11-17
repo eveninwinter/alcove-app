@@ -1,6 +1,7 @@
 import SwiftUI
 import PhotosUI
 import UIKit
+import MapKit
 
 // MARK: - 1103 旅行（#4703–4713）原生版
 // 一次旅行一整套：《与此同时》地上的钟当列表，进去八页（这一趟 / 准备清单 / 登机牌 / 日程 / 想去 / 票据 / 花销 / 回顾）。
@@ -31,8 +32,12 @@ struct TripSum {
 struct TripItem: Identifiable { let id: Int; let grp, text, note, who, whoDone: String; let done: Bool
     init(_ d: [String: Any]) { id = n(d, "id"); grp = s(d, "grp"); text = s(d, "text"); note = s(d, "note"); who = s(d, "who"); whoDone = s(d, "who_done"); done = n(d, "done") == 1 } }
 struct TripStop: Identifiable { let id: Int; let day, time, title, how, dur, note, addr, route, hisLine, hisAt: String
+    let lat, lon: Double?        // 1117 地图上点的地点
+    let steps: [String]          // 1117 #5568 到了以后的几步
     init(_ d: [String: Any]) { id = n(d, "id"); day = s(d, "day"); time = s(d, "time"); title = s(d, "title"); how = s(d, "how"); dur = s(d, "dur")
-        note = s(d, "note"); addr = s(d, "addr"); route = s(d, "route"); hisLine = s(d, "his_line"); hisAt = s(d, "his_at") } }
+        note = s(d, "note"); addr = s(d, "addr"); route = s(d, "route"); hisLine = s(d, "his_line"); hisAt = s(d, "his_at")
+        lat = (d["lat"] as? NSNumber)?.doubleValue; lon = (d["lon"] as? NSNumber)?.doubleValue
+        steps = (d["steps"] as? [Any])?.compactMap { $0 as? String } ?? [] } }
 struct TripWish: Identifiable { let id: Int; let cat, name, note, who: String; let stopId: Int?
     init(_ d: [String: Any]) { id = n(d, "id"); cat = s(d, "cat"); name = s(d, "name"); note = s(d, "note"); who = s(d, "who"); stopId = on(d, "stop_id") } }
 struct TripTicket: Identifiable { let id: Int; let kind, title, l1, l2, code, img, at: String
@@ -214,6 +219,9 @@ private struct TripPage<Content: View, Bar: View>: View {
     var menu: (() -> Void)? = nil
     var plus: (() -> Void)? = nil
     var foot: (String, String)? = nil
+    var pinned: AnyView? = nil          // 1117 #5563 标题下面钉住不跟着滑的那块（日程的日期，照「醒着的时候」）
+    var scrollTo: String? = nil         // 打开时滚到这一行（日程里「现在」那一站 / 那段路）
+    @State var pinnedH: CGFloat = 0
     @ViewBuilder var content: Content
     @ViewBuilder var bar: Bar
     private var hasBar: Bool { Bar.self != EmptyView.self }
@@ -221,19 +229,34 @@ private struct TripPage<Content: View, Bar: View>: View {
         let bg = TripInk.bg(tint)
         ZStack {
             bg.ignoresSafeArea()
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) { content }
-                    .padding(.horizontal, 22)
-                    .padding(.top, TripSafe.top + 44)
-                    .padding(.bottom, (hasBar ? 60 : 0) + (foot == nil ? 0 : 40) + 40 + TripSafe.bottom)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) { content }
+                        .padding(.horizontal, 22)
+                        .padding(.top, TripSafe.top + 44 + pinnedH)
+                        .padding(.bottom, (hasBar ? 60 : 0) + (foot == nil ? 0 : 40) + 40 + TripSafe.bottom)
+                }
+                .scrollIndicators(.hidden)
+                .onAppear {
+                    guard let scrollTo else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo(scrollTo, anchor: UnitPoint(x: 0.5, y: 0.3)) }
+                    }
+                }
             }
-            .scrollIndicators(.hidden)
         }
         .overlay(alignment: .top) {
             VStack(spacing: 0) {
                 TripHeader(title: title, back: back, menu: menu, plus: plus)
                     .padding(.horizontal, 22).padding(.top, TripSafe.top)
                     .background(bg)
+                if let pinned {
+                    pinned
+                        .padding(.horizontal, 22)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .background(bg)
+                        .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { pinnedH = $0 }
+                }
                 LinearGradient(colors: [bg, bg.opacity(0)], startPoint: .top, endPoint: .bottom).frame(height: 16).allowsHitTesting(false)
             }
         }
@@ -941,56 +964,298 @@ private struct TripBoard: View {
 
 // MARK: 日程
 
+// 1117 #5548–5569 她：日程改成一根线串起来——左边时间（老式数字、对齐成一列）、中间一根竖线、每站一个小圆圈、右边地点当大标题；
+// 两站之间是「路上」：从哪到哪当标题，下面怎么走、地图现算多久多远，右边「导航」跳高德；正在走的那段每分钟拿定位重算还剩多久，线上小黑点跟着挪。
+// 线只有两种：走过的黑实线、没走的浅色虚线（#5568）。机场这种站能展开「到了以后」几步。日期那块钉在顶上不跟着滑（#5563，照「醒着的时候」）。
+enum TripLegMode { case drive, transit, walk }
+enum TripLine { case gap, walked, ahead, moving }      // moving：正在走的那段路，线上画小黑点
+enum TripNode { case past, now, next }
+
+struct TripPlace {
+    let name: String
+    let lat: Double?, lon: Double?
+    var coord: CLLocationCoordinate2D? {
+        guard let lat, let lon else { return nil }
+        return CLLocationCoordinate2D(latitude: lat, longitude: lon)
+    }
+    var key: String {
+        guard let lat, let lon else { return name }
+        return String(format: "%.5f,%.5f", lat, lon)
+    }
+}
+
+struct TripLeg {
+    let from: TripPlace, to: TripPlace
+    let label: String          // 地铁 / 打车 / 飞机 国航…（照「怎么去」那栏）
+    let mode: TripLegMode
+    let ticket: Bool           // 飞机火车船：不算路、不给导航，照票走
+    let dur: String            // 「要多久」那栏，地图算不出来时顶上
+    let route: String          // 「怎么走」那栏（写在到达那一站上）
+    var key: String { "\(from.key)>\(to.key)#\(mode)" }
+
+    /// 这一站在哪：地址那栏（地图上点的会带坐标）；都没有就算没写地点
+    static func place(_ x: TripStop) -> TripPlace? {
+        let n = x.addr.trimmingCharacters(in: .whitespaces)
+        if n.isEmpty && x.lat == nil { return nil }
+        return TripPlace(name: n.isEmpty ? x.title : n, lat: x.lat, lon: x.lon)
+    }
+    private static func has(_ s: String, _ ks: [String]) -> Bool { ks.contains { s.localizedCaseInsensitiveContains($0) } }
+    static func isTicket(_ how: String) -> Bool { has(TripText.how(how), ["飞机", "航班", "火车", "高铁", "动车", "船", "flight", "train", "boat"]) }
+
+    /// a → b 之间有没有一段路。a 没写地点就往前找最近写了地点的那站（人还在那儿，比如落地以后「打车去酒店」）
+    static func between(_ a: TripStop, _ b: TripStop, all: [TripStop]) -> TripLeg? {
+        var here = place(a)
+        if here == nil, let i = all.firstIndex(where: { $0.id == a.id }) {
+            here = all[..<i].reversed().lazy.compactMap { TripLeg.place($0) }.first
+        }
+        guard let from = here, let to = place(b) else { return nil }
+        if isTicket(a.how) {
+            return TripLeg(from: from, to: to, label: TripText.how(a.how), mode: .drive, ticket: true, dur: a.dur, route: b.route)
+        }
+        guard from.key != to.key else { return nil }
+        if isTicket(b.how) && a.how.isEmpty { return nil }      // 机场里等起飞：同一个地方，不算路
+        let src = !a.how.isEmpty ? a.how : (isTicket(b.how) ? "" : b.how)
+        let label = src.isEmpty ? "打车" : TripText.how(src)
+        let mode: TripLegMode = has(label, ["步行", "徒步", "走路", "walk"]) ? .walk
+            : has(label, ["地铁", "公交", "轻轨", "metro", "bus"]) ? .transit : .drive
+        return TripLeg(from: from, to: to, label: label, mode: mode, ticket: false, dur: a.how.isEmpty ? b.dur : a.dur, route: b.route)
+    }
+
+    static func minutes(_ sec: Double) -> String {
+        let m = max(1, Int((sec / 60).rounded()))
+        if m < 60 { return "\(m) 分钟" }
+        return m % 60 == 0 ? "\(m / 60) 小时" : "\(m / 60) 小时 \(m % 60) 分"
+    }
+    static func meters(_ v: Double) -> String {
+        if v < 1000 { return "\(Int(v.rounded())) 米" }
+        return v < 10_000 ? String(format: "%.1f 公里", v / 1000) : "\(Int((v / 1000).rounded())) 公里"
+    }
+}
+
+/// 地图那头：地名换坐标、两站之间多久多远、正在路上还剩多久。苹果地图在国内用的是高德的数据，不要钥匙不要钱
+@MainActor
+final class TripWayModel: ObservableObject {
+    static let shared = TripWayModel()
+    struct ETA { let sec: Double; let meters: Double }
+    @Published private(set) var eta: [String: ETA] = [:]
+    @Published private(set) var left: [String: ETA] = [:]
+    private var items: [String: MKMapItem] = [:]
+    private var busy: Set<String> = []
+    private var liveAt: [String: Date] = [:]
+
+    func item(_ p: TripPlace, near: CLLocationCoordinate2D?) async -> MKMapItem? {
+        if let it = items[p.key] { return it }
+        if let c = p.coord {
+            let it = MKMapItem(placemark: MKPlacemark(coordinate: c))
+            it.name = p.name
+            items[p.key] = it
+            return it
+        }
+        let req = MKLocalSearch.Request()
+        req.naturalLanguageQuery = p.name
+        req.resultTypes = [.pointOfInterest, .address]
+        let center = near ?? SensorReporter.shared.lastLocation?.coordinate ?? CLLocationCoordinate2D(latitude: 30.593, longitude: 114.305)
+        req.region = MKCoordinateRegion(center: center, latitudinalMeters: 400_000, longitudinalMeters: 400_000)
+        guard let res = try? await MKLocalSearch(request: req).start(), let it = res.mapItems.first else { return nil }
+        items[p.key] = it
+        return it
+    }
+
+    func coord(_ p: TripPlace) async -> CLLocationCoordinate2D? {
+        if let c = p.coord { return c }
+        return await item(p, near: nil)?.placemark.coordinate
+    }
+
+    private func kind(_ m: TripLegMode) -> MKDirectionsTransportType {
+        switch m {
+        case .drive: return .automobile
+        case .transit: return .transit
+        case .walk: return .walking
+        }
+    }
+
+    /// 两站之间多久多远；出发时间按日程上那一站，以后的路按那个钟点的路况估
+    func plan(_ leg: TripLeg, depart: Date?) async {
+        let k = leg.key
+        guard !leg.ticket, eta[k] == nil, !busy.contains(k) else { return }
+        busy.insert(k)
+        defer { busy.remove(k) }
+        guard let a = await item(leg.from, near: nil),
+              let b = await item(leg.to, near: a.placemark.coordinate) else { return }
+        let r = MKDirections.Request()
+        r.source = a
+        r.destination = b
+        r.transportType = kind(leg.mode)
+        if let depart, depart > Date() { r.departureDate = depart }
+        if let e = try? await MKDirections(request: r).calculateETA() {
+            eta[k] = ETA(sec: e.expectedTravelTime, meters: e.distance)
+        }
+    }
+
+    /// 正在路上：从手机现在的位置算到下一站还要多久（开车按当下路况），一分钟最多算一次
+    func live(_ leg: TripLeg) async {
+        let k = leg.key
+        guard !leg.ticket else { return }
+        if let at = liveAt[k], Date().timeIntervalSince(at) < 55 { return }
+        liveAt[k] = Date()
+        guard let b = await item(leg.to, near: SensorReporter.shared.lastLocation?.coordinate) else { return }
+        let r = MKDirections.Request()
+        r.source = MKMapItem.forCurrentLocation()
+        r.destination = b
+        r.transportType = kind(leg.mode)
+        if let e = try? await MKDirections(request: r).calculateETA() {
+            left[k] = ETA(sec: e.expectedTravelTime, meters: e.distance)
+        }
+    }
+}
+
+/// 跳高德（#5549 她用高德）。有起点就从那站出发，没有（正在路上）就从「我的位置」；
+/// 坐标是苹果地图在国内给的（跟高德同一套），dev=0 不再转换。没装高德就开高德网页版，网页会再问要不要开 App。
+enum TripAmap {
+    @MainActor static func go(from: (CLLocationCoordinate2D, String)?, to: CLLocationCoordinate2D?, name: String, mode: TripLegMode) {
+        let ok = CharacterSet.urlQueryAllowed.subtracting(CharacterSet(charactersIn: "&=?+,"))
+        let enc: (String) -> String = { $0.addingPercentEncoding(withAllowedCharacters: ok) ?? $0 }
+        let (t, web): (Int, String) = {
+            switch mode {
+            case .drive: return (0, "car")
+            case .transit: return (1, "bus")
+            case .walk: return (2, "walk")
+            }
+        }()
+        var app: String, site: String
+        if let to {
+            app = "iosamap://path?sourceApplication=Alcove&dev=0&t=\(t)&dlat=\(to.latitude)&dlon=\(to.longitude)&dname=\(enc(name))"
+            site = "https://uri.amap.com/navigation?mode=\(web)&src=alcove&callnative=1&to=\(to.longitude),\(to.latitude),\(enc(name))"
+            if let from {
+                app += "&slat=\(from.0.latitude)&slon=\(from.0.longitude)&sname=\(enc(from.1))"
+                site += "&from=\(from.0.longitude),\(from.0.latitude),\(enc(from.1))"
+            }
+        } else {      // 地图上没找着这个地方：让高德自己搜名字
+            app = "iosamap://poi?sourceApplication=Alcove&name=\(enc(name))"
+            site = "https://uri.amap.com/search?keyword=\(enc(name))&src=alcove&callnative=1"
+        }
+        guard let u = URL(string: app) else { return }
+        UIApplication.shared.open(u) { opened in
+            if !opened, let w = URL(string: site) { UIApplication.shared.open(w) }
+        }
+    }
+}
+
+/// 时间：Cormorant 自带的老式数字（#5564 她要高低错落的），每个数字占一样宽，一列对齐（#5563）
+private struct TripClock: View {
+    let s: String
+    init(_ s: String) { self.s = s }
+    var body: some View {
+        HStack(spacing: 0) {
+            ForEach(Array(s.enumerated()), id: \.offset) { _, ch in
+                Text(String(ch)).font(.custom("CormorantGaramond-Medium", size: 17))
+                    .frame(width: ch.isNumber ? 8.8 : nil)
+            }
+        }
+    }
+}
+
+/// 中间那根线：一行一截。站那行上半截＋圆圈＋下半截；路那行要么一整截，要么（正在走）走过的实线＋小黑点＋没走的虚线
+private struct TripRailLine: View {
+    var top: TripLine = .gap
+    var bottom: TripLine = .gap
+    var node: TripNode? = nil
+    var nodeY: CGFloat = 0
+    var split: CGFloat? = nil
+    var body: some View {
+        Canvas { ctx, size in
+            let x = size.width / 2
+            func seg(_ y0: CGFloat, _ y1: CGFloat, _ s: TripLine) {
+                guard y1 > y0, s != .gap else { return }
+                var p = Path()
+                p.move(to: CGPoint(x: x, y: y0))
+                p.addLine(to: CGPoint(x: x, y: y1))
+                if s == .walked { ctx.stroke(p, with: .color(TripInk.ink), lineWidth: 1.1) }
+                else { ctx.stroke(p, with: .color(TripInk.ink.opacity(0.3)), style: StrokeStyle(lineWidth: 0.9, dash: [2.5, 3.5])) }
+            }
+            if let split {
+                let y = max(4, min(size.height - 4, size.height * split))
+                seg(0, y, .walked)
+                seg(y, size.height, .ahead)
+                ctx.fill(Path(ellipseIn: CGRect(x: x - 3.3, y: y - 3.3, width: 6.6, height: 6.6)), with: .color(TripInk.ink))
+            } else if let node {
+                let r: CGFloat = 3.8
+                seg(0, nodeY - r - 1, top)
+                seg(nodeY + r + 1, size.height, bottom)
+                let c = Path(ellipseIn: CGRect(x: x - r, y: nodeY - r, width: 2 * r, height: 2 * r))
+                switch node {
+                case .now: ctx.fill(c, with: .color(TripInk.ink))
+                case .past: ctx.stroke(c, with: .color(TripInk.g3), lineWidth: 1.1)
+                case .next: ctx.stroke(c, with: .color(TripInk.ink), lineWidth: 1.1)
+                }
+            } else {
+                seg(0, size.height, top)
+            }
+        }
+        .allowsHitTesting(false)
+    }
+}
+
+private enum TripRail {
+    static let time: CGFloat = 44       // 时间那列（跟 12.31、返回键一条竖线）
+    static let rail: CGFloat = 18       // 线那列
+    static let gap: CGFloat = 10
+    static var content: CGFloat { time + rail + gap }
+    static let nodeY: CGFloat = 26      // 圆圈压在地点那行中间（行顶 0.5 发丝线＋14 上边距＋半行）
+}
+
 private struct TripDay: View {
     let t: Trip
     @Binding var day: String
     var back: () -> Void
     @Binding var sheet: TripSheet?
+    @ObservedObject private var way = TripWayModel.shared
+    @State private var opened: Set<Int> = []     // 手动展开步骤的站
+    @State private var shut: Set<Int> = []       // 默认展开、被她手动收起的站
 
     var body: some View {
-        let ln = TripText.localNow(t.tz), isToday = TripText.ymdBJ(ln) == day, nowHM = TripText.hm(ln)
+        TimelineView(.periodic(from: .now, by: 30)) { _ in page }
+    }
+
+    /// 这一站的钟点，跟 TripText.localNow 一个算法（北京钟面＋时差）
+    private func at(_ x: TripStop) -> Date? {
+        let p = x.time.split(separator: ":").compactMap { Int($0) }
+        guard p.count >= 2, let d = TripText.date(x.day) else { return nil }
+        return d.addingTimeInterval(Double(p[0] * 3600 + p[1] * 60))
+    }
+
+    private var page: some View {
+        let ln = TripText.localNow(t.tz), today = TripText.ymdBJ(ln), nowHM = TripText.hm(ln)
         let ss = t.stops.filter { $0.day == day }
-        let cur: Int = isToday ? (ss.lastIndex { !$0.time.isEmpty && $0.time <= nowHM } ?? -1) : -1
+        let isToday = today == day
+        // 走到第几站了：过去的日子全走过，以后的日子一站没走
+        let cur: Int = day < today ? ss.count : (isToday ? (ss.lastIndex { !$0.time.isEmpty && $0.time <= nowHM } ?? -1) : -1)
+        let legs: [TripLeg?] = ss.indices.map { i in i + 1 < ss.count ? TripLeg.between(ss[i], ss[i + 1], all: t.stops) : nil }
+        let active: Int? = (isToday && cur >= 0 && cur < ss.count - 1 && legs[cur] != nil) ? cur : nil
         let wx = t.weather[day]
-        let wd = TripText.date(day).map { TripText.weekdays[(TripText.bjComponents($0).weekday ?? 1) - 1] } ?? ""
-        TripPage(title: "Day by Day", tint: t.tint, back: back, menu: nil, foot: ("\(ss.count) 件事" + (wx.map { $0.sunset.isEmpty ? "" : " · 日落 \($0.sunset)" } ?? ""), "slowly…")) {
-                VStack(alignment: .leading, spacing: 0) {
-                    HStack(alignment: .top) {
-                        VStack(alignment: .leading, spacing: 8) {
-                            Text(TripText.md(day)).font(TripInk.serif(40))
-                            HStack(spacing: 6) {
-                                Mono(wd)
-                                Text("· 第 \((t.dayList.firstIndex(of: day) ?? 0) + 1) / \(t.dayList.count) 天" + (wx.map { " · \($0.wx) \($0.hi)° / \($0.lo)°" } ?? "")).font(TripInk.serif(10)).foregroundStyle(TripInk.g1)
-                            }
-                        }
-                        Spacer()
-                        HStack(spacing: 12) {
-                            ForEach(t.dayList, id: \.self) { d in
-                                Button { day = d } label: {
-                                    Text(String(d.suffix(2))).font(TripInk.serif(12)).foregroundStyle(d == day ? TripInk.ink : TripInk.g3).padding(.bottom, 3)
-                                        .overlay(alignment: .bottom) { if d == day { Rectangle().fill(TripInk.ink).frame(height: 0.7) } }
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                        .padding(.top, 10)
+        return TripPage(title: "Day by Day", tint: t.tint, back: back, menu: nil,
+                        foot: ("\(ss.count) 件事" + (wx.map { $0.sunset.isEmpty ? "" : " · 日落 \($0.sunset)" } ?? ""), "slowly…"),
+                        pinned: AnyView(head(wx)), scrollTo: isToday && cur >= 0 ? "now" : nil) {
+            VStack(spacing: 0) {
+                if ss.isEmpty { Text("这天还没排").font(TripInk.serif(13)).foregroundStyle(TripInk.g3).frame(maxWidth: .infinity).padding(.vertical, 40) }
+                ForEach(Array(ss.enumerated()), id: \.element.id) { i, x in
+                    let node = nodeAt(i, cur: cur, active: active, pastDay: day < today)
+                    stopRow(x, first: i == 0, top: i == 0 ? .gap : (i <= cur ? .walked : .ahead), bottom: belowAt(i, count: ss.count, cur: cur, active: active),
+                            node: node, open: isOpen(x, i: i, node: node, active: active))
+                        .id(node == .now ? "now" : "stop\(x.id)")
+                    if let leg = legs[i] {
+                        legRow(leg, a: ss[i], b: ss[i + 1], ln: ln, state: i < cur ? .walked : (active == i ? .moving : .ahead))
+                            .id(active == i ? "now" : "leg\(x.id)")
                     }
-                    .padding(.top, 12)
-                    VStack(spacing: 0) {
-                        if ss.isEmpty { Text("这天还没排").font(TripInk.serif(13)).foregroundStyle(TripInk.g3).frame(maxWidth: .infinity).padding(.vertical, 40) }
-                        ForEach(Array(ss.enumerated()), id: \.element.id) { i, x in
-                            stopRow(x, past: isToday ? i < cur : day < TripText.ymdBJ(ln), now: i == cur)
-                        }
-                        if !ss.isEmpty { Hair() }
-                    }
-                    .padding(.top, 18)
                 }
-                .background(alignment: .topLeading) {
-                    TripMat(name: "tree", tint: t.tint, opacity: 0.42).frame(width: 450, height: 788)
-                        .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.14), .init(color: .black, location: 0.42),
-                                                     .init(color: .black.opacity(0.35), location: 0.62), .init(color: .clear, location: 0.86)], startPoint: .top, endPoint: .bottom))
-                        .offset(x: -50, y: 200)
-                }
+            }
+            .padding(.top, 4)
+            .background(alignment: .topLeading) {
+                TripMat(name: "tree", tint: t.tint, opacity: 0.42).frame(width: 450, height: 788)
+                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.14), .init(color: .black, location: 0.42),
+                                                 .init(color: .black.opacity(0.35), location: 0.62), .init(color: .clear, location: 0.86)], startPoint: .top, endPoint: .bottom))
+                    .offset(x: -50, y: 100)
+            }
         } bar: {
             HStack {
                 Button { sheet = .stop(nil) } label: { Text("＋ 加一项").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }
@@ -1000,53 +1265,179 @@ private struct TripDay: View {
         }
     }
 
-    private func stopRow(_ x: TripStop, past: Bool, now: Bool) -> some View {
-        VStack(spacing: 0) {
-            if !x.route.isEmpty { routeLeg(x, past: past) }
-            stopMain(x, past: past, now: now)
-        }
+    private func nodeAt(_ i: Int, cur: Int, active: Int?, pastDay: Bool) -> TripNode {
+        if i < cur { return .past }
+        if i == cur { return (active == i || pastDay) ? .past : .now }
+        return .next
+    }
+    private func belowAt(_ i: Int, count: Int, cur: Int, active: Int?) -> TripLine {
+        if i == count - 1 { return .gap }
+        return (i < cur || active == i) ? .walked : .ahead
+    }
+    /// 步骤默认展开：现在待着的那站、正在去的那站；她手动点过的照她的
+    private func isOpen(_ x: TripStop, i: Int, node: TripNode, active: Int?) -> Bool {
+        guard !x.steps.isEmpty else { return false }
+        if opened.contains(x.id) { return true }
+        if shut.contains(x.id) { return false }
+        return node == .now || (active.map { i == $0 + 1 } ?? false)
     }
 
-    /// 1108 #4915 她：每一站怎么过去——两站之间一段虚线＋怎么走，右边一键开地图导航到这一站
-    private func routeLeg(_ x: TripStop, past: Bool) -> some View {
-        HStack(alignment: .top, spacing: 0) {
-            Rectangle().stroke(style: StrokeStyle(lineWidth: 0.6, dash: [2, 3])).frame(width: 0.6).foregroundStyle(TripInk.g3)
-                .frame(width: 46, alignment: .center).padding(.vertical, 2)
-            VStack(alignment: .leading, spacing: 4) {
-                Mono("ROUTE · 怎么走", size: 8, color: TripInk.g3)
-                Text(x.route).font(TripInk.serif(12)).foregroundStyle(past ? TripInk.g3 : TripInk.g1).lineSpacing(5)
-                    .fixedSize(horizontal: false, vertical: true)
+    /// 钉在顶上的日期那块
+    private func head(_ wx: TripWx?) -> some View {
+        let wd = TripText.date(day).map { TripText.weekdays[(TripText.bjComponents($0).weekday ?? 1) - 1] } ?? ""
+        return HStack(alignment: .top) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text(TripText.md(day)).font(TripInk.serif(40))
+                HStack(spacing: 6) {
+                    Mono(wd)
+                    Text("· 第 \((t.dayList.firstIndex(of: day) ?? 0) + 1) / \(t.dayList.count) 天" + (wx.map { " · \($0.wx) \($0.hi)° / \($0.lo)°" } ?? "")).font(TripInk.serif(10)).foregroundStyle(TripInk.g1)
+                }
             }
-            Spacer(minLength: 8)
-            Button {
-                let to = x.addr.isEmpty ? x.title : x.addr
-                if let u = URL(string: "https://maps.apple.com/?daddr=" + (to.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")) { UIApplication.shared.open(u) }
-            } label: { Mono("导航 ›", color: TripInk.ink) }
-            .buttonStyle(.plain)
+            Spacer()
+            HStack(spacing: 12) {
+                ForEach(t.dayList, id: \.self) { d in
+                    Button { day = d } label: {
+                        Text(String(d.suffix(2))).font(TripInk.serif(12)).foregroundStyle(d == day ? TripInk.ink : TripInk.g3).padding(.bottom, 3)
+                            .overlay(alignment: .bottom) { if d == day { Rectangle().fill(TripInk.ink).frame(height: 0.7) } }
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.top, 10)
         }
-        .padding(.vertical, 8)
+        .padding(.top, 12).padding(.bottom, 14)
+        .foregroundStyle(TripInk.ink)
     }
 
-    private func stopMain(_ x: TripStop, past: Bool, now: Bool) -> some View {
-        Button { sheet = .stop(x.id) } label: {
-            TripRow {
-                Text(x.time.isEmpty ? "—" : x.time).font(TripInk.serif(15)).frame(width: 46, alignment: .leading)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(x.title).font(TripInk.serif(14)).fontWeight(now ? .medium : .regular)
-                    let sub = [TripText.how(x.how), x.dur].filter { !$0.isEmpty }.joined(separator: " · ")
-                    if !sub.isEmpty { Mono(sub, color: past ? TripInk.g3 : TripInk.g1) }
-                    if !x.note.isEmpty { Text(x.note).font(TripInk.serif(10)).foregroundStyle(TripInk.g1) }
+    // MARK: 一站
+
+    private func stopRow(_ x: TripStop, first: Bool, top: TripLine, bottom: TripLine, node: TripNode, open: Bool) -> some View {
+        let grey = node == .past
+        let place = x.addr.trimmingCharacters(in: .whitespaces)
+        return VStack(alignment: .leading, spacing: 0) {
+            if !first { Hair().padding(.leading, TripRail.content) }      // #5563 最上面不要线
+            HStack(alignment: .firstTextBaseline, spacing: 0) {
+                TripClock(x.time.isEmpty ? "—" : x.time).foregroundStyle(grey ? TripInk.g3 : TripInk.ink)
+                    .frame(width: TripRail.time, alignment: .leading)
+                Spacer().frame(width: TripRail.rail + TripRail.gap)
+                VStack(alignment: .leading, spacing: 6) {
+                    VStack(alignment: .leading, spacing: 6) {
+                        Text(place.isEmpty ? x.title : place).font(TripInk.serif(14.5))
+                            .foregroundStyle(grey ? TripInk.g3 : TripInk.ink)
+                        if !place.isEmpty {
+                            Text(x.title).font(TripInk.serif(12.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.ink.opacity(0.82))
+                        }
+                        if !x.note.isEmpty { Text(x.note).font(TripInk.serif(11.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.g1).lineSpacing(3) }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .contentShape(Rectangle())
+                    .onTapGesture { sheet = .stop(x.id) }
+                    if !x.steps.isEmpty { steps(x, open: open, grey: grey) }
                     if !x.hisLine.isEmpty {
-                        Text("「\(x.hisLine)」").font(TripInk.serif(12.5)).foregroundStyle(TripInk.ink).lineSpacing(6).padding(.top, 6)
+                        Text("「\(x.hisLine)」").font(TripInk.serif(11.5)).foregroundStyle(TripInk.g1).lineSpacing(4).padding(.top, 2)
+                            .fixedSize(horizontal: false, vertical: true)
                         Text("璟 · \(String(x.hisAt.dropFirst(11).prefix(5)))").font(TripInk.mono(9)).foregroundStyle(TripInk.g3)
                     }
                 }
-                Spacer()
-                if now { Mono("NOW", color: TripInk.ink) }
             }
-            .foregroundStyle(past ? TripInk.g3 : TripInk.ink)
+            .padding(.top, 14).padding(.bottom, 16)
         }
-        .buttonStyle(.plain)
+        .overlay(alignment: .topLeading) {
+            TripRailLine(top: top, bottom: bottom, node: node, nodeY: first ? TripRail.nodeY - 0.5 : TripRail.nodeY)
+                .frame(width: TripRail.rail).frame(maxHeight: .infinity)
+                .padding(.leading, TripRail.time)
+        }
+    }
+
+    /// 到了以后的几步（#5568）：标题一行能点开收起，下面一串小圆点
+    private func steps(_ x: TripStop, open: Bool, grey: Bool) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            Button {
+                if open { opened.remove(x.id); shut.insert(x.id) } else { shut.remove(x.id); opened.insert(x.id) }
+            } label: {
+                HStack {
+                    Mono("到了以后 · \(x.steps.count) 步", size: 9.5, color: TripInk.g1)
+                    Spacer()
+                    Mono(open ? "收起" : "展开", size: 9.5, color: TripInk.g1)
+                }
+                .padding(.vertical, 4)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            if open {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(x.steps.enumerated()), id: \.offset) { _, st in
+                        HStack(spacing: 10) {
+                            Circle().stroke(TripInk.g2, lineWidth: 0.8).frame(width: 5, height: 5)
+                            Text(st).font(TripInk.serif(11.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.ink.opacity(0.78))
+                        }
+                        .frame(height: 22)
+                    }
+                }
+                .background(alignment: .leading) {
+                    Rectangle().fill(TripInk.hl).frame(width: 0.7).padding(.vertical, 13).offset(x: 2.15)
+                }
+                .padding(.leading, 3)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    // MARK: 路上
+
+    private func legRow(_ leg: TripLeg, a: TripStop, b: TripStop, ln: Date, state: TripLine) -> some View {
+        let live = state == .moving        // 正在走的这段
+        let done = state == .walked
+        let start = at(a)
+        let planned = way.eta[leg.key]
+        let elapsed = max(0, start.map { ln.timeIntervalSince($0) } ?? 0)
+        // 还剩多久：先认手机定位现算的，没有就拿计划的减掉走过的，再没有就看离下一站的钟点
+        var remain: Double? = way.left[leg.key]?.sec
+        if remain == nil, let p = planned { remain = max(0, p.sec - elapsed) }
+        if remain == nil, let e = at(b) { remain = max(0, e.timeIntervalSince(ln)) }
+        var split: CGFloat? = nil
+        if live { split = CGFloat(remain.map { elapsed / max(elapsed + $0, 1) } ?? 0.5) }
+        var line1 = [leg.label]
+        if leg.ticket { line1.append(leg.dur) }
+        else if let p = planned { line1 += ["约 " + TripLeg.minutes(p.sec), TripLeg.meters(p.meters)] }
+        else { line1.append(leg.dur) }
+        let minute = Int(ln.timeIntervalSince1970 / 60)
+        return VStack(alignment: .leading, spacing: 5) {
+            if live { Mono("NOW · 在路上", size: 9, color: TripInk.ink) }
+            HStack(alignment: .firstTextBaseline, spacing: 10) {
+                Text("\(leg.from.name) → \(leg.to.name)").font(TripInk.serif(13.5)).foregroundStyle(done ? TripInk.g3 : TripInk.ink)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+                if !leg.ticket {
+                    Button {
+                        Task {
+                            let to = await way.coord(leg.to)
+                            var from: (CLLocationCoordinate2D, String)? = nil
+                            if !live, let c = await way.coord(leg.from) { from = (c, leg.from.name) }
+                            TripAmap.go(from: from, to: to, name: leg.to.name, mode: leg.mode)
+                        }
+                    } label: { Mono("导航", size: 11.5, color: TripInk.ink).padding(.vertical, 4).padding(.leading, 8).contentShape(Rectangle()) }
+                    .buttonStyle(.plain)
+                }
+            }
+            Mono(line1.filter { !$0.isEmpty }.joined(separator: " · "), size: 10, color: done ? TripInk.g3 : TripInk.g1)
+            if !leg.route.isEmpty {
+                Text(leg.route).font(TripInk.serif(11)).foregroundStyle(done ? TripInk.g3 : TripInk.g1).lineSpacing(3)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            if live {
+                Mono("已走 " + TripLeg.minutes(elapsed) + (remain.map { " · 还剩约 " + TripLeg.minutes($0) } ?? ""), size: 10, color: TripInk.ink)
+            }
+        }
+        .padding(.leading, TripRail.content).padding(.top, 4).padding(.bottom, 16)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .overlay(alignment: .topLeading) {
+            TripRailLine(top: live ? .gap : state, split: split)
+                .frame(width: TripRail.rail).frame(maxHeight: .infinity)
+                .padding(.leading, TripRail.time)
+        }
+        .task(id: leg.key) { await way.plan(leg, depart: start) }
+        .task(id: live ? "\(leg.key)|\(minute)" : "") { if live { await way.live(leg) } }
     }
 }
 
@@ -1386,6 +1777,11 @@ private struct TripSheetView: View {
     @State private var date2 = Date().addingTimeInterval(4 * 86400)
     @State private var img = ""
     @State private var rt = ""   // 1108 #4915 日程一站的「怎么走」（从上一站过来）
+    @State private var lat: Double?       // 1117 地点从地图上点的坐标（名字可以再改成「公司」这种叫法）
+    @State private var lon: Double?
+    @State private var stp = ""           // 1117 #5568 到了以后的步骤，一行一步
+    @State private var finding = false
+    @StateObject private var finder = PlaceSearchModel()
     @State private var photo: PhotosPickerItem?
     @State private var tplPicks: Set<String> = []
     @State private var tpl: [(String, String)] = []
@@ -1455,7 +1851,8 @@ private struct TripSheetView: View {
         case .item(let id):
             if let id, let it = t?.items.first(where: { $0.id == id }) { a = it.text; b = it.note; pick1 = it.grp } else { pick1 = packTab == "全部" ? "其他" : packTab }
         case .stop(let id):
-            if let id, let x = t?.stops.first(where: { $0.id == id }) { a = x.time; b = x.title; c = x.dur; d = x.addr; e = x.note; rt = x.route; pick1 = TripText.how(x.how); pick2 = TripText.md(x.day) }
+            if let id, let x = t?.stops.first(where: { $0.id == id }) { a = x.time; b = x.title; c = x.dur; d = x.addr; e = x.note; rt = x.route; pick1 = TripText.how(x.how); pick2 = TripText.md(x.day)
+                lat = x.lat; lon = x.lon; stp = x.steps.joined(separator: "\n") }
             else { pick2 = TripText.md(day) }
         case .wish(let id):
             if let id, let w = t?.wishes.first(where: { $0.id == id }) { a = w.name; b = w.note; pick1 = w.cat } else { pick1 = wishTab == "全部" ? "逛" : wishTab }
@@ -1615,7 +2012,8 @@ private struct TripSheetView: View {
             TripField(label: "几点", text: $a, placeholder: "14:10", keyboard: .numbersAndPunctuation)
             TripField(label: "去哪 / 做什么", text: $b, placeholder: "锦市场吃晚饭")
             TripChips(label: "怎么去", options: TripText.hows.map { $0.1 }, selected: $pick1)
-            HStack(spacing: 14) { TripField(label: "要多久", text: $c, placeholder: "12 分钟"); TripField(label: "地址（导航用）", text: $d) }
+            TripField(label: "要多久", text: $c, placeholder: "12 分钟")
+            placeField
             VStack(alignment: .leading, spacing: 5) {
                 Mono("怎么走（从上一站过来）")
                 TextField("地铁 2 号线换 18 号线，约 2 小时；打车约 200", text: $rt, axis: .vertical).lineLimit(1...5)
@@ -1624,14 +2022,21 @@ private struct TripSheetView: View {
             }
             .padding(.bottom, 12)
             TripField(label: "备注", text: $e)
+            VStack(alignment: .leading, spacing: 5) {
+                Mono("到了以后（一行一步，可空）")
+                TextField("走到 T3 出发层\n取登机牌\n值机", text: $stp, axis: .vertical).lineLimit(2...8)
+                    .font(TripInk.serif(15)).padding(.vertical, 6)
+                Rectangle().fill(Color.black.opacity(0.3)).frame(height: 0.6)
+            }
+            .padding(.bottom, 12)
             TripChips(label: "哪一天", options: days().map(TripText.md), selected: $pick2)
             HStack {
                 if let id { TripButton(title: "删掉", warn: true) { Task { await store.post("stop", ["op": "delete", "id": id]); await done() } } }
                 Spacer()
                 if let x, !(x.addr.isEmpty && x.title.isEmpty) {
-                    TripButton(title: "导航") {
-                        let q = "\(x.addr.isEmpty ? x.title : x.addr) \(t?.name ?? "")"
-                        if let u = URL(string: "https://maps.apple.com/?q=" + (q.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? "")) { UIApplication.shared.open(u) }
+                    TripButton(title: "导航") {      // 1117 #5549 跳高德
+                        let place = TripPlace(name: x.addr.isEmpty ? x.title : x.addr, lat: x.lat, lon: x.lon)
+                        Task { TripAmap.go(from: nil, to: await TripWayModel.shared.coord(place), name: place.name, mode: .drive) }
                     }
                 }
                 TripButton(title: "好", solid: true) {
@@ -1640,7 +2045,8 @@ private struct TripSheetView: View {
                         guard !b.trimmingCharacters(in: .whitespaces).isEmpty else { store.say("写一下去哪"); return }
                         let dd = dayFromMD(pick2) ?? day
                         var body: [String: Any] = ["trip_id": t.id, "time": a, "title": b, "how": TripText.hows.first { $0.1 == pick1 }?.0 ?? "",
-                                                   "dur": c, "addr": d, "note": e, "route": rt, "day": dd, "who": "霁"]
+                                                   "dur": c, "addr": d, "note": e, "route": rt, "day": dd, "who": "霁",
+                                                   "lat": lat.map { "\($0)" } ?? "", "lon": lon.map { "\($0)" } ?? "", "steps": stp]
                         if let id { body["op"] = "edit"; body["id"] = id } else { body["op"] = "add" }
                         let j = await store.post("stop", body)
                         if (j["ok"] as? Bool) == true { day = dd; await done() }
@@ -1648,6 +2054,52 @@ private struct TripSheetView: View {
                 }
             }
         }
+    }
+
+    /// 1117 地点：这一站的大标题，也是导航和算路程的终点。「地图上找」点中一个真地方存坐标，名字可以再改成自己的叫法
+    private var placeField: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            HStack {
+                Mono("地点（每站的大标题，导航用）")
+                Spacer()
+                Button {
+                    finding.toggle()
+                    if finding { finder.query = d }
+                } label: { Mono(finding ? "收起" : "地图上找", color: TripInk.ink) }
+                .buttonStyle(.plain)
+            }
+            TextField("公司 / 武汉天河国际机场 T3", text: $d).font(TripInk.serif(15)).padding(.vertical, 6)
+            Rectangle().fill(Color.black.opacity(0.3)).frame(height: 0.6)
+            if lat != nil && !finding {
+                HStack(alignment: .firstTextBaseline) {
+                    Text("已在地图上定好位置，名字可以改成「公司」这种叫法").font(TripInk.serif(10)).foregroundStyle(TripInk.g2)
+                    Spacer()
+                    Button { lat = nil; lon = nil } label: { Mono("清掉位置", color: TripInk.g1) }.buttonStyle(.plain)
+                }
+                .padding(.top, 4)
+            }
+            if finding {
+                TextField("搜地名，比如 天河机场T3", text: $finder.query).font(TripInk.serif(14)).padding(.vertical, 6).padding(.top, 6)
+                Rectangle().fill(Color.black.opacity(0.15)).frame(height: 0.6)
+                ForEach(Array(finder.results.prefix(6).enumerated()), id: \.offset) { _, r in
+                    Button {
+                        Task {
+                            guard let it = await finder.resolve(r) else { store.say("这个地方没查到位置，换一个"); return }
+                            let c = it.placemark.coordinate
+                            d = it.name ?? r.title; lat = c.latitude; lon = c.longitude; finding = false
+                        }
+                    } label: {
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(r.title).font(TripInk.serif(13)).foregroundStyle(TripInk.ink)
+                            if !r.subtitle.isEmpty { Text(r.subtitle).font(TripInk.serif(10)).foregroundStyle(TripInk.g2) }
+                        }
+                        .frame(maxWidth: .infinity, alignment: .leading).padding(.vertical, 7).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+        .padding(.bottom, 12)
     }
 
     private var fromWish: some View {
