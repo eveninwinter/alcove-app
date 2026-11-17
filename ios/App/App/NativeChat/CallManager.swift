@@ -2,6 +2,7 @@ import Foundation
 import CallKit
 import AVFoundation
 import UserNotifications
+import CryptoKit
 import UIKit
 import PushKit
 
@@ -220,9 +221,19 @@ final class AlcoveNotify: NSObject, UNUserNotificationCenterDelegate {
         content.body = trimmed.isEmpty ? "发来一条消息" : String(trimmed.prefix(120))
         content.sound = .default
         content.categoryIdentifier = "alcove_msg"
-        let req = UNNotificationRequest(identifier: UUID().uuidString,
+        content.threadIdentifier = "Alcove"
+        // 1117 她：锁屏上一条消息两份（两摞一模一样）。服务器只推了一次，另一份是这里弹的。
+        // 号跟服务器推送的 apns-collapse-id 一个算法（去首尾空白的全文 sha1 前 32 位）：同一句两份同号，后到的顶掉先到的
+        let key = Insecure.SHA1.hash(data: Data(trimmed.utf8)).map { String(format: "%02x", $0) }.joined().prefix(32)
+        let req = UNNotificationRequest(identifier: "alcove-" + key,
                                         content: content, trigger: nil)
         UNUserNotificationCenter.current().add(req)
+        // 查根子用：本该由服务器推的时候这里还在弹，说明号码没交上去（alertRegistered 还是 false）
+        if UIApplication.shared.applicationState != .active {
+            let reg = RemotePush.alertRegistered
+            Task { _ = try? await NativeHouseAPI.object("/island/log", method: "POST",
+                                                        body: ["event": "local_msg_notify", "alert_registered": reg]) }
+        }
     }
 
     /// 1008：灵动岛 / 锁屏条上点「消息」→ 弹这条，长按就能打字（跟平时长按回复一样），发进通话
