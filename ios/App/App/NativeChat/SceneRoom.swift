@@ -656,7 +656,9 @@ extension Notification.Name {
     static let alcoveOpenScenes = Notification.Name("alcoveOpenScenes")
 }
 
-/// 1117 #5591 照 sexroom-preview/card1.html：一块缝了针脚的底，左边花边相纸、右边行李牌（ours｜日期｜标题｜他那句｜Nº · 句数）。点了进「那几场」
+/// 1117 #5591 他收好一场，聊天页冒的小卡。#5594 她嫌排版乱 → 照 sexroom-preview/card4.html 重排：
+/// 一块缝了针脚的底托（290×120），左边花边相纸（淡紫小花）稍微歪、上沿探出底托一点；右边一张白纸条压着、顶上一截撕边胶带，
+/// 纸条里四行对齐：ours｜日期 / 标题 / 他那句 / Nº · 收进那几场｜句数。点了进「那几场」
 struct SceneChatMessageCard: View {
     let card: SceneChatCard
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
@@ -666,61 +668,70 @@ struct SceneChatMessageCard: View {
         return Button {
             NotificationCenter.default.post(name: .alcoveOpenScenes, object: card.no)
         } label: {
-            // #5592 她：里面歪的卡太不明显 → 底托缩小，相纸和行李牌更歪、从底托上沿和左右两边伸出去（card2.html）
             ZStack(alignment: .topLeading) {
-                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(sk.veil)
-                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(sk.dark ? 0.1 : 0.95), lineWidth: 0.8))
-                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
-                        .stroke(sk.stitch, style: StrokeStyle(lineWidth: 1, dash: [4, 3])).padding(6).opacity(0.75))
-                    .shadow(color: sk.shadow, radius: 12, y: 8)
-                    .frame(width: 262, height: 122)
-                    .offset(x: 14, y: 20)
-                miniPhoto(sk)
-                    .rotationEffect(.degrees(-8))
-                    .offset(x: 4, y: 6)
-                tag(sk)
-                    .frame(width: 178)
-                    .rotationEffect(.degrees(4))
-                    .offset(x: 92, y: 8)
+                RoundedRectangle(cornerRadius: 18, style: .continuous).fill(sk.veil)
+                    .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(sk.dark ? 0.1 : 0.95), lineWidth: 0.8))
+                    .overlay(RoundedRectangle(cornerRadius: 13, style: .continuous)
+                        .stroke(sk.stitch, style: StrokeStyle(lineWidth: 1, dash: [4, 3])).padding(6).opacity(0.7))
+                    .shadow(color: sk.shadow.opacity(0.7), radius: 12, y: 8)
+                    .frame(width: 290, height: 120)
+                photo(sk)
+                    .rotationEffect(.degrees(-6))
+                    .offset(x: 16, y: -8)
+                slip(sk)
+                    .rotationEffect(.degrees(2))
+                    .offset(x: 104, y: 13)
             }
-            .frame(width: 290, height: 150, alignment: .topLeading)
+            .frame(width: 290, height: 120, alignment: .topLeading)
+            .padding(.top, 10)
         }
         .buttonStyle(.plain)
     }
 
-    private func miniPhoto(_ sk: SceneInk) -> some View {
-        Image("SceneFlower")   // #5593 她：图片换成花的（/root/rhysel/flower_6.png 淡紫小花＋蝴蝶结）
+    private func photo(_ sk: SceneInk) -> some View {
+        Image("SceneFlower")   // #5593 她：图片换成花的（/root/rhysel/flower_6.png 淡紫小花，只裁开花那一簇）
             .resizable().scaledToFill()
-            .frame(width: 70, height: 76).clipped()
+            .frame(width: 80, height: 86).clipped()
             .opacity(sk.artOpacity)
-            .padding(.horizontal, 7).padding(.top, 7).padding(.bottom, 18)
+            .padding(.horizontal, 6).padding(.top, 6).padding(.bottom, 14)
             .background(ScallopEdgeShape(bump: 6, depth: 2).fill(sk.paper))
-            .shadow(color: Color.black.opacity(sk.dark ? 0.4 : 0.16), radius: 9, y: 6)
+            .shadow(color: Color.black.opacity(sk.dark ? 0.4 : 0.13), radius: 7, y: 5)
     }
 
-    private func tag(_ sk: SceneInk) -> some View {
+    private func slip(_ sk: SceneInk) -> some View {
         VStack(alignment: .leading, spacing: 0) {
-            HStack(alignment: .firstTextBaseline) {
+            HStack(alignment: .center) {
                 Text("ours").font(SanctusPageFont.script(15)).foregroundColor(sk.rose)
                 Spacer()
                 Text(SceneRoomStore.md(card.day ?? "")).font(SceneFont.mono(9.5)).foregroundColor(sk.mono)
             }
+            .frame(height: 14)
             Text(card.title).font(SceneFont.serif(15)).tracking(0.9).foregroundColor(sk.ink)
                 .lineLimit(1).padding(.top, 4)
             if let n = card.note, !n.isEmpty {
-                Text(n).font(SceneFont.serif(11)).foregroundColor(sk.body).lineLimit(2).padding(.top, 3)
+                Text(n).font(SceneFont.serif(11)).foregroundColor(sk.body).lineLimit(1).padding(.top, 3)
             }
-            (Text(String(format: "Nº %02d · %d", card.no, card.count ?? 0)).font(SceneFont.mono(9))
-             + Text(" 句 · 收进那几场").font(SceneFont.serif(9)))
-                .foregroundColor(sk.mono).lineLimit(1).padding(.top, 5)
+            Spacer(minLength: 0)
+            HStack(alignment: .firstTextBaseline) {
+                Text(String(format: "Nº %02d", card.no)).font(SceneFont.mono(9)) + Text(" · 收进那几场").font(SceneFont.serif(9))
+                Spacer()
+                Text("\(card.count ?? 0)").font(SceneFont.mono(9)) + Text(" 句").font(SceneFont.serif(9))
+            }
+            .foregroundColor(sk.mono).lineLimit(1)
+            .padding(.bottom, 9)
         }
-        .padding(.leading, 24).padding(.trailing, 13).padding(.vertical, 11)
-        .background(TagShape(cut: 12).fill(sk.paper))
-        .overlay(alignment: .leading) {
-            Circle().fill(sk.page).frame(width: 6, height: 6)
-                .overlay(Circle().stroke(sk.stitch, lineWidth: 1)).padding(.leading, 8)
+        .padding(.leading, 14).padding(.trailing, 12).padding(.top, 10)
+        .frame(width: 170, height: 94, alignment: .topLeading)
+        .background(sk.paper)
+        .shadow(color: Color.black.opacity(sk.dark ? 0.4 : 0.10), radius: 7, y: 5)
+        .overlay(alignment: .topLeading) {
+            TornTapeShape(tooth: 5, depth: 4)
+                .fill(Color.white.opacity(sk.dark ? 0.16 : 0.72))
+                .overlay(TornTapeShape(tooth: 5, depth: 4).stroke(sk.hair, lineWidth: 0.5))
+                .frame(width: 52, height: 15)
+                .rotationEffect(.degrees(-4))
+                .offset(x: 58, y: -8)
         }
-        .shadow(color: Color.black.opacity(sk.dark ? 0.4 : 0.14), radius: 9, y: 6)
     }
 }
 
