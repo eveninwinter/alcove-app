@@ -4643,14 +4643,14 @@ struct MessageRow: View {
             let n = counts[k, default: 0]
             let phrase: String
             switch k {
-            case .command: phrase = n == 1 ? "Ran a command" : "Ran \(n) commands"
-            case .read: phrase = n == 1 ? "Read a file" : "Read \(n) files"
-            case .tool: phrase = n == 1 ? "Used a tool" : "Used \(n) tools"
+            // 1117 她：看不懂英文 → 中文
+            case .command: phrase = "跑了 \(n) 条命令"
+            case .read: phrase = "看了 \(n) 个文件"
+            case .tool: phrase = "用了 \(n) 个工具"
             }
-            guard offset > 0 else { return phrase }
-            return phrase.prefix(1).lowercased() + phrase.dropFirst()
+            return phrase
         }
-        return bits.isEmpty ? "Used a tool" : bits.joined(separator: ", ")
+        return bits.isEmpty ? "用了工具" : bits.joined(separator: " · ")
     }
     private var trailEntryLabel: String { trailLabel(trailTools) }
 
@@ -5016,7 +5016,7 @@ struct MessageRow: View {
                                     .foregroundColor(sheetTheme.fyAccent)
                                     .frame(width: 18).padding(.top, 2)
                                 VStack(alignment: .leading, spacing: 2) {
-                                    Text(item.toolName == "Bash" ? "Ran" : "Used")
+                                    Text(item.zhName)
                                         .font(.system(size: 13.5, weight: .medium))
                                         .foregroundColor(sheetTheme.text)
                                     Text(item.desc.isEmpty ? item.content : item.desc)
@@ -5500,7 +5500,7 @@ struct MessageRow: View {
                                 .frame(width: 18)
                                 .padding(.top, 2)
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.toolName == "Bash" ? "Ran" : "Used")
+                                Text(item.zhName)
                                     .font(.system(size: 13.5, weight: .medium))
                                     .foregroundColor(sheetTheme.text)
                                 Text(item.desc.isEmpty ? item.content : item.desc)
@@ -5805,19 +5805,22 @@ struct MessageRow: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    commandDetailSection("Command", text: item.command.isEmpty
-                                         ? "这条旧记录没有保存原始命令"
+                    // 1117 她：看不懂 → 先一句人话说这一步干了啥，再给具体指令和结果
+                    let what = item.desc.isEmpty ? item.content : item.desc
+                    if !what.isEmpty { commandDetailSection("这一步", text: what, isError: false) }
+                    commandDetailSection(item.toolName == "Bash" ? "具体命令" : "具体参数", text: item.command.isEmpty
+                                         ? "这一步没留下具体内容（以前的记录没存）"
                                          : item.command, isError: false)
                     if !item.output.isEmpty || item.isError {
-                        commandDetailSection(item.isError ? "Error" : "Output",
-                                             text: item.output.isEmpty ? "No output" : item.output,
+                        commandDetailSection(item.isError ? "出错了" : "结果",
+                                             text: item.output.isEmpty ? "没有输出" : item.output,
                                              isError: item.isError)
                     }
                 }
                 .padding(.horizontal, 20).padding(.top, 18).padding(.bottom, 36)
             }
             .background(sheetTheme.fyCardSub.ignoresSafeArea())
-            .navigationTitle(item.toolName.isEmpty ? "Tool" : item.toolName)
+            .navigationTitle(item.zhName)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

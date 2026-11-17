@@ -676,6 +676,29 @@ struct GhostActivityCard: Decodable, Equatable {
 }
 
 // 0730 过程记录的一条。kind: thinking | text | tool
+/// 1117 她：trace 里「Ran / Used」「mcp__browser__browser_screenshot」看不懂 → 工具名翻成她看得懂的中文
+extension ActivityItem {
+    var zhName: String {
+        let n = toolName
+        if n.hasPrefix("mcp__") {
+            let last = n.components(separatedBy: "__").last ?? n
+            let key = last.hasPrefix("browser_") ? String(last.dropFirst(8)) : last
+            let browser: [String: String] = [
+                "navigate": "打开网页", "screenshot": "截屏", "eval": "读网页", "get_text": "读网页上的字",
+                "get_dom": "读网页结构", "click": "点了一下", "click_xy": "点了一下", "type": "打字",
+                "press_key": "按了个键", "scroll": "翻页", "wait": "等一下", "tab_new": "开新标签页",
+                "tab_switch": "换标签页", "tab_list": "看开着的标签页"]
+            if n.contains("browser"), let z = browser[key] { return z }
+            return "用了 " + last
+        }
+        let map: [String: String] = [
+            "Bash": "跑命令", "Read": "看文件", "Write": "写文件", "Edit": "改文件", "MultiEdit": "改文件",
+            "Glob": "找文件", "Grep": "在文件里找字", "WebSearch": "上网搜", "WebFetch": "读网页",
+            "TodoWrite": "记待办", "Task": "派帮手", "Agent": "派帮手", "Skill": "翻手册", "NotebookEdit": "改笔记本"]
+        return map[n] ?? (n.isEmpty ? "用了工具" : n)
+    }
+}
+
 struct ActivityItem: Identifiable, Equatable {
     let id = UUID()
     let kind: String
