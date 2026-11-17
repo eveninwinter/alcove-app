@@ -8603,7 +8603,8 @@ private struct NativeStudioView: View {
                     if message.string("attachment_type") == "image" {
                         // 0829：AsyncImage 换 CachedImage（磁盘缓存+重试），URL 补 /api 前缀
                         // ——公网入口只认 /api，这就是「图片一直转圈」的根因
-                        CachedImage(url: attachmentURL) { image in
+                        // 1117 #5530 她：发的 gif 动图在工作室里不动——跟表情包一样打开 animates，动图用 AnimatedImageView 播
+                        CachedImage(url: attachmentURL, animates: true) { image in
                             image.resizable().scaledToFit()
                         } placeholder: {
                             ZStack { Color.black.opacity(0.06); ProgressView() }.frame(width: 220, height: 220)
