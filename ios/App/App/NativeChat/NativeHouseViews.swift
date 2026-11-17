@@ -8389,11 +8389,16 @@ private struct NativeStudioView: View {
         }
         .sheet(isPresented: Binding(get: { deliveryDraft != nil }, set: { if !$0 { deliveryDraft = nil } })) { deliveryPreview }
         .sheet(isPresented: $showPhotoPicker) {
-            PhotoLibraryPicker(maxCount: 9) { images in
-                for image in images {
-                    if let prepared = UploadImage.prepare(image) { pendingImages.append(prepared) }
+            // 1117 #5531 她：「我这就是动图。你改」——动图原文件照传（不压不转 PNG），别的照旧压
+            PhotoLibraryPicker(maxCount: 9, onPick: { _ in }, onPickWithGIF: { items in
+                for item in items {
+                    if let gif = item.gif, gif.count <= 15_000_000 {
+                        pendingImages.append((thumb: UploadImage.downscaled(item.image), data: gif, ext: "gif"))
+                    } else if let prepared = UploadImage.prepare(item.image) {
+                        pendingImages.append(prepared)
+                    }
                 }
-            }
+            })
         }
         // 1113 #5089 她：「选择文件加一个多选发送 跟发图片一样」——一次挑几份，按挑的顺序一份一份发
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in

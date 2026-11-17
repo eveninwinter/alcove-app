@@ -10228,6 +10228,9 @@ struct DocumentPicker: UIViewControllerRepresentable {
 struct PhotoLibraryPicker: UIViewControllerRepresentable {
     var maxCount: Int = 9
     var onPick: ([UIImage]) -> Void
+    /// 1117 #5531 她：发的动图到工作室成了静图——UIImage 只留第一帧。给了这个就按挑的顺序回 (图, 原 gif 数据)，
+    /// 是 gif 的把原文件一起带上，别的为 nil；不给就照旧只回 UIImage（聊天页、圆桌、表情库不受影响）
+    var onPickWithGIF: (([(image: UIImage, gif: Data?)]) -> Void)? = nil
     @Environment(\.dismiss) private var dismiss
 
     func makeUIViewController(context: Context) -> PHPickerViewController {
@@ -10250,6 +10253,10 @@ struct PhotoLibraryPicker: UIViewControllerRepresentable {
         func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
             parent.dismiss()
             guard !results.isEmpty else { return }
+            if let withGIF = parent.onPickWithGIF {
+                pickKeepingGIF(results, done: withGIF)
+                return
+            }
             var images: [UIImage] = []
             let group = DispatchGroup()
             for result in results {
@@ -10263,6 +10270,33 @@ struct PhotoLibraryPicker: UIViewControllerRepresentable {
             group.notify(queue: .main) {
                 self.parent.onPick(images)
             }
+        }
+
+        private func pickKeepingGIF(_ results: [PHPickerResult], done: @escaping ([(image: UIImage, gif: Data?)]) -> Void) {
+            var slots = [(image: UIImage, gif: Data?)?](repeating: nil, count: results.count)
+            let lock = NSLock()
+            let group = DispatchGroup()
+            for (i, result) in results.enumerated() {
+                let provider = result.itemProvider
+                if provider.hasItemConformingToTypeIdentifier(UTType.gif.identifier) {
+                    group.enter()
+                    provider.loadDataRepresentation(forTypeIdentifier: UTType.gif.identifier) { data, _ in
+                        if let data, let first = UIImage(data: data) {
+                            lock.lock(); slots[i] = (first, data); lock.unlock()
+                        }
+                        group.leave()
+                    }
+                } else if provider.canLoadObject(ofClass: UIImage.self) {
+                    group.enter()
+                    provider.loadObject(ofClass: UIImage.self) { obj, _ in
+                        if let img = obj as? UIImage {
+                            lock.lock(); slots[i] = (img, nil); lock.unlock()
+                        }
+                        group.leave()
+                    }
+                }
+            }
+            group.notify(queue: .main) { done(slots.compactMap { $0 }) }
         }
     }
 }
