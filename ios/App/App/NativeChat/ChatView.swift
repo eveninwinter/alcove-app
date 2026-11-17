@@ -277,6 +277,7 @@ struct ChatView: View {
             SceneRoomView()
                 .modifier(HouseColorScheme())
         }
+        .onReceive(NotificationCenter.default.publisher(for: .alcoveOpenScenes)) { _ in showScenes = true }
         .fullScreenCover(isPresented: $showMoveHouse) {
             MoveHouseView()
                 .modifier(HouseColorScheme())
@@ -1679,6 +1680,7 @@ struct ChatView: View {
         if m.embroideryCard != nil { return false }
         if m.locationCard != nil { return false }   // 1008 位置卡
         if m.keepsakeCard != nil { return false }   // 1114 泡泡卡
+        if m.sceneCard != nil { return false }      // 1117 那几场卡
         if m.islandSummary != nil { return false }   // 1025 晴岛小手机卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
@@ -4701,7 +4703,8 @@ struct MessageRow: View {
     /// ‼️ 新加居中的卡一定登记在这里：光在卡上写 .frame(maxWidth: .infinity) 不够，他那边右侧还留着 48 的空，卡会偏左
     /// （1015 明信片卡就是漏了这里，她：「卡片居中。到底要我说几次？」，只给你听、信封同一个坑一起补）
     private var isTarotRow: Bool {
-        msg.tarotCard != nil || msg.tarotOffer != nil
+        if msg.sceneCard != nil { return true }   // 1117 那几场卡（单独一行，下面那串别再加长）
+        return msg.tarotCard != nil || msg.tarotOffer != nil
             || msg.insideText != nil || msg.pondCard != nil || msg.memoryCard != nil || msg.reminderCard != nil
             || msg.postcardCard != nil || msg.earsCard != nil || msg.letterCard != nil
             || msg.islandSummary != nil   // 1025 晴岛小手机卡
@@ -4799,6 +4802,9 @@ struct MessageRow: View {
                     AlbumSavedMessageCard(batch: album, theme: cardTheme)
                 } else if let ks = msg.keepsakeCard {
                     KeepsakeChatMessageCard(card: ks)
+                        .frame(maxWidth: .infinity)
+                } else if let sc = msg.sceneCard {
+                    SceneChatMessageCard(card: sc)
                         .frame(maxWidth: .infinity)
                 } else if let pond = msg.pondCard {
                     if theme.isTreehouse {

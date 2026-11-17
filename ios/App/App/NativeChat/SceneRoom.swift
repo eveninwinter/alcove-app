@@ -650,6 +650,76 @@ struct SceneReadView: View {
     }
 }
 
+// MARK: 聊天页小卡：他收好一场（sex_room.py save 投的 [SCENE_CARD]）
+
+extension Notification.Name {
+    static let alcoveOpenScenes = Notification.Name("alcoveOpenScenes")
+}
+
+/// 1117 #5591 照 sexroom-preview/card1.html：一块缝了针脚的底，左边花边相纸、右边行李牌（ours｜日期｜标题｜他那句｜Nº · 句数）。点了进「那几场」
+struct SceneChatMessageCard: View {
+    let card: SceneChatCard
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+
+    var body: some View {
+        let sk: SceneInk = { _ = houseAppearance; return SceneInk(dark: AlcoveAppearance.isDark) }()
+        return Button {
+            NotificationCenter.default.post(name: .alcoveOpenScenes, object: card.no)
+        } label: {
+            ZStack(alignment: .topLeading) {
+                RoundedRectangle(cornerRadius: 16, style: .continuous).fill(sk.veil)
+                    .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(sk.dark ? 0.1 : 0.95), lineWidth: 0.8))
+                    .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
+                        .stroke(sk.stitch, style: StrokeStyle(lineWidth: 1, dash: [4, 3])).padding(6).opacity(0.75))
+                    .shadow(color: sk.shadow, radius: 12, y: 8)
+                miniPhoto(sk)
+                    .rotationEffect(.degrees(-5))
+                    .offset(x: 16, y: 18)
+                tag(sk)
+                    .frame(width: 160)
+                    .rotationEffect(.degrees(1.5))
+                    .offset(x: 90, y: 14)
+            }
+            .frame(width: 290, height: 124)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func miniPhoto(_ sk: SceneInk) -> some View {
+        Image("SceneHands").resizable().scaledToFill()
+            .frame(width: 62, height: 66).clipped()
+            .opacity(sk.artOpacity)
+            .padding(.horizontal, 6).padding(.top, 6).padding(.bottom, 16)
+            .background(ScallopEdgeShape(bump: 6, depth: 2).fill(sk.paper))
+            .shadow(color: sk.shadow, radius: 7, y: 5)
+    }
+
+    private func tag(_ sk: SceneInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text("ours").font(SanctusPageFont.script(15)).foregroundColor(sk.rose)
+                Spacer()
+                Text(SceneRoomStore.md(card.day ?? "")).font(SceneFont.mono(9.5)).foregroundColor(sk.mono)
+            }
+            Text(card.title).font(SceneFont.serif(15)).tracking(0.9).foregroundColor(sk.ink)
+                .lineLimit(1).padding(.top, 4)
+            if let n = card.note, !n.isEmpty {
+                Text(n).font(SceneFont.serif(11)).foregroundColor(sk.body).lineLimit(2).padding(.top, 3)
+            }
+            (Text(String(format: "Nº %02d · %d", card.no, card.count ?? 0)).font(SceneFont.mono(9))
+             + Text(" 句 · 收进那几场").font(SceneFont.serif(9)))
+                .foregroundColor(sk.mono).lineLimit(1).padding(.top, 5)
+        }
+        .padding(.leading, 22).padding(.trailing, 12).padding(.vertical, 10)
+        .background(TagShape(cut: 12).fill(sk.paper))
+        .overlay(alignment: .leading) {
+            Circle().fill(sk.page).frame(width: 6, height: 6)
+                .overlay(Circle().stroke(sk.stitch, lineWidth: 1)).padding(.leading, 8)
+        }
+        .shadow(color: sk.shadow, radius: 7, y: 5)
+    }
+}
+
 // MARK: 画出来的小零件
 
 /// 一根横线（给 stroke 用）

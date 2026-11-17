@@ -25,7 +25,7 @@ final class ChatStore: ObservableObject {
         if m.msgType == "pat_incoming" || m.msgType == "pat_outgoing" { return true }
         // 只看标记、不解析（每次 messages 变都要过一遍，几百条）
         let t = m.text
-        return t.contains("[MEMORY_CARD]") || t.contains("[POND_CARD]") || t.contains("[INSIDE]") || t.hasPrefix("[MUSIC_CARD]") || t.contains("[KEEPSAKE_CARD]")
+        return t.contains("[MEMORY_CARD]") || t.contains("[POND_CARD]") || t.contains("[INSIDE]") || t.hasPrefix("[MUSIC_CARD]") || t.contains("[KEEPSAKE_CARD]") || t.contains("[SCENE_CARD]")
     }
 
     /// 一段连着的他的消息（中间没有她的）里，按轮号分组；没轮号的（拍一拍行）怎么认轮见下面 1109 那段。
