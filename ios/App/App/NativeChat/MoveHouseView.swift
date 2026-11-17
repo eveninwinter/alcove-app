@@ -1005,8 +1005,11 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
             VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                     Text(w.time).font(SanctusPageFont.ital(16)).foregroundColor(ink.title)
-                    Text(roam ? "漫游 · \(w.minutes) MIN" : (w.kind.isEmpty ? "找你" : w.kind))   // 1117 她：醒了没发消息那次后台给「看了一眼」.font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
+                    // 1117 她：醒了没发消息那次后台给「看了一眼」，不再一律写「找你」
+                    Text(roam ? "漫游 · \(w.minutes) MIN" : (w.kind.isEmpty ? "找你" : w.kind)).font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
                 }
+                // 1117 #5577 她：有图就在卡片右边留一个小方块显示图片（点开看大图，几张就在角上写 +N）
+                HStack(alignment: .top, spacing: 12) {
                 VStack(alignment: .leading, spacing: 8) {
                     if roam {
                         Text(w.title.isEmpty ? "醒来一次" : w.title)
@@ -1021,20 +1024,6 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 9)
                             .overlay(alignment: .leading) { Rectangle().fill(accent.opacity(0.5)).frame(width: 1.5) }
-                    }
-                    if !w.images.isEmpty {
-                        ScrollView(.horizontal, showsIndicators: false) {
-                            HStack(spacing: 6) {
-                                ForEach(w.images, id: \.self) { raw in
-                                    let u = AlcoveAPI.attachmentURL(raw)
-                                    CachedImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { Rectangle().fill(accent.opacity(0.12)) }
-                                        .frame(width: 92, height: 92)
-                                        .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-                                        .contentShape(Rectangle())
-                                        .onTapGesture { viewing = u }
-                                }
-                            }
-                        }
                     }
                     if let link = w.links.first {   // 1116 #5467 一条只要一张卡
                         LinkPreviewCard(url: link, theme: .named(ink.dark ? "imessage-dark" : "imessage"), isUser: false)
@@ -1055,6 +1044,23 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                             }
                         }
                     }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                if let raw = w.images.first {
+                    let u = AlcoveAPI.attachmentURL(raw)
+                    CachedImage(url: u) { img in img.resizable().scaledToFill() } placeholder: { Rectangle().fill(accent.opacity(0.12)) }
+                        .frame(width: 64, height: 64)
+                        .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+                        .overlay(alignment: .bottomTrailing) {
+                            if w.images.count > 1 {
+                                Text("+\(w.images.count - 1)").font(.system(size: 9, weight: .medium)).foregroundColor(.white)
+                                    .padding(.horizontal, 5).padding(.vertical, 1)
+                                    .background(Capsule().fill(Color.black.opacity(0.45))).padding(4)
+                            }
+                        }
+                        .contentShape(Rectangle())
+                        .onTapGesture { viewing = u }
+                }
                 }
                 .padding(.horizontal, roam ? 16 : 15).padding(.vertical, roam ? 14 : 11)
                 .frame(maxWidth: .infinity, alignment: .leading)
