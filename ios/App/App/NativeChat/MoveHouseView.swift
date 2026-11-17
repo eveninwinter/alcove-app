@@ -1005,7 +1005,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
             VStack(alignment: .leading, spacing: 7) {
                 HStack(alignment: .firstTextBaseline, spacing: 9) {
                     Text(w.time).font(SanctusPageFont.ital(16)).foregroundColor(ink.title)
-                    Text(roam ? "漫游 · \(w.minutes) MIN" : "找你").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
+                    Text(roam ? "漫游 · \(w.minutes) MIN" : (w.kind.isEmpty ? "找你" : w.kind))   // 1117 她：醒了没发消息那次后台给「看了一眼」.font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     if roam {
