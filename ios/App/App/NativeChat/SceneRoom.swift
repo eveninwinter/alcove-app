@@ -666,32 +666,36 @@ struct SceneChatMessageCard: View {
         return Button {
             NotificationCenter.default.post(name: .alcoveOpenScenes, object: card.no)
         } label: {
+            // #5592 她：里面歪的卡太不明显 → 底托缩小，相纸和行李牌更歪、从底托上沿和左右两边伸出去（card2.html）
             ZStack(alignment: .topLeading) {
                 RoundedRectangle(cornerRadius: 16, style: .continuous).fill(sk.veil)
                     .overlay(RoundedRectangle(cornerRadius: 16, style: .continuous).stroke(Color.white.opacity(sk.dark ? 0.1 : 0.95), lineWidth: 0.8))
                     .overlay(RoundedRectangle(cornerRadius: 11, style: .continuous)
                         .stroke(sk.stitch, style: StrokeStyle(lineWidth: 1, dash: [4, 3])).padding(6).opacity(0.75))
                     .shadow(color: sk.shadow, radius: 12, y: 8)
+                    .frame(width: 262, height: 122)
+                    .offset(x: 14, y: 20)
                 miniPhoto(sk)
-                    .rotationEffect(.degrees(-5))
-                    .offset(x: 16, y: 18)
+                    .rotationEffect(.degrees(-8))
+                    .offset(x: 4, y: 6)
                 tag(sk)
-                    .frame(width: 160)
-                    .rotationEffect(.degrees(1.5))
-                    .offset(x: 90, y: 14)
+                    .frame(width: 178)
+                    .rotationEffect(.degrees(4))
+                    .offset(x: 92, y: 8)
             }
-            .frame(width: 290, height: 124)
+            .frame(width: 290, height: 150, alignment: .topLeading)
         }
         .buttonStyle(.plain)
     }
 
     private func miniPhoto(_ sk: SceneInk) -> some View {
-        Image("SceneHands").resizable().scaledToFill()
-            .frame(width: 62, height: 66).clipped()
+        Image("SceneFlower")   // #5593 她：图片换成花的（/root/rhysel/flower_6.png 淡紫小花＋蝴蝶结）
+            .resizable().scaledToFill()
+            .frame(width: 70, height: 76).clipped()
             .opacity(sk.artOpacity)
-            .padding(.horizontal, 6).padding(.top, 6).padding(.bottom, 16)
+            .padding(.horizontal, 7).padding(.top, 7).padding(.bottom, 18)
             .background(ScallopEdgeShape(bump: 6, depth: 2).fill(sk.paper))
-            .shadow(color: sk.shadow, radius: 7, y: 5)
+            .shadow(color: Color.black.opacity(sk.dark ? 0.4 : 0.16), radius: 9, y: 6)
     }
 
     private func tag(_ sk: SceneInk) -> some View {
@@ -710,13 +714,13 @@ struct SceneChatMessageCard: View {
              + Text(" 句 · 收进那几场").font(SceneFont.serif(9)))
                 .foregroundColor(sk.mono).lineLimit(1).padding(.top, 5)
         }
-        .padding(.leading, 22).padding(.trailing, 12).padding(.vertical, 10)
+        .padding(.leading, 24).padding(.trailing, 13).padding(.vertical, 11)
         .background(TagShape(cut: 12).fill(sk.paper))
         .overlay(alignment: .leading) {
             Circle().fill(sk.page).frame(width: 6, height: 6)
                 .overlay(Circle().stroke(sk.stitch, lineWidth: 1)).padding(.leading, 8)
         }
-        .shadow(color: sk.shadow, radius: 7, y: 5)
+        .shadow(color: Color.black.opacity(sk.dark ? 0.4 : 0.14), radius: 9, y: 6)
     }
 }
 
