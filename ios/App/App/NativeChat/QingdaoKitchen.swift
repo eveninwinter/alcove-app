@@ -330,12 +330,12 @@ struct KitchenRibbon: View {
     var fill: Color = KitchenInk.pink
     var body: some View {
         HStack(spacing: 4) {
-            KitchenPixelHeart(on: true, outline: .white, fillColor: .white).frame(width: 11, height: 10)
-            Text(text).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(.white)
+            KitchenPixelHeart(on: true, outline: .white, fillColor: .white).frame(width: 9, height: 8)
+            Text(text).font(.system(size: 10.5, weight: .heavy, design: .rounded)).foregroundColor(.white)
         }
-        .padding(.leading, 8).padding(.trailing, 10).padding(.vertical, 3)
+        .padding(.leading, 6).padding(.trailing, 8).padding(.vertical, 1.5)
         .background(Capsule().fill(fill))
-        .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2))
+        .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 1.5))
     }
 }
 
@@ -365,9 +365,9 @@ struct KitchenPixelBox<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         content()
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(fill))
-            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 3))
-            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(KitchenInk.plum).offset(y: 3))
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(fill))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2))
+            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
     }
 }
 
@@ -380,13 +380,13 @@ struct KitchenPixelButton: View {
     var body: some View {
         Button(action: action) {
             Text(title)
-                .font(.system(size: big ? 17 : 14, weight: .bold, design: .rounded))
+                .font(.system(size: big ? 13 : 12, weight: .heavy, design: .rounded))
                 .foregroundColor(textColor)
-                .padding(.horizontal, big ? 18 : 12).padding(.vertical, big ? 11 : 8)
+                .padding(.horizontal, big ? 16 : 11).padding(.vertical, big ? 6 : 5)
                 .frame(maxWidth: big ? .infinity : nil)
                 .background(Capsule().fill(fill))
-                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 3))
-                .background(Capsule().fill(KitchenInk.plum).offset(y: 3))
+                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2))
+                .background(Capsule().fill(KitchenInk.plum).offset(y: 2))
         }
         .buttonStyle(.plain)
     }
@@ -500,16 +500,16 @@ struct KitchenSplitView: View {
         return ZStack(alignment: .top) {
             KitchenWebView(path: watchHim ? (store.place == "bar" ? "/farm/bar.html" : "/farm/kitchen.html") : "/farm/?mini=1")
                 .frame(width: w, height: w * 9 / 16)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(KitchenInk.plum, lineWidth: 3))
+                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2))
             HStack {
                 Button { store.closeSplit() } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .heavy))
+                        .font(.system(size: 12, weight: .heavy))
                         .foregroundColor(KitchenInk.plum)
-                        .frame(width: 40, height: 32)
-                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white))
-                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
+                        .frame(width: 32, height: 26)
+                        .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2))
                 }
                 .buttonStyle(.plain)
                 Spacer()
@@ -519,7 +519,7 @@ struct KitchenSplitView: View {
                 }
                 .background(Capsule().fill(Color.white))
                 .clipShape(Capsule())
-                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2.5))
+                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2))
             }
             .padding(10)
         }
@@ -529,9 +529,9 @@ struct KitchenSplitView: View {
     private func camChip(_ t: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
             Text(t)
-                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .font(.system(size: 11.5, weight: .heavy, design: .rounded))
                 .foregroundColor(on ? .white : KitchenInk.plum)
-                .padding(.horizontal, 14).padding(.vertical, 7)
+                .padding(.horizontal, 11).padding(.vertical, 5)
                 .background(on ? Color(red: 1.0, green: 0.77, blue: 0.84) : Color.clear)
         }
         .buttonStyle(.plain)
@@ -539,9 +539,9 @@ struct KitchenSplitView: View {
 
     // 下半块：锅、该你了、留给你的、冰箱、两个按钮（照内容高，太高就在里面滚），小手机铺满剩下的
     private func panel(height: CGFloat) -> some View {
-        VStack(spacing: 10) {
+        VStack(spacing: 8) {
             ScrollView {
-                VStack(spacing: 12) {
+                VStack(spacing: 9) {
                     if store.place == "bar", let g = store.glass {
                         BarPanel(glass: g)
                     } else {
@@ -555,7 +555,7 @@ struct KitchenSplitView: View {
                         KitchenPixelButton(title: "酒柜", fill: KitchenInk.pinkSoft, textColor: KitchenInk.plum, big: true) { showCabinet = true }
                     }
                 }
-                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 6)
+                .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
                 .background(GeometryReader { g in Color.clear.preference(key: KitchenCardsHeight.self, value: g.size.height) })
             }
             .frame(height: min(cardsHeight, max(160, height - 230)))
@@ -574,22 +574,22 @@ struct KitchenSplitView: View {
                     if let p = store.pot {
                         TimelineView(.periodic(from: .now, by: 1)) { _ in
                             Text(store.statusLine(p))
-                                .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
+                                .font(.system(size: 11, weight: .heavy, design: .rounded).monospacedDigit())
                                 .foregroundColor(KitchenInk.plum)
-                                .padding(.horizontal, 10).padding(.vertical, 2)
+                                .padding(.horizontal, 8).padding(.vertical, 1)
                                 .background(Capsule().fill(Color(red: 1.0, green: 0.95, blue: 0.965)))
-                                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2))
+                                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 1.5))
                         }
                     }
                     if store.speed > 1 {
                         Text("\(store.speed) 倍").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                     }
                     Spacer()
-                    Text("✿").font(.system(size: 16)).foregroundColor(KitchenInk.pink)
+                    Text("✿").font(.system(size: 12)).foregroundColor(KitchenInk.pink)
                 }
                 if let p = store.pot {
                     Text(p.dish)
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .font(.system(size: 16, weight: .heavy, design: .rounded))
                         .foregroundColor(KitchenInk.ink)
                         .onLongPressGesture { showSpeed = true }
                     stepBar(p)
@@ -600,7 +600,7 @@ struct KitchenSplitView: View {
                         .onLongPressGesture { showSpeed = true }
                 }
             }
-            .padding(14)
+            .padding(.horizontal, 11).padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -636,7 +636,7 @@ struct KitchenSplitView: View {
                         KitchenPixelButton(title: "吃") { Task { await store.act(["do": "eat"]) } }
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 11).padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if let t = p.task, !p.auto {
@@ -646,7 +646,7 @@ struct KitchenSplitView: View {
                     switch t {
                     case "hand": handTask(p)
                     case "taste":
-                        Text("尝一口").font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
+                        Text("尝一口").font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
                         HStack(spacing: 10) {
                             KitchenPixelButton(title: "淡了", fill: KitchenInk.mint, textColor: KitchenInk.plum) { Task { await store.act(["do": "taste", "v": "淡"]) } }
                             KitchenPixelButton(title: "刚好") { Task { await store.act(["do": "taste", "v": "好"]) } }
@@ -656,7 +656,7 @@ struct KitchenSplitView: View {
                         KitchenPixelButton(title: "摆好碗筷", big: true) { Task { await store.act(["do": "bowls"]) } }
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 11).padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -666,19 +666,19 @@ struct KitchenSplitView: View {
     private func handTask(_ p: KitchenPot) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("递\(p.ask) ×\(p.askN)")
-                .font(.system(size: 16, weight: .bold, design: .rounded))
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
                 .foregroundColor(KitchenInk.ink)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 5)], spacing: 6) {
                 ForEach(store.fridge.filter { $0.fresh != "bad" }) { b in
                     Button { Task { await store.act(["do": "hand", "batch": b.id]) } } label: {
                         VStack(spacing: 3) {
-                            Text(b.name).font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
-                            Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                            Text(b.name).font(.system(size: 11.5, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                            Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 9, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                         }
-                        .frame(maxWidth: .infinity).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.fresh(b.fresh)))
-                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
-                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
+                        .frame(maxWidth: .infinity).padding(.vertical, 4)
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(KitchenInk.fresh(b.fresh)))
+                        .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(KitchenInk.plum, lineWidth: 1.5))
+                        .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(KitchenInk.plum).offset(y: 1.5))
                     }
                     .buttonStyle(.plain)
                 }
@@ -694,21 +694,21 @@ struct KitchenSplitView: View {
                 if store.fridge.isEmpty {
                     Text("空的").font(.system(size: 14, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                 } else {
-                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 5)], spacing: 6) {
                         ForEach(store.fridge) { b in
                             VStack(spacing: 3) {
-                                Text(b.name).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
-                                Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                                Text(b.name).font(.system(size: 11.5, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                                Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 9, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                             }
-                            .frame(maxWidth: .infinity).padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.fresh(b.fresh)))
-                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
+                            .frame(maxWidth: .infinity).padding(.vertical, 4)
+                            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(KitchenInk.fresh(b.fresh)))
+                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(KitchenInk.plum, lineWidth: 1.5))
+                            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(KitchenInk.plum).offset(y: 1.5))
                         }
                     }
                 }
             }
-            .padding(14)
+            .padding(.horizontal, 11).padding(.vertical, 9)
             .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
@@ -734,18 +734,18 @@ struct KitchenSplitView: View {
     private var chatBox: some View {
         VStack(spacing: 0) {
             HStack(spacing: 8) {
-                KitchenAvatar(name: "avatar_cj").frame(width: 28, height: 28)
-                Text("陈璟").font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
+                KitchenAvatar(name: "avatar_cj").frame(width: 21, height: 21)
+                Text("陈璟").font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
                 Spacer()
                 Text(store.place == "bar" ? "在吧台" : (store.pot != nil ? "在厨房" : ""))
-                    .font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                    .font(.system(size: 9.5, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
             }
-            .padding(.horizontal, 10).padding(.vertical, 6)
+            .padding(.horizontal, 9).padding(.vertical, 4)
             .background(Color(red: 1.0, green: 0.933, blue: 0.953))
-            Rectangle().fill(KitchenInk.plum).frame(height: 3)
+            Rectangle().fill(KitchenInk.plum).frame(height: 2)
             ScrollViewReader { proxy in
                 ScrollView {
-                    VStack(spacing: 8) {
+                    VStack(spacing: 6) {
                         ForEach(Array(chat.enumerated()), id: \.offset) { i, m in
                             chatRow(m.role == "user", m.text).id(i)
                         }
@@ -758,42 +758,42 @@ struct KitchenSplitView: View {
             }
             .frame(maxHeight: .infinity)
             .background(Color.white)
-            Rectangle().fill(KitchenInk.plum).frame(height: 3)
+            Rectangle().fill(KitchenInk.plum).frame(height: 2)
             HStack(spacing: 8) {
                 TextField("跟他说…", text: $draft)
-                    .font(.system(size: 14, design: .rounded))
-                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .font(.system(size: 12.5, design: .rounded))
+                    .padding(.horizontal, 11).padding(.vertical, 5)
                     .background(Capsule().fill(Color.white))
-                    .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2.5))
+                    .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 1.5))
                     .submitLabel(.send)
                     .onSubmit(send)
                 Button(action: send) {
                     AsyncImage(url: AlcoveAPI.fullURL("/farm/ui/phone/btn_send.png")) { img in
                         img.interpolation(.none).resizable().scaledToFit()
                     } placeholder: { Circle().fill(KitchenInk.pink) }
-                    .frame(width: 36, height: 36)
+                    .frame(width: 28, height: 28)
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 10).padding(.vertical, 7)
+            .padding(.horizontal, 8).padding(.vertical, 5)
             .background(KitchenInk.check1)
         }
-        .frame(minHeight: 200, maxHeight: .infinity)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(KitchenInk.plum, lineWidth: 3))
-        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(KitchenInk.plum).offset(y: 3))
+        .frame(minHeight: 180, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2))
+        .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
     }
 
     private func chatRow(_ mine: Bool, _ text: String) -> some View {
         HStack(alignment: .bottom, spacing: 6) {
-            if mine { Spacer(minLength: 40) } else { KitchenAvatar(name: "avatar_cj").frame(width: 26, height: 26) }
+            if mine { Spacer(minLength: 40) } else { KitchenAvatar(name: "avatar_cj").frame(width: 21, height: 21) }
             Text(text)
-                .font(.system(size: 13.5, design: .rounded))
+                .font(.system(size: 12, design: .rounded))
                 .foregroundColor(KitchenInk.ink)
-                .padding(.horizontal, 11).padding(.vertical, 7)
-                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(mine ? Color.white : KitchenInk.blush))
-                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
-            if mine { KitchenAvatar(name: "avatar_me").frame(width: 26, height: 26) } else { Spacer(minLength: 40) }
+                .padding(.horizontal, 8).padding(.vertical, 4)
+                .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(mine ? Color.white : KitchenInk.blush))
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 1.5))
+            if mine { KitchenAvatar(name: "avatar_me").frame(width: 21, height: 21) } else { Spacer(minLength: 40) }
         }
     }
 
@@ -852,8 +852,8 @@ struct KitchenHeartSteps: View {
         HStack(spacing: 4) {
             ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
                 VStack(spacing: 3) {
-                    KitchenPixelHeart(on: done || i <= step).frame(width: 21, height: 18)
-                    Text(s).font(.system(size: 10.5, weight: i == step && !done ? .heavy : .regular, design: .rounded))
+                    KitchenPixelHeart(on: done || i <= step).frame(width: 15, height: 13)
+                    Text(s).font(.system(size: 9.5, weight: i == step && !done ? .heavy : .regular, design: .rounded))
                         .foregroundColor(done || i <= step ? KitchenInk.ink : KitchenInk.inkSoft)
                         .lineLimit(1).minimumScaleFactor(0.7)
                 }
@@ -937,12 +937,12 @@ struct BarPanel: View {
                 VStack(alignment: .leading, spacing: 8) {
                     KitchenRibbon(text: "吧台", fill: Color(red: 0.80, green: 0.74, blue: 0.95))
                     Text(glass.want == "自己调" ? "他自己配的一杯" : glass.want)
-                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .font(.system(size: 16, weight: .heavy, design: .rounded))
                         .foregroundColor(KitchenInk.ink)
                         .onLongPressGesture { showSpeed = true }
                     KitchenHeartSteps(steps: glass.steps, step: glass.step, done: glass.done)
                 }
-                .padding(14)
+                .padding(.horizontal, 11).padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
             taskView
@@ -998,7 +998,7 @@ struct BarPanel: View {
                         KitchenPixelButton(title: "喝掉", fill: KitchenInk.check2, textColor: KitchenInk.plum) { Task { await store.actBar(["do": "drink"]) } }
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 11).padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         } else if glass.stepKey == "shake" {
@@ -1016,7 +1016,7 @@ struct BarPanel: View {
                     default: choices("装饰", store.garnishes, kind: "garnish")
                     }
                 }
-                .padding(14)
+                .padding(.horizontal, 11).padding(.vertical, 9)
                 .frame(maxWidth: .infinity, alignment: .leading)
             }
         }
@@ -1024,16 +1024,16 @@ struct BarPanel: View {
 
     private func choices(_ title: String, _ items: [String], kind: String) -> some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(title).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 8)], spacing: 8) {
+            Text(title).font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 62), spacing: 5)], spacing: 6) {
                 ForEach(items, id: \.self) { v in
                     Button { Task { await store.actBar(["do": kind, "v": v]) } } label: {
-                        Text(v).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
+                        Text(v).font(.system(size: 11.5, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
                             .lineLimit(1).minimumScaleFactor(0.7)
-                            .frame(maxWidth: .infinity).padding(.vertical, 9)
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white))
-                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
-                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
+                            .frame(maxWidth: .infinity).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(Color.white))
+                            .overlay(RoundedRectangle(cornerRadius: 7, style: .continuous).stroke(KitchenInk.plum, lineWidth: 1.5))
+                            .background(RoundedRectangle(cornerRadius: 7, style: .continuous).fill(KitchenInk.plum).offset(y: 1.5))
                     }
                     .buttonStyle(.plain)
                 }
