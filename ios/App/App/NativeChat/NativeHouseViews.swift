@@ -17557,20 +17557,23 @@ struct FarmEventLine: View {
 
 // MARK: - 房间（1106 #4850–4852 她：「侧边栏加一个房间入口 就是让我看陈璟写的这些 要有时间线和进度显示」）
 // 她挑的 A：顶上那段屋里的样子，下面桌上 5 张卡，一排小圆点＝他走了几步，点卡原地展开这件事的时间线；
-// 底下排队的、最近来来去去的（记下／做了一点／做完／放下／30 天没动扔掉）。只读，数据走 /api/nianlun/room。
+// 底下排队的、最近来来去去的（记下／做了一点／做完／放下／30 天没动扔掉）。数据走 /api/nianlun/room。
+// 1118 #5672 她：「房间页面做我可以删除编辑 修改之后要同步后端」——右上角「编辑」，每件、每一步、排队的、最近的后面冒改和删，
+// 走 /api/nianlun/edit|delete（年轮 18020 her_edit / her_delete；surprise 那几件她本来就看不见，也碰不到）。
 // 样子照 sanctus-style：冷白纸、银灰字、花体只写英文小注、宋体中文、细线，不用颜色。
 
 @MainActor
 private final class DeskRoomModel: ObservableObject {
-    struct Step: Identifiable { let id = UUID(); let at: String; let note: String }
+    struct Step: Identifiable { let id: String; let at: String; let note: String }
+    struct Queued: Identifiable { let id: String; let text: String }
     struct Item: Identifiable {
         let id: String; let text: String; let steps: Int; let days: Int; let deskDays: Int
         let added: String; let line: String; let timeline: [Step]
     }
-    struct Event: Identifiable { let id = UUID(); let at: String; let kind: String; let text: String; let note: String }
+    struct Event: Identifiable { let id: String; let at: String; let kind: String; let text: String; let note: String }
     @Published var room: String?
     @Published var desk: [Item] = []
-    @Published var queued: [String] = []
+    @Published var queued: [Queued] = []
     @Published var events: [Event] = []
     @Published var loading = true
     @Published var failed = false
@@ -17584,11 +17587,31 @@ private final class DeskRoomModel: ObservableObject {
         desk = o.array("desk").map { d in
             Item(id: d.string("id"), text: d.string("text"), steps: d.int("steps"), days: d.int("days"),
                  deskDays: d.int("desk_days"), added: d.string("added"), line: d.string("line"),
-                 timeline: d.array("timeline").map { Step(at: $0.string("at"), note: $0.string("note")) })
+                 timeline: d.array("timeline").map { Step(id: $0.string("id"), at: $0.string("at"), note: $0.string("note")) })
         }
-        queued = o.array("queued").map { $0.string("text") }
-        events = o.array("events").map { Event(at: $0.string("at"), kind: $0.string("kind"), text: $0.string("text"), note: $0.string("note")) }
+        queued = o.array("queued").map { Queued(id: $0.string("id"), text: $0.string("text")) }
+        events = o.array("events").map { Event(id: $0.string("id"), at: $0.string("at"), kind: $0.string("kind"), text: $0.string("text"), note: $0.string("note")) }
     }
+
+    /// kind：desire（一件事）/ step（时间线里的一步）/ event（最近里的一条，改的是破折号后面那句）
+    func edit(kind: String, id: String, text: String) async -> Bool {
+        let o = try? await NativeHouseAPI.object("/api/nianlun/edit", method: "POST", body: ["kind": kind, "id": id, "text": text])
+        await load()
+        return o?["ok"] as? Bool == true
+    }
+
+    func delete(kind: String, id: String) async -> Bool {
+        let o = try? await NativeHouseAPI.object("/api/nianlun/delete", method: "POST", body: ["kind": kind, "id": id])
+        await load()
+        return o?["ok"] as? Bool == true
+    }
+}
+
+private struct DeskEditTarget: Identifiable {
+    let kind: String
+    let id: String
+    let title: String
+    var text: String
 }
 
 struct DeskRoomView: View {
@@ -17596,6 +17619,10 @@ struct DeskRoomView: View {
     @StateObject private var m = DeskRoomModel()
     @State private var open: Set<String> = []
     @State private var allEvents = false
+    @State private var editingMode = false
+    @State private var editTarget: DeskEditTarget?
+    @State private var deleteTarget: DeskEditTarget?
+    @State private var failNote = ""
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -17638,9 +17665,58 @@ struct DeskRoomView: View {
             }
             SanctusBackButton(color: ink.link) { dismiss() }
                 .padding(.top, safeTop)
+            if !m.loading && !m.failed {
+                Button(editingMode ? "完成" : "编辑") {
+                    withAnimation(.easeInOut(duration: 0.18)) { editingMode.toggle() }
+                }
+                .font(SanctusPageFont.cn(12)).foregroundColor(ink.link).buttonStyle(.plain)
+                .frame(height: 44)
+                .padding(.trailing, 20)
+                .padding(.top, safeTop)
+                .frame(maxWidth: .infinity, alignment: .trailing)
+            }
         }
         .environment(\.sanctusInk, ink)
         .task { await m.load() }
+        .sheet(item: $editTarget) { t in
+            DeskEditSheet(target: t) { newText in
+                Task {
+                    let ok = await m.edit(kind: t.kind, id: t.id, text: newText)
+                    if !ok { failNote = "没改成，再试一次" }
+                }
+            }
+        }
+        .confirmationDialog("删掉这一条？", isPresented: Binding(get: { deleteTarget != nil }, set: { if !$0 { deleteTarget = nil } }),
+                            titleVisibility: .visible) {
+            Button("删除", role: .destructive) {
+                if let t = deleteTarget {
+                    Task {
+                        let ok = await m.delete(kind: t.kind, id: t.id)
+                        if !ok { failNote = "没删成，再试一次" }
+                    }
+                }
+                deleteTarget = nil
+            }
+            Button("取消", role: .cancel) { deleteTarget = nil }
+        } message: {
+            Text(deleteTarget?.kind == "desire" ? "这件事走过的每一步也一起删掉" : (deleteTarget?.title ?? ""))
+        }
+        .alert(failNote, isPresented: Binding(get: { !failNote.isEmpty }, set: { if !$0 { failNote = "" } })) {
+            Button("好", role: .cancel) { failNote = "" }
+        }
+    }
+
+    /// 编辑模式下每一条后面的两颗小图标：改、删
+    private func editIcons(_ ink: SanctusPageInk, edit: (() -> Void)?, delete: @escaping () -> Void) -> some View {
+        HStack(spacing: 14) {
+            if let edit {
+                Button(action: edit) { Image(systemName: "pencil").font(.system(size: 12, weight: .light)) }
+                    .buttonStyle(.plain)
+            }
+            Button(action: delete) { Image(systemName: "trash").font(.system(size: 12, weight: .light)) }
+                .buttonStyle(.plain)
+        }
+        .foregroundColor(ink.link)
     }
 
     private func header(_ ink: SanctusPageInk) -> some View {
@@ -17691,18 +17767,17 @@ struct DeskRoomView: View {
 
     private func deskCard(_ no: Int, _ item: DeskRoomModel.Item, _ ink: SanctusPageInk) -> some View {
         let expanded = open.contains(item.id)
-        return Button {
-            withAnimation(.easeInOut(duration: 0.22)) {
-                if expanded { open.remove(item.id) } else { open.insert(item.id) }
-            }
-        } label: {
-            VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
                     Text("\(no)").font(SanctusPageFont.corm(22)).foregroundColor(ink.sub)
                     Text(item.text).font(SanctusPageFont.cn(13)).foregroundColor(ink.body).lineSpacing(5)
                         .lineLimit(expanded ? nil : 3)
                         .multilineTextAlignment(.leading)
                         .frame(maxWidth: .infinity, alignment: .leading)
+                    if editingMode {
+                        editIcons(ink, edit: { editTarget = DeskEditTarget(kind: "desire", id: item.id, title: "改这件事", text: item.text) },
+                                  delete: { deleteTarget = DeskEditTarget(kind: "desire", id: item.id, title: item.text, text: item.text) })
+                    }
                 }
                 HStack(spacing: 10) {
                     dots(item.steps, ink)
@@ -17711,13 +17786,16 @@ struct DeskRoomView: View {
                         .rotationEffect(.degrees(expanded ? 180 : 0))
                 }
                 Text(statusText(item)).font(SanctusPageFont.cn(10)).tracking(0.6).foregroundColor(ink.sub)
-                if expanded { timeline(item, ink) }
+                if expanded || editingMode { timeline(item, ink) }
             }
             .padding(.horizontal, 18).padding(.vertical, 15)
             .frame(maxWidth: .infinity, alignment: .leading)
             .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
+            .onTapGesture {
+                withAnimation(.easeInOut(duration: 0.22)) {
+                    if expanded { open.remove(item.id) } else { open.insert(item.id) }
+                }
+            }
         .sanctusCard(ink)
     }
 
@@ -17735,12 +17813,15 @@ struct DeskRoomView: View {
             SanctusHairline().padding(.bottom, 10)
             timelineRow(item.added, "记下这件事", ink, last: item.timeline.isEmpty)
             ForEach(Array(item.timeline.enumerated()), id: \.element.id) { k, s in
-                timelineRow(s.at, s.note, ink, last: k == item.timeline.count - 1)
+                timelineRow(s.at, s.note, ink, last: k == item.timeline.count - 1,
+                            onEdit: { editTarget = DeskEditTarget(kind: "step", id: s.id, title: "改这一步", text: s.note) },
+                            onDelete: { deleteTarget = DeskEditTarget(kind: "step", id: s.id, title: s.note, text: s.note) })
             }
         }
     }
 
-    private func timelineRow(_ at: String, _ note: String, _ ink: SanctusPageInk, last: Bool) -> some View {
+    private func timelineRow(_ at: String, _ note: String, _ ink: SanctusPageInk, last: Bool,
+                             onEdit: (() -> Void)? = nil, onDelete: (() -> Void)? = nil) -> some View {
         HStack(alignment: .top, spacing: 10) {
             VStack(spacing: 0) {
                 Circle().stroke(ink.sub, lineWidth: 0.7).frame(width: 5, height: 5).padding(.top, 5)
@@ -17753,14 +17834,25 @@ struct DeskRoomView: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(.bottom, last ? 0 : 10)
+            if editingMode, let onDelete {
+                Spacer(minLength: 6)
+                editIcons(ink, edit: onEdit, delete: onDelete).padding(.top, 2)
+            }
         }
     }
 
     private func queueCard(_ ink: SanctusPageInk) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("WAITING · 排队 \(m.queued.count) 件").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(ink.sub)
-            ForEach(Array(m.queued.enumerated()), id: \.offset) { _, t in
-                Text("· " + t).font(SanctusPageFont.cn(12)).foregroundColor(ink.body).lineLimit(2)
+            ForEach(m.queued) { q in
+                HStack(alignment: .top, spacing: 8) {
+                    Text("· " + q.text).font(SanctusPageFont.cn(12)).foregroundColor(ink.body).lineLimit(editingMode ? nil : 2)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                    if editingMode {
+                        editIcons(ink, edit: { editTarget = DeskEditTarget(kind: "desire", id: q.id, title: "改这件事", text: q.text) },
+                                  delete: { deleteTarget = DeskEditTarget(kind: "desire", id: q.id, title: q.text, text: q.text) })
+                    }
+                }
             }
             Text("桌上做完或放下一件，排队的才上来").font(SanctusPageFont.ital(10)).foregroundColor(ink.sub)
         }
@@ -17796,12 +17888,58 @@ struct DeskRoomView: View {
             }
             .padding(.bottom, 10)
             ForEach(Array(list.enumerated()), id: \.element.id) { k, e in
-                timelineRow(e.at, verb(e.kind) + "：" + e.text + (e.note.isEmpty ? "" : "——" + e.note), ink, last: k == list.count - 1)
+                timelineRow(e.at, verb(e.kind) + "：" + e.text + (e.note.isEmpty ? "" : "——" + e.note), ink, last: k == list.count - 1,
+                            onEdit: e.note.isEmpty ? nil : { editTarget = DeskEditTarget(kind: "event", id: e.id, title: "改这一句", text: e.note) },
+                            onDelete: { deleteTarget = DeskEditTarget(kind: "event", id: e.id, title: e.text, text: e.text) })
             }
         }
         .padding(.horizontal, 18).padding(.vertical, 15)
         .frame(maxWidth: .infinity, alignment: .leading)
         .sanctusCard(ink)
+    }
+}
+
+
+/// 房间页改字的那一页：大一点的输入框（一件事经常是一长句）
+private struct DeskEditSheet: View {
+    let target: DeskEditTarget
+    let onSave: (String) -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var text = ""
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+
+    var body: some View {
+        let ink = self.ink
+        VStack(alignment: .leading, spacing: 14) {
+            HStack {
+                Button("取消") { dismiss() }.foregroundColor(ink.sub)
+                Spacer()
+                Text(target.title).font(SanctusPageFont.cn(13)).foregroundColor(ink.title)
+                Spacer()
+                Button("保存") {
+                    let t = text.trimmingCharacters(in: .whitespacesAndNewlines)
+                    if !t.isEmpty { onSave(t) }
+                    dismiss()
+                }
+                .foregroundColor(ink.link)
+                .disabled(text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+            }
+            .font(SanctusPageFont.cn(12.5))
+            .buttonStyle(.plain)
+            TextEditor(text: $text)
+                .font(SanctusPageFont.cn(13))
+                .foregroundColor(ink.body)
+                .scrollContentBackground(.hidden)
+                .padding(10)
+                .frame(minHeight: 160)
+                .sanctusCard(ink)
+            Spacer()
+        }
+        .padding(20)
+        .background(ink.page.ignoresSafeArea())
+        .onAppear { text = target.text }
+        .presentationDetents([.medium, .large])
     }
 }
 
