@@ -1681,6 +1681,7 @@ struct ChatView: View {
         if m.locationCard != nil { return false }   // 1008 位置卡
         if m.keepsakeCard != nil { return false }   // 1114 泡泡卡
         if m.sceneCard != nil { return false }      // 1117 那几场卡
+        if m.kitchenCard != nil { return false }    // 1118 晴岛厨房卡
         if m.islandSummary != nil { return false }   // 1025 晴岛小手机卡
         if m.isSticker || m.isAudio || m.isBareLink { return false }
         return !m.displayText.isEmpty
@@ -4704,6 +4705,7 @@ struct MessageRow: View {
     /// （1015 明信片卡就是漏了这里，她：「卡片居中。到底要我说几次？」，只给你听、信封同一个坑一起补）
     private var isTarotRow: Bool {
         if msg.sceneCard != nil { return true }   // 1117 那几场卡（单独一行，下面那串别再加长）
+        if msg.kitchenCard != nil { return true }   // 1118 晴岛厨房卡
         return msg.tarotCard != nil || msg.tarotOffer != nil
             || msg.insideText != nil || msg.pondCard != nil || msg.memoryCard != nil || msg.reminderCard != nil
             || msg.postcardCard != nil || msg.earsCard != nil || msg.letterCard != nil
@@ -4805,6 +4807,9 @@ struct MessageRow: View {
                         .frame(maxWidth: .infinity)
                 } else if let sc = msg.sceneCard {
                     SceneChatMessageCard(card: sc)
+                        .frame(maxWidth: .infinity)
+                } else if let kc = msg.kitchenCard {
+                    KitchenChatMessageCard(card: kc)   // 1118 #5667 晴岛厨房：他开锅那张
                         .frame(maxWidth: .infinity)
                 } else if let pond = msg.pondCard {
                     if theme.isTreehouse {

@@ -199,6 +199,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(SceneChatCard.self, from: data)
     }
 
+    /// 1118 #5667 晴岛厨房：他开锅（kitchen.py 直接落库）→ 聊天页做饭小卡，点了进上下分屏
+    var kitchenCard: KitchenChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "KITCHEN_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(KitchenChatCard.self, from: data)
+    }
+
     /// 1014：他录好一期「只给你听」（alcove-backend/ears.py 投的）→ 聊天页小卡，点了直接进这一期
     var earsCard: EarsChatCard? {
         guard role == "assistant", !pending,
