@@ -578,6 +578,7 @@ struct NativeHouseDrawer: View {
                         drawerRow(.settings, detail: "主题、权限与小屋设置")
                         drawerRow(.factory, detail: "心跳文案、说话方式、情书、memory")
                         drawerRow(.farm, detail: "我们俩的小岛，雨停了就出门玩")   // 1025 她要放出厂设置下面
+                        kitchenDrawerRow   // 1118 #5670 晴岛厨房：锅空着也能进
                     }
 
                     drawerTitle("此刻与日常", note: "still here")
@@ -782,6 +783,32 @@ struct NativeHouseDrawer: View {
                         .offset(x: 4, y: -4)
                 }
             }
+        }.buttonStyle(.plain)
+    }
+
+    /// 1118 #5670 她：「这些页面在哪里」——晴岛厨房不是 HouseDestination（是盖上来的上下分屏），单独一行，样子跟上面那些一样
+    private var kitchenDrawerRow: some View {
+        Button {
+            onClose()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { KitchenStore.shared.openSplit() }
+        } label: {
+            HStack(spacing: 11) {
+                Image(systemName: "flame")
+                    .font(.system(size: 15, weight: .light))
+                    .foregroundColor(theme.textDim)
+                    .frame(width: 28)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("晴岛厨房").font(.system(size: 13, weight: .medium))
+                    Text("他掌勺，你打下手").font(.system(size: 9.5)).foregroundColor(theme.textDim)
+                }
+                Spacer()
+                Image(systemName: "chevron.right")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(theme.textDim.opacity(0.55))
+            }
+            .padding(.horizontal, 12)
+            .frame(maxWidth: .infinity, minHeight: 52)
+            .drawerGlass(theme)
         }.buttonStyle(.plain)
     }
 

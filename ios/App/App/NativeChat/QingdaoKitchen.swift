@@ -369,6 +369,7 @@ struct KitchenSplitView: View {
                 potCard
                 if let p = store.pot { taskCard(p) }
                 ForEach(store.leftovers) { l in leftoverRow(l) }
+                if store.pot?.task != "hand" { fridgeBox }
                 chatBox
             }
             .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 30)
@@ -505,6 +506,36 @@ struct KitchenSplitView: View {
                     .buttonStyle(.plain)
                 }
             }
+        }
+    }
+
+    /// 冰箱：每一批几个、新不新鲜（锅空着也能看）
+    private var fridgeBox: some View {
+        KitchenPixelBox(fill: KitchenInk.cream) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text("冰箱")
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 8).padding(.vertical, 3)
+                    .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.mint.opacity(0.95)))
+                if store.fridge.isEmpty {
+                    Text("空的").font(.system(size: 14, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                } else {
+                    LazyVGrid(columns: [GridItem(.adaptive(minimum: 92), spacing: 8)], spacing: 8) {
+                        ForEach(store.fridge) { b in
+                            VStack(spacing: 3) {
+                                Text(b.name).font(.system(size: 14, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
+                                Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                            }
+                            .frame(maxWidth: .infinity).padding(.vertical, 7)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.fresh(b.fresh)))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2))
+                        }
+                    }
+                }
+            }
+            .padding(14)
+            .frame(maxWidth: .infinity, alignment: .leading)
         }
     }
 
