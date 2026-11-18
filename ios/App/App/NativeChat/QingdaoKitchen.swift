@@ -300,24 +300,61 @@ final class KitchenStore: ObservableObject {
     }
 }
 
-/// 晴岛小手机那套颜色，往灰里压一点
+/// 晴岛小手机那套：深紫红粗描边＋淡粉（#5676 她要可爱、粉一点；#5677「太粉了」→ 白卡、淡粉底，粉只做点缀）
 enum KitchenInk {
-    static let plum = Color(red: 0.29, green: 0.17, blue: 0.23)           // #4A2C3A 粗描边
-    static let pink = Color(red: 0.86, green: 0.66, blue: 0.72)           // 粉顶栏（压灰）
-    static let pinkDeep = Color(red: 0.76, green: 0.52, blue: 0.60)
-    static let mint = Color(red: 0.68, green: 0.81, blue: 0.76)           // 薄荷绿（压灰）
-    static let cream = Color(red: 0.99, green: 0.96, blue: 0.93)          // 奶白
-    static let check1 = Color(red: 0.96, green: 0.92, blue: 0.93)
-    static let check2 = Color(red: 0.92, green: 0.86, blue: 0.88)
-    static let ink = Color(red: 0.29, green: 0.17, blue: 0.23)
-    static let inkSoft = Color(red: 0.29, green: 0.17, blue: 0.23).opacity(0.62)
-    static let night = Color(red: 0.16, green: 0.13, blue: 0.15)
+    static let plum = Color(red: 0.353, green: 0.200, blue: 0.275)        // #5A3346 粗描边、字
+    static let pink = Color(red: 1.0, green: 0.718, blue: 0.812)          // #FFB7CF 小飘带、主按钮
+    static let pinkDeep = Color(red: 0.957, green: 0.604, blue: 0.725)    // #F49AB9
+    static let pinkSoft = Color(red: 1.0, green: 0.910, blue: 0.937)      // #FFE8EF 次按钮
+    static let blush = Color(red: 1.0, green: 0.945, blue: 0.961)         // #FFF1F5 他的气泡、新鲜的格子
+    static let mint = Color(red: 0.918, green: 0.965, blue: 0.945)        // #EAF6F1
+    static let cream = Color.white                                        // 卡片
+    static let check1 = Color(red: 1.0, green: 0.969, blue: 0.980)        // #FFF7FA 整页底
+    static let check2 = Color(red: 0.953, green: 0.890, blue: 0.918)      // #F3E3EA 没走到的步子
+    static let ink = Color(red: 0.353, green: 0.200, blue: 0.275)
+    static let inkSoft = Color(red: 0.353, green: 0.200, blue: 0.275).opacity(0.6)
+    static let night = Color(red: 0.992, green: 0.933, blue: 0.953)       // #FDEEF3 上半块的底
     static func fresh(_ f: String) -> Color {
         switch f {
-        case "fresh": return mint
-        case "ok": return Color(red: 0.86, green: 0.84, blue: 0.94)      // 还行：淡紫（不用黄、米黄）
-        case "old": return Color(red: 0.93, green: 0.76, blue: 0.80)     // 快坏了：灰粉
-        default: return Color(red: 0.70, green: 0.66, blue: 0.68)
+        case "fresh": return blush
+        case "ok": return Color(red: 0.965, green: 0.941, blue: 1.0)      // 还行：淡紫（不用黄、米黄）
+        case "old": return Color(red: 0.984, green: 0.890, blue: 0.910)   // 快坏了：灰粉
+        default: return Color(red: 0.902, green: 0.878, blue: 0.890)
+        }
+    }
+}
+
+/// 粉色小飘带（「厨房」「该你了」）：像素小爱心＋白字
+struct KitchenRibbon: View {
+    let text: String
+    var fill: Color = KitchenInk.pink
+    var body: some View {
+        HStack(spacing: 4) {
+            KitchenPixelHeart(on: true, outline: .white, fillColor: .white).frame(width: 11, height: 10)
+            Text(text).font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(.white)
+        }
+        .padding(.leading, 8).padding(.trailing, 10).padding(.vertical, 3)
+        .background(Capsule().fill(fill))
+        .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2))
+    }
+}
+
+/// 晴岛那颗像素小爱心（7×6 格），亮的粉、暗的灰
+struct KitchenPixelHeart: View {
+    var on = true
+    var outline: Color = KitchenInk.plum
+    var fillColor: Color = Color(red: 1.0, green: 0.56, blue: 0.75)
+    private static let cells: [(Int, Int)] = [(1,0),(2,0),(4,0),(5,0),(0,1),(1,1),(2,1),(3,1),(4,1),(5,1),(6,1),
+                                              (0,2),(1,2),(2,2),(3,2),(4,2),(5,2),(6,2),(1,3),(2,3),(3,3),(4,3),(5,3),(2,4),(3,4),(4,4),(3,5)]
+    var body: some View {
+        Canvas { ctx, size in
+            let u = min(size.width / 7, size.height / 6)
+            let set = Set(Self.cells.map { $0.0 * 10 + $0.1 })
+            for (x, y) in Self.cells {
+                let edge = !set.contains((x - 1) * 10 + y) || !set.contains((x + 1) * 10 + y) || !set.contains(x * 10 + y - 1) || !set.contains(x * 10 + y + 1)
+                let c: Color = edge ? (on ? outline : Color(red: 0.78, green: 0.72, blue: 0.75)) : (on ? fillColor : Color(red: 0.95, green: 0.92, blue: 0.93))
+                ctx.fill(Path(CGRect(x: CGFloat(x) * u, y: CGFloat(y) * u, width: u + 0.3, height: u + 0.3)), with: .color(c))
+            }
         }
     }
 }
@@ -328,9 +365,9 @@ struct KitchenPixelBox<Content: View>: View {
     @ViewBuilder var content: () -> Content
     var body: some View {
         content()
-            .background(RoundedRectangle(cornerRadius: 4).fill(fill))
-            .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2.5))
-            .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.plum.opacity(0.85)).offset(y: 3))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(fill))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 3))
+            .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(KitchenInk.plum).offset(y: 3))
     }
 }
 
@@ -347,9 +384,9 @@ struct KitchenPixelButton: View {
                 .foregroundColor(textColor)
                 .padding(.horizontal, big ? 18 : 12).padding(.vertical, big ? 11 : 8)
                 .frame(maxWidth: big ? .infinity : nil)
-                .background(RoundedRectangle(cornerRadius: 4).fill(fill))
-                .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2.5))
-                .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.plum).offset(y: 3))
+                .background(Capsule().fill(fill))
+                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 3))
+                .background(Capsule().fill(KitchenInk.plum).offset(y: 3))
         }
         .buttonStyle(.plain)
     }
@@ -424,18 +461,20 @@ struct KitchenSplitView: View {
     @State private var chatLoop: Task<Void, Never>?
     @State private var showBook = false
     @State private var showCabinet = false
+    @State private var cardsHeight: CGFloat = 200
 
     var body: some View {
         GeometryReader { geo in
             VStack(spacing: 0) {
                 top(width: geo.size.width)
-                    .padding(.top, geo.safeAreaInsets.top)
+                    .padding(.top, geo.safeAreaInsets.top + 6)
+                    .padding(.bottom, 10)
                     .background(KitchenInk.night)
-                panel
+                panel(height: geo.size.height - geo.size.width * 9 / 16)
             }
             .ignoresSafeArea(.container, edges: .top)
         }
-        .background(KitchenCheck().ignoresSafeArea())
+        .background(KitchenInk.check1.ignoresSafeArea())
         .confirmationDialog("倍速（录视频用）", isPresented: $showSpeed, titleVisibility: .visible) {
             ForEach([1, 10, 60], id: \.self) { s in
                 Button(s == store.speed ? "\(s) 倍 ✓" : "\(s) 倍") { Task { await store.act(["do": "speed", "speed": s]) } }
@@ -455,18 +494,22 @@ struct KitchenSplitView: View {
         .onDisappear(perform: endChat)
     }
 
-    // 上半块：近景小窗＋「看他｜看我」＋收起
+    // 上半块：近景小窗（淡粉底上一个圆角框）＋「看他｜看我」＋收起
     private func top(width: CGFloat) -> some View {
-        ZStack(alignment: .top) {
+        let w = width - 20
+        return ZStack(alignment: .top) {
             KitchenWebView(path: watchHim ? (store.place == "bar" ? "/farm/bar.html" : "/farm/kitchen.html") : "/farm/?mini=1")
-                .frame(width: width, height: width * 9 / 16)
+                .frame(width: w, height: w * 9 / 16)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(KitchenInk.plum, lineWidth: 3))
             HStack {
                 Button { store.closeSplit() } label: {
                     Image(systemName: "chevron.down")
-                        .font(.system(size: 14, weight: .bold))
-                        .foregroundColor(.white)
-                        .frame(width: 34, height: 30)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.plum.opacity(0.8)))
+                        .font(.system(size: 14, weight: .heavy))
+                        .foregroundColor(KitchenInk.plum)
+                        .frame(width: 40, height: 32)
+                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
                 }
                 .buttonStyle(.plain)
                 Spacer()
@@ -474,71 +517,81 @@ struct KitchenSplitView: View {
                     camChip("看他", on: watchHim) { watchHim = true }
                     camChip("看我", on: !watchHim) { watchHim = false }
                 }
-                .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.plum.opacity(0.8)))
+                .background(Capsule().fill(Color.white))
+                .clipShape(Capsule())
+                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2.5))
             }
             .padding(10)
         }
-        .frame(width: width, height: width * 9 / 16)
+        .frame(width: width)
     }
 
     private func camChip(_ t: String, on: Bool, _ tap: @escaping () -> Void) -> some View {
         Button(action: tap) {
             Text(t)
-                .font(.system(size: 13, weight: .bold, design: .rounded))
-                .foregroundColor(on ? KitchenInk.plum : .white.opacity(0.85))
-                .padding(.horizontal, 12).padding(.vertical, 6)
-                .background(RoundedRectangle(cornerRadius: 3).fill(on ? KitchenInk.cream : Color.clear))
-                .padding(2)
+                .font(.system(size: 13, weight: .heavy, design: .rounded))
+                .foregroundColor(on ? .white : KitchenInk.plum)
+                .padding(.horizontal, 14).padding(.vertical, 7)
+                .background(on ? Color(red: 1.0, green: 0.77, blue: 0.84) : Color.clear)
         }
         .buttonStyle(.plain)
     }
 
-    // 下半块：锅、该你了、留给你的、小手机
-    private var panel: some View {
-        ScrollView {
-            VStack(spacing: 14) {
-                if store.place == "bar", let g = store.glass {
-                    BarPanel(glass: g)
-                } else {
-                    potCard
-                    if let p = store.pot { taskCard(p) }
-                    ForEach(store.leftovers) { l in leftoverRow(l) }
-                    if store.pot?.task != "hand" { fridgeBox }
+    // 下半块：锅、该你了、留给你的、冰箱、两个按钮（照内容高，太高就在里面滚），小手机铺满剩下的
+    private func panel(height: CGFloat) -> some View {
+        VStack(spacing: 10) {
+            ScrollView {
+                VStack(spacing: 12) {
+                    if store.place == "bar", let g = store.glass {
+                        BarPanel(glass: g)
+                    } else {
+                        potCard
+                        if let p = store.pot { taskCard(p) }
+                        ForEach(store.leftovers) { l in leftoverRow(l) }
+                        if store.pot?.task != "hand" { fridgeBox }
+                    }
+                    HStack(spacing: 10) {
+                        KitchenPixelButton(title: "菜谱本", fill: KitchenInk.cream, textColor: KitchenInk.plum, big: true) { showBook = true }
+                        KitchenPixelButton(title: "酒柜", fill: KitchenInk.pinkSoft, textColor: KitchenInk.plum, big: true) { showCabinet = true }
+                    }
                 }
-                HStack(spacing: 10) {
-                    KitchenPixelButton(title: "菜谱本", fill: KitchenInk.cream, textColor: KitchenInk.plum, big: true) { showBook = true }
-                    KitchenPixelButton(title: "酒柜", fill: KitchenInk.mint, textColor: KitchenInk.plum, big: true) { showCabinet = true }
-                }
-                chatBox
+                .padding(.horizontal, 12).padding(.top, 12).padding(.bottom, 6)
+                .background(GeometryReader { g in Color.clear.preference(key: KitchenCardsHeight.self, value: g.size.height) })
             }
-            .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 30)
+            .frame(height: min(cardsHeight, max(160, height - 230)))
+            .onPreferenceChange(KitchenCardsHeight.self) { cardsHeight = $0 }
+            chatBox
+                .padding(.horizontal, 12)
+                .padding(.bottom, 12)
         }
     }
 
     private var potCard: some View {
         KitchenPixelBox {
             VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Text("厨房")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.pinkDeep))
+                HStack(spacing: 8) {
+                    KitchenRibbon(text: "厨房")
+                    if let p = store.pot {
+                        TimelineView(.periodic(from: .now, by: 1)) { _ in
+                            Text(store.statusLine(p))
+                                .font(.system(size: 13, weight: .heavy, design: .rounded).monospacedDigit())
+                                .foregroundColor(KitchenInk.plum)
+                                .padding(.horizontal, 10).padding(.vertical, 2)
+                                .background(Capsule().fill(Color(red: 1.0, green: 0.95, blue: 0.965)))
+                                .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2))
+                        }
+                    }
                     if store.speed > 1 {
                         Text("\(store.speed) 倍").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                     }
                     Spacer()
+                    Text("✿").font(.system(size: 16)).foregroundColor(KitchenInk.pink)
                 }
                 if let p = store.pot {
                     Text(p.dish)
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
                         .foregroundColor(KitchenInk.ink)
                         .onLongPressGesture { showSpeed = true }
-                    TimelineView(.periodic(from: .now, by: 1)) { _ in
-                        Text(store.statusLine(p))
-                            .font(.system(size: 15, weight: .semibold, design: .rounded).monospacedDigit())
-                            .foregroundColor(KitchenInk.ink)
-                    }
                     stepBar(p)
                 } else {
                     Text("锅是空的")
@@ -552,21 +605,9 @@ struct KitchenSplitView: View {
         }
     }
 
+    /// 五颗小爱心：走过的亮粉，没走到的灰
     private func stepBar(_ p: KitchenPot) -> some View {
-        HStack(spacing: 4) {
-            ForEach(Array(p.steps.enumerated()), id: \.offset) { i, s in
-                VStack(spacing: 4) {
-                    Rectangle()
-                        .fill(p.done || i < p.step ? KitchenInk.pinkDeep : (i == p.step ? KitchenInk.pink : KitchenInk.check2))
-                        .frame(height: 8)
-                        .overlay(Rectangle().stroke(KitchenInk.plum, lineWidth: 1.5))
-                    Text(s)
-                        .font(.system(size: 10, weight: i == p.step ? .bold : .regular, design: .rounded))
-                        .foregroundColor(i == p.step ? KitchenInk.ink : KitchenInk.inkSoft)
-                        .lineLimit(1).minimumScaleFactor(0.7)
-                }
-            }
-        }
+        KitchenHeartSteps(steps: p.steps, step: p.step, done: p.done)
     }
 
     @ViewBuilder
@@ -601,11 +642,7 @@ struct KitchenSplitView: View {
         } else if let t = p.task, !p.auto {
             KitchenPixelBox(fill: KitchenInk.cream) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("该你了")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.pinkDeep))
+                    KitchenRibbon(text: "该你了")
                     switch t {
                     case "hand": handTask(p)
                     case "taste":
@@ -639,8 +676,9 @@ struct KitchenSplitView: View {
                             Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                         }
                         .frame(maxWidth: .infinity).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.fresh(b.fresh)))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2))
+                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.fresh(b.fresh)))
+                        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
+                        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
                     }
                     .buttonStyle(.plain)
                 }
@@ -652,11 +690,7 @@ struct KitchenSplitView: View {
     private var fridgeBox: some View {
         KitchenPixelBox(fill: KitchenInk.cream) {
             VStack(alignment: .leading, spacing: 10) {
-                Text("冰箱")
-                    .font(.system(size: 12, weight: .bold, design: .rounded))
-                    .foregroundColor(.white)
-                    .padding(.horizontal, 8).padding(.vertical, 3)
-                    .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.mint.opacity(0.95)))
+                KitchenRibbon(text: "冰箱", fill: Color(red: 0.80, green: 0.74, blue: 0.95))
                 if store.fridge.isEmpty {
                     Text("空的").font(.system(size: 14, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                 } else {
@@ -667,8 +701,9 @@ struct KitchenSplitView: View {
                                 Text("×\(b.qty) · \(b.freshZh)").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
                             }
                             .frame(maxWidth: .infinity).padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.fresh(b.fresh)))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2))
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.fresh(b.fresh)))
+                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
                         }
                     }
                 }
@@ -695,33 +730,70 @@ struct KitchenSplitView: View {
     }
 
     // 小手机：跟岛上那只一样走 /api/farm/chat，一次打开＝一段，关掉时聊天页落那张小手机卡
+    // #5676 照晴岛小手机的样子：粉头栏＋他的像素头像，两边头像气泡，底下胶囊输入框＋爱心发送；铺满下面剩下的地方
     private var chatBox: some View {
-        KitchenPixelBox(fill: KitchenInk.cream) {
-            VStack(alignment: .leading, spacing: 8) {
-                ForEach(Array(chat.suffix(8).enumerated()), id: \.offset) { _, m in
-                    HStack {
-                        if m.role == "user" { Spacer(minLength: 40) }
-                        Text(m.text)
-                            .font(.system(size: 14, design: .rounded))
-                            .foregroundColor(KitchenInk.ink)
-                            .padding(.horizontal, 10).padding(.vertical, 7)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(m.role == "user" ? KitchenInk.pink.opacity(0.55) : KitchenInk.mint.opacity(0.75)))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 1.5))
-                        if m.role != "user" { Spacer(minLength: 40) }
+        VStack(spacing: 0) {
+            HStack(spacing: 8) {
+                KitchenAvatar(name: "avatar_cj").frame(width: 28, height: 28)
+                Text("陈璟").font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
+                Spacer()
+                Text(store.place == "bar" ? "在吧台" : (store.pot != nil ? "在厨房" : ""))
+                    .font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 6)
+            .background(Color(red: 1.0, green: 0.933, blue: 0.953))
+            Rectangle().fill(KitchenInk.plum).frame(height: 3)
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(spacing: 8) {
+                        ForEach(Array(chat.enumerated()), id: \.offset) { i, m in
+                            chatRow(m.role == "user", m.text).id(i)
+                        }
                     }
+                    .padding(10)
                 }
-                HStack(spacing: 8) {
-                    TextField("跟他说…", text: $draft)
-                        .font(.system(size: 15, design: .rounded))
-                        .padding(.horizontal, 10).padding(.vertical, 8)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(Color.white))
-                        .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2))
-                        .submitLabel(.send)
-                        .onSubmit(send)
-                    KitchenPixelButton(title: "发送", action: send)
+                .onChange(of: chat.count) { n in
+                    withAnimation(.easeOut(duration: 0.2)) { proxy.scrollTo(n - 1, anchor: .bottom) }
                 }
             }
-            .padding(12)
+            .frame(maxHeight: .infinity)
+            .background(Color.white)
+            Rectangle().fill(KitchenInk.plum).frame(height: 3)
+            HStack(spacing: 8) {
+                TextField("跟他说…", text: $draft)
+                    .font(.system(size: 14, design: .rounded))
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Capsule().fill(Color.white))
+                    .overlay(Capsule().stroke(KitchenInk.plum, lineWidth: 2.5))
+                    .submitLabel(.send)
+                    .onSubmit(send)
+                Button(action: send) {
+                    AsyncImage(url: AlcoveAPI.fullURL("/farm/ui/phone/btn_send.png")) { img in
+                        img.interpolation(.none).resizable().scaledToFit()
+                    } placeholder: { Circle().fill(KitchenInk.pink) }
+                    .frame(width: 36, height: 36)
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.horizontal, 10).padding(.vertical, 7)
+            .background(KitchenInk.check1)
+        }
+        .frame(minHeight: 200, maxHeight: .infinity)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous).stroke(KitchenInk.plum, lineWidth: 3))
+        .background(RoundedRectangle(cornerRadius: 14, style: .continuous).fill(KitchenInk.plum).offset(y: 3))
+    }
+
+    private func chatRow(_ mine: Bool, _ text: String) -> some View {
+        HStack(alignment: .bottom, spacing: 6) {
+            if mine { Spacer(minLength: 40) } else { KitchenAvatar(name: "avatar_cj").frame(width: 26, height: 26) }
+            Text(text)
+                .font(.system(size: 13.5, design: .rounded))
+                .foregroundColor(KitchenInk.ink)
+                .padding(.horizontal, 11).padding(.vertical, 7)
+                .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(mine ? Color.white : KitchenInk.blush))
+                .overlay(RoundedRectangle(cornerRadius: 12, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
+            if mine { KitchenAvatar(name: "avatar_me").frame(width: 26, height: 26) } else { Spacer(minLength: 40) }
         }
     }
 
@@ -755,23 +827,46 @@ struct KitchenSplitView: View {
     }
 }
 
-/// 粉白格子底（小手机那套），压灰
-struct KitchenCheck: View {
+/// 晴岛小手机里两个人的像素头像
+struct KitchenAvatar: View {
+    let name: String
     var body: some View {
-        Canvas { ctx, size in
-            let s: CGFloat = 14
-            ctx.fill(Path(CGRect(origin: .zero, size: size)), with: .color(KitchenInk.check1))
-            var y: CGFloat = 0, r = 0
-            while y < size.height {
-                var x: CGFloat = (r % 2 == 0) ? 0 : s
-                while x < size.width {
-                    ctx.fill(Path(CGRect(x: x, y: y, width: s, height: s)), with: .color(KitchenInk.check2))
-                    x += s * 2
+        AsyncImage(url: AlcoveAPI.fullURL("/farm/ui/phone/\(name).png")) { img in
+            img.interpolation(.none).resizable().scaledToFit()
+        } placeholder: { Circle().fill(KitchenInk.blush) }
+    }
+}
+
+/// 分屏下半块：量卡片那一摞有多高（照内容高，太高才在里面滚）
+struct KitchenCardsHeight: PreferenceKey {
+    static var defaultValue: CGFloat = 200
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
+}
+
+/// 五颗小爱心当进度：走过的亮粉、这一步加粗、没到的灰
+struct KitchenHeartSteps: View {
+    let steps: [String]
+    let step: Int
+    let done: Bool
+    var body: some View {
+        HStack(spacing: 4) {
+            ForEach(Array(steps.enumerated()), id: \.offset) { i, s in
+                VStack(spacing: 3) {
+                    KitchenPixelHeart(on: done || i <= step).frame(width: 21, height: 18)
+                    Text(s).font(.system(size: 10.5, weight: i == step && !done ? .heavy : .regular, design: .rounded))
+                        .foregroundColor(done || i <= step ? KitchenInk.ink : KitchenInk.inkSoft)
+                        .lineLimit(1).minimumScaleFactor(0.7)
                 }
-                y += s; r += 1
+                .frame(maxWidth: .infinity)
             }
         }
+        .padding(.top, 2)
     }
+}
+
+/// 整页底（#5677 淡粉，不铺格子）
+struct KitchenCheck: View {
+    var body: some View { KitchenInk.check1 }
 }
 
 // MARK: - 聊天页做饭小卡：像素奶白描边框，左边厨房近景小窗，右边菜名、大字倒计时、五格进度
@@ -819,7 +914,7 @@ struct KitchenChatMessageCard: View {
             }
             .padding(12)
             .frame(width: 270)
-            .background(RoundedRectangle(cornerRadius: 4).fill(dark ? KitchenInk.night : KitchenInk.cream))
+            .background(RoundedRectangle(cornerRadius: 4).fill(dark ? Color(red: 0.16, green: 0.13, blue: 0.15) : KitchenInk.cream))
             .overlay(RoundedRectangle(cornerRadius: 4).stroke(dark ? KitchenInk.cream.opacity(0.8) : KitchenInk.plum, lineWidth: 2.5))
             .padding(.vertical, 6)
         }
@@ -840,28 +935,12 @@ struct BarPanel: View {
         VStack(spacing: 14) {
             KitchenPixelBox(fill: KitchenInk.cream) {
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("吧台")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.plum))
+                    KitchenRibbon(text: "吧台", fill: Color(red: 0.80, green: 0.74, blue: 0.95))
                     Text(glass.want == "自己调" ? "他自己配的一杯" : glass.want)
                         .font(.system(size: 20, weight: .heavy, design: .rounded))
                         .foregroundColor(KitchenInk.ink)
                         .onLongPressGesture { showSpeed = true }
-                    HStack(spacing: 4) {
-                        ForEach(Array(glass.steps.enumerated()), id: \.offset) { i, s in
-                            VStack(spacing: 4) {
-                                Rectangle()
-                                    .fill(glass.done || i < glass.step ? KitchenInk.plum.opacity(0.75) : (i == glass.step ? KitchenInk.pink : KitchenInk.check2))
-                                    .frame(height: 8)
-                                    .overlay(Rectangle().stroke(KitchenInk.plum, lineWidth: 1.5))
-                                Text(s).font(.system(size: 10, weight: i == glass.step ? .bold : .regular, design: .rounded))
-                                    .foregroundColor(i == glass.step ? KitchenInk.ink : KitchenInk.inkSoft)
-                                    .lineLimit(1).minimumScaleFactor(0.7)
-                            }
-                        }
-                    }
+                    KitchenHeartSteps(steps: glass.steps, step: glass.step, done: glass.done)
                 }
                 .padding(14)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -929,11 +1008,7 @@ struct BarPanel: View {
         } else if let t = glass.task, !glass.auto {
             KitchenPixelBox(fill: KitchenInk.cream) {
                 VStack(alignment: .leading, spacing: 10) {
-                    Text("该你了")
-                        .font(.system(size: 12, weight: .bold, design: .rounded))
-                        .foregroundColor(.white)
-                        .padding(.horizontal, 8).padding(.vertical, 3)
-                        .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.pinkDeep))
+                    KitchenRibbon(text: "该你了")
                     switch t {
                     case "glass": choices("挑杯子", store.glassKinds, kind: "glass")
                     case "bottle": choices("递\(glass.base)", store.bottles, kind: "bottle")
@@ -956,8 +1031,9 @@ struct BarPanel: View {
                         Text(v).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
                             .lineLimit(1).minimumScaleFactor(0.7)
                             .frame(maxWidth: .infinity).padding(.vertical, 9)
-                            .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.check1))
-                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2))
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white))
+                            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
+                            .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(KitchenInk.plum).offset(y: 2))
                     }
                     .buttonStyle(.plain)
                 }
