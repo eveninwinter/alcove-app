@@ -199,6 +199,14 @@ struct ChatMessage: Identifiable, Equatable {
         return try? JSONDecoder().decode(SceneChatCard.self, from: data)
     }
 
+    /// 1118 #5675 晴岛调酒屋：他开调（bar.py 直接落库）→ 聊天页调酒小卡，点了进上下分屏
+    var barCard: BarChatCard? {
+        guard role == "assistant", !pending,
+              let raw = Self.taggedBody(text, tag: "BAR_CARD"),
+              let data = raw.data(using: .utf8) else { return nil }
+        return try? JSONDecoder().decode(BarChatCard.self, from: data)
+    }
+
     /// 1118 #5667 晴岛厨房：他开锅（kitchen.py 直接落库）→ 聊天页做饭小卡，点了进上下分屏
     var kitchenCard: KitchenChatCard? {
         guard role == "assistant", !pending,

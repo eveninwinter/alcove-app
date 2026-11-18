@@ -41,6 +41,61 @@ struct KitchenLeftover: Identifiable, Equatable {
     let note: String
 }
 
+/// 1118 #5675 吧台上那一杯（alcove-independent/bar.py）
+struct BarGlass: Equatable {
+    let id: String
+    let want: String
+    let base: String
+    let method: String
+    let step: Int
+    let stepKey: String
+    let steps: [String]
+    let task: String?        // glass / bottle / ice / garnish
+    let gotGlass: String?
+    let shakes: Int
+    let done: Bool
+    let auto: Bool
+    let cheered: Bool
+    let resultKey: String?
+    let resultName: String?
+    let resultKind: String?  // classic / hidden / bad / custom
+    let first: Bool
+    let start: Double
+}
+
+/// 酒柜里的一格
+struct BarCell: Identifiable, Equatable {
+    let id: String           // key，图片 /farm/bar/glass/<key>.png（没调过的用 _lock）
+    let name: String?
+    let group: String        // classic / hidden / bad / custom
+    let got: Bool
+    let count: Int
+    let note: String
+}
+
+/// 菜谱本里的一道
+struct KitchenBookEntry: Identifiable, Equatable {
+    let id: String
+    let name: String?
+    let weird: Bool
+    let ings: [String]
+    let colors: [String]
+    let count: Int
+    let taste: [String: Int]
+    let salt: String
+    let notes: [String]
+    let left: Int
+    let first: Double
+    let namedBy: String
+}
+
+/// 聊天页调酒小卡（bar.py 开调时落库）
+struct BarChatCard: Decodable, Equatable {
+    let glass: String
+    let want: String
+    let en: String?
+}
+
 /// 聊天页那张小卡（kitchen.py 开锅时落库）
 struct KitchenChatCard: Decodable, Equatable {
     let pot: String
@@ -56,6 +111,17 @@ final class KitchenStore: ObservableObject {
     @Published var leftovers: [KitchenLeftover] = []
     @Published var speed = 1
     @Published var splitOpen = false
+    @Published var glass: BarGlass?
+    @Published var barCells: [BarCell] = []
+    @Published var barCustom: [BarCell] = []
+    @Published var hiddenLeft = 0
+    @Published var barGot = 0
+    @Published var barTotal = 0
+    @Published var bottles: [String] = []
+    @Published var glassKinds: [String] = []
+    @Published var garnishes: [String] = []
+    @Published var book: [KitchenBookEntry] = []
+    @Published var potStart: Double = 0
     private weak var splitHost: UIViewController?
     private(set) var fetchedAt = Date()
     private var loop: Task<Void, Never>?
@@ -77,9 +143,58 @@ final class KitchenStore: ObservableObject {
     }
 
     func refresh() async {
-        guard let o = try? await AlcoveAPI.getRaw("/api/farm/kitchen") else { return }
-        apply(o)
+        if let o = try? await AlcoveAPI.getRaw("/api/farm/kitchen") { apply(o) }
+        if let b = try? await AlcoveAPI.getRaw("/api/farm/bar") { applyBar(b) }
         syncFloating()
+    }
+
+    @discardableResult
+    func actBar(_ body: [String: Any]) async -> [String: Any]? {
+        let r = try? await AlcoveAPI.postRaw("/api/farm/bar", body: body)
+        await refresh()
+        return r
+    }
+
+    /// 现在该看哪边：吧台上有一杯、而且比锅里那锅晚开 → 吧台
+    var place: String {
+        guard let g = glass else { return "kitchen" }
+        if pot == nil || g.start >= potStart { return "bar" }
+        return "kitchen"
+    }
+    private var activeID: String? { place == "bar" ? glass?.id : pot?.id }
+
+    private func applyBar(_ o: [String: Any]) {
+        bottles = o["bottles"] as? [String] ?? []
+        glassKinds = o["glasses"] as? [String] ?? []
+        garnishes = o["garnish"] as? [String] ?? []
+        hiddenLeft = o["hidden_left"] as? Int ?? 0
+        barGot = o["got"] as? Int ?? 0
+        barTotal = o["total"] as? Int ?? 0
+        barCells = (o["menu"] as? [[String: Any]] ?? []).compactMap { m in
+            guard let k = m["key"] as? String else { return nil }
+            return BarCell(id: k, name: m["name"] as? String, group: m["group"] as? String ?? "classic",
+                           got: m["got"] as? Bool ?? false, count: m["count"] as? Int ?? 0, note: m["of"] as? String ?? "")
+        }
+        barCustom = (o["custom"] as? [[String: Any]] ?? []).compactMap { m in
+            guard let k = m["key"] as? String else { return nil }
+            return BarCell(id: k, name: m["name"] as? String, group: "custom", got: true, count: m["count"] as? Int ?? 0,
+                           note: (m["ings"] as? [String] ?? []).joined(separator: "、"))
+        }
+        guard let g = o["glass"] as? [String: Any], let id = g["id"] as? String else { glass = nil; return }
+        let steps = g["steps"] as? [[String: Any]] ?? []
+        let step = g["step"] as? Int ?? 0
+        let res = g["result"] as? [String: Any]
+        glass = BarGlass(id: id, want: g["want"] as? String ?? "", base: g["base"] as? String ?? "",
+                         method: g["method"] as? String ?? "摇", step: step,
+                         stepKey: step < steps.count ? (steps[step]["key"] as? String ?? "") : "",
+                         steps: steps.map { $0["label"] as? String ?? "" },
+                         task: (g["task"] as? [String: Any])?["kind"] as? String,
+                         gotGlass: g["got_glass"] as? String, shakes: g["shakes"] as? Int ?? 0,
+                         done: g["done"] as? Bool ?? false, auto: g["auto"] as? Bool ?? false,
+                         cheered: g["cheered"] as? Bool ?? false,
+                         resultKey: res?["key"] as? String, resultName: res?["name"] as? String,
+                         resultKind: res?["kind"] as? String, first: res?["first"] as? Bool ?? false,
+                         start: (g["start"] as? NSNumber)?.doubleValue ?? 0)
     }
 
     @discardableResult
@@ -101,7 +216,18 @@ final class KitchenStore: ObservableObject {
             guard let id = x["id"] as? String else { return nil }
             return KitchenLeftover(id: id, dish: x["dish"] as? String ?? "", note: x["note"] as? String ?? "")
         }
+        book = (o["book"] as? [[String: Any]] ?? []).compactMap { e in
+            guard let id = e["id"] as? String else { return nil }
+            let cols = (e["colors"] as? [String: Any] ?? [:]).values.compactMap { $0 as? String }
+            return KitchenBookEntry(id: id, name: e["name"] as? String, weird: e["weird"] as? Bool ?? false,
+                                    ings: e["ings"] as? [String] ?? [], colors: cols, count: e["count"] as? Int ?? 0,
+                                    taste: e["taste"] as? [String: Int] ?? [:], salt: e["salt"] as? String ?? "",
+                                    notes: (e["notes"] as? [[String: Any]] ?? []).compactMap { $0["text"] as? String },
+                                    left: e["left"] as? Int ?? 0, first: (e["first"] as? NSNumber)?.doubleValue ?? 0,
+                                    namedBy: e["named_by"] as? String ?? "")
+        }
         guard let p = o["pot"] as? [String: Any], let id = p["id"] as? String else { pot = nil; return }
+        potStart = (p["start"] as? NSNumber)?.doubleValue ?? 0
         let ask = p["ask"] as? [Any] ?? []
         let steps = (p["steps"] as? [[String: Any]] ?? []).map { $0["label"] as? String ?? "" }
         let task = (p["task"] as? [String: Any])?["kind"] as? String
@@ -137,7 +263,7 @@ final class KitchenStore: ObservableObject {
 
     // MARK: 浮窗：锅里有东西、她没开分屏、没点过叉 → 浮着
     func syncFloating() {
-        let want = pot != nil && !splitOpen && closedPot != pot?.id
+        let want = activeID != nil && !splitOpen && closedPot != activeID
             && UIApplication.shared.applicationState == .active
         if want {
             if !FloatingOverlay.shared.isShowing("kitchen") {
@@ -149,7 +275,7 @@ final class KitchenStore: ObservableObject {
     }
 
     func closeFloating() {
-        closedPot = pot?.id
+        closedPot = activeID
         syncFloating()
     }
 
@@ -227,6 +353,7 @@ struct KitchenPixelButton: View {
         }
         .buttonStyle(.plain)
     }
+
 }
 
 // MARK: - 网页：厨房近景 / 岛上的她
@@ -264,7 +391,7 @@ struct KitchenFloatView: View {
     private var width: CGFloat { UIScreen.main.bounds.width - 20 }
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            KitchenWebView(path: "/farm/kitchen.html?bar=1")
+            KitchenWebView(path: store.place == "bar" ? "/farm/bar.html?bar=1" : "/farm/kitchen.html?bar=1")
                 .frame(width: width, height: width * 9 / 16)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
@@ -295,6 +422,8 @@ struct KitchenSplitView: View {
     @State private var chat: [(role: String, text: String)] = []
     @State private var draft = ""
     @State private var chatLoop: Task<Void, Never>?
+    @State private var showBook = false
+    @State private var showCabinet = false
 
     var body: some View {
         GeometryReader { geo in
@@ -320,6 +449,8 @@ struct KitchenSplitView: View {
             }
             Button("算了", role: .cancel) {}
         }
+        .sheet(isPresented: $showBook) { KitchenBookSheet() }
+        .sheet(isPresented: $showCabinet) { BarCabinetSheet() }
         .onAppear(perform: startChat)
         .onDisappear(perform: endChat)
     }
@@ -327,7 +458,7 @@ struct KitchenSplitView: View {
     // 上半块：近景小窗＋「看他｜看我」＋收起
     private func top(width: CGFloat) -> some View {
         ZStack(alignment: .top) {
-            KitchenWebView(path: watchHim ? "/farm/kitchen.html" : "/farm/?mini=1")
+            KitchenWebView(path: watchHim ? (store.place == "bar" ? "/farm/bar.html" : "/farm/kitchen.html") : "/farm/?mini=1")
                 .frame(width: width, height: width * 9 / 16)
             HStack {
                 Button { store.closeSplit() } label: {
@@ -366,10 +497,18 @@ struct KitchenSplitView: View {
     private var panel: some View {
         ScrollView {
             VStack(spacing: 14) {
-                potCard
-                if let p = store.pot { taskCard(p) }
-                ForEach(store.leftovers) { l in leftoverRow(l) }
-                if store.pot?.task != "hand" { fridgeBox }
+                if store.place == "bar", let g = store.glass {
+                    BarPanel(glass: g)
+                } else {
+                    potCard
+                    if let p = store.pot { taskCard(p) }
+                    ForEach(store.leftovers) { l in leftoverRow(l) }
+                    if store.pot?.task != "hand" { fridgeBox }
+                }
+                HStack(spacing: 10) {
+                    KitchenPixelButton(title: "菜谱本", fill: KitchenInk.cream, textColor: KitchenInk.plum, big: true) { showBook = true }
+                    KitchenPixelButton(title: "酒柜", fill: KitchenInk.mint, textColor: KitchenInk.plum, big: true) { showCabinet = true }
+                }
                 chatBox
             }
             .padding(.horizontal, 14).padding(.top, 14).padding(.bottom, 30)
@@ -685,5 +824,389 @@ struct KitchenChatMessageCard: View {
             .padding(.vertical, 6)
         }
         .buttonStyle(.plain)
+    }
+
+}
+
+// MARK: - 1118 #5675 吧台：她打下手的面板
+struct BarPanel: View {
+    let glass: BarGlass
+    @ObservedObject private var store = KitchenStore.shared
+    @State private var naming = false
+    @State private var nameText = ""
+    @State private var showSpeed = false
+
+    var body: some View {
+        VStack(spacing: 14) {
+            KitchenPixelBox(fill: KitchenInk.cream) {
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("吧台")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.plum))
+                    Text(glass.want == "自己调" ? "他自己配的一杯" : glass.want)
+                        .font(.system(size: 20, weight: .heavy, design: .rounded))
+                        .foregroundColor(KitchenInk.ink)
+                        .onLongPressGesture { showSpeed = true }
+                    HStack(spacing: 4) {
+                        ForEach(Array(glass.steps.enumerated()), id: \.offset) { i, s in
+                            VStack(spacing: 4) {
+                                Rectangle()
+                                    .fill(glass.done || i < glass.step ? KitchenInk.plum.opacity(0.75) : (i == glass.step ? KitchenInk.pink : KitchenInk.check2))
+                                    .frame(height: 8)
+                                    .overlay(Rectangle().stroke(KitchenInk.plum, lineWidth: 1.5))
+                                Text(s).font(.system(size: 10, weight: i == glass.step ? .bold : .regular, design: .rounded))
+                                    .foregroundColor(i == glass.step ? KitchenInk.ink : KitchenInk.inkSoft)
+                                    .lineLimit(1).minimumScaleFactor(0.7)
+                            }
+                        }
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            taskView
+        }
+        .confirmationDialog("倍速（录视频用）", isPresented: $showSpeed, titleVisibility: .visible) {
+            ForEach([1, 10, 60], id: \.self) { s in
+                Button("\(s) 倍") { Task { await store.actBar(["do": "speed", "speed": s]) } }
+            }
+        }
+        .alert("给这杯起个名字", isPresented: $naming) {
+            TextField("名字", text: $nameText)
+            Button("好") {
+                let n = nameText.trimmingCharacters(in: .whitespaces)
+                if let k = glass.resultKey, !n.isEmpty { Task { await store.actBar(["do": "name", "key": k, "name": n]) } }
+            }
+            Button("算了", role: .cancel) {}
+        }
+    }
+
+    @ViewBuilder
+    private var taskView: some View {
+        if glass.done {
+            KitchenPixelBox(fill: KitchenInk.cream) {
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack(spacing: 12) {
+                        if let k = glass.resultKey {
+                            AsyncImage(url: AlcoveAPI.fullURL("/farm/bar/glass/\(k).png")) { img in
+                                img.interpolation(.none).resizable().scaledToFit()
+                            } placeholder: { Color.clear }
+                            .frame(width: 56, height: 60)
+                        }
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(glass.resultName ?? "还没有名字")
+                                .font(.system(size: 18, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                            Text(["classic": "经典", "hidden": "隐藏", "bad": "难喝", "custom": "没对上配方"][glass.resultKind ?? ""] ?? "")
+                                .font(.system(size: 12, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                            if glass.first {
+                                Text("第一杯").font(.system(size: 12, weight: .bold, design: .rounded))
+                                    .foregroundColor(Color(red: 0.72, green: 0.55, blue: 0.25))
+                            }
+                        }
+                    }
+                    HStack(spacing: 10) {
+                        if glass.resultKind == "custom" && glass.resultName == nil {
+                            KitchenPixelButton(title: "我来取", fill: KitchenInk.mint, textColor: KitchenInk.plum) { nameText = ""; naming = true }
+                            KitchenPixelButton(title: "让他取") {
+                                if let k = glass.resultKey { Task { await store.actBar(["do": "ask_name", "key": k]) } }
+                            }
+                        }
+                        if !glass.cheered {
+                            KitchenPixelButton(title: "碰杯") { Task { await store.actBar(["do": "cheers"]) } }
+                        }
+                        KitchenPixelButton(title: "喝掉", fill: KitchenInk.check2, textColor: KitchenInk.plum) { Task { await store.actBar(["do": "drink"]) } }
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        } else if glass.stepKey == "shake" {
+            KitchenPixelButton(title: glass.method == "摇" ? "一起摇！（\(glass.shakes)）" : (glass.method == "搅" ? "一起搅（\(glass.shakes)）" : "慢慢兑（\(glass.shakes)）"), big: true) {
+                Task { await store.actBar(["do": "shake"]) }
+            }
+        } else if let t = glass.task, !glass.auto {
+            KitchenPixelBox(fill: KitchenInk.cream) {
+                VStack(alignment: .leading, spacing: 10) {
+                    Text("该你了")
+                        .font(.system(size: 12, weight: .bold, design: .rounded))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 8).padding(.vertical, 3)
+                        .background(RoundedRectangle(cornerRadius: 3).fill(KitchenInk.pinkDeep))
+                    switch t {
+                    case "glass": choices("挑杯子", store.glassKinds, kind: "glass")
+                    case "bottle": choices("递\(glass.base)", store.bottles, kind: "bottle")
+                    case "ice": choices("加冰", ["少冰", "正常", "多冰"], kind: "ice")
+                    default: choices("装饰", store.garnishes, kind: "garnish")
+                    }
+                }
+                .padding(14)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+        }
+    }
+
+    private func choices(_ title: String, _ items: [String], kind: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(title).font(.system(size: 16, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 78), spacing: 8)], spacing: 8) {
+                ForEach(items, id: \.self) { v in
+                    Button { Task { await store.actBar(["do": kind, "v": v]) } } label: {
+                        Text(v).font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
+                            .lineLimit(1).minimumScaleFactor(0.7)
+                            .frame(maxWidth: .infinity).padding(.vertical, 9)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.check1))
+                            .overlay(RoundedRectangle(cornerRadius: 4).stroke(KitchenInk.plum, lineWidth: 2))
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+        }
+    }
+}
+
+// MARK: - 酒柜（深色吧台那套：木框、黄铜线、琥珀暗光）
+enum BarInk {
+    static let night = Color(red: 0.09, green: 0.06, blue: 0.10)
+    static let wood = Color(red: 0.23, green: 0.14, blue: 0.12)
+    static let inner = Color(red: 0.13, green: 0.10, blue: 0.16)
+    static let brass = Color(red: 0.79, green: 0.63, blue: 0.38)
+    static let text = Color(red: 0.95, green: 0.88, blue: 0.80)
+    static let dim = Color(red: 0.55, green: 0.50, blue: 0.62)
+    static let pink = Color(red: 1.0, green: 0.74, blue: 0.86)
+}
+
+struct BarCabinetSheet: View {
+    @ObservedObject private var store = KitchenStore.shared
+    @State private var naming: BarCell?
+    @State private var nameText = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("酒柜 · HOUSE CABINET").font(.system(size: 15, weight: .bold, design: .rounded)).foregroundColor(BarInk.text)
+                    Spacer()
+                    Text("\(store.barGot) / \(store.barTotal)").font(.system(size: 13, design: .rounded).monospacedDigit()).foregroundColor(BarInk.dim)
+                }
+                shelf("经典", store.barCells.filter { $0.group == "classic" })
+                if store.barCells.contains(where: { $0.group == "hidden" }) {
+                    shelf("隐藏", store.barCells.filter { $0.group == "hidden" })
+                }
+                if store.hiddenLeft > 0 {
+                    HStack(spacing: 8) {
+                        Image(systemName: "key.fill").font(.system(size: 12)).foregroundColor(BarInk.brass)
+                        Text("隐藏 × \(store.hiddenLeft)").font(.system(size: 13, design: .rounded)).foregroundColor(BarInk.pink)
+                    }
+                }
+                shelf("难喝", store.barCells.filter { $0.group == "bad" })
+                if !store.barCustom.isEmpty { shelf("起名的", store.barCustom) }
+            }
+            .padding(18)
+        }
+        .background(BarInk.night.ignoresSafeArea())
+        .alert("给这杯起个名字", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
+            TextField("名字", text: $nameText)
+            Button("好") {
+                let n = nameText.trimmingCharacters(in: .whitespaces)
+                if let c = naming, !n.isEmpty { Task { await store.actBar(["do": "name", "key": c.id, "name": n]) } }
+                naming = nil
+            }
+            Button("算了", role: .cancel) { naming = nil }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func shelf(_ title: String, _ cells: [BarCell]) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text(title).font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(BarInk.brass)
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 74), spacing: 6)], spacing: 10) {
+                ForEach(cells) { c in cell(c) }
+            }
+            .padding(10)
+            .background(RoundedRectangle(cornerRadius: 4).fill(BarInk.inner))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(BarInk.wood, lineWidth: 4))
+            .overlay(Rectangle().fill(BarInk.brass).frame(height: 3), alignment: .bottom)
+        }
+    }
+
+    private func cell(_ c: BarCell) -> some View {
+        VStack(spacing: 4) {
+            AsyncImage(url: AlcoveAPI.fullURL("/farm/bar/glass/\(c.id)\(c.got ? "" : "_lock").png")) { img in
+                img.interpolation(.none).resizable().scaledToFit()
+            } placeholder: { Color.clear }
+            .frame(width: 56, height: 60)
+            .overlay(Text(c.got ? "" : "?").font(.system(size: 18, weight: .bold, design: .rounded)).foregroundColor(BarInk.dim))
+            Text(c.got ? (c.name ?? "还没有名字") : "？？？")
+                .font(.system(size: 11, weight: c.got ? .semibold : .regular, design: .rounded))
+                .foregroundColor(c.got ? BarInk.text : BarInk.dim)
+                .lineLimit(2).multilineTextAlignment(.center).minimumScaleFactor(0.7)
+            if c.group == "custom" && c.name == nil {
+                HStack(spacing: 6) {
+                    Button("我来取") { nameText = ""; naming = c }.foregroundColor(BarInk.pink)
+                    Button("让他取") { Task { await store.actBar(["do": "ask_name", "key": c.id]) } }.foregroundColor(BarInk.brass)
+                }
+                .font(.system(size: 10, weight: .bold, design: .rounded))
+                .buttonStyle(.plain)
+            }
+        }
+        .frame(maxWidth: .infinity)
+    }
+}
+
+// MARK: - 菜谱本（小手机那套：奶白纸、深紫红描边）
+struct KitchenBookSheet: View {
+    @ObservedObject private var store = KitchenStore.shared
+    @State private var naming: KitchenBookEntry?
+    @State private var nameText = ""
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 12) {
+                HStack {
+                    Text("菜谱本").font(.system(size: 18, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                    Spacer()
+                    Text("\(store.book.count) 道").font(.system(size: 13, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                }
+                let dishes = store.book.filter { !$0.weird }, weird = store.book.filter { $0.weird }
+                if !dishes.isEmpty {
+                    Text("做过的菜").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.pinkDeep)
+                    ForEach(dishes) { e in page(e) }
+                }
+                if !weird.isEmpty {
+                    Text("怪菜").font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.pinkDeep)
+                    ForEach(weird) { e in page(e) }
+                }
+                if store.book.isEmpty {
+                    Text("空的").font(.system(size: 14, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                }
+            }
+            .padding(18)
+        }
+        .background(KitchenCheck().ignoresSafeArea())
+        .alert("给这道起个名字", isPresented: Binding(get: { naming != nil }, set: { if !$0 { naming = nil } })) {
+            TextField("名字", text: $nameText)
+            Button("好") {
+                let n = nameText.trimmingCharacters(in: .whitespaces)
+                if let e = naming, !n.isEmpty { Task { await store.act(["do": "name", "id": e.id, "name": n]) } }
+                naming = nil
+            }
+            Button("算了", role: .cancel) { naming = nil }
+        }
+        .presentationDetents([.large])
+    }
+
+    private func page(_ e: KitchenBookEntry) -> some View {
+        KitchenPixelBox(fill: KitchenInk.cream) {
+            HStack(alignment: .top, spacing: 12) {
+                KitchenPlate(colors: e.colors).frame(width: 64, height: 40)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(e.name ?? "还没有名字").font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                    Text("做过 \(e.count) 次 · " + e.ings.joined(separator: "、"))
+                        .font(.system(size: 11.5, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                    if !e.taste.isEmpty {
+                        HStack(spacing: 8) {
+                            ForEach([("淡", "淡了"), ("好", "刚好"), ("咸", "咸了")], id: \.0) { k, label in
+                                if let n = e.taste[k], n > 0 {
+                                    Text("\(label) \(n)").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.plum)
+                                        .padding(.horizontal, 6).padding(.vertical, 2)
+                                        .background(RoundedRectangle(cornerRadius: 3).fill(k == "好" ? KitchenInk.pink.opacity(0.6) : KitchenInk.mint.opacity(0.7)))
+                                }
+                            }
+                        }
+                    }
+                    if !e.salt.isEmpty { Text(e.salt).font(.system(size: 12, design: .rounded)).foregroundColor(KitchenInk.ink) }
+                    if e.left > 0 { Text("给曈曈留过 \(e.left) 次").font(.system(size: 11.5, design: .rounded)).foregroundColor(KitchenInk.inkSoft) }
+                    ForEach(e.notes, id: \.self) { n in
+                        Text(n).font(.system(size: 12.5, design: .rounded)).foregroundColor(KitchenInk.ink)
+                            .padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(KitchenInk.check1))
+                    }
+                    if e.weird && e.name == nil {
+                        HStack(spacing: 10) {
+                            KitchenPixelButton(title: "我来取", fill: KitchenInk.mint, textColor: KitchenInk.plum) { nameText = ""; naming = e }
+                            KitchenPixelButton(title: "让他取") { Task { await store.act(["do": "ask_name", "id": e.id]) } }
+                        }
+                    } else if e.weird && e.namedBy == "ji" {
+                        Text("曈曈 起").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+        }
+    }
+}
+
+/// 一只白盘子，上面几小块菜（颜色照用了的食材）
+struct KitchenPlate: View {
+    let colors: [String]
+    var body: some View {
+        Canvas { ctx, size in
+            let w = size.width, h = size.height
+            let plate = Path(ellipseIn: CGRect(x: 2, y: h * 0.25, width: w - 4, height: h * 0.62))
+            ctx.fill(plate, with: .color(.white))
+            ctx.stroke(plate, with: .color(KitchenInk.plum), lineWidth: 2)
+            let cols = colors.isEmpty ? ["#e8483f"] : colors
+            let pts: [(CGFloat, CGFloat)] = [(-0.22, -0.05), (-0.08, -0.12), (0.06, -0.06), (0.18, -0.1), (-0.14, 0.05), (0.0, 0.03), (0.14, 0.04)]
+            for (i, p) in pts.enumerated() {
+                let r = CGRect(x: w / 2 + p.0 * w - 4, y: h * 0.52 + p.1 * h - 3, width: 8, height: 6)
+                ctx.fill(Path(r), with: .color(Color(kitchenHex: cols[i % cols.count])))
+            }
+        }
+    }
+}
+
+extension Color {
+    /// "#e8483f" → Color
+    init(kitchenHex s: String) {
+        let h = s.trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let v = UInt64(h, radix: 16) ?? 0xcccccc
+        self.init(red: Double((v >> 16) & 0xff) / 255, green: Double((v >> 8) & 0xff) / 255, blue: Double(v & 0xff) / 255)
+    }
+}
+
+// MARK: - 聊天页调酒小卡：深紫底、粉色细描边，左边吧台近景，右边酒名
+struct BarChatMessageCard: View {
+    let card: BarChatCard
+    @ObservedObject private var store = KitchenStore.shared
+
+    var body: some View {
+        let live = store.glass?.id == card.glass ? store.glass : nil
+        return Button { store.openSplit() } label: {
+            HStack(spacing: 12) {
+                AsyncImage(url: AlcoveAPI.fullURL("/farm/bar/bar_thumb.png")) { img in
+                    img.interpolation(.none).resizable().scaledToFill()
+                } placeholder: { BarInk.inner }
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(BarInk.brass, lineWidth: 2))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("调酒屋").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(BarInk.brass)
+                    Text(card.want == "自己调" ? "他自己配的一杯" : card.want)
+                        .font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(BarInk.pink).lineLimit(1)
+                    if let en = card.en, !en.isEmpty {
+                        Text(en).font(.system(size: 12, design: .serif).italic()).foregroundColor(BarInk.dim)
+                    }
+                    Text(status(live))
+                        .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(BarInk.text.opacity(0.8))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(width: 270)
+            .background(RoundedRectangle(cornerRadius: 4).fill(BarInk.night))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(BarInk.pink.opacity(0.85), lineWidth: 2))
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
+    }
+
+    private func status(_ g: BarGlass?) -> String {
+        guard let g else { return "调好了" }
+        if g.done { return (g.resultName ?? "还没有名字") + " · 调好了" }
+        if g.task != nil && !g.auto { return "等你帮忙" }
+        return g.steps.indices.contains(g.step) ? g.steps[g.step] : ""
     }
 }
