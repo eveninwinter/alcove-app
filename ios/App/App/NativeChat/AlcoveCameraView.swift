@@ -594,7 +594,7 @@ struct AlcoveCameraView: View {
 
     // MARK: 底下三颗
 
-    private func dock(W: CGFloat    private func dock(W: CGFloat) -> some View {
+    private func dock(W: CGFloat) -> some View {
         // 照图：相册 57 方、快门 78、翻转 57，中间各空 45 / 47，整排居中
         HStack(spacing: 0) {
             Button { showAlbum = true } label: {
@@ -642,7 +642,9 @@ struct AlcoveCameraView: View {
         .frame(width: W, height: 80)
     }
 
-c add(image: UIImage, width: CGFloat, pixel: Bool) {
+    // MARK: 动作
+
+    private func add(image: UIImage, width: CGFloat, pixel: Bool) {
         let c = CamInk.canvas
         // 一个叠一个往右下错一点，别全压在正中
         let n = CGFloat(stickers.count % 5)
