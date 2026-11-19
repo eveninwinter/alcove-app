@@ -46,6 +46,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case desk           // 1106 房间：陈璟桌上在做的事（DeskRoomView，数据走 /api/nianlun/room）
     case bench          // 1112 工作台：她上班的文件，分区放着一直在（BenchRoom.swift，数据走 /api/bench/*）
     case recap          // 1110 #4993 压缩换窗：把这个窗口压成一份经过带进新窗口（RecapRoomView，/api/recap/*）
+    case camera         // 1120 Alcove 相机：边框、滤镜、贴纸，拍完进相册「Alcove 相机」（AlcoveCameraView.swift）
 
     var id: String { rawValue }
 
@@ -103,6 +104,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .desk: return "房间"
         case .bench: return "工作台"
         case .recap: return "压缩换窗"
+        case .camera: return "Alcove 相机"
         }
     }
 
@@ -114,7 +116,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
              .calendar, .dreams,
              .music,   // 1016 听歌页 Sanctus 版自己铺冷白纸、自己做顶栏
              .health,  // 1019 健康页自己铺底、自己做页头
-             .chronicle, .farm, .trip, .desk, .recap, .bench,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
+             .chronicle, .farm, .trip, .desk, .recap, .bench, .camera,   // 1103 旅行自己铺底自己做页头；1025 晴岛整页横屏网页；1024 家账页同健康页一套，自己铺底、自己做页头
              .fiction, .pulse, .nowhere: return true   // 0927 日记花树版、Dreams 紫夜版、书房/Pulse/乌有乡蓝粉白纸页，自己铺满自己做头
         default: return false
         }
@@ -173,6 +175,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .trip: return "airplane"
         case .desk: return "lamp.desk"
         case .bench: return "tray.full"
+        case .camera: return "camera"
         default: return "sparkles"
         }
     }
@@ -298,6 +301,8 @@ struct NativeHouseSheet: View {
                     DeskRoomView()
                 case .bench:
                     BenchRoomView()
+                case .camera:
+                    AlcoveCameraView()   // 1120 自己铺壁纸、自己做关闭键
                 case .usage:
                     NativeUsageView()
                 case .workbench:
@@ -598,6 +603,7 @@ struct NativeHouseDrawer: View {
                     drawerTitle("记忆与创作", note: "kept close")
                     VStack(spacing: 7) {
                         drawerRow(.album, detail: "照片和留给它的一句话")
+                        drawerRow(.camera, detail: "边框、滤镜、小贴纸")   // 1120
                         drawerRow(.memory, detail: "五条线、小睡、夜里那趟")
                         drawerRow(.chronicle, detail: "日结、周篇、月篇，一本账", alert: chronicleAlerts > 0)   // 1024 #4272；1031 一本账
                         drawerRow(.dreams, detail: "梦与旧日记")

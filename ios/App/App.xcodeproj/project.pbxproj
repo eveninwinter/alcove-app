@@ -38,6 +38,7 @@
 		CB00000000000000101503A1 /* SanctusPageKit.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101503A2 /* SanctusPageKit.swift */; };
 		CB00000000000000101601A1 /* StickerMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101601A2 /* StickerMask.swift */; };
 		CB00000000000000110301A1 /* TripRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000110301A2 /* TripRoom.swift */; };
+		CB00000000000000112001A1 /* AlcoveCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000112001A2 /* AlcoveCameraView.swift */; };
 		CB00000000000000111701A1 /* SceneRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111701A2 /* SceneRoom.swift */; };
 		CB00000000000000111801A1 /* QingdaoKitchen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111801A2 /* QingdaoKitchen.swift */; };
 		CB00000000000000111201A1 /* BenchRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111201A2 /* BenchRoom.swift */; };
@@ -186,6 +187,7 @@
 		CB00000000000000101503A2 /* SanctusPageKit.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SanctusPageKit.swift; sourceTree = "<group>"; };
 		CB00000000000000101601A2 /* StickerMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerMask.swift; sourceTree = "<group>"; };
 		CB00000000000000110301A2 /* TripRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRoom.swift; sourceTree = "<group>"; };
+		CB00000000000000112001A2 /* AlcoveCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlcoveCameraView.swift; sourceTree = "<group>"; };
 		CB00000000000000111701A2 /* SceneRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000111801A2 /* QingdaoKitchen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QingdaoKitchen.swift; sourceTree = "<group>"; };
 		CB00000000000000111201A2 /* BenchRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchRoom.swift; sourceTree = "<group>"; };
@@ -351,6 +353,7 @@
 				CB00000000000000101503A2 /* SanctusPageKit.swift */,
 				CB00000000000000101601A2 /* StickerMask.swift */,
 				CB00000000000000110301A2 /* TripRoom.swift */,
+				CB00000000000000112001A2 /* AlcoveCameraView.swift */,
 				CB00000000000000111701A2 /* SceneRoom.swift */,
 				CB00000000000000111801A2 /* QingdaoKitchen.swift */,
 				CB00000000000000111201A2 /* BenchRoom.swift */,
@@ -598,6 +601,7 @@
 				CB00000000000000101503A1 /* SanctusPageKit.swift in Sources */,
 				CB00000000000000101601A1 /* StickerMask.swift in Sources */,
 				CB00000000000000110301A1 /* TripRoom.swift in Sources */,
+				CB00000000000000112001A1 /* AlcoveCameraView.swift in Sources */,
 				CB00000000000000111701A1 /* SceneRoom.swift in Sources */,
 				CB00000000000000111801A1 /* QingdaoKitchen.swift in Sources */,
 				CB00000000000000111201A1 /* BenchRoom.swift in Sources */,
