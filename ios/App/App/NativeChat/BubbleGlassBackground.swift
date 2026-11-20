@@ -250,3 +250,129 @@ extension View {
         onGeometryChange(for: CGRect.self) { $0.frame(in: .global) } action: { frame.wrappedValue = $0 }
     }
 }
+
+// MARK: - 1120 #5800 壁纸方案
+// 她：「壁纸那里加多重方案，方案一就是现在白色的壁纸，后面切粉色的，白色的留在方案一，名字自己能改，随意切换」。
+// 每个主题格子（ChatWallpaperStore.fileName 那一格，树屋白天黑夜各一格）各存一串方案；一个方案＝一张图＋模糊度。
+// 第一次打开把当时正在用的那张存成「方案一」。切换＝方案里的图拷回这一格的壁纸文件、模糊度写回、wallStamp 一跳，
+// 聊天页那套读图的路一点不改。在某个方案上「从相册更换」/拉模糊/恢复默认，都记进当前这个方案。
+
+struct WallScheme: Codable, Identifiable, Equatable {
+    var id: String
+    var name: String
+    var blur: Double
+    var hasImage: Bool      // false＝这个方案用的是主题自带的默认壁纸
+}
+
+enum WallSchemes {
+    private static var docs: URL { FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0] }
+    private static func slot(_ themeName: String) -> String {
+        (ChatWallpaperStore.fileName(for: themeName) as NSString).deletingPathExtension
+    }
+    private static func dir(_ themeName: String) -> URL {
+        let d = docs.appendingPathComponent("wallSchemes", isDirectory: true).appendingPathComponent(slot(themeName), isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+    private static func listKey(_ themeName: String) -> String { "wallSchemes." + slot(themeName) }
+    private static func activeKey(_ themeName: String) -> String { "wallSchemes.active." + slot(themeName) }
+    private static func wallURL(_ themeName: String) -> URL { docs.appendingPathComponent(ChatWallpaperStore.fileName(for: themeName)) }
+    static func imageURL(_ id: String, _ themeName: String) -> URL { dir(themeName).appendingPathComponent(id + ".jpg") }
+
+    static func list(_ themeName: String) -> [WallScheme] {
+        if let data = UserDefaults.standard.data(forKey: listKey(themeName)),
+           let items = try? JSONDecoder().decode([WallScheme].self, from: data), !items.isEmpty {
+            return items
+        }
+        // 第一次：她现在用的这张就是方案一
+        var first = WallScheme(id: UUID().uuidString, name: "方案一", blur: 0, hasImage: false)
+        snapshot(&first, themeName)
+        save([first], themeName)
+        UserDefaults.standard.set(first.id, forKey: activeKey(themeName))
+        return [first]
+    }
+
+    static func activeID(_ themeName: String) -> String? {
+        UserDefaults.standard.string(forKey: activeKey(themeName))
+    }
+
+    private static func save(_ items: [WallScheme], _ themeName: String) {
+        if let data = try? JSONEncoder().encode(items) { UserDefaults.standard.set(data, forKey: listKey(themeName)) }
+    }
+
+    /// 把这一格现在的壁纸（图＋模糊）存进方案
+    private static func snapshot(_ s: inout WallScheme, _ themeName: String) {
+        let fm = FileManager.default
+        let dst = imageURL(s.id, themeName)
+        try? fm.removeItem(at: dst)
+        if fm.fileExists(atPath: wallURL(themeName).path) {
+            s.hasImage = (try? fm.copyItem(at: wallURL(themeName), to: dst)) != nil
+        } else {
+            s.hasImage = false
+        }
+        s.blur = TreehouseWallBlur.value(for: themeName)
+    }
+
+    /// 换图 / 恢复默认之后：记进当前方案
+    static func syncActiveImage(_ themeName: String) {
+        var items = list(themeName)
+        guard let id = activeID(themeName), let i = items.firstIndex(where: { $0.id == id }) else { return }
+        snapshot(&items[i], themeName)
+        save(items, themeName)
+    }
+
+    /// 拉模糊之后：只记模糊度，不拷图
+    static func syncActiveBlur(_ themeName: String) {
+        var items = list(themeName)
+        guard let id = activeID(themeName), let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].blur = TreehouseWallBlur.value(for: themeName)
+        save(items, themeName)
+    }
+
+    static func apply(_ id: String, _ themeName: String) {
+        guard let s = list(themeName).first(where: { $0.id == id }) else { return }
+        let fm = FileManager.default
+        let wall = wallURL(themeName)
+        try? fm.removeItem(at: wall)
+        if s.hasImage { try? fm.copyItem(at: imageURL(id, themeName), to: wall) }
+        TreehouseWallBlur.set(s.blur, for: themeName)
+        UserDefaults.standard.set(id, forKey: activeKey(themeName))
+        UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "wallStamp")
+    }
+
+    /// 新方案：先照着现在这张抄一份，切过去，她再从相册换成想要的
+    @discardableResult
+    static func add(_ themeName: String) -> WallScheme {
+        var items = list(themeName)
+        var s = WallScheme(id: UUID().uuidString, name: defaultName(items.count + 1), blur: 0, hasImage: false)
+        snapshot(&s, themeName)
+        items.append(s)
+        save(items, themeName)
+        UserDefaults.standard.set(s.id, forKey: activeKey(themeName))
+        return s
+    }
+
+    static func rename(_ id: String, to name: String, _ themeName: String) {
+        let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty else { return }
+        var items = list(themeName)
+        guard let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].name = String(trimmed.prefix(12))
+        save(items, themeName)
+    }
+
+    /// 删一个；最后一个不让删。删的是正在用的，就切到剩下的第一个
+    static func remove(_ id: String, _ themeName: String) {
+        var items = list(themeName)
+        guard items.count > 1, let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items.remove(at: i)
+        save(items, themeName)
+        try? FileManager.default.removeItem(at: imageURL(id, themeName))
+        if activeID(themeName) == id, let first = items.first { apply(first.id, themeName) }
+    }
+
+    private static func defaultName(_ n: Int) -> String {
+        let cn = ["一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+        return "方案" + (n >= 1 && n <= 10 ? cn[n - 1] : String(n))
+    }
+}

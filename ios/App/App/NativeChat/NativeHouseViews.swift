@@ -1619,6 +1619,8 @@ private struct NativeSettingsView: View {
                     }
                 }
                 if page == .appearance { section("聊天壁纸") {
+                    WallSchemeStrip(themeName: themeName, wallStamp: wallStamp, theme: theme)   // 1120 #5800 壁纸方案
+                        .padding(.bottom, 6)
                     HStack {
                         PhotosPicker(selection: $wallPhoto, matching: .images) {
                             Label("从相册更换", systemImage: "photo")
@@ -1632,7 +1634,7 @@ private struct NativeSettingsView: View {
                         Text("壁纸模糊").font(.system(size: 13))
                         Text("清楚").font(.system(size: 10)).foregroundColor(theme.textDim)
                         Slider(value: Binding(get: { _ = wallBlurStamp; return TreehouseWallBlur.value(for: themeName) },
-                                              set: { TreehouseWallBlur.set($0, for: themeName); wallBlurStamp = Date().timeIntervalSince1970 }),
+                                              set: { TreehouseWallBlur.set($0, for: themeName); WallSchemes.syncActiveBlur(themeName); wallBlurStamp = Date().timeIntervalSince1970 }),
                                in: 0...12, step: 1)
                         Text("朦胧").font(.system(size: 10)).foregroundColor(theme.textDim)
                     }
@@ -2118,6 +2120,7 @@ private struct NativeSettingsView: View {
             let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
                 .appendingPathComponent(file)
             try? jpeg.write(to: url, options: .atomic)
+            WallSchemes.syncActiveImage(themeName)   // 1120 记进当前方案
             wallStamp = Date().timeIntervalSince1970
         }
     }
@@ -2127,10 +2130,103 @@ private struct NativeSettingsView: View {
         let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
             .appendingPathComponent(file)
         try? FileManager.default.removeItem(at: url)
+        WallSchemes.syncActiveImage(themeName)   // 1120 当前方案也回默认
         wallStamp = Date().timeIntervalSince1970
     }
 }
 
+
+/// 1120 #5800 壁纸方案那一排：一格一个方案（小图＋名字），点了切过去；长按改名 / 删除；最后一格「＋」新建
+private struct WallSchemeStrip: View {
+    let themeName: String
+    let wallStamp: Double
+    let theme: AlcoveTheme
+    @State private var items: [WallScheme] = []
+    @State private var active: String?
+    @State private var thumbs: [String: UIImage] = [:]
+    @State private var renaming: WallScheme?
+    @State private var newName = ""
+
+    var body: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(alignment: .top, spacing: 10) {
+                ForEach(items) { s in
+                    Button { WallSchemes.apply(s.id, themeName); reload() } label: { chip(s) }
+                        .buttonStyle(.plain)
+                        .contextMenu {
+                            Button { newName = s.name; renaming = s } label: { Label("改名", systemImage: "pencil") }
+                            if items.count > 1 {
+                                Button(role: .destructive) { WallSchemes.remove(s.id, themeName); reload() } label: {
+                                    Label("删掉这个方案", systemImage: "trash")
+                                }
+                            }
+                        }
+                }
+                Button { WallSchemes.add(themeName); reload() } label: {
+                    VStack(spacing: 5) {
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .strokeBorder(theme.textDim.opacity(0.5), style: StrokeStyle(lineWidth: 1, dash: [4, 3]))
+                            .frame(width: 46, height: 82)
+                            .overlay(Image(systemName: "plus").font(.system(size: 15, weight: .light)).foregroundColor(theme.textDim))
+                        Text("新方案").font(.system(size: 10.5)).foregroundColor(theme.textDim)
+                    }
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.vertical, 3)
+            .padding(.horizontal, 2)
+        }
+        .onAppear { reload() }
+        .onChange(of: themeName) { _ in reload() }
+        .onChange(of: wallStamp) { _ in reload() }
+        .alert("方案改名", isPresented: Binding(get: { renaming != nil }, set: { if !$0 { renaming = nil } })) {
+            TextField("名字", text: $newName)
+            Button("好") {
+                if let r = renaming { WallSchemes.rename(r.id, to: newName, themeName) }
+                renaming = nil
+                reload()
+            }
+            Button("取消", role: .cancel) { renaming = nil }
+        }
+    }
+
+    private func chip(_ s: WallScheme) -> some View {
+        let on = s.id == active
+        return VStack(spacing: 5) {
+            Group {
+                if let img = thumbs[s.id] {
+                    Image(uiImage: img).resizable().scaledToFill()
+                } else {
+                    // 用的是主题自带那张：画个底色占位
+                    LinearGradient(colors: theme.wallGradient.isEmpty ? [theme.textLight.opacity(0.3)] : theme.wallGradient,
+                                   startPoint: .top, endPoint: .bottom)
+                        .overlay(Text("默认").font(.system(size: 9)).foregroundColor(theme.textDim))
+                }
+            }
+            .frame(width: 46, height: 82)
+            .clipShape(RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .stroke(on ? theme.text.opacity(0.75) : theme.textDim.opacity(0.25), lineWidth: on ? 2 : 0.7))
+            Text(s.name)
+                .font(.system(size: 10.5, weight: on ? .semibold : .regular))
+                .foregroundColor(on ? theme.text : theme.textDim)
+                .lineLimit(1)
+                .frame(maxWidth: 64)
+        }
+    }
+
+    private func reload() {
+        items = WallSchemes.list(themeName)
+        active = WallSchemes.activeID(themeName)
+        var t: [String: UIImage] = [:]
+        for s in items where s.hasImage {
+            if let img = UIImage(contentsOfFile: WallSchemes.imageURL(s.id, themeName).path) {
+                t[s.id] = img.preparingThumbnail(of: CGSize(width: 138, height: 246)) ?? img
+            }
+        }
+        thumbs = t
+    }
+}
 
 private struct BubbleAppearanceSettingsView: View {
     // 1009 晚 她要的（只给树屋）：他的气泡分段 / 整个
