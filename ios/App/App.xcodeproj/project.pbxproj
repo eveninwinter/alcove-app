@@ -39,6 +39,8 @@
 		CB00000000000000101601A1 /* StickerMask.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000101601A2 /* StickerMask.swift */; };
 		CB00000000000000110301A1 /* TripRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000110301A2 /* TripRoom.swift */; };
 		CB00000000000000112001A1 /* AlcoveCameraView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000112001A2 /* AlcoveCameraView.swift */; };
+		CB00000000000000112002A1 /* AlcoveFilterEngine.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000112002A2 /* AlcoveFilterEngine.swift */; };
+		CB00000000000000112002B1 /* AlcoveFilters in Resources */ = {isa = PBXBuildFile; fileRef = CB00000000000000112002B2 /* AlcoveFilters */; };
 		CB00000000000000111701A1 /* SceneRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111701A2 /* SceneRoom.swift */; };
 		CB00000000000000111801A1 /* QingdaoKitchen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111801A2 /* QingdaoKitchen.swift */; };
 		CB00000000000000111201A1 /* BenchRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111201A2 /* BenchRoom.swift */; };
@@ -188,6 +190,8 @@
 		CB00000000000000101601A2 /* StickerMask.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StickerMask.swift; sourceTree = "<group>"; };
 		CB00000000000000110301A2 /* TripRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TripRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000112001A2 /* AlcoveCameraView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlcoveCameraView.swift; sourceTree = "<group>"; };
+		CB00000000000000112002A2 /* AlcoveFilterEngine.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AlcoveFilterEngine.swift; sourceTree = "<group>"; };
+		CB00000000000000112002B2 /* AlcoveFilters */ = {isa = PBXFileReference; lastKnownFileType = folder; path = AlcoveFilters; sourceTree = "<group>"; };
 		CB00000000000000111701A2 /* SceneRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000111801A2 /* QingdaoKitchen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QingdaoKitchen.swift; sourceTree = "<group>"; };
 		CB00000000000000111201A2 /* BenchRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchRoom.swift; sourceTree = "<group>"; };
@@ -307,6 +311,7 @@
 				C0DE09080000000000000002 /* MistSplash */,
 				7EE0C0DE0A1009000000F1F2 /* Treehouse */,
 				E10110000000000000000004 /* Embroidery */,
+				CB00000000000000112002B2 /* AlcoveFilters */,
 				C0DE09240000000000000002 /* Fonts */,
 				504EC30B1FED79650016851F /* Main.storyboard */,
 				504EC30E1FED79650016851F /* Assets.xcassets */,
@@ -354,6 +359,7 @@
 				CB00000000000000101601A2 /* StickerMask.swift */,
 				CB00000000000000110301A2 /* TripRoom.swift */,
 				CB00000000000000112001A2 /* AlcoveCameraView.swift */,
+				CB00000000000000112002A2 /* AlcoveFilterEngine.swift */,
 				CB00000000000000111701A2 /* SceneRoom.swift */,
 				CB00000000000000111801A2 /* QingdaoKitchen.swift */,
 				CB00000000000000111201A2 /* BenchRoom.swift */,
@@ -523,6 +529,7 @@
 				C0DE09080000000000000001 /* MistSplash in Resources */,
 				7EE0C0DE0A1009000000F1B1 /* Treehouse in Resources */,
 				E10110000000000000000003 /* Embroidery in Resources */,
+				CB00000000000000112002B1 /* AlcoveFilters in Resources */,
 				C0DE09240000000000000001 /* Fonts in Resources */,
 				50B271D11FEDC1A000F3C39B /* public in Resources */,
 				504EC30F1FED79650016851F /* Assets.xcassets in Resources */,
@@ -602,6 +609,7 @@
 				CB00000000000000101601A1 /* StickerMask.swift in Sources */,
 				CB00000000000000110301A1 /* TripRoom.swift in Sources */,
 				CB00000000000000112001A1 /* AlcoveCameraView.swift in Sources */,
+				CB00000000000000112002A1 /* AlcoveFilterEngine.swift in Sources */,
 				CB00000000000000111701A1 /* SceneRoom.swift in Sources */,
 				CB00000000000000111801A1 /* QingdaoKitchen.swift in Sources */,
 				CB00000000000000111201A1 /* BenchRoom.swift in Sources */,

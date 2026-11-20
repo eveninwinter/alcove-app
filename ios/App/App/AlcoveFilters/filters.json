@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "lutSize": 16,
+  "defaultIntensity": 100,
+  "filters": [
+    {
+      "id": "7p",
+      "name": "7p",
+      "lut": "luts/7p.cube"
+    },
+    {
+      "id": "soft",
+      "name": "soft",
+      "lut": "luts/soft.cube"
+    },
+    {
+      "id": "cute",
+      "name": "cute",
+      "lut": "luts/cute.cube"
+    },
+    {
+      "id": "milk",
+      "name": "milk",
+      "lut": "luts/milk.cube"
+    },
+    {
+      "id": "pink",
+      "name": "pink",
+      "lut": "luts/pink.cube"
+    },
+    {
+      "id": "leaf",
+      "name": "leaf",
+      "lut": "luts/leaf.cube"
+    },
+    {
+      "id": "dark",
+      "name": "dark",
+      "lut": "luts/dark.cube"
+    }
+  ],
+  "adjustments": [
+    {
+      "id": "brightness",
+      "label": "亮度",
+      "min": -100,
+      "max": 100,
+      "default": 0
+    },
+    {
+      "id": "softBlur",
+      "label": "柔焦",
+      "min": 0,
+      "max": 100,
+      "default": 0
+    },
+    {
+      "id": "grain",
+      "label": "颗粒",
+      "min": 0,
+      "max": 100,
+      "default": 0
+    },
+    {
+      "id": "saturation",
+      "label": "饱和度",
+      "min": -100,
+      "max": 100,
+      "default": 0
+    },
+    {
+      "id": "temperature",
+      "label": "色温",
+      "min": -100,
+      "max": 100,
+      "default": 0
+    }
+  ]
+}
