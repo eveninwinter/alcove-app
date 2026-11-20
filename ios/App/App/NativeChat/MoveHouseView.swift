@@ -1010,7 +1010,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                     Text(roam ? "漫游 · \(w.minutes) MIN" : (w.kind.isEmpty ? "找你" : w.kind)).font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
                     if roam && !w.toHer.isEmpty {
                         Spacer(minLength: 0)
-                        Image(systemName: "arrowtriangle.right")
+                        Image(systemName: "chevron.right")   // 1120 #5848 她要的是没封口的尖角 ›，展开转成 ⌄
                             .font(.system(size: 9, weight: .light)).foregroundColor(accent)
                             .rotationEffect(.degrees(openRoam.contains(w.id) ? 90 : 0))
                             .frame(width: 32, height: 22).contentShape(Rectangle())
