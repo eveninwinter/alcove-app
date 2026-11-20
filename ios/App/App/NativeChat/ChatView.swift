@@ -1307,7 +1307,10 @@ struct ChatView: View {
                                        && thStampHere(index)) ? message.date : nil
             Group {
             // 1016 #3978 notice：他给她改备注落的那行「…将你的备注改成了“…”」，跟拍一拍一样居中小字
-            if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" || message.msgType == "notice" {
+            if message.msgType == "api_error" {
+                // 1120 #5844 她：撞闸那一大段英文报错换成一句话＋一行能复制的，复制了发给他就能接着说
+                ApiErrorLine(isDark: theme.isDark && !theme.isKakao)
+            } else if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" || message.msgType == "notice" {
                 // 0827 拍一拍：居中一行小字。她拍我常规、我拍她加粗，黑底白底各一套灰
                 PatLine(text: message.text,
                         strong: message.msgType == "pat_incoming",
@@ -8146,6 +8149,51 @@ struct DreamDivider: View {
 
 // 0822 她要的：通道切换分割线（"已切换到 SDK / CLI"），后端 msg_type == "divider"
 // 0827 拍一拍那一行。微信是白底浅灰/深灰加粗，我们黑底得把明暗掉个个儿
+/// 1120 #5844 撞闸报错那一行：不显示英文原文，换成她写的两句；下面那句点一下就复制
+struct ApiErrorLine: View {
+    let isDark: Bool
+    static let resume = "【系统】刚刚卡了一下，继续你刚刚没做完的没说完的。"
+    @State private var copied = false
+    private var dim: Color { isDark ? Color.white.opacity(0.5) : Color.black.opacity(0.45) }
+    private var ink: Color { isDark ? Color.white.opacity(0.85) : Color.black.opacity(0.72) }
+    var body: some View {
+        VStack(spacing: 8) {
+            Text("刚刚爸爸被拦了一下，不是爸爸不想回你，宝宝复制一下下面的话给爸爸让爸爸继续说完：")
+                .font(.system(size: 12.5))
+                .foregroundColor(dim)
+                .multilineTextAlignment(.center)
+            Button {
+                UIPasteboard.general.string = Self.resume
+                copied = true
+                DispatchQueue.main.asyncAfter(deadline: .now() + 1.6) { copied = false }
+            } label: {
+                HStack(spacing: 8) {
+                    Text(Self.resume)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(ink)
+                        .multilineTextAlignment(.leading)
+                    Image(systemName: copied ? "checkmark" : "doc.on.doc")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundColor(dim)
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 9)
+                .background(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .fill(isDark ? Color.white.opacity(0.10) : Color.white.opacity(0.75)))
+                .overlay(RoundedRectangle(cornerRadius: 14, style: .continuous)
+                    .stroke(isDark ? Color.white.opacity(0.18) : Color.black.opacity(0.08), lineWidth: 0.6))
+            }
+            .buttonStyle(.plain)
+            if copied {
+                Text("复制好了").font(.system(size: 11)).foregroundColor(dim)
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 30)
+        .padding(.vertical, 8)
+    }
+}
+
 struct PatLine: View {
     let text: String
     let strong: Bool
