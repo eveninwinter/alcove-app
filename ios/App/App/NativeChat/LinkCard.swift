@@ -80,6 +80,7 @@ final class LinkCardStore: ObservableObject {
 extension ChatMessage {
     /// 正文里的链接（按出现顺序、去重，最多 3 个）
     var linkURLs: [String] {
+        if msgType == "api_error" { return [] }   // 1120 #5844：撞闸报错里那个 anthropic 网址不要长预览卡
         let text = displayText
         guard text.contains("http"), let re = try? NSRegularExpression(pattern: #"https?://[^\s<>"'）)\]]+"#) else { return [] }
         var out: [String] = []
