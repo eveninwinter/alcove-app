@@ -649,6 +649,15 @@ enum CamLive {
         return CGImageDestinationFinalize(dest) ? data as Data : nil
     }
 
+    /// 不是实况：成片照样存一份进手机“照片”（#5842 她：点存下也要进手机相册）
+    static func saveStillToPhotos(_ data: Data) async throws {
+        let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
+        guard status == .authorized || status == .limited else { throw Failure.denied }
+        try await PHPhotoLibrary.shared().performChanges {
+            PHAssetCreationRequest.forAsset().addResource(with: .photo, data: data, options: nil)
+        }
+    }
+
     static func saveToPhotos(still: Data, movie: URL) async throws {
         let status = await PHPhotoLibrary.requestAuthorization(for: .addOnly)
         guard status == .authorized || status == .limited else { throw Failure.denied }
@@ -1457,7 +1466,7 @@ struct CamStickerView: View {
     }
 }
 
-// MARK: - 拍完：一张静止的照片，还能换滤镜、改调节（边框贴纸定住了）；存下 / 重拍，可选发给陈璟；实况另存手机“照片”
+// MARK: - 拍完：一张静止的照片，还能换滤镜、改调节（边框贴纸定住了）；存下＝进 Alcove 相册＋手机“照片”（实况就存实况），可选发给陈璟
 
 struct CamConfirmView: View {
     let shot: CamShot
@@ -1650,6 +1659,14 @@ struct CamConfirmView: View {
                 problems.append("实况没存进手机照片")
             }
             if let m = shot.capture.movie { try? FileManager.default.removeItem(at: m) }
+        } else {
+            do {
+                try await CamLive.saveStillToPhotos(data)
+            } catch CamLive.Failure.denied {
+                problems.append("没存进手机相册（没给相册权限，去设置里打开）")
+            } catch {
+                problems.append("没存进手机相册")
+            }
         }
         if !problems.isEmpty {
             self.error = "存进 Alcove 相册了；" + problems.joined(separator: "，")
