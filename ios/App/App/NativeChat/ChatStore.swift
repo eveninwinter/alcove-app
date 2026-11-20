@@ -135,7 +135,7 @@ final class ChatStore: ObservableObject {
     private var liveBubbleBase: Date?
 
     /// 他还在写的正文按空行切段，每段一个临时气泡（跟正式落库的切法一样），接在列表末尾
-    func showLiveBubbles(_ text: String, thinking: String) {
+    func showLiveBubbles(_ text: String, thinking: String, nativeThinking: String = "") {
         let paras = text.components(separatedBy: "\n\n")
             .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
             .filter { !$0.isEmpty }
@@ -147,8 +147,10 @@ final class ChatStore: ObservableObject {
         let base = liveBubbleBase ?? Date()
         liveBubbleBase = base
         for (i, p) in paras.enumerated() {
-            kept.append(ChatMessage(liveText: p, at: base.addingTimeInterval(Double(i) * 0.001),
-                                    thinking: (i == 0 && !thinking.isEmpty) ? thinking : nil))
+            var m = ChatMessage(liveText: p, at: base.addingTimeInterval(Double(i) * 0.001),
+                                thinking: (i == 0 && !thinking.isEmpty) ? thinking : nil)
+            if i == 0 && !nativeThinking.isEmpty { m.nativeThinking = nativeThinking }
+            kept.append(m)
         }
         messages = kept
         liveBubbleRev += 1
@@ -864,17 +866,19 @@ final class ChatStore: ObservableObject {
             if isTyping != typing { isTyping = typing }
             if room == "api", r.isTyping, let p = r.apiPartial {
                 let say = p["say"] as? String ?? ""
-                let thought = [p["thinking"] as? String ?? "", p["native_thinking"] as? String ?? ""]
-                    .filter { !$0.isEmpty }.joined(separator: "\n\n")
+                // 1120 #5863 她：API 的思考链跟主聊天一模一样——原生思考不再跟手写思绪拼成一段画在气泡里，
+                // 单独放 nativeThinking，落到「mind」那个面板（右上角带「译」）
+                let thought = p["thinking"] as? String ?? ""
+                let native = p["native_thinking"] as? String ?? ""
                 // 0926 她要的：正文直接画在正式那种气泡里；还没开口只在想的时候才用那条「思考中」的实时行
                 // 0927：半截话没长就别重画（原来每秒整批拆了重排一次临时气泡）
-                let key = say + "\u{1f}" + thought
+                let key = say + "\u{1f}" + thought + "\u{1f}" + native
                 if key != lastApiPartial {
                     lastApiPartial = key
-                    showLiveBubbles(say, thinking: thought)
+                    showLiveBubbles(say, thinking: thought, nativeThinking: native)
                 }
                 var s = AlcoveAPI.LiveState(active: true, turnID: "api-live")
-                if say.isEmpty { s.thinking = thought }
+                if say.isEmpty { s.thinking = thought; s.nativeThinking = native }
                 if apiLive != s { apiLive = s }
                 let t = p["tool"] as? String ?? ""
                 tool = t.isEmpty ? nil : t   // 他正在用的工具（后端 current_tool 是 tmux 那个他的，这间不认）
