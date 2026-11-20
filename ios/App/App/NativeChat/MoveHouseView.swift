@@ -838,6 +838,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
     @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
     @State private var onlyRoam = false
     @State private var viewing: URL?
+    @State private var openRoam: Set<String> = []   // 1120 #5847 她：漫游里他发的正文默认收起，点小三角展开
 
     private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -1007,6 +1008,18 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                     Text(w.time).font(SanctusPageFont.ital(16)).foregroundColor(ink.title)
                     // 1117 她：醒了没发消息那次后台给「看了一眼」，不再一律写「找你」
                     Text(roam ? "漫游 · \(w.minutes) MIN" : (w.kind.isEmpty ? "找你" : w.kind)).font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(accent)
+                    if roam && !w.toHer.isEmpty {
+                        Spacer(minLength: 0)
+                        Image(systemName: "arrowtriangle.right")
+                            .font(.system(size: 9, weight: .light)).foregroundColor(accent)
+                            .rotationEffect(.degrees(openRoam.contains(w.id) ? 90 : 0))
+                            .frame(width: 32, height: 22).contentShape(Rectangle())
+                            .onTapGesture {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    if openRoam.contains(w.id) { openRoam.remove(w.id) } else { openRoam.insert(w.id) }
+                                }
+                            }
+                    }
                 }
                 VStack(alignment: .leading, spacing: 8) {
                     if roam {
@@ -1017,7 +1030,7 @@ struct WakeHoursView: View {   // 1116 别叫 WakeTimelineView：NativeHouseView
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
-                    if !w.toHer.isEmpty {
+                    if !w.toHer.isEmpty && (!roam || openRoam.contains(w.id)) {
                         Text(w.toHer).font(.system(size: 11.5, design: .serif)).foregroundColor(ink.link).lineSpacing(5)
                             .fixedSize(horizontal: false, vertical: true)
                             .padding(.leading, 9)
