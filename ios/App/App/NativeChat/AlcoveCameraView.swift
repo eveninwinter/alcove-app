@@ -176,10 +176,42 @@ enum CamFilters {
     }()
     static var list: [AlcoveFilterInfo] { engine?.filters ?? [] }
     static func apply(_ p: AlcoveParams, _ img: CIImage) -> CIImage { engine?.apply(p, to: img) ?? img }
+    static let ctx = CIContext(options: [.cacheIntermediates: false])
+
+    /// 一张图整张套上滤镜和调节（拍完那页换滤镜用）
+    static func render(_ p: AlcoveParams, _ image: UIImage) -> UIImage {
+        guard let ci = CIImage(image: image) else { return image }
+        let out = apply(p, ci)
+        guard let cg = ctx.createCGImage(out, from: ci.extent) else { return image }
+        return UIImage(cgImage: cg)
+    }
+
+    /// 滤镜格子的小图：同一张图缩小，每个滤镜各套一遍（不带调节），"" 是原图
+    static func thumbs(from image: UIImage) -> [String: UIImage] {
+        guard let ci = CIImage(image: image) else { return [:] }
+        let ts = 140 / max(ci.extent.width, 1)
+        var small = ci.transformed(by: CGAffineTransform(scaleX: ts, y: ts))
+        small = small.transformed(by: CGAffineTransform(translationX: -small.extent.minX, y: -small.extent.minY))
+        var d: [String: UIImage] = [:]
+        if let c = ctx.createCGImage(small, from: small.extent) { d[""] = UIImage(cgImage: c) }
+        for f in list {
+            let o = apply(AlcoveParams(filter: f.id), small)
+            if let c = ctx.createCGImage(o, from: small.extent) { d[f.id] = UIImage(cgImage: c) }
+        }
+        return d
+    }
+
+    /// 相机里滤镜格子用的固定示例图（她滤镜包里的 sample.jpg）
+    static var sample: UIImage? {
+        guard let url = Bundle.main.url(forResource: "AlcoveFilters", withExtension: nil)?.appendingPathComponent("sample.jpg"),
+              let data = try? Data(contentsOf: url) else { return nil }
+        return UIImage(data: data)
+    }
 }
 
-/// 拍下来那一下：静图（已套滤镜）、实况小视频（原样，存的时候再逐帧套）
+/// 拍下来那一下：原图（没上滤镜，拍完那页换滤镜就从它重算）、静图（按拍的时候的滤镜套好）、实况小视频（原样，存的时候再逐帧套）
 struct CamCapture {
+    let raw: UIImage
     let still: UIImage
     let movie: URL?
     let stillTime: CMTime
@@ -196,15 +228,20 @@ struct CamShot {
 
 // MARK: - 相机
 
-/// 取景画面单独一个对象：一秒三十帧只让取景框和格子重画，整页不跟着重算
+/// 取景画面单独一个对象：一秒三十帧只让取景框重画，整页不跟着重算
 final class CamFeed: ObservableObject {
     @Published var preview: UIImage?
-    @Published var thumb: UIImage?                       // 边框格子用，半秒换一次
-    @Published var filterThumbs: [String: UIImage] = [:] // 滤镜格子用，"" 是原图
+}
+
+/// 边框格子用的小画面，半秒换一次；单独一个对象，免得 29 个格子跟着取景每帧重画
+final class CamThumbFeed: ObservableObject {
+    @Published var thumb: UIImage?
 }
 
 final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
     let feed = CamFeed()
+    let thumbFeed = CamThumbFeed()
+    @Published var filterThumbs: [String: UIImage] = [:]   // 滤镜格子：固定示例图，不跟镜头刷新（#5832）
     @Published var denied = false
     @Published var busy = false
     @Published var hasUltraWide = false
@@ -223,6 +260,7 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
 
     private var shotDone: ((CamCapture?) -> Void)?
     private var shotParams = AlcoveParams()
+    private var shotRaw: UIImage?
     private var shotStill: UIImage?
     private var shotMovie: URL?
     private var shotStillTime = CMTime.invalid
@@ -230,7 +268,6 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     private let lock = NSLock()
     private var _params = AlcoveParams()
     private var _original = false
-    private var _wantFilterThumbs = true
     var params: AlcoveParams {
         get { lock.lock(); defer { lock.unlock() }; return _params }
         set { lock.lock(); _params = newValue; lock.unlock() }
@@ -240,9 +277,13 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         get { lock.lock(); defer { lock.unlock() }; return _original }
         set { lock.lock(); _original = newValue; lock.unlock() }
     }
-    var wantFilterThumbs: Bool {
-        get { lock.lock(); defer { lock.unlock() }; return _wantFilterThumbs }
-        set { lock.lock(); _wantFilterThumbs = newValue; lock.unlock() }
+    override init() {
+        super.init()
+        DispatchQueue.global(qos: .utility).async {
+            guard let img = CamFilters.sample else { return }
+            let d = CamFilters.thumbs(from: img)
+            DispatchQueue.main.async { self.filterThumbs = d }
+        }
     }
 
     func start() {
@@ -360,28 +401,11 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         let ui = UIImage(cgImage: cg)
         let now = Date()
         let refresh = now.timeIntervalSince(lastThumb) > 0.5
-        var thumbs: [String: UIImage]?
-        if refresh {
-            lastThumb = now
-            if wantFilterThumbs {
-                // 滤镜格子：同一帧缩小，七个滤镜各套一遍（不带调节）
-                let ts = 120 / max(img.extent.width, 1)
-                var small = img.transformed(by: CGAffineTransform(scaleX: ts, y: ts))
-                small = small.transformed(by: CGAffineTransform(translationX: -small.extent.minX, y: -small.extent.minY))
-                var d: [String: UIImage] = [:]
-                if let c = ctx.createCGImage(small, from: small.extent) { d[""] = UIImage(cgImage: c) }
-                for f in CamFilters.list {
-                    let o = CamFilters.apply(AlcoveParams(filter: f.id), small)
-                    if let c = ctx.createCGImage(o, from: small.extent) { d[f.id] = UIImage(cgImage: c) }
-                }
-                thumbs = d
-            }
-        }
-        let feed = self.feed
+        if refresh { lastThumb = now }
+        let feed = self.feed, thumbFeed = self.thumbFeed
         DispatchQueue.main.async {
             feed.preview = ui
-            if refresh { feed.thumb = ui }
-            if let thumbs { feed.filterThumbs = thumbs }
+            if refresh { thumbFeed.thumb = ui }
         }
     }
 
@@ -392,6 +416,7 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         queue.async {
             self.shotDone = done
             self.shotParams = p
+            self.shotRaw = nil
             self.shotStill = nil
             self.shotMovie = nil
             self.shotStillTime = .invalid
@@ -411,9 +436,12 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         let upright = UIGraphicsImageRenderer(size: raw.size, format: {
             let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f
         }()).image { _ in raw.draw(in: CGRect(origin: .zero, size: raw.size)) }
-        guard let ci = CIImage(image: upright) else { return }
-        let out = CamFilters.apply(shotParams, ci)
-        if let cg = ctx.createCGImage(out, from: ci.extent) { shotStill = UIImage(cgImage: cg) }
+        let k = min(1, 2160 / max(upright.size.width, upright.size.height))
+        let raw = k >= 1 ? upright : UIGraphicsImageRenderer(size: CGSize(width: (upright.size.width * k).rounded(), height: (upright.size.height * k).rounded()), format: {
+            let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f
+        }()).image { rc in upright.draw(in: rc.format.bounds) }
+        shotRaw = raw
+        shotStill = CamFilters.render(shotParams, raw)
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL,
@@ -424,9 +452,13 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishCaptureFor resolvedSettings: AVCaptureResolvedPhotoSettings, error: Error?) {
-        let result = shotStill.map { CamCapture(still: $0, movie: shotMovie, stillTime: shotStillTime, params: shotParams) }
+        var result: CamCapture?
+        if let raw = shotRaw, let still = shotStill {
+            result = CamCapture(raw: raw, still: still, movie: shotMovie, stillTime: shotStillTime, params: shotParams)
+        }
         let done = shotDone
         shotDone = nil
+        shotRaw = nil
         shotStill = nil
         DispatchQueue.main.async {
             self.busy = false
@@ -493,7 +525,7 @@ enum CamLive {
     enum Failure: Error { case noMovie, writer, denied }
 
     /// 照片和视频靠同一个 identifier 配成一张实况：视频写 content.identifier + still-image-time，照片写 MakerApple["17"]
-    static func process(shot: CamShot, identifier: String) async throws -> URL {
+    static func process(shot: CamShot, params: AlcoveParams, identifier: String) async throws -> URL {
         guard let movie = shot.capture.movie else { throw Failure.noMovie }
         let asset = AVURLAsset(url: movie)
         guard let track = try await asset.loadTracks(withMediaType: .video).first else { throw Failure.noMovie }
@@ -582,7 +614,7 @@ enum CamLive {
             var img = CIImage(cvPixelBuffer: px).oriented(orient)
             img = img.transformed(by: CGAffineTransform(translationX: -img.extent.minX, y: -img.extent.minY))
             let src = img.extent
-            img = CamFilters.apply(shot.capture.params, img).cropped(to: src)
+            img = CamFilters.apply(params, img).cropped(to: src)
             let s = max(hole.width / src.width, hole.height / src.height)
             img = img.transformed(by: CGAffineTransform(scaleX: s, y: s))
             img = img.transformed(by: CGAffineTransform(translationX: hole.midX - img.extent.midX, y: hole.midY - img.extent.midY))
@@ -714,12 +746,10 @@ struct AlcoveCameraView: View {
         .ignoresSafeArea()
         .onAppear {
             engine.params = params
-            engine.wantFilterThumbs = (tab == 0)
             engine.start()
         }
         .onDisappear { engine.stop() }
         .onChange(of: params) { _, p in engine.params = p }
-        .onChange(of: tab) { _, t in engine.wantFilterThumbs = (t == 0) }
         .onChange(of: layout.canvas) { old, new in
             // 换尺寸/换边框：贴纸跟着成片按比例挪，别跑到画外头
             guard old != new, old.width > 0, old.height > 0 else { return }
@@ -899,43 +929,7 @@ struct AlcoveCameraView: View {
     }
 
     private var filterPane: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(alignment: .top, spacing: 10) {
-                    filterTile(nil, name: "原图")
-                    ForEach(CamFilters.list) { f in filterTile(f.id, name: f.name) }
-                }
-                .padding(.horizontal, 14)
-                .padding(.vertical, 6)
-            }
-            sliderRow("强度", value: $params.intensity, range: 0...100)
-                .opacity(params.filter == nil ? 0.35 : 1)
-                .disabled(params.filter == nil)
-        }
-    }
-
-    private func filterTile(_ id: String?, name: String) -> some View {
-        let on = params.filter == id
-        return Button {
-            params.filter = id
-            params.intensity = 100
-        } label: {
-            VStack(spacing: 4) {
-                CamFilterThumb(feed: engine.feed, key: id ?? "")
-                    .frame(width: 48, height: 48)
-                    .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-                    .shadow(color: .black.opacity(on ? 0 : 0.08), radius: 5, y: 3)
-                    .overlay {
-                        if on {
-                            RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(CamInk.ink, lineWidth: 1.5).padding(-3.5)
-                        }
-                    }
-                Text(name)
-                    .font(.system(size: 10, weight: on ? .bold : .semibold))
-                    .foregroundColor(on ? CamInk.ink : CamInk.dim)
-            }
-        }
-        .buttonStyle(.plain)
+        CamFilterStrip(params: $params, thumbs: engine.filterThumbs)
     }
 
     private var framePane: some View {
@@ -957,7 +951,7 @@ struct AlcoveCameraView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.55))
                     if let f {
-                        CamFrameThumb(feed: engine.feed, frame: f)
+                        CamFrameThumb(feed: engine.thumbFeed, frame: f)
                     } else {
                         Text("无").font(.system(size: 12, weight: .semibold)).foregroundColor(CamInk.dim)
                     }
@@ -1021,46 +1015,8 @@ struct AlcoveCameraView: View {
     }
 
     private var adjustPane: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 8) {
-                    ForEach(CamAdjust.allCases) { a in
-                        let on = adjust == a
-                        Button { adjust = a } label: {
-                            HStack(spacing: 5) {
-                                Text(a.rawValue).font(.system(size: 12, weight: .semibold))
-                                Text("\(Int(params[keyPath: a.keyPath]))").font(.system(size: 10, weight: .semibold)).opacity(0.7)
-                            }
-                            .foregroundColor(on ? .white : CamInk.dim)
-                            .padding(.horizontal, 12)
-                            .frame(height: 28)
-                            .background(Capsule().fill(on ? CamInk.ink : Color.white.opacity(0.5)))
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
-                .padding(.horizontal, 14)
-            }
-            sliderRow(nil, value: Binding(get: { params[keyPath: adjust.keyPath] },
-                                          set: { params[keyPath: adjust.keyPath] = $0 }),
-                      range: adjust.range)
-        }
-        .padding(.top, 10)
-    }
-
-    private func sliderRow(_ label: String?, value: Binding<Double>, range: ClosedRange<Double>) -> some View {
-        HStack(spacing: 10) {
-            if let label {
-                Text(label).font(.system(size: 11, weight: .semibold)).foregroundColor(CamInk.dim)
-            }
-            Slider(value: value, in: range, step: 1).tint(CamInk.ink)
-            Text("\(Int(value.wrappedValue))")
-                .font(.system(size: 11, weight: .bold))
-                .foregroundColor(CamInk.ink)
-                .frame(width: 30, alignment: .trailing)
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 28)
+        CamAdjustStrip(params: $params, adjust: $adjust)
+            .padding(.top, 10)
     }
 
     // MARK: 底下三颗
@@ -1158,7 +1114,7 @@ private struct CamLiveCanvas: View {
 }
 
 private struct CamFrameThumb: View {
-    @ObservedObject var feed: CamFeed
+    @ObservedObject var feed: CamThumbFeed
     let frame: CamFrameSpec
     var body: some View {
         let layout = CamLayout.make(frame: frame, ratio: .portrait)
@@ -1170,16 +1126,108 @@ private struct CamFrameThumb: View {
     }
 }
 
-private struct CamFilterThumb: View {
-    @ObservedObject var feed: CamFeed
-    let key: String
+/// 滤镜条：原图＋她的 7 个滤镜（格子是固定小图）＋强度滑杆。相机卡片和拍完那页共用
+private struct CamFilterStrip: View {
+    @Binding var params: AlcoveParams
+    let thumbs: [String: UIImage]
+
     var body: some View {
-        ZStack {
-            Color.black.opacity(0.06)
-            if let img = feed.filterThumbs[key] {
-                Image(uiImage: img).resizable().scaledToFill()
+        VStack(alignment: .leading, spacing: 4) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(alignment: .top, spacing: 10) {
+                    tile(nil, name: "原图")
+                    ForEach(CamFilters.list) { f in tile(f.id, name: f.name) }
+                }
+                .padding(.horizontal, 14)
+                .padding(.vertical, 6)
+            }
+            CamSliderRow(label: "强度", value: $params.intensity, range: 0...100)
+                .opacity(params.filter == nil ? 0.35 : 1)
+                .disabled(params.filter == nil)
+        }
+    }
+
+    private func tile(_ id: String?, name: String) -> some View {
+        let on = params.filter == id
+        return Button {
+            params.filter = id
+            params.intensity = 100
+        } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    Color.black.opacity(0.06)
+                    if let img = thumbs[id ?? ""] {
+                        Image(uiImage: img).resizable().scaledToFill()
+                    }
+                }
+                .frame(width: 48, height: 48)
+                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+                .shadow(color: .black.opacity(on ? 0 : 0.08), radius: 5, y: 3)
+                .overlay {
+                    if on {
+                        RoundedRectangle(cornerRadius: 15, style: .continuous).stroke(CamInk.ink, lineWidth: 1.5).padding(-3.5)
+                    }
+                }
+                Text(name)
+                    .font(.system(size: 10, weight: on ? .bold : .semibold))
+                    .foregroundColor(on ? CamInk.ink : CamInk.dim)
             }
         }
+        .buttonStyle(.plain)
+    }
+}
+
+/// 调节条：亮度 柔焦 颗粒 饱和度 色温，点哪个下面滑杆调哪个
+private struct CamAdjustStrip: View {
+    @Binding var params: AlcoveParams
+    @Binding var adjust: CamAdjust
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 8) {
+                    ForEach(CamAdjust.allCases) { a in
+                        let on = adjust == a
+                        Button { adjust = a } label: {
+                            HStack(spacing: 5) {
+                                Text(a.rawValue).font(.system(size: 12, weight: .semibold))
+                                Text("\(Int(params[keyPath: a.keyPath]))").font(.system(size: 10, weight: .semibold)).opacity(0.7)
+                            }
+                            .foregroundColor(on ? .white : CamInk.dim)
+                            .padding(.horizontal, 12)
+                            .frame(height: 28)
+                            .background(Capsule().fill(on ? CamInk.ink : Color.white.opacity(0.5)))
+                        }
+                        .buttonStyle(.plain)
+                    }
+                }
+                .padding(.horizontal, 14)
+            }
+            CamSliderRow(label: nil, value: Binding(get: { params[keyPath: adjust.keyPath] },
+                                                    set: { params[keyPath: adjust.keyPath] = $0 }),
+                         range: adjust.range)
+        }
+    }
+}
+
+private struct CamSliderRow: View {
+    let label: String?
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+
+    var body: some View {
+        HStack(spacing: 10) {
+            if let label {
+                Text(label).font(.system(size: 11, weight: .semibold)).foregroundColor(CamInk.dim)
+            }
+            Slider(value: $value, in: range, step: 1).tint(CamInk.ink)
+            Text("\(Int(value))")
+                .font(.system(size: 11, weight: .bold))
+                .foregroundColor(CamInk.ink)
+                .frame(width: 30, alignment: .trailing)
+        }
+        .padding(.horizontal, 16)
+        .frame(height: 28)
     }
 }
 
@@ -1405,13 +1453,19 @@ struct CamStickerView: View {
     }
 }
 
-// MARK: - 拍完：存下 / 重拍，可选发给陈璟；实况另存手机“照片”
+// MARK: - 拍完：一张静止的照片，还能换滤镜、改调节（边框贴纸定住了）；存下 / 重拍，可选发给陈璟；实况另存手机“照片”
 
 struct CamConfirmView: View {
     let shot: CamShot
     let retake: () -> Void
     let saved: (UIImage) -> Void
 
+    @State private var params: AlcoveParams
+    @State private var image: UIImage
+    @State private var editTab = 0
+    @State private var adjust: CamAdjust = .brightness
+    @State private var thumbs: [String: UIImage] = [:]
+    @State private var renderToken = 0
     @State private var sendToHim = false
     @State private var saving = false
     @State private var error: String?
@@ -1419,12 +1473,20 @@ struct CamConfirmView: View {
     private static let categoryName = "Alcove 相机"
     private var isLive: Bool { shot.capture.movie != nil }
 
+    init(shot: CamShot, retake: @escaping () -> Void, saved: @escaping (UIImage) -> Void) {
+        self.shot = shot
+        self.retake = retake
+        self.saved = saved
+        _params = State(initialValue: shot.capture.params)
+        _image = State(initialValue: shot.image)
+    }
+
     var body: some View {
         GeometryReader { geo in
             let safeTop = FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 47
             let safeBottom = FloatingOverlay.appWindow()?.safeAreaInsets.bottom ?? 34
-            VStack(spacing: 14) {
-                Image(uiImage: shot.image)
+            VStack(spacing: 12) {
+                Image(uiImage: image)
                     .resizable()
                     .scaledToFit()
                     .overlay(alignment: .topLeading) {
@@ -1441,14 +1503,17 @@ struct CamConfirmView: View {
                         }
                     }
                     .shadow(color: .black.opacity(0.10), radius: 14, y: 6)
-                    .frame(maxHeight: geo.size.height - safeTop - safeBottom - 190)
+                    .frame(maxHeight: .infinity)
                     .padding(.horizontal, 22)
+                editCard
+                    .frame(height: 138)
+                    .padding(.horizontal, 12)
                 Toggle(isOn: $sendToHim) {
                     Text("也发给陈璟").font(.system(size: 14, weight: .semibold)).foregroundColor(CamInk.ink)
                 }
                 .tint(CamInk.ink)
                 .padding(.horizontal, 18)
-                .frame(height: 50)
+                .frame(height: 46)
                 .background(CamFrost(shape: RoundedRectangle(cornerRadius: 18, style: .continuous)))
                 .padding(.horizontal, 22)
                 if let error {
@@ -1476,16 +1541,69 @@ struct CamConfirmView: View {
                 }
                 .padding(.horizontal, 22)
             }
-            .padding(.top, safeTop + 16)
-            .padding(.bottom, safeBottom + 16)
+            .padding(.top, safeTop + 10)
+            .padding(.bottom, safeBottom + 12)
             .frame(width: geo.size.width, height: geo.size.height)
             .background(CamInk.page)
         }
         .ignoresSafeArea()
+        .task {
+            // 滤镜格子：就用这张照片做小图，做一次
+            let raw = shot.capture.raw
+            thumbs = await Task.detached(priority: .utility) { CamFilters.thumbs(from: raw) }.value
+        }
+        .onChange(of: params) { _, p in rerender(p) }
+    }
+
+    /// 滤镜｜调节，跟相机里那两栏一模一样
+    private var editCard: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(spacing: 18) {
+                ForEach(["滤镜", "调节"].indices, id: \.self) { i in
+                    Button { editTab = i } label: {
+                        Text(i == 0 ? "滤镜" : "调节")
+                            .font(.system(size: 13, weight: .bold))
+                            .foregroundColor(editTab == i ? CamInk.ink : CamInk.faint)
+                            .frame(height: 22)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
+            .padding(.leading, 14)
+            Group {
+                if editTab == 0 {
+                    CamFilterStrip(params: $params, thumbs: thumbs)
+                } else {
+                    CamAdjustStrip(params: $params, adjust: $adjust).padding(.top, 10)
+                }
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        }
+        .padding(.top, 10)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(CamFrost(shape: RoundedRectangle(cornerRadius: 24, style: .continuous)))
+        .disabled(saving)
+    }
+
+    /// 换了滤镜/调节：从原图重算一遍再合进边框贴纸；拖滑杆时只要最后那次的结果
+    private func rerender(_ p: AlcoveParams) {
+        renderToken += 1
+        let token = renderToken
+        let shot = self.shot
+        Task {
+            let img = await Task.detached(priority: .userInitiated) {
+                CamCompose.render(photo: CamFilters.render(p, shot.capture.raw), layout: shot.layout, stickers: shot.stickers)
+            }.value
+            if token == renderToken { image = img }
+        }
     }
 
     private func save() async {
-        guard !saving, let data = shot.image.jpegData(compressionQuality: 0.9) else { return }
+        guard !saving else { return }
+        // 滑杆刚松手、最后那次还在算：先等它算完
+        let finalImage = CamCompose.render(photo: CamFilters.render(params, shot.capture.raw), layout: shot.layout, stickers: shot.stickers)
+        guard let data = finalImage.jpegData(compressionQuality: 0.9) else { return }
         saving = true
         error = nil
         defer { saving = false }
@@ -1509,12 +1627,13 @@ struct CamConfirmView: View {
         }
         if isLive {
             let shot = self.shot
+            let p = params
             let id = UUID().uuidString
             do {
                 let movie = try await Task.detached(priority: .userInitiated) {
-                    try await CamLive.process(shot: shot, identifier: id)
+                    try await CamLive.process(shot: shot, params: p, identifier: id)
                 }.value
-                guard let still = CamLive.stillData(shot.image, identifier: id) else { throw CamLive.Failure.writer }
+                guard let still = CamLive.stillData(finalImage, identifier: id) else { throw CamLive.Failure.writer }
                 try await CamLive.saveToPhotos(still: still, movie: movie)
             } catch CamLive.Failure.denied {
                 problems.append("实况没存进手机照片（没给相册权限）")
@@ -1527,6 +1646,6 @@ struct CamConfirmView: View {
             self.error = "存进 Alcove 相册了；" + problems.joined(separator: "，")
             try? await Task.sleep(nanoseconds: 1_600_000_000)
         }
-        saved(shot.image)
+        saved(finalImage)
     }
 }
