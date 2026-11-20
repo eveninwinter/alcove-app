@@ -437,11 +437,11 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
             let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f
         }()).image { _ in raw.draw(in: CGRect(origin: .zero, size: raw.size)) }
         let k = min(1, 2160 / max(upright.size.width, upright.size.height))
-        let raw = k >= 1 ? upright : UIGraphicsImageRenderer(size: CGSize(width: (upright.size.width * k).rounded(), height: (upright.size.height * k).rounded()), format: {
+        let small = k >= 1 ? upright : UIGraphicsImageRenderer(size: CGSize(width: (upright.size.width * k).rounded(), height: (upright.size.height * k).rounded()), format: {
             let f = UIGraphicsImageRendererFormat(); f.scale = 1; return f
         }()).image { rc in upright.draw(in: rc.format.bounds) }
-        shotRaw = raw
-        shotStill = CamFilters.render(shotParams, raw)
+        shotRaw = small
+        shotStill = CamFilters.render(shotParams, small)
     }
 
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingLivePhotoToMovieFileAt outputFileURL: URL,

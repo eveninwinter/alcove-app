@@ -29,7 +29,8 @@ final class ChatWallpaperStore: ObservableObject {
 
     private var loadedKey = ""
 
-    static func fileName(for themeName: String) -> String {
+    // nonisolated：纯查表，壁纸方案（WallSchemes，不在主线程类里）也要用它
+    nonisolated static func fileName(for themeName: String) -> String {
         switch themeName {
         case "midnight": return "chatwall_midnight.jpg"
         case "paper": return "chatwall_paper.jpg"
