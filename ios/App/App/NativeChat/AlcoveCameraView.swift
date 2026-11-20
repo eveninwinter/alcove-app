@@ -233,14 +233,9 @@ final class CamFeed: ObservableObject {
     @Published var preview: UIImage?
 }
 
-/// 边框格子用的小画面，半秒换一次；单独一个对象，免得 29 个格子跟着取景每帧重画
-final class CamThumbFeed: ObservableObject {
-    @Published var thumb: UIImage?
-}
 
 final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampleBufferDelegate, AVCapturePhotoCaptureDelegate {
     let feed = CamFeed()
-    let thumbFeed = CamThumbFeed()
     @Published var filterThumbs: [String: UIImage] = [:]   // 滤镜格子：固定示例图，不跟镜头刷新（#5832）
     @Published var denied = false
     @Published var busy = false
@@ -256,7 +251,6 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
     private var position: AVCaptureDevice.Position = .back
     private var zoomOne: CGFloat = 1        // “1×”对应的倍数（三摄虚拟镜头里 1.0 是超广角）
     private var rendering = false
-    private var lastThumb = Date.distantPast
 
     private var shotDone: ((CamCapture?) -> Void)?
     private var shotParams = AlcoveParams()
@@ -399,14 +393,8 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
         let out = showOriginal ? img : CamFilters.apply(params, img)
         guard let cg = ctx.createCGImage(out, from: img.extent) else { return }
         let ui = UIImage(cgImage: cg)
-        let now = Date()
-        let refresh = now.timeIntervalSince(lastThumb) > 0.5
-        if refresh { lastThumb = now }
-        let feed = self.feed, thumbFeed = self.thumbFeed
-        DispatchQueue.main.async {
-            feed.preview = ui
-            if refresh { thumbFeed.thumb = ui }
-        }
+        let feed = self.feed
+        DispatchQueue.main.async { feed.preview = ui }
     }
 
     func shoot(live: Bool, flash: Bool, _ done: @escaping (CamCapture?) -> Void) {
@@ -470,15 +458,14 @@ final class CamEngine: NSObject, ObservableObject, AVCaptureVideoDataOutputSampl
 // MARK: - 合成成片
 
 enum CamCompose {
+    /// 套了边框：边框外圈透明的地方（唱片四周、老手机圆角）就留透明，存成 PNG；没边框是整张照片
     static func render(photo: UIImage, layout: CamLayout, stickers: [CamSticker]) -> UIImage {
         let size = layout.canvas
         let fmt = UIGraphicsImageRendererFormat()
         fmt.scale = 1
-        fmt.opaque = true
+        fmt.opaque = layout.frameId == nil
         return UIGraphicsImageRenderer(size: size, format: fmt).image { rc in
             let cg = rc.cgContext
-            UIColor.white.setFill()
-            cg.fill(CGRect(origin: .zero, size: size))
             // 照片：铺满边框的洞
             let r = layout.hole
             let k = max(r.width / photo.size.width, r.height / photo.size.height)
@@ -488,6 +475,18 @@ enum CamCompose {
             photo.draw(in: CGRect(x: r.midX - pw / 2, y: r.midY - ph / 2, width: pw, height: ph))
             cg.restoreGState()
             drawOverlay(cg, layout: layout, stickers: stickers)
+        }
+    }
+
+    /// 垫白底（手机“照片”里的实况静图是 JPEG，透明的地方不垫会变黑）
+    static func flattened(_ image: UIImage) -> UIImage {
+        let fmt = UIGraphicsImageRendererFormat()
+        fmt.scale = 1
+        fmt.opaque = true
+        return UIGraphicsImageRenderer(size: image.size, format: fmt).image { rc in
+            UIColor.white.setFill()
+            rc.fill(CGRect(origin: .zero, size: image.size))
+            image.draw(at: .zero)
         }
     }
 
@@ -951,7 +950,7 @@ struct AlcoveCameraView: View {
                 ZStack {
                     RoundedRectangle(cornerRadius: 13, style: .continuous).fill(Color.white.opacity(0.55))
                     if let f {
-                        CamFrameThumb(feed: engine.thumbFeed, frame: f)
+                        CamFrameThumb(frame: f)
                     } else {
                         Text("无").font(.system(size: 12, weight: .semibold)).foregroundColor(CamInk.dim)
                     }
@@ -1113,16 +1112,21 @@ private struct CamLiveCanvas: View {
     }
 }
 
+/// 边框格子：不跟镜头（#5839），就是边框原图，照片的洞里填白
 private struct CamFrameThumb: View {
-    @ObservedObject var feed: CamThumbFeed
     let frame: CamFrameSpec
     var body: some View {
-        let layout = CamLayout.make(frame: frame, ratio: .portrait)
-        let a = layout.canvas.height / max(layout.canvas.width, 1)
+        let a = frame.aspect
         let size = a >= 1 ? CGSize(width: 52 / a, height: 52) : CGSize(width: 52, height: 52 * a)
-        CamCanvasView(layout: layout, size: size, photo: feed.thumb,
-                      stickers: .constant([]), selected: .constant(nil), interactive: false)
-            .frame(width: size.width, height: size.height)
+        let h = frame.hole
+        ZStack(alignment: .topLeading) {
+            Color.clear
+            Color.white
+                .frame(width: h.width * size.width, height: h.height * size.height)
+                .position(x: h.midX * size.width, y: h.midY * size.height)
+            Image(frame.id).resizable().frame(width: size.width, height: size.height)
+        }
+        .frame(width: size.width, height: size.height)
     }
 }
 
@@ -1262,7 +1266,7 @@ struct CamCanvasView: View {
     var body: some View {
         let r = layout.hole
         ZStack(alignment: .topLeading) {
-            Color.white
+            Color.clear
             if let photo {
                 Image(uiImage: photo).resizable().scaledToFill()
                     .frame(width: r.width * k, height: r.height * k)
@@ -1515,6 +1519,7 @@ struct CamConfirmView: View {
                 .padding(.horizontal, 18)
                 .frame(height: 46)
                 .background(CamFrost(shape: RoundedRectangle(cornerRadius: 18, style: .continuous)))
+                .fixedSize(horizontal: false, vertical: true)
                 .padding(.horizontal, 22)
                 if let error {
                     Text(error).font(.system(size: 12, weight: .semibold)).foregroundColor(CamInk.dim)
@@ -1522,7 +1527,8 @@ struct CamConfirmView: View {
                 HStack(spacing: 14) {
                     Button(action: retake) {
                         Text("重拍").font(.system(size: 15, weight: .semibold)).foregroundColor(CamInk.ink)
-                            .frame(maxWidth: .infinity, minHeight: 48)
+                            .frame(maxWidth: .infinity)
+                            .frame(height: 48)
                             .background(CamFrost(shape: Capsule()))
                     }
                     .buttonStyle(.plain)
@@ -1534,12 +1540,14 @@ struct CamConfirmView: View {
                                 Text("存下").font(.system(size: 15, weight: .bold)).foregroundColor(.white)
                             }
                         }
-                        .frame(maxWidth: .infinity, minHeight: 48)
+                        .frame(maxWidth: .infinity)
+                        .frame(height: 48)
                     }
                     .buttonStyle(.plain)
                     .disabled(saving)
                 }
                 .padding(.horizontal, 22)
+                .frame(height: 48)
             }
             .padding(.top, safeTop + 10)
             .padding(.bottom, safeBottom + 12)
@@ -1603,7 +1611,8 @@ struct CamConfirmView: View {
         guard !saving else { return }
         // 滑杆刚松手、最后那次还在算：先等它算完
         let finalImage = CamCompose.render(photo: CamFilters.render(params, shot.capture.raw), layout: shot.layout, stickers: shot.stickers)
-        guard let data = finalImage.jpegData(compressionQuality: 0.9) else { return }
+        let keepClear = shot.layout.frameId != nil
+        guard let data = keepClear ? finalImage.pngData() : finalImage.jpegData(compressionQuality: 0.9) else { return }
         saving = true
         error = nil
         defer { saving = false }
@@ -1618,7 +1627,7 @@ struct CamConfirmView: View {
         }
         var problems: [String] = []
         if sendToHim {
-            let name = "AlcoveCam_\(Int(Date().timeIntervalSince1970)).jpg"
+            let name = "AlcoveCam_\(Int(Date().timeIntervalSince1970))" + (keepClear ? ".png" : ".jpg")
             do {
                 _ = try await AlcoveAPI.upload(data: data, filename: name, caption: "")
             } catch {
@@ -1633,7 +1642,7 @@ struct CamConfirmView: View {
                 let movie = try await Task.detached(priority: .userInitiated) {
                     try await CamLive.process(shot: shot, params: p, identifier: id)
                 }.value
-                guard let still = CamLive.stillData(finalImage, identifier: id) else { throw CamLive.Failure.writer }
+                guard let still = CamLive.stillData(CamCompose.flattened(finalImage), identifier: id) else { throw CamLive.Failure.writer }
                 try await CamLive.saveToPhotos(still: still, movie: movie)
             } catch CamLive.Failure.denied {
                 problems.append("实况没存进手机照片（没给相册权限）")
