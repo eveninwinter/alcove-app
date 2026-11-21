@@ -321,15 +321,19 @@ enum WallSchemes {
     private static let globalLookKeys = ["chatFontSize", "chatBubbleGap", "chatTurnGap", BubblePadV.key,
                                          "showClawdPet", KakaoPackStore.fontKey]
 
+    private static let glassLookKeys = ["msgGlassFrost", "msgGlassKind", "msgGlassFog2"]
+
     private static func lookKeys(_ themeName: String) -> (exact: [String], prefixes: [String]) {
         let dark = MessagesPalette.isDark
         switch AlcoveAppearance.family(of: themeName) {
+        // 1121 #5897 她：「气泡没有存在方案里面」——玻璃气泡那几样（透 / 雾、两条透明滑杆、我的 / 他的毛玻璃色）树屋也在用，上一版漏了
         case "treehouse":
-            return (globalLookKeys + [MessagesPalette.thGlassKey, TreehouseBubbleMode.key],
-                    [dark ? "msgColorTreehouseNight." : "msgColorTreehouse."])
+            return (globalLookKeys + [MessagesPalette.thGlassKey, TreehouseBubbleMode.key] + glassLookKeys,
+                    [dark ? "msgColorTreehouseNight." : "msgColorTreehouse.", "frostTint." + (dark ? "night." : "day.")])
         case "imessage":
-            return (globalLookKeys + [MessagesPalette.glassKey, "msgGlassFrost", "msgGlassKind", "msgGlassFog2"],
-                    ["msgColor." + (dark ? "night." : "day."), "msgColorGlass." + (dark ? "night." : "day.")])
+            return (globalLookKeys + [MessagesPalette.glassKey] + glassLookKeys,
+                    ["msgColor." + (dark ? "night." : "day."), "msgColorGlass." + (dark ? "night." : "day."),
+                     "frostTint." + (dark ? "night." : "day.")])
         case "kakao":
             return (globalLookKeys + [KakaoPackStore.selectedKey, KakaoPackStore.usePackAvatarKey,
                                       KakaoPackStore.showAvatarKey, KakaoSendButton.key], [])
@@ -339,6 +343,8 @@ enum WallSchemes {
     }
 
     private static let modeMark = "@mode"
+    private static let exactMark = "@exact"
+    private static let prefixMark = "@prefixes"
 
     private static func managedKeys(_ themeName: String) -> [String] {
         let (exact, prefixes) = lookKeys(themeName)
@@ -352,6 +358,9 @@ enum WallSchemes {
             if let v = UserDefaults.standard.object(forKey: k) { dict[k] = v }
         }
         dict[modeMark] = MessagesPalette.isDark ? "night" : "day"
+        let (exact, prefixes) = lookKeys(themeName)
+        dict[exactMark] = exact          // 存的时候认识哪几样：换上时只清这些，后来新加的键不会被老方案当成默认清掉
+        dict[prefixMark] = prefixes
         return try? PropertyListSerialization.data(fromPropertyList: dict, format: .binary, options: 0)
     }
 
@@ -364,11 +373,18 @@ enum WallSchemes {
         let oldFont = d.string(forKey: KakaoPackStore.fontKey) ?? ""
         // 存的时候是白天、现在是黑夜（或反过来）：颜色那组不动，只换全局和开关那几样
         let sameMode = (dict[modeMark] as? String) == (MessagesPalette.isDark ? "night" : "day")
+        let marks: Set<String> = [modeMark, exactMark, prefixMark]
         let exact = Set(lookKeys(themeName).exact)
+        let knewExact = Set(dict[exactMark] as? [String] ?? [])
+        let knewPrefixes = dict[prefixMark] as? [String] ?? []
         var keys = Set(sameMode ? managedKeys(themeName) : lookKeys(themeName).exact)
-        if sameMode { keys.formUnion(dict.keys.filter { $0 != modeMark }) }
+        if sameMode { keys.formUnion(dict.keys.filter { !marks.contains($0) }) }
         for k in keys where sameMode || exact.contains(k) {
-            if let v = dict[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) }
+            if let v = dict[k] {
+                d.set(v, forKey: k)
+            } else if knewExact.contains(k) || knewPrefixes.contains(where: { k.hasPrefix($0) }) {
+                d.removeObject(forKey: k)     // 存的时候是默认 → 清回默认
+            }                                  // 存的时候还不认识这一样 → 不动
         }
         // Kakao 包和字体在 KakaoPackStore 里另有一份内存里的，走它自己的入口换，别只改了存的那份
         let store = KakaoPackStore.shared
