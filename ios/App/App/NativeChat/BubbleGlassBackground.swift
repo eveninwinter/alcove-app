@@ -450,7 +450,10 @@ enum WallSchemes {
     }
 
     static func apply(_ id: String, _ themeName: String) {
-        if activeID(themeName) != id { saveActiveLook(themeName) }
+        // 1121 #5902 她：「我刚调好 点了一下方案 又回去了」——点的是正在用的那个，原来会把它存的旧样子整套盖回来。
+        // 点正在用的那个＝什么都不做
+        if activeID(themeName) == id { return }
+        saveActiveLook(themeName)
         guard let s = list(themeName).first(where: { $0.id == id }) else { return }
         let fm = FileManager.default
         let wall = wallURL(themeName)
