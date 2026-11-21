@@ -318,8 +318,13 @@ enum WallSchemes {
 
     // ── 1121 #5893 外观页上除了壁纸以外的调节 ──
     // 全局的（哪个主题都吃）＋这一族主题自己的；颜色只管眼下白天 / 黑夜那一套，免得切一个方案把另一边的颜色也冲掉
+    // 1121 #5900 她：「方案是一整个聊天页的所有能调节的地方」——聊天页上能调的一样都不许漏。
+    // ‼️以后聊天页新加任何一个能调的（颜色、开关、滑杆、头像……），都要在这里（或下面各族那几行）登记一个键。
     private static let globalLookKeys = ["chatFontSize", "chatBubbleGap", "chatTurnGap", BubblePadV.key,
-                                         "showClawdPet", KakaoPackStore.fontKey]
+                                         "showClawdPet", "clawdOffX", "clawdOffY",          // 小螃蟹开关、拖到哪
+                                         "imsgShowProcess",                                 // 过程线圆点
+                                         "assistantAvatarDataURL", "userAvatarDataURL",     // 两个人的头像
+                                         KakaoPackStore.fontKey]
 
     private static let glassLookKeys = ["msgGlassFrost", "msgGlassKind", "msgGlassFog2"]
 
