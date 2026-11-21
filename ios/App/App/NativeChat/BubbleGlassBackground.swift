@@ -263,6 +263,7 @@ struct WallScheme: Codable, Identifiable, Equatable {
     var name: String
     var blur: Double
     var hasImage: Bool      // false＝这个方案用的是主题自带的默认壁纸
+    var look: Data? = nil   // 1121 #5893 她：方案要包含所有调节——字体字号间距、气泡颜色、Kakao 包这些（plist 存的那一组键）
 }
 
 enum WallSchemes {
@@ -312,6 +313,78 @@ enum WallSchemes {
             s.hasImage = false
         }
         s.blur = TreehouseWallBlur.value(for: themeName)
+        s.look = captureLook(themeName)
+    }
+
+    // ── 1121 #5893 外观页上除了壁纸以外的调节 ──
+    // 全局的（哪个主题都吃）＋这一族主题自己的；颜色只管眼下白天 / 黑夜那一套，免得切一个方案把另一边的颜色也冲掉
+    private static let globalLookKeys = ["chatFontSize", "chatBubbleGap", "chatTurnGap", BubblePadV.key,
+                                         "showClawdPet", KakaoPackStore.fontKey]
+
+    private static func lookKeys(_ themeName: String) -> (exact: [String], prefixes: [String]) {
+        let dark = MessagesPalette.isDark
+        switch AlcoveAppearance.family(of: themeName) {
+        case "treehouse":
+            return (globalLookKeys + [MessagesPalette.thGlassKey, TreehouseBubbleMode.key],
+                    [dark ? "msgColorTreehouseNight." : "msgColorTreehouse."])
+        case "imessage":
+            return (globalLookKeys + [MessagesPalette.glassKey, "msgGlassFrost", "msgGlassKind", "msgGlassFog2"],
+                    ["msgColor." + (dark ? "night." : "day."), "msgColorGlass." + (dark ? "night." : "day.")])
+        case "kakao":
+            return (globalLookKeys + [KakaoPackStore.selectedKey, KakaoPackStore.usePackAvatarKey,
+                                      KakaoPackStore.showAvatarKey, KakaoSendButton.key], [])
+        default:
+            return (globalLookKeys, [])
+        }
+    }
+
+    private static let modeMark = "@mode"
+
+    private static func managedKeys(_ themeName: String) -> [String] {
+        let (exact, prefixes) = lookKeys(themeName)
+        let all = UserDefaults.standard.dictionaryRepresentation().keys
+        return exact + all.filter { k in prefixes.contains { k.hasPrefix($0) } }
+    }
+
+    private static func captureLook(_ themeName: String) -> Data? {
+        var dict: [String: Any] = [:]
+        for k in managedKeys(themeName) {
+            if let v = UserDefaults.standard.object(forKey: k) { dict[k] = v }
+        }
+        dict[modeMark] = MessagesPalette.isDark ? "night" : "day"
+        return try? PropertyListSerialization.data(fromPropertyList: dict, format: .binary, options: 0)
+    }
+
+    /// 方案里没存的键＝那时候是默认，换上时也清回默认
+    private static func restoreLook(_ data: Data?, _ themeName: String) {
+        guard let data,
+              let dict = (try? PropertyListSerialization.propertyList(from: data, format: nil)) as? [String: Any] else { return }
+        let d = UserDefaults.standard
+        let oldPack = d.string(forKey: KakaoPackStore.selectedKey) ?? ""
+        let oldFont = d.string(forKey: KakaoPackStore.fontKey) ?? ""
+        // 存的时候是白天、现在是黑夜（或反过来）：颜色那组不动，只换全局和开关那几样
+        let sameMode = (dict[modeMark] as? String) == (MessagesPalette.isDark ? "night" : "day")
+        let exact = Set(lookKeys(themeName).exact)
+        var keys = Set(sameMode ? managedKeys(themeName) : lookKeys(themeName).exact)
+        if sameMode { keys.formUnion(dict.keys.filter { $0 != modeMark }) }
+        for k in keys where sameMode || exact.contains(k) {
+            if let v = dict[k] { d.set(v, forKey: k) } else { d.removeObject(forKey: k) }
+        }
+        // Kakao 包和字体在 KakaoPackStore 里另有一份内存里的，走它自己的入口换，别只改了存的那份
+        let store = KakaoPackStore.shared
+        let pack = d.string(forKey: KakaoPackStore.selectedKey) ?? ""
+        let font = d.string(forKey: KakaoPackStore.fontKey) ?? ""
+        if pack != oldPack, !pack.isEmpty { d.set(oldPack, forKey: KakaoPackStore.selectedKey); store.select(pack) }
+        if font != oldFont { d.set(oldFont, forKey: KakaoPackStore.fontKey); store.selectFont(font) }
+        MessagesPalette.bump()
+    }
+
+    /// 切走之前：把眼下这一整套调节记进正在用的方案
+    private static func saveActiveLook(_ themeName: String) {
+        var items = list(themeName)
+        guard let id = activeID(themeName), let i = items.firstIndex(where: { $0.id == id }) else { return }
+        items[i].look = captureLook(themeName)
+        save(items, themeName)
     }
 
     /// 换图 / 恢复默认之后：记进当前方案
@@ -331,12 +404,14 @@ enum WallSchemes {
     }
 
     static func apply(_ id: String, _ themeName: String) {
+        if activeID(themeName) != id { saveActiveLook(themeName) }
         guard let s = list(themeName).first(where: { $0.id == id }) else { return }
         let fm = FileManager.default
         let wall = wallURL(themeName)
         try? fm.removeItem(at: wall)
         if s.hasImage { try? fm.copyItem(at: imageURL(id, themeName), to: wall) }
         TreehouseWallBlur.set(s.blur, for: themeName)
+        restoreLook(s.look, themeName)
         UserDefaults.standard.set(id, forKey: activeKey(themeName))
         UserDefaults.standard.set(Date().timeIntervalSince1970, forKey: "wallStamp")
     }
@@ -344,6 +419,7 @@ enum WallSchemes {
     /// 新方案：先照着现在这张抄一份，切过去，她再从相册换成想要的
     @discardableResult
     static func add(_ themeName: String) -> WallScheme {
+        saveActiveLook(themeName)
         var items = list(themeName)
         var s = WallScheme(id: UUID().uuidString, name: defaultName(items.count + 1), blur: 0, hasImage: false)
         snapshot(&s, themeName)
