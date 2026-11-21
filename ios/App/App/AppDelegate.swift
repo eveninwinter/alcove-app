@@ -52,6 +52,7 @@ class AppDelegate: UIResponder, UIApplicationDelegate {
 
         // SwiftUI 原生聊天页接管根视图；其余页面走常驻 WebHouse WebView
         let win = UIWindow(frame: UIScreen.main.bounds)
+        WallSchemes.startAutoSave()   // 1121 #5901 聊天页的调节一改就记进当前方案
         let host = UIHostingController(rootView: RootView())
         // 深浅由 RootView 按 PWA 主题设置，不在这里锁死
         host.view.backgroundColor = .clear

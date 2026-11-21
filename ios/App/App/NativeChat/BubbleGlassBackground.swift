@@ -400,6 +400,31 @@ enum WallSchemes {
         MessagesPalette.bump()
     }
 
+    // ── 1121 #5901 她：「你到底怎么保存的」——原来只在切方案 / 新建的那一下才存，她调完看不出存没存。
+    // 改成：聊天页任何一样调完，一秒内自动记进正在用的那个方案。App 启动时 startAutoSave() 开一次。
+    private static var autoSaveToken: NSObjectProtocol?
+    private static var autoSaveWork: DispatchWorkItem?
+
+    static func startAutoSave() {
+        guard autoSaveToken == nil else { return }
+        autoSaveToken = NotificationCenter.default.addObserver(
+            forName: UserDefaults.didChangeNotification, object: nil, queue: .main) { _ in
+            autoSaveWork?.cancel()
+            let work = DispatchWorkItem { autoSaveNow() }
+            autoSaveWork = work
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1, execute: work)
+        }
+    }
+
+    private static func autoSaveNow() {
+        let themeName = UserDefaults.standard.string(forKey: "alcoveTheme") ?? "haven"
+        var items = list(themeName)
+        guard let id = activeID(themeName), let i = items.firstIndex(where: { $0.id == id }) else { return }
+        guard let look = captureLook(themeName), look != items[i].look else { return }   // 没变就不写，免得自己触发自己
+        items[i].look = look
+        save(items, themeName)
+    }
+
     /// 切走之前：把眼下这一整套调节记进正在用的方案
     private static func saveActiveLook(_ themeName: String) {
         var items = list(themeName)
