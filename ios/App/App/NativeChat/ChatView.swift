@@ -1250,7 +1250,12 @@ struct ChatView: View {
                 if let a = prev.turnID, !a.isEmpty, let b = message.turnID, !b.isEmpty { return a != b }
                 return abs(message.date.timeIntervalSince(prev.date)) > 180   // 没有轮次号的（他 curl 的），三分钟内算同一轮
             }()
-            if herAsleepStart {
+            if message.msgType == "glance" {
+                // 1122 #5922–5923 她：追问那轮他一句没说，落一枚「他来看了看你，没说话」，样子跟睡着那枚一样，
+                // 时间也一样：这里本来要插时间的就并进胶囊，不另起一行
+                HerAsleepCapsule(date: divided ? message.date : nil,
+                                 text: message.text.isEmpty ? "他来看了看你，没说话" : message.text)
+            } else if herAsleepStart {
                 HerAsleepCapsule(date: divided ? message.date : nil)
             } else if divided {
                 if theme.isKakao {
@@ -1281,7 +1286,7 @@ struct ChatView: View {
                       prev.role != message.role,
                       prev.role == "user" || prev.role == "assistant",
                       message.role == "user" || message.role == "assistant" else { return 0 }
-                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error", "notice", "farm_event"]
+                let quiet: Set<String> = ["pat_incoming", "pat_outgoing", "divider", "api_error", "notice", "farm_event", "glance"]
                 if quiet.contains(prev.msgType ?? "") || quiet.contains(message.msgType ?? "") { return 0 }
                 if theme.isKakao {
                     return 12 + 2 + ((message.role == "assistant" && listKakaoShowAvatar) ? 6 : 0)
@@ -1307,7 +1312,9 @@ struct ChatView: View {
                                        && thStampHere(index)) ? message.date : nil
             Group {
             // 1016 #3978 notice：他给她改备注落的那行「…将你的备注改成了“…”」，跟拍一拍一样居中小字
-            if message.msgType == "api_error" {
+            if message.msgType == "glance" {
+                EmptyView()     // 胶囊在上面时间那一格已经画了
+            } else if message.msgType == "api_error" {
                 // 1120 #5844 她：撞闸那一大段英文报错换成一句话＋一行能复制的，复制了发给他就能接着说
                 ApiErrorLine(isDark: theme.isDark && !theme.isKakao)
             } else if message.msgType == "pat_outgoing" || message.msgType == "pat_incoming" || message.msgType == "notice" {
@@ -1560,7 +1567,7 @@ struct ChatView: View {
     }
 
     /// 这几种行后面那条算新一串的开头（分隔线、拍一拍、报错行）
-    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error", "notice", "farm_event"]
+    static let kakaoGroupBreakers: Set<String> = ["divider", "pat_incoming", "pat_outgoing", "api_error", "notice", "farm_event", "glance"]
 
     /// 跟 kakaoHead 同一个认法：b 是不是接着 a 那一串
     private func thSameGroup(_ a: ChatMessage, _ b: ChatMessage) -> Bool {
@@ -1671,7 +1678,7 @@ struct ChatView: View {
     /// 跟消息行里那一长串 if / else 对齐：这些卡片、贴纸、语音、音乐都不画九宫格气泡
     static func kakaoDrawsBubble(_ m: ChatMessage) -> Bool {
         let t = m.msgType ?? "text"
-        if t == "pat_incoming" || t == "pat_outgoing" || t == "divider" || t == "api_error" || t == "notice"
+        if t == "pat_incoming" || t == "pat_outgoing" || t == "divider" || t == "api_error" || t == "notice" || t == "glance"
             || t == "tarot_answer" || t == "choice_answer" { return false }
         if m.morningPaperDate != nil || m.insideText != nil || m.ghostCard != nil || m.playCard != nil
             || m.favoriteForward != nil || m.readingCard != nil || m.tarotCard != nil || m.tarotOffer != nil
@@ -8405,13 +8412,14 @@ struct HerSleepSwitchSheet: View {
 /// 这一轮本来要插时间的就把时间并进来（date 不是 nil），不然只有这行字。所有主题同一枚
 struct HerAsleepCapsule: View {
     let date: Date?
+    var text: String = "你睡着时他发来的"   // 1122 #5922 「他来看了看你，没说话」也用这一枚
     var body: some View {
         let dark = AlcoveAppearance.isDark
         HStack(spacing: 8) {
             if let d = date {
                 Text(TreehouseTimeDivider.text(d)).fontWeight(.semibold)
             }
-            Text("你睡着时他发来的")
+            Text(text)
         }
         .font(.system(size: 11))
         .foregroundColor(dark ? Color(red: 0.93, green: 0.86, blue: 0.90) : Color(red: 0.55, green: 0.40, blue: 0.48))
