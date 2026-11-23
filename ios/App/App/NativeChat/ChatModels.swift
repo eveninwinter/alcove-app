@@ -77,6 +77,10 @@ struct ChatMessage: Identifiable, Equatable {
     /// 0912：他发语音时自己写的中文翻译（voice_speak.py --zh → 后端 extra.audio_zh）。展开转文字后点「译」才显示
     var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
+    /// 1123 她：「第一次因为网络没发出去的 左边显示一个重来的按钮」——发失败就 true，小钟换成气泡左边的转圈箭头，点了重发
+    var sendFailed = false
+    /// 这条是「攒着不叫他」那种（sendHold / 一轮里前面几句），重发时照原样攒，不叫他
+    var heldSend = false
     /// 1001 她要的贴表情：谁贴了什么（"user" 她 / "assistant" 他 → emoji），一人一条只一种
     var reactions: [String: String] = [:]
     // 0926 她要的「流式直接在原有气泡里」：他还在写的那几段先当成临时气泡塞进列表，

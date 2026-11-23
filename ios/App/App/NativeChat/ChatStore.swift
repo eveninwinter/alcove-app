@@ -326,7 +326,10 @@ final class ChatStore: ObservableObject {
                    let idx = messages.lastIndex(where: { $0.uid == local.uid }) {
                     messages[idx] = confirmed
                 }
-            } catch { connectionError = true }
+            } catch {
+                connectionError = true
+                markFailed([local.uid], held: [local.uid])
+            }
         }
     }
 
@@ -540,7 +543,7 @@ final class ChatStore: ObservableObject {
             temporarilyHiddenTextTs.removeAll()
             temporarilyHiddenPhotoTs.removeAll()
             let recs = try await AlcoveAPI.history(limit: 300)
-            messages = recs
+            messages = keepingFailed(recs)
             lastTs = recs.last?.ts
             isViewingHistory = false
             loading = false
@@ -582,7 +585,7 @@ final class ChatStore: ObservableObject {
     func returnToLatest() async {
         do {
             let recs = try await AlcoveAPI.history(limit: 300)
-            messages = applyTemporaryHides(recs)
+            messages = applyTemporaryHides(keepingFailed(recs))
             lastTs = recs.last?.ts
             hasOlder = recs.count >= 300
             isViewingHistory = false
@@ -1106,6 +1109,7 @@ final class ChatStore: ObservableObject {
                 if let h = try? await AlcoveAPI.heldCount() { heldCount = h }
             } catch {
                 connectionError = true
+                markFailed([local.uid])
             }
         }
     }
@@ -1236,8 +1240,69 @@ final class ChatStore: ObservableObject {
                 if let h = try? await AlcoveAPI.heldCount() { heldCount = h }
             } catch {
                 connectionError = true
+                // 已经换成服务器那条的不动，还挂着本地的那几句标失败；最后一句以外都是攒着的
+                markFailed(locals.map(\.uid), held: locals.dropLast().map(\.uid))
             }
         }
+    }
+
+    /// 1123 没发出去：还是本地那条的标成失败（服务器那条已经换上的找不到 uid，自然跳过）
+    private func markFailed(_ uids: [UUID], held: [UUID] = []) {
+        for uid in uids {
+            guard let idx = messages.lastIndex(where: { $0.uid == uid }), messages[idx].pending else { continue }
+            messages[idx].sendFailed = true
+            messages[idx].heldSend = held.contains(uid)
+        }
+    }
+
+    /// 1123 她点了转圈箭头：所有没发出去的按原来顺序再发一遍。里面有一句本来要叫他的，最后一句就叫他，其余攒着；
+    /// 全是攒着的就照样只攒。半路又断了，剩下的重新标失败，箭头回来。
+    /// 服务器其实收到了、只是回执没回来的那种，轮询会拿服务器那条把本地这条换掉，箭头自己就没了
+    func retryFailed() {
+        let failed = messages.filter { $0.sendFailed }
+        guard !failed.isEmpty else { return }
+        let wake = failed.contains { !$0.heldSend }
+        for m in failed {
+            if let idx = messages.lastIndex(where: { $0.uid == m.uid }) { messages[idx].sendFailed = false }
+        }
+        if wake {
+            wakeHerLocally()
+            heldCount = 0
+            heldGen += 1
+            optimisticTyping()
+        }
+        Task { @MainActor in
+            for (i, m) in failed.enumerated() {
+                do {
+                    var rec: ChatMessage?
+                    if wake && i == failed.count - 1 {
+                        let (r, asleep) = try await AlcoveAPI.send(text: m.text)
+                        rec = r
+                        if asleep { rec?.asleepAtSend = true }
+                    } else {
+                        rec = try await AlcoveAPI.sendHold(text: m.text).record
+                    }
+                    if let confirmed = rec, let idx = messages.lastIndex(where: { $0.uid == m.uid }) {
+                        var t = Transaction(); t.disablesAnimations = true
+                        withTransaction(t) { messages[idx] = confirmed }
+                    }
+                } catch {
+                    connectionError = true
+                    let rest = failed[i...]
+                    markFailed(rest.map(\.uid), held: rest.filter(\.heldSend).map(\.uid))
+                    return
+                }
+            }
+            if let h = try? await AlcoveAPI.heldCount() { heldCount = h }
+        }
+    }
+
+    /// 1123 整批换记录（切后台回来、回到最新）时，没发出去的那几条挂回最后，不然一刷新就没了、箭头也没地方点
+    private func keepingFailed(_ recs: [ChatMessage]) -> [ChatMessage] {
+        let failed = messages.filter { $0.sendFailed }
+        guard !failed.isEmpty else { return recs }
+        let landed = Set(recs.suffix(60).filter { $0.role == "user" }.map(\.text))
+        return recs + failed.filter { !landed.contains($0.text) }
     }
 
     func deleteMessage(_ msg: ChatMessage) {

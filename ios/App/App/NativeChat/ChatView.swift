@@ -1417,7 +1417,8 @@ struct ChatView: View {
                     onReactLongPress: reactLongPress(for: message),
                     reactLifted: reactTarget?.msg.id == message.id,
                     textSelectable: selectingTs == message.ts,
-                    onExitTextSelection: exitTextSelection
+                    onExitTextSelection: exitTextSelection,
+                    onRetryFailed: { store.retryFailed() }
                 )
                 if paragraphSelectionMode && !splittable {
                     Button {
@@ -4501,6 +4502,7 @@ struct MessageRow: View {
     var reactLifted = false
     var textSelectable = false
     var onExitTextSelection: (() -> Void)? = nil
+    var onRetryFailed: (() -> Void)? = nil
     @State private var reactPressing = false
     @State private var treehouseMetaHeight: CGFloat = 24
     @State private var showThinking = false
@@ -4549,7 +4551,7 @@ struct MessageRow: View {
 
     @ViewBuilder private var metaRow: some View {
         HStack(spacing: theme.isKakao ? 16 : (theme.isMessages ? 12 : (theme.isPaper && !isUser ? 14 : 4))) {
-                        if msg.pending {
+                        if msg.pending && !msg.sendFailed {   // 1123 发失败的不画钟，左边换成转圈箭头
                             Image(systemName: "clock")
                                 .font(.system(size: 9))
                                 .foregroundColor(.secondary)
@@ -5003,6 +5005,23 @@ struct MessageRow: View {
                 // 树屋下这一行搬进气泡（见 bubbleCore），外面不再画。
                 if shouldShowMetaRow && !(theme.isTreehouse && showsTextBubble) {
                     metaRow
+                }
+            }
+            // 1123 她：「第一次因为网络没发出去的 左边显示一个重来的按钮…转圈的那个箭头」。
+            // 挂在这一列左边、不占排版（她那侧左边本来留着 48 的空），点了把没发出去的按顺序重发
+            .overlay(alignment: .leading) {
+                if isUser && msg.sendFailed, let onRetryFailed {
+                    Button(action: onRetryFailed) {
+                        Image(systemName: "arrow.clockwise")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(Color(red: 0.78, green: 0.22, blue: 0.27))
+                            .frame(width: 28, height: 28)
+                            .background(.ultraThinMaterial, in: Circle())
+                            .contentShape(Circle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("重新发送")
+                    .offset(x: -36)
                 }
             }
             if !isUser {
