@@ -4,6 +4,7 @@ import CoreImage
 import Photos
 import ImageIO
 import UniformTypeIdentifiers
+import PhotosUI
 
 // 1120 Alcove 相机·ins 苹果风（她 #5809–#5828 一路改定的，效果图 camera-ins-1120/cam10–cam15）。
 // 浅灰底；套了边框就把边框图糊开垫在最底下、盖一层雾（毛玻璃，取了她说的“中间值”：糊 33、雾 42%）。
@@ -216,6 +217,7 @@ struct CamCapture {
     let movie: URL?
     let stillTime: CMTime
     let params: AlcoveParams
+    var imported = false     // 1123 从手机相册挑的，不是拍的（拍完那页按钮写“重选”）
 }
 
 /// 拍完待确认的一张：合好的成片 + 合成要用的东西（实况要逐帧再合一遍）
@@ -705,6 +707,9 @@ struct AlcoveCameraView: View {
     @State private var live = false
     @State private var flashOn = false
     @State private var zoom: CamZoom = .one
+    @State private var showPicker = false            // 1123 #5940 从手机相册挑一张来套滤镜
+    @State private var pickItem: PhotosPickerItem?
+    @State private var importing = false
 
     private let tabs = ["滤镜", "边框", "贴纸", "调节"]
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 47 }
@@ -739,7 +744,7 @@ struct AlcoveCameraView: View {
                 card.frame(width: W - 24, height: cardH).position(x: W / 2, y: cardTop + cardH / 2)
                 dock(W: W).position(x: W / 2, y: dockY)
                 if let shot {
-                    CamConfirmView(shot: shot, retake: {
+                    CamConfirmView(shot: shot, imported: shot.capture.imported, retake: {
                         if let m = shot.capture.movie { try? FileManager.default.removeItem(at: m) }
                         self.shot = nil
                     }, saved: { img in
@@ -767,6 +772,12 @@ struct AlcoveCameraView: View {
             }
         }
         .fullScreenCover(isPresented: $showAlbum) { NativeAlbumView() }
+        .photosPicker(isPresented: $showPicker, selection: $pickItem, matching: .images)
+        .onChange(of: pickItem) { _, item in
+            guard let item else { return }
+            pickItem = nil
+            importPhoto(item)
+        }
         .animation(.easeOut(duration: 0.18), value: shot != nil)
         .animation(.easeInOut(duration: 0.35), value: frame?.id)
     }
@@ -817,6 +828,8 @@ struct AlcoveCameraView: View {
         ZStack {
             HStack(spacing: 10) {
                 roundButton("chevron.left", size: 15) { dismiss() }
+                // 1123 #5940 她：「再加一个可以相册选图然后叠加滤镜的功能」
+                roundButton(importing ? "hourglass" : "photo.badge.plus", size: 15) { if !importing { showPicker = true } }
                 Spacer()
                 roundButton(live ? "livephoto" : "livephoto.slash", size: 17) { toggleLive() }
                 roundButton(flashOn ? "bolt.fill" : "bolt.slash", size: 15) { flashOn.toggle() }
@@ -1098,6 +1111,43 @@ struct AlcoveCameraView: View {
             selected = nil
             let img = CamCompose.render(photo: cap.still, layout: keepLayout, stickers: keepStickers)
             shot = CamShot(image: img, capture: cap, layout: keepLayout, stickers: keepStickers)
+        }
+    }
+
+    /// 相册里挑的一张：摆正、长边缩到 3024，当成“刚拍的原图”进拍完那页（换滤镜、调节、存下、发陈璟都一样）。
+    /// 选了边框就塞进边框的洞；没边框就照这张图自己的长宽，不裁成 3:4。贴纸跟着成片按比例挪
+    private func importPhoto(_ item: PhotosPickerItem) {
+        importing = true
+        let keepFrame = layout
+        let keepStickers = stickers
+        let p = params
+        Task {
+            defer { importing = false }
+            guard let data = try? await item.loadTransferable(type: Data.self) else { flash("这张读不出来，换一张"); return }
+            let made: (UIImage, UIImage)? = await Task.detached(priority: .userInitiated) {
+                guard let img = UIImage(data: data), img.size.width > 0, img.size.height > 0 else { return nil }
+                let k = min(1, 3024 / max(img.size.width, img.size.height))
+                let size = CGSize(width: (img.size.width * k).rounded(), height: (img.size.height * k).rounded())
+                let fmt = UIGraphicsImageRendererFormat()
+                fmt.scale = 1
+                fmt.opaque = true
+                let raw = UIGraphicsImageRenderer(size: size, format: fmt).image { rc in img.draw(in: rc.format.bounds) }
+                return (raw, CamFilters.render(p, raw))
+            }.value
+            guard let made else { flash("这张读不出来，换一张"); return }
+            let (raw, still) = made
+            let L = keepFrame.frameId != nil ? keepFrame
+                : CamLayout(canvas: raw.size, hole: CGRect(origin: .zero, size: raw.size), frameId: nil)
+            let sx = L.canvas.width / max(keepFrame.canvas.width, 1), sy = L.canvas.height / max(keepFrame.canvas.height, 1)
+            let moved = keepStickers.map { s -> CamSticker in
+                var s = s
+                s.center = CGPoint(x: s.center.x * sx, y: s.center.y * sy)
+                s.width *= sx
+                return s
+            }
+            let cap = CamCapture(raw: raw, still: still, movie: nil, stillTime: .invalid, params: p, imported: true)
+            selected = nil
+            shot = CamShot(image: CamCompose.render(photo: still, layout: L, stickers: moved), capture: cap, layout: L, stickers: moved)
         }
     }
 
@@ -1470,6 +1520,7 @@ struct CamStickerView: View {
 
 struct CamConfirmView: View {
     let shot: CamShot
+    var imported = false
     let retake: () -> Void
     let saved: (UIImage) -> Void
 
@@ -1486,8 +1537,9 @@ struct CamConfirmView: View {
     private static let categoryName = "Alcove 相机"
     private var isLive: Bool { shot.capture.movie != nil }
 
-    init(shot: CamShot, retake: @escaping () -> Void, saved: @escaping (UIImage) -> Void) {
+    init(shot: CamShot, imported: Bool = false, retake: @escaping () -> Void, saved: @escaping (UIImage) -> Void) {
         self.shot = shot
+        self.imported = imported
         self.retake = retake
         self.saved = saved
         _params = State(initialValue: shot.capture.params)
@@ -1535,7 +1587,7 @@ struct CamConfirmView: View {
                 }
                 HStack(spacing: 14) {
                     Button(action: retake) {
-                        Text("重拍").font(.system(size: 15, weight: .semibold)).foregroundColor(CamInk.ink)
+                        Text(imported ? "重选" : "重拍").font(.system(size: 15, weight: .semibold)).foregroundColor(CamInk.ink)
                             .frame(maxWidth: .infinity)
                             .frame(height: 48)
                             .background(CamFrost(shape: Capsule()))

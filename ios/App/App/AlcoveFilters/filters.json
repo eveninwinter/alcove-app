@@ -37,6 +37,11 @@
       "id": "dark",
       "name": "dark",
       "lut": "luts/dark.cube"
+    },
+    {
+      "id": "peak",
+      "name": "peak",
+      "lut": "luts/peak.cube"
     }
   ],
   "adjustments": [
