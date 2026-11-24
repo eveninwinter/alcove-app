@@ -99,13 +99,15 @@ final class RingStore: ObservableObject {
     @Published var toast = ""
     @Published var bookClaude: [String] = []
     @Published var book: [BookItem] = []
-    @Published var renew: [String: String] = [:]
+    @Published var renew: [String: String] = [:]     // 下次续费日 yyyy-MM-dd（后台按每月几号算好）
+    @Published var renewDay: [String: Int] = [:]      // 每月几号续，跟侧栏额度卡同一份
 
     func loadBook() async {
         guard let j = try? await RingStore.call("/api/usage/book", method: "GET", body: nil) else { return }
         bookClaude = j["claude"] as? [String] ?? []
         book = (j["items"] as? [[String: Any]] ?? []).map(BookItem.init)
         renew = j["renew"] as? [String: String] ?? [:]
+        renewDay = (j["renew_day"] as? [String: Any] ?? [:]).compactMapValues { ($0 as? NSNumber)?.intValue }
     }
 
     func load() async {
@@ -290,7 +292,7 @@ struct AccountRingView: View {
                 .presentationDragIndicator(.visible)
         }
         .sheet(item: renewBinding) { t in
-            RenewSheet(name: t.name, current: store.renew[t.name] ?? "") { await store.loadBook() }
+            RenewSheet(name: t.name, current: store.renewDay[t.name] ?? 0) { await store.loadBook() }
                 .presentationDetents([.medium])
                 .presentationDragIndicator(.visible)
         }
@@ -1084,24 +1086,23 @@ private struct RenewTarget: Identifiable {
 
 private struct RenewSheet: View {
     let name: String
-    let current: String
+    let current: Int          // 每月几号续，0＝没记
     let done: () async -> Void
     @Environment(\.dismiss) private var dismiss
-    @State private var date = Date()
+    @State private var day = 1
     @State private var busy = false
-
-    private static let ymd: DateFormatter = {
-        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
-        f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.locale = Locale(identifier: "en_US_POSIX"); return f
-    }()
 
     var body: some View {
         NavigationStack {
             Form {
-                DatePicker("续费日", selection: $date, displayedComponents: .date)
-                    .environment(\.timeZone, TimeZone(identifier: "Asia/Shanghai")!)
-                if !current.isEmpty {
-                    Button("清掉续费日", role: .destructive) { Task { await send("") } }
+                Section {
+                    Picker("每月几号", selection: $day) {
+                        ForEach(1...31, id: \.self) { Text("\($0) 号").tag($0) }
+                    }
+                    .pickerStyle(.wheel)
+                } footer: { Text("跟左边侧栏额度卡上的 renews 是同一个，这里改了那边也跟着变。") }
+                if current > 0 {
+                    Button("不记续费日", role: .destructive) { Task { await send(0) } }
                 }
             }
             .navigationTitle(name)
@@ -1109,17 +1110,17 @@ private struct RenewSheet: View {
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) { Button("算了") { dismiss() } }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button("存") { Task { await send(Self.ymd.string(from: date)) } }.disabled(busy)
+                    Button("存") { Task { await send(day) } }.disabled(busy)
                 }
             }
         }
-        .onAppear { if let d = Self.ymd.date(from: current) { date = d } }
+        .onAppear { if current > 0 { day = current } }
     }
 
-    private func send(_ s: String) async {
+    private func send(_ d: Int) async {
         busy = true
         defer { busy = false }
-        _ = try? await RingStore.call("/api/usage/book/renew", body: ["name": name, "date": s])
+        _ = try? await RingStore.call("/api/usage/book/renew", body: ["name": name, "day": d])
         await done()
         dismiss()
     }
