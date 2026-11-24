@@ -69,6 +69,8 @@
 	<string>感知外设上下文</string>
 	<key>AlcoveLocToken</key>
 	<string>$(ALCOVE_LOC_TOKEN)</string>
+	<key>NSFaceIDUsageDescription</key>
+	<string>看账号本里存的密码</string>
 	<key>NSCameraUsageDescription</key>
 	<string>拍照发给陈璟</string>
 	<key>NSMicrophoneUsageDescription</key>

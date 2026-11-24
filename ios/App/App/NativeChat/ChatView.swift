@@ -3046,7 +3046,7 @@ private struct ChatRoomSidebar: View {
                     if i < accounts.count - 1 { Color.clear.frame(height: 22) }
                 }
                 // 1113 #5072 她：额度这儿加个小小的「换号」，点了弹一整页（钥匙串）
-                linkRow("换号", action: onOpenAccounts).padding(.top, 14)
+                linkRow("账号", action: onOpenAccounts).padding(.top, 14)
                 linkRow("搬家", action: onOpenMove)
                 linkRow("出口", action: onOpenExit)   // 1115 #5331 住宅 IP ↔ 直连，只她手动切
                 linkRow("急救", action: onOpenRescue)   // 1116 #5438 App 崩了去 VPS 终端敲的命令

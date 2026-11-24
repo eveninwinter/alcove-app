@@ -1,5 +1,7 @@
 import SwiftUI
 import UIKit
+import LocalAuthentication
+import UniformTypeIdentifiers
 
 // MARK: - 1113 钥匙串换号页（#5068–5076）
 // 她：「换号我这边直接操作」——号被封了、找不到隅的时候，自己在手机上登新号、换上去。
@@ -65,6 +67,29 @@ struct RingAccount: Identifiable, Equatable {
     var untilText: String { until.replacingOccurrences(of: "-", with: ".").prefix(7).description }
 }
 
+/// 1124 #5962–5973 账号本里的一条：挂在哪个 Claude 号下面（空＝其他）、类别、账号全文；密码只在刷脸后单独要
+struct BookItem: Identifiable, Equatable {
+    let id: String
+    let owner: String
+    let kind: String
+    let label: String
+    let account: String
+    let purpose: String
+    let note: String
+    let hasSecret: Bool
+
+    init(_ d: [String: Any]) {
+        id = d["id"] as? String ?? ""
+        owner = d["owner"] as? String ?? ""
+        kind = d["kind"] as? String ?? "other"
+        label = d["label"] as? String ?? ""
+        account = d["account"] as? String ?? ""
+        purpose = d["purpose"] as? String ?? ""
+        note = d["note"] as? String ?? ""
+        hasSecret = d["has_secret"] as? Bool ?? false
+    }
+}
+
 @MainActor
 final class RingStore: ObservableObject {
     @Published var accounts: [RingAccount] = []
@@ -72,8 +97,19 @@ final class RingStore: ObservableObject {
     @Published var loading = true
     @Published var failed = false
     @Published var toast = ""
+    @Published var bookClaude: [String] = []
+    @Published var book: [BookItem] = []
+    @Published var renew: [String: String] = [:]
+
+    func loadBook() async {
+        guard let j = try? await RingStore.call("/api/usage/book", method: "GET", body: nil) else { return }
+        bookClaude = j["claude"] as? [String] ?? []
+        book = (j["items"] as? [[String: Any]] ?? []).map(BookItem.init)
+        renew = j["renew"] as? [String: String] ?? [:]
+    }
 
     func load() async {
+        async let b: Void = loadBook()
         do {
             let j = try await RingStore.call("/api/usage/ring", method: "GET", body: nil)
             accounts = (j["accounts"] as? [[String: Any]] ?? []).map(RingAccount.init)
@@ -83,6 +119,7 @@ final class RingStore: ObservableObject {
             if accounts.isEmpty { failed = true }
         }
         loading = false
+        _ = await b
     }
 
     func account(_ name: String?) -> RingAccount? { accounts.first { $0.name == name } }
@@ -168,6 +205,11 @@ struct AccountRingView: View {
     @State private var hookPick: String?            // 点了哪个挂钩的「换一把」：main / work
     @State private var tagPick: RingAccount?        // 点了哪张钥匙牌
     @State private var showLogin = false
+    @State private var editing: BookDraft?           // 1124 账号本：新记 / 改一条
+    @State private var deleting: BookItem?
+    @State private var renewing: String?             // 改哪个号的续费日
+    @State private var shown: [String: String] = [:] // 刷过脸、正露着的密码（30 秒自己收回）
+    @State private var unlockedUntil = Date.distantPast
 
     private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
     private var safeTop: CGFloat { FloatingOverlay.appWindow()?.safeAreaInsets.top ?? 0 }
@@ -180,7 +222,7 @@ struct AccountRingView: View {
             RingBackdrop(base: ink.page, veil: r.veil)
             ScrollView(showsIndicators: false) {
                 VStack(spacing: 0) {
-                    (Text("ACCOUNTS · ").font(SanctusPageFont.corm(8.5)) + Text("换号").font(.system(size: 8.5, design: .serif)))
+                    (Text("ACCOUNTS · ").font(SanctusPageFont.corm(8.5)) + Text("账号").font(.system(size: 8.5, design: .serif)))
                         .tracking(2.7).foregroundColor(ink.sub)
                         .frame(height: 44).frame(maxWidth: .infinity)
                         .padding(.top, max(safeTop, 20))
@@ -190,6 +232,8 @@ struct AccountRingView: View {
                     tagList(ink, r)
                     addButton(ink, r).padding(.top, 24)
                     footer(ink).padding(.top, 12)
+                    // 1124 #5962 账号本：钥匙串下面，往下滑
+                    bookSection(ink, r).padding(.top, 46)
                         .padding(.bottom, max(safeBottom, 10) + 20)
                 }
             }
@@ -240,12 +284,46 @@ struct AccountRingView: View {
                 }
             }
         }
+        .sheet(item: $editing) { d in
+            BookEditor(draft: d, claudeNames: store.bookClaude) { await store.loadBook() }
+                .presentationDetents([.large])
+                .presentationDragIndicator(.visible)
+        }
+        .sheet(item: renewBinding) { t in
+            RenewSheet(name: t.name, current: store.renew[t.name] ?? "") { await store.loadBook() }
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
+        }
+        .confirmationDialog(deletingTitle,
+                            isPresented: Binding(get: { deleting != nil }, set: { if !$0 { deleting = nil } }),
+                            titleVisibility: .visible) {
+            if let it = deleting {
+                Button("删掉", role: .destructive) {
+                    Task {
+                        _ = try? await RingStore.call("/api/usage/book/delete", body: ["id": it.id])
+                        shown[it.id] = nil
+                        await store.loadBook()
+                    }
+                }
+                Button("算了", role: .cancel) {}
+            }
+        } message: { Text("密码也一起删，找不回来。") }
+        .onDisappear { shown = [:] }
         .sheet(isPresented: $showLogin, onDismiss: { Task { await store.load() } }) {
             RingLoginSheet(store: store)
                 .presentationDetents([.large])
                 .presentationDragIndicator(.visible)
                 .interactiveDismissDisabled(false)
         }
+    }
+
+    private var deletingTitle: String {
+        guard let it = deleting else { return "" }
+        return "删掉 " + (it.account.isEmpty ? it.label : it.account) + "？"
+    }
+
+    private var renewBinding: Binding<RenewTarget?> {
+        Binding(get: { renewing.map { RenewTarget(name: $0) } }, set: { renewing = $0?.name })
     }
 
     private var hookPickTitle: String {
@@ -435,6 +513,181 @@ struct AccountRingView: View {
         .foregroundColor(ink.sub)
         .frame(maxWidth: .infinity)
     }
+
+    // MARK: 账号本（1124 #5962–5973，效果图 sanctus-kit/mock-keys/d.jpg）
+
+    private static let blood = Color(red: 0x9B / 255, green: 0x1B / 255, blue: 0x2A / 255)
+
+    private func bookSection(_ ink: SanctusPageInk, _ r: RingInk) -> some View {
+        let others = store.book.filter { $0.owner.isEmpty || !store.bookClaude.contains($0.owner) }
+        return VStack(spacing: 14) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text("账号本").font(SanctusPageFont.cn(13)).tracking(1.3).foregroundColor(ink.title)
+                Text("ALL OUR KEYS").font(SanctusPageFont.corm(8.5)).tracking(2.7).foregroundColor(ink.sub)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            ForEach(store.bookClaude, id: \.self) { name in
+                bookCard(name: name, items: store.book.filter { $0.owner == name }, ink, r)
+            }
+            if !others.isEmpty {
+                VStack(alignment: .leading, spacing: 0) {
+                    (Text("ELSEWHERE · ").font(SanctusPageFont.corm(8)) + Text("其他").font(.system(size: 9, design: .serif)))
+                        .tracking(2.4).foregroundColor(ink.sub)
+                        .padding(.bottom, 2)
+                    ForEach(others) { it in bookRow(it, bead: false, ink, r) }
+                }
+                .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 6)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(r.tag))
+            }
+            Button { editing = BookDraft(owner: "") } label: {
+                Text("＋ 记 一 个").font(SanctusPageFont.cn(12.5)).tracking(3).foregroundColor(ink.link)
+                    .frame(height: 40).frame(maxWidth: .infinity).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+        }
+        .padding(.horizontal, 20)
+    }
+
+    private func bookCard(name: String, items: [BookItem], _ ink: SanctusPageInk, _ r: RingInk) -> some View {
+        VStack(alignment: .leading, spacing: 0) {
+            HStack(alignment: .firstTextBaseline) {
+                Text(name).font(SanctusPageFont.corm(19)).foregroundColor(ink.title).lineLimit(1).minimumScaleFactor(0.75)
+                Spacer(minLength: 8)
+                Button { renewing = name } label: { renewLabel(name, ink) }.buttonStyle(.plain)
+            }
+            Text("CLAUDE").font(SanctusPageFont.corm(8)).tracking(2.4).foregroundColor(ink.sub).padding(.top, 2)
+            LinearGradient(colors: [.clear, r.rail, r.rail, .clear], startPoint: .leading, endPoint: .trailing)
+                .frame(height: 0.7).padding(.top, 12).padding(.horizontal, -4)
+            VStack(alignment: .leading, spacing: 0) {
+                ForEach(items) { it in bookRow(it, bead: true, ink, r) }
+                Button { editing = BookDraft(owner: name) } label: {
+                    Text(items.isEmpty ? "＋ 挂一个账号" : "＋ 再挂一个").font(SanctusPageFont.cn(10.5)).tracking(1.6)
+                        .foregroundColor(ink.link).frame(height: 34).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+            }
+            .padding(.leading, items.isEmpty ? 0 : 20)
+            .background(alignment: .topLeading) {
+                // 一根银线把挂着的账号串起来
+                if !items.isEmpty {
+                    Rectangle().fill(r.string).frame(width: 0.7)
+                        .padding(.top, 14).padding(.bottom, 46)
+                        .offset(x: 3.5)
+                }
+            }
+        }
+        .padding(.horizontal, 18).padding(.top, 16).padding(.bottom, 4)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 16, style: .continuous).fill(r.tag))
+    }
+
+    /// 续费日：她自己填；七天内（含过了的）前面一滴暗红
+    @ViewBuilder private func renewLabel(_ name: String, _ ink: SanctusPageInk) -> some View {
+        if let s = store.renew[name], let d = Self.ymd.date(from: s) {
+            let soon = d.timeIntervalSinceNow < 7 * 86400
+            HStack(spacing: 5) {
+                if soon { Circle().fill(Self.blood).frame(width: 5, height: 5) }
+                (Text("续费 ").font(SanctusPageFont.cn(9.5)) + Text(Self.md.string(from: d)).font(SanctusPageFont.ital(11)))
+                    .foregroundColor(soon ? ink.script : ink.sub)
+            }
+        } else {
+            Text("填续费日").font(SanctusPageFont.cn(9.5)).tracking(1).foregroundColor(ink.sub)
+        }
+    }
+
+    private func bookRow(_ it: BookItem, bead: Bool, _ ink: SanctusPageInk, _ r: RingInk) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(it.label.isEmpty ? "账号" : it.label).font(SanctusPageFont.cn(9.5)).tracking(2).foregroundColor(ink.sub)
+                Text(it.account.isEmpty ? "—" : it.account)
+                    .font(.system(size: 14.5, design: .serif)).foregroundColor(ink.title)
+                    .lineLimit(1).minimumScaleFactor(0.7)
+                    .onTapGesture { copy(it.account, what: "账号") }
+                if !it.note.isEmpty || !it.purpose.isEmpty {
+                    Text([it.purpose, it.note].filter { !$0.isEmpty }.joined(separator: " · "))
+                        .font(SanctusPageFont.cn(9.5)).foregroundColor(ink.sub).lineLimit(2)
+                }
+            }
+            Spacer(minLength: 4)
+            secretPill(it, ink, r)
+        }
+        .padding(.vertical, 10)
+        .overlay(alignment: .topLeading) {
+            if bead {
+                Circle().fill(r.hole).overlay(Circle().stroke(r.holeEdge, lineWidth: 0.8))
+                    .frame(width: 7, height: 7).offset(x: -20, y: 14)
+            }
+        }
+        .contentShape(Rectangle())
+        .contextMenu {
+            Button { editing = BookDraft(it) } label: { Label("改", systemImage: "pencil") }
+            Button { copy(it.account, what: "账号") } label: { Label("复制账号", systemImage: "doc.on.doc") }
+            Button(role: .destructive) { deleting = it } label: { Label("删掉", systemImage: "trash") }
+        }
+    }
+
+    /// 密码：圆点；点一下刷脸露出来，露着的时候再点＝复制
+    @ViewBuilder private func secretPill(_ it: BookItem, _ ink: SanctusPageInk, _ r: RingInk) -> some View {
+        if !it.hasSecret {
+            Button { editing = BookDraft(it) } label: {
+                Text("填密码").font(SanctusPageFont.cn(9.5)).tracking(1).foregroundColor(ink.sub)
+                    .padding(.horizontal, 9).frame(height: 24)
+                    .overlay(Capsule().stroke(r.pillEdge, lineWidth: 0.6))
+            }
+            .buttonStyle(.plain)
+        } else if let sec = shown[it.id] {
+            Button { copy(sec, what: "密码") } label: {
+                Text(sec).font(.system(size: 12, design: .monospaced)).foregroundColor(ink.title)
+                    .lineLimit(1).minimumScaleFactor(0.6)
+                    .padding(.horizontal, 9).frame(height: 24).frame(maxWidth: 150)
+                    .overlay(Capsule().stroke(r.pillEdge, lineWidth: 0.6))
+            }
+            .buttonStyle(.plain)
+        } else {
+            Button { Task { await reveal(it) } } label: {
+                Text("••••••").font(.system(size: 9)).tracking(3).foregroundColor(ink.link)
+                    .padding(.leading, 9).padding(.trailing, 6).frame(height: 24)
+                    .overlay(Capsule().stroke(r.pillEdge, lineWidth: 0.6))
+            }
+            .buttonStyle(.plain)
+        }
+    }
+
+    private func reveal(_ it: BookItem) async {
+        if Date() > unlockedUntil {
+            let ctx = LAContext()
+            var err: NSError?
+            guard ctx.canEvaluatePolicy(.deviceOwnerAuthentication, error: &err) else { store.say("这台手机没设密码或面容，看不了"); return }
+            guard (try? await ctx.evaluatePolicy(.deviceOwnerAuthentication, localizedReason: "看账号本里存的密码")) == true else { return }
+            unlockedUntil = Date().addingTimeInterval(60)     // 一分钟内再点别的不用再刷
+        }
+        guard let j = try? await RingStore.call("/api/usage/book/reveal", body: ["id": it.id]),
+              let sec = j["secret"] as? String else { store.say("没连上，再点一次"); return }
+        shown[it.id] = sec
+        Task {
+            try? await Task.sleep(nanoseconds: 30_000_000_000)
+            if shown[it.id] == sec { shown[it.id] = nil }
+        }
+    }
+
+    /// 复制：只在这台手机上（不同步到别的设备），两分钟后剪贴板自己清掉
+    private func copy(_ text: String, what: String) {
+        guard !text.isEmpty else { return }
+        UIPasteboard.general.setItems([[UTType.plainText.identifier: text]],
+                                      options: [.localOnly: true, .expirationDate: Date().addingTimeInterval(120)])
+        store.say("复制了\(what)")
+    }
+
+    private static let ymd: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.locale = Locale(identifier: "en_US_POSIX"); return f
+    }()
+    private static let md: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "MM.dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.locale = Locale(identifier: "en_US_POSIX"); return f
+    }()
 
     private func toastLayer(_ ink: SanctusPageInk) -> some View {
         VStack {
@@ -680,5 +933,194 @@ private struct RingLoginSheet: View {
     private func cancel() async {
         _ = try? await RingStore.call("/api/usage/ring/cancel", body: [:])
         url = nil; code = ""; err = ""; kind = ""
+    }
+}
+
+// MARK: - 账号本：新记 / 改一条（1124 #5962–5973）
+
+/// 编辑框里的草稿。改旧的：密码框空着＝不动原来的密码
+struct BookDraft: Identifiable {
+    var id = UUID()
+    var itemId: String? = nil
+    var owner: String
+    var preset: String = "苹果 · 邮箱"
+    var customLabel = ""
+    var account = ""
+    var secret = ""
+    var note = ""
+
+    struct Preset: Hashable {
+        let label: String
+        let kind: String
+    }
+    /// 类别：显示的字 → 后台 kind
+    static let presets: [Preset] = [
+        .init(label: "登录", kind: "claude"), .init(label: "苹果 · 邮箱", kind: "apple"), .init(label: "苹果", kind: "apple"),
+        .init(label: "邮箱", kind: "email"), .init(label: "币安", kind: "exchange"), .init(label: "卡", kind: "card"),
+        .init(label: "其他", kind: "other"),
+    ]
+
+    init(owner: String) {
+        self.owner = owner
+        preset = owner.isEmpty ? "其他" : "苹果 · 邮箱"
+    }
+
+    init(_ it: BookItem) {
+        itemId = it.id
+        owner = it.owner
+        account = it.account
+        note = [it.purpose, it.note].filter { !$0.isEmpty }.joined(separator: " · ")
+        if Self.presets.contains(where: { $0.label == it.label && $0.label != "其他" }) {
+            preset = it.label
+        } else {
+            preset = "其他"
+            customLabel = it.label
+        }
+    }
+
+    var label: String { preset == "其他" ? (customLabel.isEmpty ? "其他" : customLabel) : preset }
+    var kind: String { Self.presets.first { $0.label == preset }?.kind ?? "other" }
+}
+
+private struct BookEditor: View {
+    @State var draft: BookDraft
+    let claudeNames: [String]
+    let done: () async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @AppStorage(AlcoveAppearance.key) private var houseAppearance = ""
+    @State private var showSecret = false
+    @State private var busy = false
+    @State private var err = ""
+
+    private var ink: SanctusPageInk { _ = houseAppearance; return SanctusPageInk() }
+    private var isNew: Bool { draft.itemId == nil }
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                Section("挂在哪个号下面") {
+                    Picker("挂在", selection: $draft.owner) {
+                        Text("不挂（放进其他）").tag("")
+                        ForEach(claudeNames, id: \.self) { Text($0).tag($0) }
+                    }
+                }
+                Section("是什么") {
+                    Picker("类别", selection: $draft.preset) {
+                        ForEach(BookDraft.presets, id: \.label) { Text($0.label).tag($0.label) }
+                    }
+                    if draft.preset == "其他" {
+                        TextField("写个名字，比如 Infini", text: $draft.customLabel)
+                    }
+                }
+                Section("账号") {
+                    TextField("邮箱、手机号、卡号尾号…", text: $draft.account)
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        .keyboardType(.emailAddress)
+                }
+                Section {
+                    HStack {
+                        Group {
+                            if showSecret {
+                                TextField(isNew ? "密码" : "不改就空着", text: $draft.secret)
+                            } else {
+                                SecureField(isNew ? "密码" : "不改就空着", text: $draft.secret)
+                            }
+                        }
+                        .textInputAutocapitalization(.never)
+                        .autocorrectionDisabled()
+                        Button { showSecret.toggle() } label: {
+                            Image(systemName: showSecret ? "eye.slash" : "eye").foregroundColor(ink.sub)
+                        }
+                        .buttonStyle(.plain)
+                    }
+                } header: { Text("密码") } footer: { Text("加密存着，页面上看要刷脸。") }
+                Section("备注") {
+                    TextField("干嘛用的、绑了什么", text: $draft.note, axis: .vertical)
+                }
+                if !err.isEmpty {
+                    Text(err).foregroundColor(.red).font(.footnote)
+                }
+            }
+            .navigationTitle(isNew ? "记一个账号" : "改一下")
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("算了") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button(busy ? "存…" : "存") { Task { await save() } }
+                        .disabled(busy || (draft.account.trimmingCharacters(in: .whitespaces).isEmpty && draft.preset == "其他" && draft.customLabel.isEmpty))
+                }
+            }
+        }
+    }
+
+    private func save() async {
+        busy = true
+        defer { busy = false }
+        var body: [String: Any] = [
+            "owner": draft.owner, "kind": draft.kind, "label": draft.label,
+            "account": draft.account.trimmingCharacters(in: .whitespacesAndNewlines),
+            "purpose": "", "note": draft.note.trimmingCharacters(in: .whitespacesAndNewlines),
+        ]
+        if let id = draft.itemId { body["id"] = id }
+        if !draft.secret.isEmpty { body["secret"] = draft.secret }
+        do {
+            let j = try await RingStore.call("/api/usage/book/save", body: body)
+            guard j["ok"] as? Bool == true else { err = j["error"] as? String ?? "没存上"; return }
+            await done()
+            dismiss()
+        } catch {
+            err = "没连上，再点一次"
+        }
+    }
+}
+
+// MARK: - 续费日
+
+private struct RenewTarget: Identifiable {
+    let name: String
+    var id: String { name }
+}
+
+private struct RenewSheet: View {
+    let name: String
+    let current: String
+    let done: () async -> Void
+    @Environment(\.dismiss) private var dismiss
+    @State private var date = Date()
+    @State private var busy = false
+
+    private static let ymd: DateFormatter = {
+        let f = DateFormatter(); f.dateFormat = "yyyy-MM-dd"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai"); f.locale = Locale(identifier: "en_US_POSIX"); return f
+    }()
+
+    var body: some View {
+        NavigationStack {
+            Form {
+                DatePicker("续费日", selection: $date, displayedComponents: .date)
+                    .environment(\.timeZone, TimeZone(identifier: "Asia/Shanghai")!)
+                if !current.isEmpty {
+                    Button("清掉续费日", role: .destructive) { Task { await send("") } }
+                }
+            }
+            .navigationTitle(name)
+            .navigationBarTitleDisplayMode(.inline)
+            .toolbar {
+                ToolbarItem(placement: .cancellationAction) { Button("算了") { dismiss() } }
+                ToolbarItem(placement: .confirmationAction) {
+                    Button("存") { Task { await send(Self.ymd.string(from: date)) } }.disabled(busy)
+                }
+            }
+        }
+        .onAppear { if let d = Self.ymd.date(from: current) { date = d } }
+    }
+
+    private func send(_ s: String) async {
+        busy = true
+        defer { busy = false }
+        _ = try? await RingStore.call("/api/usage/book/renew", body: ["name": name, "date": s])
+        await done()
+        dismiss()
     }
 }
