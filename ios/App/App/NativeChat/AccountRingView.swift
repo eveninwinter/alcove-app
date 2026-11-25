@@ -48,11 +48,10 @@ struct RingAccount: Identifiable, Equatable {
     var pill: String? {
         if verify { return "要验证" }
         if !ok && !error.isEmpty { return error.contains("额度") ? nil : "要重登" }
-        let main = inUse.contains("main"), work = inUse.contains("work")
-        if main && work { return "两边在用" }
-        if main { return "陈璟在用" }
-        if work { return "隅在用" }
-        return nil
+        // 1125 #6034 多了 pi 屋：谁在用就写谁，两个以上连着写
+        let who = [("main", "陈璟"), ("work", "隅"), ("pi", "pi 屋")].filter { inUse.contains($0.0) }.map { $0.1 }
+        if who.isEmpty { return nil }
+        return who.joined(separator: "、") + "在用"
     }
 
     var usable: Bool { ok }
@@ -132,7 +131,7 @@ final class RingStore: ObservableObject {
     }
 
     func switchTo(_ name: String, who: String) async {
-        let whoText = who == "main" ? "陈璟" : (who == "work" ? "隅" : "两边")
+        let whoText = who == "main" ? "陈璟" : (who == "work" ? "隅" : (who == "pi" ? "pi 屋" : "两边"))
         do {
             let j = try await RingStore.call("/api/usage/ring/switch", body: ["account": name, "who": who])
             if j["ok"] as? Bool == true {
@@ -252,7 +251,8 @@ struct AccountRingView: View {
         .task { WindowFont.requestSongti(); await store.load() }
         .confirmationDialog(hookPickTitle, isPresented: Binding(get: { hookPick != nil }, set: { if !$0 { hookPick = nil } }),
                             titleVisibility: .visible) {
-            ForEach(store.accounts.filter { $0.usable }) { a in
+            // pi 屋只认钥匙（完整登录那种几小时就过期）
+            ForEach(store.accounts.filter { $0.usable && (hookPick != "pi" || $0.kind == "key") }) { a in
                 Button(a.name + "（" + a.kindText + "）") {
                     let who = hookPick ?? "main"
                     Task { await store.switchTo(a.name, who: who) }
@@ -270,6 +270,9 @@ struct AccountRingView: View {
                     Button("陈璟（主聊天）") { Task { await store.switchTo(a.name, who: "main") } }
                     Button("隅（工作室）") { Task { await store.switchTo(a.name, who: "work") } }
                     Button("两个都换") { Task { await store.switchTo(a.name, who: "both") } }
+                    if a.kind == "key" {
+                        Button("pi 屋") { Task { await store.switchTo(a.name, who: "pi") } }
+                    }
                 } else {
                     Button("重新登这个号") { showLogin = true }
                 }
@@ -330,7 +333,7 @@ struct AccountRingView: View {
 
     private var hookPickTitle: String {
         guard let h = hookPick else { return "" }
-        return h == "main" ? "给陈璟换一个号" : "给隅换一个号"
+        return h == "main" ? "给陈璟换一个号" : (h == "pi" ? "给 pi 屋换一个号" : "给隅换一个号")
     }
 
     // MARK: 头
@@ -360,8 +363,9 @@ struct AccountRingView: View {
             HStack(alignment: .top, spacing: 0) {
                 hook(who: "main", name: "陈璟", note: "main", ink, r).frame(maxWidth: .infinity)
                 hook(who: "work", name: "隅", note: "workroom", ink, r).frame(maxWidth: .infinity)
+                hook(who: "pi", name: "pi 屋", note: "pi", ink, r).frame(maxWidth: .infinity)   // 1125 #6034
             }
-            .padding(.horizontal, 20)
+            .padding(.horizontal, 12)
         }
     }
 
@@ -390,7 +394,7 @@ struct AccountRingView: View {
                     Text("换 一 把 ›").font(SanctusPageFont.cn(10)).foregroundColor(ink.link).padding(.top, 8)
                 }
                 .padding(.top, 7).padding(.bottom, 12)
-                .frame(width: 132)
+                .frame(width: 108)   // 1125 三个挂钩并排，原来 132 一个挤不下
                 .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(r.tag))
                 .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
@@ -403,6 +407,7 @@ struct AccountRingView: View {
         if let a, a.ok, let f = a.five, let s = a.seven {
             (Text("5h ") + Text("\(f)%").foregroundColor(ink.title) + Text(" · 7d ") + Text("\(s)%").foregroundColor(ink.title))
                 .font(SanctusPageFont.corm(11)).foregroundColor(ink.script).tracking(0.6)
+                .lineLimit(1).minimumScaleFactor(0.8)
         } else if let a, !a.error.isEmpty {
             Text(a.error).font(SanctusPageFont.cn(10)).foregroundColor(ink.sub).lineLimit(1).minimumScaleFactor(0.8)
                 .padding(.horizontal, 6)
@@ -874,6 +879,7 @@ private struct RingLoginSheet: View {
             hangButton("陈璟（主聊天）", "main", ink)
             hangButton("隅（工作室）", "work", ink)
             hangButton("两个都换", "both", ink)
+            if doneKind != "full" { hangButton("pi 屋", "pi", ink) }
             Button("先不挂，放着") { dismiss() }
                 .font(SanctusPageFont.cn(11.5)).foregroundColor(ink.sub).padding(.top, 4)
         }
