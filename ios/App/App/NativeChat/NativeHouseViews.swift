@@ -982,6 +982,12 @@ private struct NativeSettingsView: View {
     @State private var wakeOn = true
     // 0925 「追问」（相处页，找你那排下面）开着时，找你 / 自醒锁住点不动（去玩照常）
     @State private var followupOn = false
+    // 1125 #6040 她：「开关 在相处那里写清楚 当前哪个通道 开哪个 其他的被锁住然后暗一点颜色」
+    // 同一时间只住一处：开着的那个亮着，另外两个锁住变暗；关掉现在这个，另外两个才解锁，再开要去的那个就搬过去
+    @State private var channelNow = ""
+    @State private var channelPicking = false
+    @State private var channelWorking = ""
+    @State private var channelMsg = ""
     @State private var followupAlarm: String? = nil   // 他给自己订的闹钟几点到，nil = 没订
     @State private var followupSchedule: [String] = []  // 0925 他订的日程提醒（可以好几张），只给 HH:mm
     // 0925 兜底：追问开着、他一张闹钟都没有、两边都安静 backstopMin 分钟，叫他一次（flags followup_backstop）
@@ -1244,7 +1250,8 @@ private struct NativeSettingsView: View {
             async let her: Void = loadHerStatus()
             async let pat: Void = loadPat()
             async let windowFlags: Void = loadWindowFlags()
-            _ = await (services, reply, thought, pulse, her, pat, windowFlags)
+            async let channel: Void = loadChannel()
+            _ = await (services, reply, thought, pulse, her, pat, windowFlags, channel)
         }
     }
 
@@ -1413,6 +1420,8 @@ private struct NativeSettingsView: View {
                     }
                 } }
                 if page == .relationship { section("相处") {
+                    channelBlock
+                    Divider().opacity(0.25)
                     Button { showQuietRoom = true } label: {
                         settingRow("留白", "让追问暂时安静下来") {
                             Image(systemName: "moon.stars")
@@ -1884,6 +1893,88 @@ private struct NativeSettingsView: View {
                 }
             }
         })
+    }
+
+    // MARK: 通道（1125 #6040）
+
+    private static let channelNames: [(id: String, name: String, sub: String)] = [
+        ("cli", "tmux", "Claude Code 里"), ("sdk", "SDK", "SDK 常驻"), ("pi", "pi", "pi 里")]
+
+    private func channelName(_ id: String) -> String {
+        Self.channelNames.first { $0.id == id }?.name ?? id
+    }
+
+    private var channelBlock: some View {
+        VStack(alignment: .leading, spacing: 11) {
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(spacing: 6) {
+                    Text("通道").font(.system(size: 13, weight: .medium))
+                    Text(channelNow.isEmpty ? "…" : "现在住在 \(channelName(channelNow))")
+                        .font(.system(size: 11)).foregroundColor(theme.fyAccent)
+                }
+                Text("他同一时间只住一处，追问、心跳、自醒、记忆都跟着他走。要搬家就先关掉现在这个，另外两个解锁了，再打开要去的那个。")
+                    .font(.system(size: 10)).foregroundColor(theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            HStack(spacing: 18) {
+                ForEach(Self.channelNames, id: \.id) { c in channelToggle(c.id, c.name, c.sub) }
+            }
+            if !channelMsg.isEmpty {
+                Text(channelMsg).font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.vertical, 4)
+    }
+
+    private func channelToggle(_ id: String, _ name: String, _ sub: String) -> some View {
+        let locked = !channelPicking && !channelNow.isEmpty && channelNow != id
+        let working = channelWorking == id
+        return HStack(spacing: 8) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(name).font(.system(size: 12, weight: .medium))
+                Text(working ? "在搬…" : (locked ? "锁着" : sub)).font(.system(size: 9)).foregroundColor(theme.textDim)
+            }
+            Toggle("", isOn: Binding(
+                get: { working || (!channelPicking && channelNow == id) },
+                set: { on in
+                    if !on, channelNow == id { channelPicking = true; channelMsg = "选一个要搬去的；改主意就把 \(name) 再打开"; return }
+                    guard on, channelPicking else { return }
+                    if id == channelNow { channelPicking = false; channelMsg = ""; return }
+                    Task { await switchChannel(id) }
+                }))
+            .labelsHidden()
+            .tint(theme.fyAccent)
+            .disabled(locked || !channelWorking.isEmpty || channelNow.isEmpty)
+        }
+        .opacity(locked ? 0.45 : 1)
+    }
+
+    @MainActor private func loadChannel() async {
+        if let o = try? await NativeHouseAPI.object("/api/sdk-shadow/status"), let ch = o["channel"] as? String {
+            channelNow = ch
+        }
+    }
+
+    @MainActor private func switchChannel(_ id: String) async {
+        channelWorking = id
+        channelMsg = ""
+        defer { channelWorking = "" }
+        do {
+            let o = try await NativeHouseAPI.objectIncludingHTTPError("/api/sdk-shadow/switch", method: "POST",
+                                                                       body: ["channel": id, "keep_session": true])
+            if o["ok"] as? Bool == true {
+                channelNow = o["channel"] as? String ?? id
+                channelPicking = false
+                channelMsg = id == "pi" || channelNow == "cli"
+                    ? "搬到 \(channelName(channelNow)) 了：那边退出、这边起来要半分钟左右，聊天页会留一道「已切换」的线"
+                    : "搬到 \(channelName(channelNow)) 了"
+            } else {
+                channelMsg = "没搬成：" + (o["error"] as? String ?? "后台没说为什么")
+            }
+        } catch {
+            channelMsg = "没搬成：\(error.localizedDescription)"
+        }
     }
 
     private func pulseToggle(_ title: String, _ sub: String, _ value: Binding<Bool>, key: String,

@@ -121,7 +121,7 @@ final class ChatStore: ObservableObject {
             let snapshot = live
             Task { await AlcoveLiveActivityController.sync(snapshot) }
             // 0926：tmux / SDK 的流式也画进气泡（她要三个房间一样）
-            if room != "api" && room != "pi" {   // 1125 pi 房间同 API：tmux 的实时气泡不画进来
+            if room != "api" {
                 if let l = live, l.active || l.finishing {
                     showLiveBubbles(l.say + l.pendingSay, thinking: l.thinking)
                 } else {
@@ -402,7 +402,7 @@ final class ChatStore: ObservableObject {
                     }
                 } catch { connectionError = true }
             }
-            if room == "api" || room == "pi" {
+            if room == "api" {
                 // 0926 API 房间：图传完就叫他回（配文已经挂在第一张上），不用再按一次发送
                 optimisticTyping()
                 _ = try? await AlcoveAPI.send(text: "")
@@ -633,7 +633,7 @@ final class ChatStore: ObservableObject {
         _ event: AlcoveAPI.ParagraphLiveEvent,
         sseEvent: String
     ) async {
-        if room == "api" || room == "pi" { return }   // 0926 实时通道是 tmux/SDK 那个他的，别画进 API 房间（pi 同理）
+        if room == "api" { return }   // 0926 实时通道是 tmux/SDK 那个他的，别画进 API 房间
         let kind = event.event ?? sseEvent
         if kind == "snapshot" {
             let snapshotActive = event.active == true || event.done == false
@@ -888,7 +888,7 @@ final class ChatStore: ObservableObject {
             } else {
                 if apiLive != nil { apiLive = nil }
                 lastApiPartial = ""
-                if room == "api" || room == "pi" { tool = nil; clearLiveBubbles() }
+                if room == "api" { tool = nil; clearLiveBubbles() }
             }
             if currentTool != tool { currentTool = tool }
             if r.isTyping { optimisticUntil = .distantPast }

@@ -241,8 +241,9 @@ enum AlcoveAPI {
         set { UserDefaults.standard.set(newValue, forKey: "alcove.chatRoom") }
     }
     private static var roomQuery: String { "&room=\(chatRoom)" }
-    /// 1125 #6026：api 和 pi 是两间「旁边的屋子」——不跟开关走、不碰 tmux，发的东西都要带上房间名
-    static var isSideRoom: Bool { chatRoom == "api" || chatRoom == "pi" }
+    /// 只有 api 是「旁边的屋子」——不跟开关走、不碰 tmux，发的东西要带上房间名。
+    /// 1125 #6040 pi 改成跟 tmux / SDK 一样的通道（拨到 pi 就住在 main 里），按主屋那条路发
+    static var isSideRoom: Bool { chatRoom == "api" }
 
     static func history(limit: Int = 300) async throws -> [ChatMessage] {
         let obj = try await getJSON("/api/history?limit=\(limit)" + roomQuery)
@@ -519,7 +520,7 @@ enum AlcoveAPI {
     }
 
     static func heldCount() async throws -> Int {
-        let obj = try await getJSON(chatRoom == "pi" ? "/api/held?room=pi" : "/api/held")   // 1125 pi 房间攒的另算
+        let obj = try await getJSON("/api/held")
         return obj["held"] as? Int ?? 0
     }
 
