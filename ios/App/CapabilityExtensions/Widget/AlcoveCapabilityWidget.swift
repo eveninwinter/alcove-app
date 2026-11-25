@@ -292,7 +292,7 @@ private struct AlcoveLabLiveActivity: Widget {
     var body: some WidgetConfiguration {
         ActivityConfiguration(for: AlcoveLabAttributes.self) { context in
             // 1015 锁屏那一条：跟展开的岛同一张卡（白天白、黑夜深炭灰）
-            LiveBanner(message: context.state.message, bpm: context.state.bpm)
+            LiveBanner(message: context.state.message, bpm: context.state.bpm, dark: context.state.dark ?? false)
         } dynamicIsland: { context in
             // 1015 #3824–3834 她：灵动岛换成她给的吊坠图（狼＋兔子，/root/workroom/mock/island/locket.png 抠的）。
             // 收起：岛照旧黑，左边只放吊坠（1015 去掉了白胶囊、放大到 26），右边心率用聊天页顶栏那个 Cormorant 数字；
@@ -388,10 +388,10 @@ private struct IslandCard: View {
 private struct LiveBanner: View {
     let message: String
     let bpm: Int
-    @Environment(\.colorScheme) private var scheme
+    /// 只认全屋按钮（App 写进 ContentState），不看系统深浅
+    let dark: Bool
 
     var body: some View {
-        let dark = scheme == .dark
         IslandCard(message: message, bpm: bpm, dark: dark)
             .padding(.top, 16)
             .background(SPal(dark: dark).card)

@@ -415,6 +415,11 @@ enum RemotePush {
     static func setIslandEnabled(_ on: Bool) {
         Task { _ = try? await NativeHouseAPI.object("/push/pref", method: "POST", body: ["la_enabled": on]) }
     }
+
+    /// 1125 锁屏条深浅跟全屋按钮：服务器推岛时照这个带 dark
+    static func setIslandDark(_ dark: Bool) {
+        Task { _ = try? await NativeHouseAPI.object("/push/pref", method: "POST", body: ["la_dark": dark]) }
+    }
 }
 
 final class VoipPush: NSObject, PKPushRegistryDelegate {

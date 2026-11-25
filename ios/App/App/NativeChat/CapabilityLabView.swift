@@ -282,10 +282,22 @@ enum AlcoveLiveActivityController {
                     continue
                 }
                 tick += 1
+                // 1125 全屋按钮切了白天/黑夜：锁屏条几秒内跟着换，也告诉服务器（它推的岛也带上）
+                let dark = AlcoveAppearance.isDark
+                if activities.contains(where: { $0.content.state.dark != dark }) {
+                    RemotePush.setIslandDark(dark)
+                    for activity in activities where activity.content.state.dark != dark {
+                        var state = activity.content.state
+                        state.dark = dark
+                        if bpm > 0 { state.bpm = bpm }
+                        await activity.update(ActivityContent(state: state, staleDate: nil))
+                    }
+                }
                 guard bpm > 0 else { continue }
                 for activity in activities where activity.content.state.bpm != bpm || tick % 15 == 0 {
                     var state = activity.content.state
                     state.bpm = bpm
+                    state.dark = dark
                     await activity.update(ActivityContent(state: state, staleDate: nil))
                 }
             }
@@ -310,12 +322,13 @@ enum AlcoveLiveActivityController {
             return "系统未允许实时活动，请在 iPhone 设置中开启。"
         }
         RemotePush.setIslandEnabled(true)
+        RemotePush.setIslandDark(AlcoveAppearance.isDark)
         guard !starting else { return "灵动岛正在刷新。" }
         starting = true
         defer { starting = false }
 
         let state = AlcoveLabAttributes.ContentState(
-            message: "等待任务", startedAt: .now, bpm: await currentBPM()
+            message: "等待任务", startedAt: .now, bpm: await currentBPM(), dark: AlcoveAppearance.isDark
         )
         let existing = await liveActivities()
         if !existing.isEmpty {
@@ -421,7 +434,7 @@ enum AlcoveLiveActivityController {
         }
 
         let state = AlcoveLabAttributes.ContentState(
-            message: message, startedAt: .now, bpm: await currentBPM()
+            message: message, startedAt: .now, bpm: await currentBPM(), dark: AlcoveAppearance.isDark
         )
         let existing = await liveActivities()
         if !existing.isEmpty {

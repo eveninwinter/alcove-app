@@ -7,6 +7,9 @@ struct AlcoveLabAttributes: ActivityAttributes {
         var message: String
         var startedAt: Date
         var bpm: Int
+        /// 1125 她：「为啥是黑的 我没开深色模式」——锁屏条原来跟系统给的深浅，锁屏壁纸一暗系统就报黑夜。
+        /// 改成跟全屋白天/黑夜按钮：App 和服务器每次写岛都带上；老推送没这个字段就按白天
+        var dark: Bool? = nil
     }
 
     var name: String
