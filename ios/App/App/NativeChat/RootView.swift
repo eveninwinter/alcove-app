@@ -134,9 +134,11 @@ struct RootView: View {
             if showTerminal {
                 ZStack {
                     Color(red: 0.1, green: 0.1, blue: 0.12).ignoresSafeArea()
+                    // 1125 #6026 pi 房间点头像进的是 pi 那个窗（tmux 会话 pi），只这一个标签、不切 SDK
                     TerminalView(onDismiss: {
                         withAnimation(.easeOut(duration: 0.15)) { showTerminal = false }
-                    })
+                    }, initialSession: chatRoom == "pi" ? "pi" : "main",
+                       availableSessions: chatRoom == "pi" ? ["pi"] : ["main", "assistant", "gemini", "ghost"])
                 }
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .zIndex(20)

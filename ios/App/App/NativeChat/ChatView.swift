@@ -297,7 +297,7 @@ struct ChatView: View {
         }
         // 房间跟着开关走：开关拨到哪边，看的就是哪间（api 是只看不拨，留在原地）
         .onChange(of: activeChatChannel) { ch in
-            if store.room != "api" && store.room != ch { store.switchRoom(ch) }
+            if store.room != "api" && store.room != "pi" && store.room != ch { store.switchRoom(ch) }
         }
         .sheet(isPresented: $showCamera) {
             CameraView { image in
@@ -354,7 +354,7 @@ struct ChatView: View {
                 if let obj = try? await AlcoveAPI.getRaw("/api/sdk-shadow/status") {
                     let ch = obj["channel"] as? String ?? "cli"
                     activeChatChannel = ch
-                    if store.room != "api" && store.room != ch { store.switchRoom(ch) }
+                    if store.room != "api" && store.room != "pi" && store.room != ch { store.switchRoom(ch) }
                 }
             }
         }
@@ -678,7 +678,8 @@ struct ChatView: View {
                         withAnimation(.spring(response: 0.3, dampingFraction: 0.84)) {
                             showMiniTerminal = false
                         }
-                    }, mini: true)
+                    }, mini: true, initialSession: store.room == "pi" ? "pi" : "main",
+                       availableSessions: store.room == "pi" ? ["pi"] : ["main", "assistant", "gemini", "ghost"])
                     .frame(height: miniTerminalHeight)
                     .padding(.horizontal, 16)
                     .padding(.bottom, bottomChromeHeight + 14)
@@ -1010,7 +1011,7 @@ struct ChatView: View {
 
     /// 0924：给 MessageRow 的「重来」回调。抽成函数是为了别在那个几百行的构造里塞三目＋闭包（编译器算不过来，c5bdd8d/72e3404 两笔红）
     private func rerollAction(for message: ChatMessage) -> (() -> Void)? {
-        guard store.room != "api", isLatestAssistantTurn(message) else { return nil }   // 0926 重来走的是 tmux，API 房间不给
+        guard store.room != "api", store.room != "pi", isLatestAssistantTurn(message) else { return nil }   // 0926 重来走的是 tmux，API 房间不给
         // 0928 她误触过一次（任务#3110：他那轮被藏、他自己也退掉不记得了），现在先弹一句问清楚再真重来
         return { rerollConfirmShown = true }
     }
@@ -2540,7 +2541,7 @@ struct ChatView: View {
     private func performDynamicComposerAction() {
         guard !store.stagingImages else { return }
         // 0926 API 房间：字 / 图 / 语音都能发（任务#2954），但不给停止键——停止那条路掐的是 tmux 的他
-        if store.room == "api" && isGenerating { return }
+        if (store.room == "api" || store.room == "pi") && isGenerating { return }   // 1125 pi 也不给停止键（那条路掐 tmux）
         if isGenerating {
             stopGenerating()
             return
@@ -2971,7 +2972,8 @@ private struct ChatRoomSidebar: View {
     @State private var accounts: [[String: Any]] = []
     @State private var dragX: CGFloat = 0
 
-    private let rooms: [(id: String, name: String)] = [("cli", "tmux"), ("sdk", "SDK"), ("api", "API")]
+    // 1125 #6026 她要的 pi 入口：第四间，聊天页跟主屋同一个，记录在 pi.db
+    private let rooms: [(id: String, name: String)] = [("cli", "tmux"), ("sdk", "SDK"), ("api", "API"), ("pi", "pi")]
     private static let corm = "CormorantGaramond-Medium"
     private static let cormI = "CormorantGaramondItalic-MediumItalic"
 
@@ -3173,7 +3175,7 @@ private struct ChatRoomSidebar: View {
 
     @MainActor private func pick(_ id: String) async {
         message = ""
-        if id == "api" || id == activeChannel {
+        if id == "api" || id == "pi" || id == activeChannel {
             onPickRoom(id); onClose(); return
         }
         working = id
@@ -8644,6 +8646,7 @@ struct TreehouseContextLine: View {
     }
 
     @MainActor private func load() async {
+        if room == "pi" { ratio = 0; used = 0; window = 0; return }   // 1125 pi 房间没有 tmux 那根上下文线
         if room == "api" {
             if let o = try? await AlcoveAPI.getRaw("/api/api-room/context"), o["ok"] as? Bool == true {
                 let c = ApiContext(o)

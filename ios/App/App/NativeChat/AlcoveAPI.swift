@@ -241,6 +241,8 @@ enum AlcoveAPI {
         set { UserDefaults.standard.set(newValue, forKey: "alcove.chatRoom") }
     }
     private static var roomQuery: String { "&room=\(chatRoom)" }
+    /// 1125 #6026：api 和 pi 是两间「旁边的屋子」——不跟开关走、不碰 tmux，发的东西都要带上房间名
+    static var isSideRoom: Bool { chatRoom == "api" || chatRoom == "pi" }
 
     static func history(limit: Int = 300) async throws -> [ChatMessage] {
         let obj = try await getJSON("/api/history?limit=\(limit)" + roomQuery)
@@ -389,7 +391,7 @@ enum AlcoveAPI {
     // 返回服务器确认的记录；睡眠闸门拦下时 asleep=true
     static func send(text: String) async throws -> (record: ChatMessage?, asleep: Bool) {
         var body: [String: Any] = ["text": text]
-        if chatRoom == "api" { body["room"] = "api" }   // 0926 API 房间：后端直接交给中转站，不碰 tmux
+        if isSideRoom { body["room"] = chatRoom }   // 0926 API 房间：后端直接交给中转站，不碰 tmux；1125 pi 房间落 pi.db
         let obj = try await postJSON("/api/send", body: body)
         let rec = (obj["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
         return (rec, obj["asleep"] as? Bool ?? false)
@@ -399,7 +401,7 @@ enum AlcoveAPI {
         var body: [String: Any] = ["role": "user", "sticker_id": stk.id,
                                    "sticker_desc": stk.descForAI]
         if let t = text, !t.isEmpty { body["text"] = t }
-        if chatRoom == "api" { body["room"] = "api" }   // 0926 落进 API 房间，后端直接叫 API 的他回
+        if isSideRoom { body["room"] = chatRoom }   // 0926 落进 API 房间，后端直接叫 API 的他回（pi 同理）
         _ = try await postJSON("/api/chat-append", body: body)
     }
 
@@ -510,14 +512,14 @@ enum AlcoveAPI {
     static func sendHold(text: String) async throws -> (held: Int, record: ChatMessage?) {
         var body: [String: Any] = ["text": text, "hold": true]
         // 0927 任务#2998：API 房间攒的原来没带 room，掉进 tmux 的攒气泡队列，API 的他只看到最后一句
-        if chatRoom == "api" { body["room"] = "api" }
+        if isSideRoom { body["room"] = chatRoom }
         let obj = try await postJSON("/api/send", body: body)
         let rec = (obj["record"] as? [String: Any]).flatMap(ChatMessage.init(json:))
         return (obj["held"] as? Int ?? 0, rec)
     }
 
     static func heldCount() async throws -> Int {
-        let obj = try await getJSON("/api/held")
+        let obj = try await getJSON(chatRoom == "pi" ? "/api/held?room=pi" : "/api/held")   // 1125 pi 房间攒的另算
         return obj["held"] as? Int ?? 0
     }
 
@@ -696,7 +698,7 @@ enum AlcoveAPI {
             if !v.zh.isEmpty { items.append(URLQueryItem(name: "zh", value: v.zh)) }   // 1022 卡片上翻好的中文，服务端不再翻第二遍
         }
         if hold { items.append(URLQueryItem(name: "hold", value: "1")) }
-        if chatRoom == "api" { items.append(URLQueryItem(name: "room", value: "api")) }   // 0926 落进 API 房间
+        if isSideRoom { items.append(URLQueryItem(name: "room", value: chatRoom)) }   // 0926 落进 API 房间（1125 pi 同理）
         comps.queryItems = items
         var req = URLRequest(url: comps.url!)
         req.httpMethod = "POST"
