@@ -1010,7 +1010,7 @@ struct ChatView: View {
 
     /// 0924：给 MessageRow 的「重来」回调。抽成函数是为了别在那个几百行的构造里塞三目＋闭包（编译器算不过来，c5bdd8d/72e3404 两笔红）
     private func rerollAction(for message: ChatMessage) -> (() -> Void)? {
-        guard store.room != "api", store.room != "pi", isLatestAssistantTurn(message) else { return nil }   // 1125 pi 没有 Claude Code 那种回退，重来不给   // 0926 重来走的是 tmux，API 房间不给
+        guard store.room != "api", isLatestAssistantTurn(message) else { return nil }   // 0926 重来走的是 tmux，API 房间不给；1125 #6050 pi 也能重来（扩展的 /alcove-reroll）   // 0926 重来走的是 tmux，API 房间不给
         // 0928 她误触过一次（任务#3110：他那轮被藏、他自己也退掉不记得了），现在先弹一句问清楚再真重来
         return { rerollConfirmShown = true }
     }
