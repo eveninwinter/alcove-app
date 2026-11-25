@@ -8645,7 +8645,7 @@ struct TreehouseContextLine: View {
     }
 
     @MainActor private func load() async {
-        if room == "pi" { ratio = 0; used = 0; window = 0; return }   // 1125 pi 没有 Claude Code 那份记录，这根线先不画
+        // 1125 #6041 住在 pi 时后台把 pi 报的用量放在 cli_context 里，跟 tmux 同一根线
         if room == "api" {
             if let o = try? await AlcoveAPI.getRaw("/api/api-room/context"), o["ok"] as? Bool == true {
                 let c = ApiContext(o)
