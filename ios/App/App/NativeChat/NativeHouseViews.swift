@@ -988,6 +988,8 @@ private struct NativeSettingsView: View {
     @State private var channelPicking = false
     @State private var channelWorking = ""
     @State private var channelMsg = ""
+    // 1125 #6068 她：下一个开窗带哪个通道的三十轮自己挑；没挑（""）就跟着现在住的通道。后台用一次就清
+    @State private var nextWindowRoom = ""
     @State private var followupAlarm: String? = nil   // 他给自己订的闹钟几点到，nil = 没订
     @State private var followupSchedule: [String] = []  // 0925 他订的日程提醒（可以好几张），只给 HH:mm
     // 0925 兜底：追问开着、他一张闹钟都没有、两边都安静 backstopMin 分钟，叫他一次（flags followup_backstop）
@@ -1919,6 +1921,7 @@ private struct NativeSettingsView: View {
             HStack(spacing: 18) {
                 ForEach(Self.channelNames, id: \.id) { c in channelToggle(c.id, c.name, c.sub) }
             }
+            nextWindowRow
             if !channelMsg.isEmpty {
                 Text(channelMsg).font(.system(size: 9.5, design: .rounded)).foregroundColor(theme.textDim)
                     .fixedSize(horizontal: false, vertical: true)
@@ -1953,6 +1956,40 @@ private struct NativeSettingsView: View {
     @MainActor private func loadChannel() async {
         if let o = try? await NativeHouseAPI.object("/api/sdk-shadow/status"), let ch = o["channel"] as? String {
             channelNow = ch
+        }
+        if let o = try? await NativeHouseAPI.object("/api/sdk-shadow/next-window") {
+            nextWindowRoom = o["room"] as? String ?? ""
+        }
+    }
+
+    /// 1125 #6068 下次开窗带哪边的三十轮：跟着通道 / tmux / pi
+    private var nextWindowRow: some View {
+        HStack(spacing: 6) {
+            VStack(alignment: .leading, spacing: 1) {
+                Text("下次开窗带").font(.system(size: 12, weight: .medium))
+                Text(nextWindowRoom.isEmpty ? "跟着通道" : "只管下一次").font(.system(size: 9)).foregroundColor(theme.textDim)
+            }
+            Spacer(minLength: 8)
+            ForEach([("", "跟着通道"), ("cli", "tmux"), ("pi", "pi")], id: \.0) { item in
+                let on = nextWindowRoom == item.0
+                Button {
+                    let old = nextWindowRoom
+                    nextWindowRoom = item.0
+                    Task { @MainActor in
+                        let o = try? await NativeHouseAPI.object("/api/sdk-shadow/next-window", method: "POST",
+                                                                 body: ["room": item.0])
+                        if o == nil { nextWindowRoom = old }
+                    }
+                } label: {
+                    Text(item.1)
+                        .font(.system(size: 11, weight: on ? .medium : .regular))
+                        .foregroundColor(on ? theme.fyAccent : theme.textDim)
+                        .padding(.horizontal, 9).padding(.vertical, 4)
+                        .background(Capsule().fill(on ? theme.fyAccent.opacity(0.14) : Color.clear))
+                        .overlay(Capsule().stroke(on ? theme.fyAccent : theme.textDim.opacity(0.35), lineWidth: 0.8))
+                }
+                .buttonStyle(.plain)
+            }
         }
     }
 
