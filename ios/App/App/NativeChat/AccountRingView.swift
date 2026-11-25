@@ -251,8 +251,8 @@ struct AccountRingView: View {
         .task { WindowFont.requestSongti(); await store.load() }
         .confirmationDialog(hookPickTitle, isPresented: Binding(get: { hookPick != nil }, set: { if !$0 { hookPick = nil } }),
                             titleVisibility: .visible) {
-            // pi 屋只认钥匙（完整登录那种几小时就过期）
-            ForEach(store.accounts.filter { $0.usable && (hookPick != "pi" || $0.kind == "key") }) { a in
+            // 1125 #6054 她：「还有over的号呢」——pi 屋也能挂机器上登着的那个完整登录（后台每轮借主屋那张），别的完整登录后台会拒
+            ForEach(store.accounts.filter { $0.usable }) { a in
                 Button(a.name + "（" + a.kindText + "）") {
                     let who = hookPick ?? "main"
                     Task { await store.switchTo(a.name, who: who) }
@@ -270,9 +270,7 @@ struct AccountRingView: View {
                     Button("陈璟（主聊天）") { Task { await store.switchTo(a.name, who: "main") } }
                     Button("隅（工作室）") { Task { await store.switchTo(a.name, who: "work") } }
                     Button("两个都换") { Task { await store.switchTo(a.name, who: "both") } }
-                    if a.kind == "key" {
-                        Button("pi 屋") { Task { await store.switchTo(a.name, who: "pi") } }
-                    }
+                    Button("pi 屋") { Task { await store.switchTo(a.name, who: "pi") } }
                 } else {
                     Button("重新登这个号") { showLogin = true }
                 }
@@ -879,7 +877,7 @@ private struct RingLoginSheet: View {
             hangButton("陈璟（主聊天）", "main", ink)
             hangButton("隅（工作室）", "work", ink)
             hangButton("两个都换", "both", ink)
-            if doneKind != "full" { hangButton("pi 屋", "pi", ink) }
+            hangButton("pi 屋", "pi", ink)
             Button("先不挂，放着") { dismiss() }
                 .font(SanctusPageFont.cn(11.5)).foregroundColor(ink.sub).padding(.top, 4)
         }
