@@ -5068,7 +5068,7 @@ struct MessageRow: View {
             }
             if !isUser {
                 // 晨报和旅行卡片是整行居中的东西，不吃我这边气泡的右侧留白
-                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil || isTarotRow) ? 0
+                Spacer(minLength: (msg.morningPaperDate != nil || msg.journeyCard != nil || isTarotRow || !islandRun.isEmpty) ? 0
                        : (msg.choiceCard != nil ? 34 : (theme.isPaper ? 15
                           : ((theme.isKakao && kakaoShowAvatar) ? 40 : 48))))
             }
@@ -6062,14 +6062,14 @@ struct MessageRow: View {
     /// 1126 #6220 她：晴岛截图缩小、一行两张、第三张换下面。两张并排正好占满原来一张的宽（300），
     /// 截图 4:3 一格 148×111；小票跟截图一样高，窄一条
     private var islandRunBody: some View {
-        let cellW: CGFloat = 148, cellH: CGFloat = 111, gap: CGFloat = 4
+        let cellW: CGFloat = 180, cellH: CGFloat = 135, gap: CGFloat = 4   // #6221 两张并排能放下的最大（小 30% 的 210 两张 424，屏幕才 393）
         let rows = stride(from: 0, to: islandRun.count, by: 2).map { Array(islandRun.indices[$0..<min($0 + 2, islandRun.count)]) }
         let urls = islandRun.map(\.url)
         return VStack(alignment: .leading, spacing: gap) {
             ForEach(rows, id: \.self) { row in
                 HStack(spacing: gap) {
                     ForEach(row, id: \.self) { i in
-                        islandCell(islandRun[i], width: islandRun[i].shot ? cellW : 82, height: cellH) {
+                        islandCell(islandRun[i], width: islandRun[i].shot ? cellW : 100, height: cellH) {
                             onTapImages(urls, .constant(i))
                         }
                     }
