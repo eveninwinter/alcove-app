@@ -500,6 +500,7 @@ struct CallTurn: Identifiable, Equatable {
 struct IslandRunItem: Equatable {
     let url: URL
     let shot: Bool
+    let msg: ChatMessage   // 每张图自己那条：长按、多选、删都认它
 }
 
 struct IslandSummaryInfo: Equatable {

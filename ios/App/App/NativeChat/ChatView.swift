@@ -1354,6 +1354,12 @@ struct ChatView: View {
                     suppressOwnActivity: hoist.suppressActivity,
                     photoURLs: photos,
                     islandRun: islandRun,
+                    islandSelecting: paragraphSelectionMode,
+                    islandSelectedIDs: islandRun.isEmpty ? [] : selectedPhotoIDs,
+                    onToggleIslandPhoto: { uid in
+                        if selectedPhotoIDs.contains(uid) { selectedPhotoIDs.remove(uid) } else { selectedPhotoIDs.insert(uid) }
+                    },
+                    islandLiftedID: islandRun.isEmpty ? nil : reactTarget?.msg.id,
                     photoNamespace: photoTransition,
                     onTapImages: { urls, selectedIndex in
                         photoViewer = PhotoViewerSelection(
@@ -1423,7 +1429,7 @@ struct ChatView: View {
                     onExitTextSelection: exitTextSelection,
                     onRetryFailed: { store.retryFailed() }
                 )
-                if paragraphSelectionMode && !splittable {
+                if paragraphSelectionMode && !splittable && islandRun.isEmpty {   // 1126 #6220 晴岛那组每张自己一个圈
                     Button {
                         if rowSelected { selectedParagraphIDs.subtract(rowSelectionIDs) }
                         else { selectedParagraphIDs.formUnion(rowSelectionIDs) }
@@ -1784,10 +1790,10 @@ struct ChatView: View {
         guard index < store.messages.count, !islandLinked(index) else { return [] }
         let head = store.messages[index]
         guard head.islandShot || head.receiptShot, let raw = head.attachmentUrl else { return [] }
-        var items = [IslandRunItem(url: AlcoveAPI.attachmentURL(raw), shot: head.islandShot)]
+        var items = [IslandRunItem(url: AlcoveAPI.attachmentURL(raw), shot: head.islandShot, msg: head)]
         var i = index + 1
         while islandLinked(i), let r = store.messages[i].attachmentUrl {
-            items.append(IslandRunItem(url: AlcoveAPI.attachmentURL(r), shot: store.messages[i].islandShot))
+            items.append(IslandRunItem(url: AlcoveAPI.attachmentURL(r), shot: store.messages[i].islandShot, msg: store.messages[i]))
             i += 1
         }
         return items.count > 1 ? items : []
@@ -4487,6 +4493,11 @@ struct MessageRow: View {
     var suppressOwnActivity = false
     var photoURLs: [URL] = []
     var islandRun: [IslandRunItem] = []   // 1126 #6220 晴岛连着的几张，两张一行
+    /// 1126 #6220 她：「并排了怎么删」——那组里每张各管各的：多选时每张一个圈，长按按到哪张就是哪张
+    var islandSelecting = false
+    var islandSelectedIDs: Set<UUID> = []
+    var onToggleIslandPhoto: ((UUID) -> Void)? = nil
+    var islandLiftedID: String? = nil
     var photoNamespace: Namespace.ID
     var onTapImages: ([URL], Binding<Int>) -> Void
     var onDelete: (() -> Void)? = nil
@@ -6018,7 +6029,9 @@ struct MessageRow: View {
     /// 圈画在图左边，图和气泡的上下顺序一点不动。
     @ViewBuilder
     private var photoBlock: some View {
-        if paragraphSelectionMode, hasPhotoBlock, let toggle = onTogglePhotoSelection {
+        if !islandRun.isEmpty {
+            photoBlockCore      // 1126 #6220 晴岛那组：圈和长按挂在每张图上（islandRunBody）
+        } else if paragraphSelectionMode, hasPhotoBlock, let toggle = onTogglePhotoSelection {
             HStack(alignment: .top, spacing: 9) {
                 Button { toggle() } label: {
                     Image(systemName: photoSelected ? "checkmark.circle.fill" : "circle")
@@ -6056,23 +6069,48 @@ struct MessageRow: View {
             ForEach(rows, id: \.self) { row in
                 HStack(spacing: gap) {
                     ForEach(row, id: \.self) { i in
-                        let item = islandRun[i]
-                        let w: CGFloat = item.shot ? cellW : 82
-                        CachedImage(url: item.url) { img in
-                            if item.shot { img.resizable().interpolation(.none).scaledToFill() } else { img.resizable().scaledToFit() }
-                        } placeholder: {
-                            ZStack { Color(.tertiarySystemFill); ProgressView() }
+                        islandCell(islandRun[i], width: islandRun[i].shot ? cellW : 82, height: cellH) {
+                            onTapImages(urls, .constant(i))
                         }
-                        .frame(width: w, height: cellH)
-                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
-                        .chatPhotoRim()
-                        .onTapGesture { onTapImages(urls, .constant(i)) }
                     }
                 }
             }
         }
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
+    }
+
+    @ViewBuilder
+    private func islandCell(_ item: IslandRunItem, width: CGFloat, height: CGFloat, open: @escaping () -> Void) -> some View {
+        let pic = CachedImage(url: item.url) { img in
+            if item.shot { img.resizable().interpolation(.none).scaledToFill() } else { img.resizable().scaledToFit() }
+        } placeholder: {
+            ZStack { Color(.tertiarySystemFill); ProgressView() }
+        }
+        .frame(width: width, height: height)
+        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .chatPhotoRim()
+        if islandSelecting {
+            let on = islandSelectedIDs.contains(item.msg.uid)
+            pic.allowsHitTesting(false)
+                .overlay(alignment: .topLeading) {
+                    Image(systemName: on ? "checkmark.circle.fill" : "circle")
+                        .font(.system(size: 19, weight: .regular))
+                        .foregroundColor(on ? theme.fyAccent : .white)
+                        .shadow(color: .black.opacity(0.35), radius: 2)
+                        .padding(5)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture { onToggleIslandPhoto?(item.msg.uid) }
+        } else if let cb = onReactLongPress {
+            let a: UnitPoint = isUser ? .trailing : .leading
+            pic.onTapGesture(perform: open)
+                .modifier(ReactPressable(lifted: islandLiftedID == item.msg.id, anchor: a) { f in
+                    cb(ReactTarget(msg: item.msg, frame: f, kind: .image, urls: [item.url], ghost: AnyView(pic), anchor: a))
+                })
+        } else {
+            pic.onTapGesture(perform: open)
+        }
     }
 
     /// 1126 #6118 她：他在晴岛截的图横的 4:3、长度跟最长的气泡一样；小票跟在旁边，窄长一条照原比例
