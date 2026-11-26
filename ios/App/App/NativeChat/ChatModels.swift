@@ -74,6 +74,9 @@ struct ChatMessage: Identifiable, Equatable {
     var callSummary: CallSummaryInfo?
     /// 1025 #4374 晴岛小手机：一次上岛的对话在聊天页只留这一张卡（服务端 msg_type=island_summary，extra.island）
     var islandSummary: IslandSummaryInfo?
+    /// 1126 #6118 他在晴岛截的图（extra.island_shot）：横的 4:3，宽跟最长的气泡差不多；小票（extra.receipt）窄长一条
+    var islandShot = false
+    var receiptShot = false
     /// 0912：他发语音时自己写的中文翻译（voice_speak.py --zh → 后端 extra.audio_zh）。展开转文字后点「译」才显示
     var audioZh: String?
     var pending: Bool = false // 本地乐观渲染，服务器确认前为 true
@@ -406,6 +409,8 @@ struct ChatMessage: Identifiable, Equatable {
         if let steps = json["trace"] as? [String] {
             self.trace = steps.filter { !$0.isEmpty }
         }
+        if json["island_shot"] is [String: Any] { self.islandShot = true }
+        if json["receipt"] is [String: Any] { self.receiptShot = true }
         if let i = json["island"] as? [String: Any] {
             self.islandSummary = IslandSummaryInfo(
                 session: i["session"] as? String ?? "",

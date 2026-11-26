@@ -6009,7 +6009,34 @@ struct MessageRow: View {
         }
     }
 
+    @ViewBuilder
     private func imageBody(_ raw: String) -> some View {
+        if msg.islandShot || msg.receiptShot { islandImageBody(raw) } else { squareImageBody(raw) }
+    }
+
+    /// 1126 #6118 她：他在晴岛截的图横的 4:3、长度跟最长的气泡一样；小票跟在旁边，窄长一条照原比例
+    private func islandImageBody(_ raw: String) -> some View {
+        let url = AlcoveAPI.attachmentURL(raw)
+        let w: CGFloat = msg.islandShot ? 300 : 150
+        return CachedImage(url: url) { img in
+            if msg.islandShot { img.resizable().interpolation(.none).scaledToFill() } else { img.resizable().scaledToFit() }
+        } placeholder: {
+            ZStack {
+                Color(.tertiarySystemFill)
+                ProgressView()
+            }
+            .frame(width: w, height: msg.islandShot ? 225 : 220)
+        }
+        .frame(width: w, height: msg.islandShot ? 225 : nil)
+        .frame(maxHeight: msg.islandShot ? 225 : 320)
+        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .chatPhotoRim()
+        .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
+        .onTapGesture { onTapImages([url], .constant(0)) }
+    }
+
+    private func squareImageBody(_ raw: String) -> some View {
         let url = AlcoveAPI.attachmentURL(raw)
         let previewURL = AlcoveAPI.attachmentThumbnailURL(raw)
         // 0821 她定的：聊天里的图一律小方卡（跟成叠的那种一个尺寸），不按原图比例撑大
