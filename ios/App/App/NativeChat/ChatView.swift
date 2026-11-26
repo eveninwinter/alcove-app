@@ -1194,7 +1194,7 @@ struct ChatView: View {
     /// 被前面吃进去的行（图组后几张、「整个」模式并走的、空壳）干脆不进 ForEach
     private var listedRows: [(offset: Int, element: ChatMessage)] {
         store.messages.enumerated().filter { e in
-            !(isPhotoGroupContinuation(at: e.offset) || thMergedAway(at: e.offset) || thEmptyShell(at: e.offset))
+            !(isPhotoGroupContinuation(at: e.offset) || isIslandRunContinuation(at: e.offset) || thMergedAway(at: e.offset) || thEmptyShell(at: e.offset))
         }
     }
 
@@ -1202,7 +1202,7 @@ struct ChatView: View {
     private func chatMessageRow(at index: Int, message rawMessage: ChatMessage) -> some View {
         if thMergedAway(at: index) || thEmptyShell(at: index) {
             EmptyView()
-        } else if !isPhotoGroupContinuation(at: index) {
+        } else if !isPhotoGroupContinuation(at: index) && !isIslandRunContinuation(at: index) {
             // 1009 晚「整个」模式：他同一轮里连着的几段字并成一个气泡，时间那行落在并完的尾巴上
             let mergeRun = thMergeRun(from: index)
             let message: ChatMessage = {
@@ -1223,7 +1223,9 @@ struct ChatView: View {
             // 里 msgs[rowEnd] 当场越界崩掉。以前最多并 3 张、后面行数够，一直没撞上。
             // 内联图一律算 0 行，只有真一条条排着的图（chatPhotoGroup）才算行数；
             // 末了再夹一道栏杆，以后不管发多少张都不会再越界。
-            let rowSpan = message.inlineImages.isEmpty ? max(photos.count, mergeRun, 1) : mergeRun
+            // 1126 #6220 他晴岛连着截的几张（夹着小票）并成一组两张一行，后面几条不占行
+            let islandRun = islandRunItems(startingAt: index)
+            let rowSpan = message.inlineImages.isEmpty ? max(photos.count, mergeRun, islandRun.count, 1) : mergeRun
             let groupEnd = min(index + max(rowSpan, 1) - 1, store.messages.count - 1)
             let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
             let recall = recallFor(index: index)
@@ -1351,6 +1353,7 @@ struct ChatView: View {
                     suppressOwnThought: hoist.suppressThought,
                     suppressOwnActivity: hoist.suppressActivity,
                     photoURLs: photos,
+                    islandRun: islandRun,
                     photoNamespace: photoTransition,
                     onTapImages: { urls, selectedIndex in
                         photoViewer = PhotoViewerSelection(
@@ -1762,6 +1765,32 @@ struct ChatView: View {
     private func isPhotoGroupContinuation(at index: Int) -> Bool {
         guard index > 0, let key = store.messages[index].photoBatchKey else { return false }
         return store.messages[index - 1].photoBatchKey == key
+    }
+
+    /// 1126 #6220 她：晴岛截图缩小、一行放两张、第三张换到下面。他截的图和小票是一张一条，
+    /// 同一个人连着发的（中间不隔 15 分钟）并成一组，在第一条那里画，后面几条不占行。
+    private func islandLinked(_ i: Int) -> Bool {
+        guard i > 0, i < store.messages.count else { return false }
+        let a = store.messages[i - 1], b = store.messages[i]
+        guard (a.islandShot || a.receiptShot), (b.islandShot || b.receiptShot),
+              a.attachmentUrl != nil, b.attachmentUrl != nil, a.role == b.role else { return false }
+        return b.date.timeIntervalSince(a.date) <= 900
+    }
+
+    private func isIslandRunContinuation(at index: Int) -> Bool { islandLinked(index) }
+
+    /// 从这一条起连着的一组；只有一张就返回空，照单张画
+    private func islandRunItems(startingAt index: Int) -> [IslandRunItem] {
+        guard index < store.messages.count, !islandLinked(index) else { return [] }
+        let head = store.messages[index]
+        guard head.islandShot || head.receiptShot, let raw = head.attachmentUrl else { return [] }
+        var items = [IslandRunItem(url: AlcoveAPI.attachmentURL(raw), shot: head.islandShot)]
+        var i = index + 1
+        while islandLinked(i), let r = store.messages[i].attachmentUrl {
+            items.append(IslandRunItem(url: AlcoveAPI.attachmentURL(r), shot: store.messages[i].islandShot))
+            i += 1
+        }
+        return items.count > 1 ? items : []
     }
 
     // MARK: alpha淡出mask（不用背景色渐变，内容本身按alpha淡出）
@@ -4457,6 +4486,7 @@ struct MessageRow: View {
     var suppressOwnThought = false
     var suppressOwnActivity = false
     var photoURLs: [URL] = []
+    var islandRun: [IslandRunItem] = []   // 1126 #6220 晴岛连着的几张，两张一行
     var photoNamespace: Namespace.ID
     var onTapImages: ([URL], Binding<Int>) -> Void
     var onDelete: (() -> Void)? = nil
@@ -5190,6 +5220,7 @@ struct MessageRow: View {
 
     private var photoSaveURLs: [URL] {
         if !photoURLs.isEmpty { return photoURLs }
+        if !islandRun.isEmpty { return islandRun.map(\.url) }
         if let raw = msg.attachmentUrl, msg.isImage { return [AlcoveAPI.attachmentURL(raw)] }
         return []
     }
@@ -6011,13 +6042,43 @@ struct MessageRow: View {
 
     @ViewBuilder
     private func imageBody(_ raw: String) -> some View {
-        if msg.islandShot || msg.receiptShot { islandImageBody(raw) } else { squareImageBody(raw) }
+        if !islandRun.isEmpty { islandRunBody }
+        else if msg.islandShot || msg.receiptShot { islandImageBody(raw) } else { squareImageBody(raw) }
+    }
+
+    /// 1126 #6220 她：晴岛截图缩小、一行两张、第三张换下面。两张并排正好占满原来一张的宽（300），
+    /// 截图 4:3 一格 148×111；小票跟截图一样高，窄一条
+    private var islandRunBody: some View {
+        let cellW: CGFloat = 148, cellH: CGFloat = 111, gap: CGFloat = 4
+        let rows = stride(from: 0, to: islandRun.count, by: 2).map { Array(islandRun.indices[$0..<min($0 + 2, islandRun.count)]) }
+        let urls = islandRun.map(\.url)
+        return VStack(alignment: .leading, spacing: gap) {
+            ForEach(rows, id: \.self) { row in
+                HStack(spacing: gap) {
+                    ForEach(row, id: \.self) { i in
+                        let item = islandRun[i]
+                        let w: CGFloat = item.shot ? cellW : 82
+                        CachedImage(url: item.url) { img in
+                            if item.shot { img.resizable().interpolation(.none).scaledToFill() } else { img.resizable().scaledToFit() }
+                        } placeholder: {
+                            ZStack { Color(.tertiarySystemFill); ProgressView() }
+                        }
+                        .frame(width: w, height: cellH)
+                        .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .contentShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                        .chatPhotoRim()
+                        .onTapGesture { onTapImages(urls, .constant(i)) }
+                    }
+                }
+            }
+        }
+        .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
     }
 
     /// 1126 #6118 她：他在晴岛截的图横的 4:3、长度跟最长的气泡一样；小票跟在旁边，窄长一条照原比例
     private func islandImageBody(_ raw: String) -> some View {
         let url = AlcoveAPI.attachmentURL(raw)
-        let w: CGFloat = msg.islandShot ? 300 : 150
+        let w: CGFloat = msg.islandShot ? 210 : 105   // 1126 #6220 她：缩小 30%（原 300 / 150）
         return CachedImage(url: url) { img in
             if msg.islandShot { img.resizable().interpolation(.none).scaledToFill() } else { img.resizable().scaledToFit() }
         } placeholder: {
@@ -6025,10 +6086,10 @@ struct MessageRow: View {
                 Color(.tertiarySystemFill)
                 ProgressView()
             }
-            .frame(width: w, height: msg.islandShot ? 225 : 220)
+            .frame(width: w, height: msg.islandShot ? 158 : 154)
         }
-        .frame(width: w, height: msg.islandShot ? 225 : nil)
-        .frame(maxHeight: msg.islandShot ? 225 : 320)
+        .frame(width: w, height: msg.islandShot ? 158 : nil)
+        .frame(maxHeight: msg.islandShot ? 158 : 224)
         .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
         .chatPhotoRim()

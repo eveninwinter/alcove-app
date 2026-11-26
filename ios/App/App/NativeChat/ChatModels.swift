@@ -496,6 +496,12 @@ struct CallTurn: Identifiable, Equatable {
 /// 聊天页那条通话摘要气泡。kind 决定它落在哪一侧：
 /// out=她打的→她那侧（右），in=他打来的→他那侧（左）。拒绝也照这条走，没有例外。
 /// 1025 #4374 晴岛小手机卡：session＝那一次上岛，点开按它取这段对话
+/// 1126 #6220 聊天页晴岛连着的几张（截图 / 小票），两张一行
+struct IslandRunItem: Equatable {
+    let url: URL
+    let shot: Bool
+}
+
 struct IslandSummaryInfo: Equatable {
     let session: String
     let count: Int
