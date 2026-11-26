@@ -949,6 +949,16 @@ enum TermParse {
         if let last = lines.lastIndex(where: isRule), lines.count - last - 1 <= 8, last < lines.count - 1 {
             status = lines[(last + 1)...].map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
             lines = Array(lines[...last])
+            // 1126 #6109：pi / Claude Code 退出以后，状态行下面会接「To resume this session: …」和命令行提示符，
+            // 原来一并塞进软盘标签又认不出，整段被吞，她看不到已经退出来了。从这几句起往后的放回正文（保活那行照旧留在标签里）
+            if let cut = status.firstIndex(where: { s in
+                s.hasPrefix("To resume this session") || s.hasPrefix("pi 已退出") || s.hasPrefix("Resume this session")
+                    || s.range(of: #"^\S+@\S+:.*[#$]"#, options: .regularExpression) != nil
+            }) {
+                let tail = Array(status[cut...])
+                status = Array(status[..<cut]) + tail.filter { $0.hasPrefix("保活") }
+                lines += tail.filter { !$0.hasPrefix("保活") }
+            }
         }
         var out: [TermLine] = []
         var kind: TermLine.Kind = .plain
