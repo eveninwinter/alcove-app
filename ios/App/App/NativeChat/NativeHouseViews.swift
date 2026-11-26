@@ -47,6 +47,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
     case bench          // 1112 工作台：她上班的文件，分区放着一直在（BenchRoom.swift，数据走 /api/bench/*）
     case recap          // 1110 #4993 压缩换窗：把这个窗口压成一份经过带进新窗口（RecapRoomView，/api/recap/*）
     case camera         // 1120 Alcove 相机：边框、滤镜、贴纸，拍完进相册「Alcove 相机」（AlcoveCameraView.swift）
+    case group          // 1126 #6134 群聊：陈霁、陈璟、隅三个人，不用艾特（GroupChatView.swift，数据走 /api/group/*）
 
     var id: String { rawValue }
 
@@ -105,6 +106,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .bench: return "工作台"
         case .recap: return "压缩换窗"
         case .camera: return "Alcove 相机"
+        case .group: return "群聊"
         }
     }
 
@@ -176,6 +178,7 @@ enum HouseDestination: String, Identifiable, CaseIterable {
         case .desk: return "lamp.desk"
         case .bench: return "tray.full"
         case .camera: return "camera"
+        case .group: return "bubble.left.and.bubble.right"
         default: return "sparkles"
         }
     }
@@ -445,6 +448,12 @@ struct NativeHouseSheet: View {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
                 withAnimation(.easeOut(duration: 0.2)) { showRoundtable() }
             }
+        // 1126 群聊也走全屏，交给 RootView（presentHouse 认得 .group）
+        case .group:
+            dismiss()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                NotificationCenter.default.post(name: .alcoveOpenHouse, object: HouseDestination.group.rawValue)
+            }
         default:
             withAnimation(.easeInOut(duration: 0.18)) { route = target }
         }
@@ -578,6 +587,7 @@ struct NativeHouseDrawer: View {
 
                     VStack(spacing: 7) {
                         drawerRow(.chat, detail: "回到你们正在说的话")
+                        drawerRow(.group, detail: "我们三个人，不用艾特")   // 1126 #6134 她要放在圆桌上面
                         drawerRow(.roundtable, detail: roundtableUnread > 0 ? "\(roundtableUnread) 条新消息" : "三个人的桌边")
                         drawerRow(.terminal, detail: "看看他正在做什么")
                         drawerRow(.settings, detail: "主题、权限与小屋设置")

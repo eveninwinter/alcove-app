@@ -16,6 +16,7 @@ struct RootView: View {
     @AppStorage("alcove.chatRoom") private var chatRoom = "cli"
     @State private var showApiContext = false
     @State private var showRoundtable = false   // 0731 圆桌：她要全屏，所以不走面板那条 sheet
+    @State private var showGroup = false   // 1126 #6134 群聊：跟圆桌一样全屏
     // 任务#1309/#1310：一起听开着且在放歌，大卡就钉在聊天页顶部，一直在；
     // 聊天在卡下面照聊。卡右上角小叉 = 结束一起听。
     @State private var showChatPlayer = false
@@ -111,14 +112,14 @@ struct RootView: View {
                     .animation(.easeOut(duration: 0.22), value: showHouseDrawer)
             }
             // 1016 贴纸打码：盖在聊天页和顶栏上面（落在顶栏上的贴纸钉住不动）；开了别的房间 / 抽屉就先藏起来，回来还在
-            if stickerMask.active && !showTerminal && !showRoundtable && !showHouseDrawer && housePage == nil {
+            if stickerMask.active && !showTerminal && !showRoundtable && !showGroup && !showHouseDrawer && housePage == nil {
                 StickerMaskLayer(topBarHeight: theme.isTreehouse ? 84 : (theme.isKakao ? 44 : (theme.isMessages ? 52 : 60)))
                     .zIndex(7)
             }
             // 1006 她要的：一起听开着且在放歌 → 陈璟名字下面一条玻璃胶囊（原来的白瓷大卡撤了）。
             // 72 = 信息顶栏头像 45 + 名字胶囊 32 − 叠 15，再空 10；Kakao / 旧顶栏只有一行，往上提
             if listenMusic.nowPlaying != nil && listenMusic.togetherOn && !listenMinimized
-                && !showTerminal && !showRoundtable && !showHouseDrawer {
+                && !showTerminal && !showRoundtable && !showGroup && !showHouseDrawer {
                 ListenCapsule(
                     model: listenMusic, dark: theme.isDark,
                     off: { withAnimation(.easeOut(duration: 0.22)) { listenMusic.togetherOn = false } },
@@ -146,6 +147,13 @@ struct RootView: View {
                 RoundtableView(onDismiss: {
                     markRoundtableRead()
                     withAnimation(.easeOut(duration: 0.15)) { showRoundtable = false }
+                })
+                .transition(.opacity.combined(with: .move(edge: .bottom)))
+                .zIndex(21)
+            }
+            if showGroup {
+                GroupChatView(onDismiss: {
+                    withAnimation(.easeOut(duration: 0.15)) { showGroup = false }
                 })
                 .transition(.opacity.combined(with: .move(edge: .bottom)))
                 .zIndex(21)
@@ -825,6 +833,7 @@ struct RootView: View {
             withAnimation(.easeOut(duration: 0.2)) { showHouseDrawer = false }
         case .terminal: showTerminal = true
         case .roundtable: markRoundtableRead(); showRoundtable = true
+        case .group: withAnimation(.easeOut(duration: 0.2)) { showGroup = true }
         default:
             presentHouse(target)
         }
@@ -839,6 +848,10 @@ struct RootView: View {
     private func presentHouse(_ target: HouseDestination) {
         if target == .sidebar {
             withAnimation(.spring(response: 0.34, dampingFraction: 0.88)) { showHouseDrawer = true }
+            return
+        }
+        if target == .group {   // 1126 群聊全屏，不进面板
+            withAnimation(.easeOut(duration: 0.2)) { showGroup = true }
             return
         }
         let asset = AlcoveTheme.panelNamed(themeName).panelTextureAsset

@@ -44,6 +44,7 @@
 		CB00000000000000111701A1 /* SceneRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111701A2 /* SceneRoom.swift */; };
 		CB00000000000000111801A1 /* QingdaoKitchen.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111801A2 /* QingdaoKitchen.swift */; };
 		CB00000000000000111201A1 /* BenchRoom.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111201A2 /* BenchRoom.swift */; };
+		CB00000000000000112601C1 /* GroupChatView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000112601C2 /* GroupChatView.swift */; };
 		CB00000000000000111301A1 /* AccountRingView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111301A2 /* AccountRingView.swift */; };
 		CB00000000000000111301B1 /* MoveHouseView.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111301B2 /* MoveHouseView.swift */; };
 		CB00000000000000111202A1 /* PondPublic.swift in Sources */ = {isa = PBXBuildFile; fileRef = CB00000000000000111202A2 /* PondPublic.swift */; };
@@ -195,6 +196,7 @@
 		CB00000000000000111701A2 /* SceneRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SceneRoom.swift; sourceTree = "<group>"; };
 		CB00000000000000111801A2 /* QingdaoKitchen.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QingdaoKitchen.swift; sourceTree = "<group>"; };
 		CB00000000000000111201A2 /* BenchRoom.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BenchRoom.swift; sourceTree = "<group>"; };
+		CB00000000000000112601C2 /* GroupChatView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GroupChatView.swift; sourceTree = "<group>"; };
 		CB00000000000000111301A2 /* AccountRingView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AccountRingView.swift; sourceTree = "<group>"; };
 		CB00000000000000111301B2 /* MoveHouseView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MoveHouseView.swift; sourceTree = "<group>"; };
 		CB00000000000000111202A2 /* PondPublic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PondPublic.swift; sourceTree = "<group>"; };
@@ -363,6 +365,7 @@
 				CB00000000000000111701A2 /* SceneRoom.swift */,
 				CB00000000000000111801A2 /* QingdaoKitchen.swift */,
 				CB00000000000000111201A2 /* BenchRoom.swift */,
+				CB00000000000000112601C2 /* GroupChatView.swift */,
 				CB00000000000000111301A2 /* AccountRingView.swift */,
 				CB00000000000000111301B2 /* MoveHouseView.swift */,
 				CB00000000000000111202A2 /* PondPublic.swift */,
@@ -613,6 +616,7 @@
 				CB00000000000000111701A1 /* SceneRoom.swift in Sources */,
 				CB00000000000000111801A1 /* QingdaoKitchen.swift in Sources */,
 				CB00000000000000111201A1 /* BenchRoom.swift in Sources */,
+				CB00000000000000112601C1 /* GroupChatView.swift in Sources */,
 				CB00000000000000111301A1 /* AccountRingView.swift in Sources */,
 				CB00000000000000111301B1 /* MoveHouseView.swift in Sources */,
 				CB00000000000000111202A1 /* PondPublic.swift in Sources */,
