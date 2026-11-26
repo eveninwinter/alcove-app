@@ -1796,9 +1796,7 @@ struct ChatView: View {
             items.append(IslandRunItem(url: AlcoveAPI.attachmentURL(r), shot: store.messages[i].islandShot, msg: store.messages[i]))
             i += 1
         }
-        // 1126 #6224 她要每张正好小 30%（宽 210），两张并排比屏幕宽放不下——先不并排，一张一行；并排的代码留着
-        _ = items
-        return []
+        return items.count > 1 ? items : []
     }
 
     // MARK: alpha淡出mask（不用背景色渐变，内容本身按alpha淡出）
