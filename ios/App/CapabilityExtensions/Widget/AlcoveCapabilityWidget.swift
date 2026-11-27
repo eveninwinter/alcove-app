@@ -28,7 +28,10 @@ private enum WidgetWall {
     static let base = "https://alcove.ob-memory.uk/api/attachments/"
 
     static func fetch(_ name: String) async -> UIImage? {
-        guard let url = URL(string: base + name) else { return nil }
+        // 1127 #6240 她换了壁纸、删了重加小组件还是旧底：同名图被 Cloudflare 缓存了 30 天。
+        // 网址后面带上「第几个钟头」，每个钟头都是新网址，缓存拦不住；服务器那边也改成 widget-bg 不让缓存
+        let hour = Int(Date().timeIntervalSince1970 / 3600)
+        guard let url = URL(string: base + name + "?t=\(hour)") else { return nil }
         var req = URLRequest(url: url)
         req.cachePolicy = .reloadIgnoringLocalCacheData
         req.timeoutInterval = 10
