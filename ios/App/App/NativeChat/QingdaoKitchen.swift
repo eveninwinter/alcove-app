@@ -122,6 +122,11 @@ final class KitchenStore: ObservableObject {
     @Published var garnishes: [String] = []
     @Published var book: [KitchenBookEntry] = []
     @Published var potStart: Double = 0
+    /// 1127 #6239 调酒屋上班接单（shift.py）
+    @Published var shift: ShiftInfo?
+    @Published var shiftBook: [ShiftPage] = []
+    @Published var shiftRep: Double?
+    var serverOffset: Double = 0
     private weak var splitHost: UIViewController?
     private(set) var fetchedAt = Date()
     private var loop: Task<Void, Never>?
@@ -145,6 +150,7 @@ final class KitchenStore: ObservableObject {
     func refresh() async {
         if let o = try? await AlcoveAPI.getRaw("/api/farm/kitchen") { apply(o) }
         if let b = try? await AlcoveAPI.getRaw("/api/farm/bar") { applyBar(b) }
+        if let sh = try? await AlcoveAPI.getRaw("/api/farm/shift") { applyShift(sh) }
         syncFloating()
     }
 
@@ -155,13 +161,56 @@ final class KitchenStore: ObservableObject {
         return r
     }
 
-    /// 现在该看哪边：吧台上有一杯、而且比锅里那锅晚开 → 吧台
+    @discardableResult
+    func actShift(_ body: [String: Any]) async -> [String: Any]? {
+        let r = try? await AlcoveAPI.postRaw("/api/farm/shift", body: body)
+        await refresh()
+        return r
+    }
+
+    /// 现在该看哪边：他在上班 → 上班；吧台上有一杯、而且比锅里那锅晚开 → 吧台
     var place: String {
+        if shift != nil { return "shift" }
         guard let g = glass else { return "kitchen" }
         if pot == nil || g.start >= potStart { return "bar" }
         return "kitchen"
     }
-    private var activeID: String? { place == "bar" ? glass?.id : pot?.id }
+    private var activeID: String? { place == "shift" ? shift?.id : (place == "bar" ? glass?.id : pot?.id) }
+
+    private func applyShift(_ o: [String: Any]) {
+        let num: (Any?) -> Double = { ($0 as? NSNumber)?.doubleValue ?? 0 }
+        serverOffset = num(o["now"]) - Date().timeIntervalSince1970
+        shiftRep = (o["rep"] as? NSNumber)?.doubleValue
+        shiftBook = (o["book"] as? [[String: Any]] ?? []).compactMap { pg in
+            guard let id = pg["id"] as? String else { return nil }
+            let rows = (pg["orders"] as? [[String: Any]] ?? []).enumerated().map { i, r in
+                ShiftOrderRow(id: "\(id)-\(i)", cust: r["cust"] as? String ?? "", her: r["her"] as? Bool ?? false,
+                              said: r["said"] as? String ?? "", ask: r["ask"] as? String, ans: r["ans"] as? String,
+                              drink: r["drink"] as? String, mishap: r["mishap"] as? String, words: r["words"] as? String,
+                              stars: r["stars"] as? Int, money: (r["money"] as? Int ?? 0) + (r["tip"] as? Int ?? 0),
+                              reply: r["reply"] as? String, herComment: r["her_comment"] as? String, angry: r["angry"] as? Bool ?? false)
+            }
+            return ShiftPage(id: id, start: num(pg["start"]), earned: pg["earned"] as? Int ?? 0,
+                             avg: (pg["avg"] as? NSNumber)?.doubleValue, orders: rows)
+        }
+        guard o["open"] as? Bool == true, let sh = o["shift"] as? [String: Any], let id = sh["id"] as? String else { shift = nil; return }
+        let custs = (sh["custs"] as? [[String: Any]] ?? []).compactMap { c -> ShiftCust? in
+            guard let cid = c["id"] as? String else { return nil }
+            let d = c["drink"] as? [String: Any]
+            let sv = c["served"] as? [String: Any]
+            return ShiftCust(id: cid, name: c["name"] as? String ?? "", who: c["who"] as? String ?? "",
+                             regular: c["regular"] as? Bool ?? false, her: c["her"] as? Bool ?? false,
+                             said: c["said"] as? String ?? "", ask: c["ask"] as? String, ans: c["ans"] as? String,
+                             status: c["status"] as? String ?? "", sat: num(c["sat"]), pat: max(1, num(c["pat"])),
+                             drink: d?["name"] as? String, ice: d?["ice"] as? String, mishap: d?["mishap"] as? String,
+                             first: d?["first"] as? Bool ?? false, stars: sv?["stars"] as? Int,
+                             money: (sv?["money"] as? Int ?? 0) + (sv?["tip"] as? Int ?? 0),
+                             reply: sv?["reply"] as? String, herComment: sv?["her_comment"] as? String, bye: c["bye"] as? String)
+        }
+        shift = ShiftInfo(id: id, max: sh["max"] as? Int ?? 3, earned: sh["earned"] as? Int ?? 0,
+                          soldOut: sh["sold_out"] as? [String] ?? [], custs: custs, cur: sh["cur"] as? String,
+                          served: sh["served"] as? Int ?? 0, start: num(sh["start"]))
+    }
 
     private func applyBar(_ o: [String: Any]) {
         bottles = o["bottles"] as? [String] ?? []
@@ -428,7 +477,7 @@ struct KitchenFloatView: View {
     private var width: CGFloat { UIScreen.main.bounds.width - 20 }
     var body: some View {
         ZStack(alignment: .topTrailing) {
-            KitchenWebView(path: store.place == "bar" ? "/farm/bar.html?bar=1" : "/farm/kitchen.html?bar=1")
+            KitchenWebView(path: store.place != "kitchen" ? "/farm/bar.html?bar=1" : "/farm/kitchen.html?bar=1")
                 .frame(width: width, height: width * 9 / 16)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2.5))
@@ -461,6 +510,7 @@ struct KitchenSplitView: View {
     @State private var chatLoop: Task<Void, Never>?
     @State private var showBook = false
     @State private var showCabinet = false
+    @State private var showShiftBook = false
     @State private var cardsHeight: CGFloat = 200
 
     var body: some View {
@@ -490,6 +540,7 @@ struct KitchenSplitView: View {
         }
         .sheet(isPresented: $showBook) { KitchenBookSheet() }
         .sheet(isPresented: $showCabinet) { BarCabinetSheet() }
+        .sheet(isPresented: $showShiftBook) { ShiftBookSheet() }
         .onAppear(perform: startChat)
         .onDisappear(perform: endChat)
     }
@@ -498,7 +549,7 @@ struct KitchenSplitView: View {
     private func top(width: CGFloat) -> some View {
         let w = width - 20
         return ZStack(alignment: .top) {
-            KitchenWebView(path: watchHim ? (store.place == "bar" ? "/farm/bar.html" : "/farm/kitchen.html") : "/farm/?mini=1")
+            KitchenWebView(path: watchHim ? (store.place != "kitchen" ? "/farm/bar.html" : "/farm/kitchen.html") : "/farm/?mini=1")
                 .frame(width: w, height: w * 9 / 16)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
                 .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(KitchenInk.plum, lineWidth: 2))
@@ -542,7 +593,9 @@ struct KitchenSplitView: View {
         VStack(spacing: 8) {
             ScrollView {
                 VStack(spacing: 9) {
-                    if store.place == "bar", let g = store.glass {
+                    if store.place == "shift", let sh = store.shift {
+                        ShiftPanel(shift: sh)
+                    } else if store.place == "bar", let g = store.glass {
                         BarPanel(glass: g)
                     } else {
                         potCard
@@ -551,7 +604,11 @@ struct KitchenSplitView: View {
                         if store.pot?.task != "hand" { fridgeBox }
                     }
                     HStack(spacing: 10) {
-                        KitchenPixelButton(title: "菜谱本", fill: KitchenInk.cream, textColor: KitchenInk.plum, big: true) { showBook = true }
+                        if store.place == "shift" {
+                            KitchenPixelButton(title: "上班小本子", fill: KitchenInk.cream, textColor: KitchenInk.plum, big: true) { showShiftBook = true }
+                        } else {
+                            KitchenPixelButton(title: "菜谱本", fill: KitchenInk.cream, textColor: KitchenInk.plum, big: true) { showBook = true }
+                        }
                         KitchenPixelButton(title: "酒柜", fill: KitchenInk.pinkSoft, textColor: KitchenInk.plum, big: true) { showCabinet = true }
                     }
                 }
@@ -737,7 +794,7 @@ struct KitchenSplitView: View {
                 KitchenAvatar(name: "avatar_cj").frame(width: 21, height: 21)
                 Text("陈璟").font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
                 Spacer()
-                Text(store.place == "bar" ? "在吧台" : (store.pot != nil ? "在厨房" : ""))
+                Text(store.place == "shift" ? "在上班" : store.place == "bar" ? "在吧台" : (store.pot != nil ? "在厨房" : ""))
                     .font(.system(size: 9.5, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
             }
             .padding(.horizontal, 9).padding(.vertical, 4)
@@ -1284,5 +1341,374 @@ struct BarChatMessageCard: View {
         if g.done { return (g.resultName ?? "还没有名字") + " · 调好了" }
         if g.task != nil && !g.auto { return "等你帮忙" }
         return g.steps.indices.contains(g.step) ? g.steps[g.step] : ""
+    }
+}
+
+// MARK: - 1127 #6234–6239 调酒屋上班接单（alcove-independent/shift.py）
+// 他开店，客人一个个进店说一句心情，他问一句、做、端上去，客人打星给钱；每单截图＋小票自己落进聊天页。
+// ‼️她不打下手（#6236）：这里只看。她能做的只有当客人——点一杯、回他那一句、喝完自己打星写评价。
+
+struct ShiftCust: Identifiable, Equatable {
+    let id: String
+    let name: String
+    let who: String
+    let regular: Bool
+    let her: Bool
+    let said: String
+    let ask: String?
+    let ans: String?
+    let status: String      // waiting / making / made / paid / angry / wait_rate / rated
+    let sat: Double
+    let pat: Double
+    let drink: String?
+    let ice: String?
+    let mishap: String?
+    let first: Bool
+    let stars: Int?
+    let money: Int
+    let reply: String?
+    let herComment: String?
+    let bye: String?
+}
+
+struct ShiftInfo: Equatable {
+    let id: String
+    let max: Int
+    let earned: Int
+    let soldOut: [String]
+    let custs: [ShiftCust]
+    let cur: String?
+    let served: Int
+    let start: Double
+}
+
+struct ShiftOrderRow: Identifiable, Equatable {
+    let id: String
+    let cust: String
+    let her: Bool
+    let said: String
+    let ask: String?
+    let ans: String?
+    let drink: String?
+    let mishap: String?
+    let words: String?
+    let stars: Int?
+    let money: Int
+    let reply: String?
+    let herComment: String?
+    let angry: Bool
+}
+
+struct ShiftPage: Identifiable, Equatable {
+    let id: String
+    let start: Double
+    let earned: Int
+    let avg: Double?
+    let orders: [ShiftOrderRow]
+}
+
+/// 聊天页上班小卡（shift.py 开店时落库）
+struct ShiftChatCard: Decodable, Equatable {
+    let shift: String
+    let shop: String?
+}
+
+/// 小星星：亮的金、暗的灰
+struct ShiftStars: View {
+    let n: Int
+    var size: CGFloat = 11
+    var body: some View {
+        HStack(spacing: 1) {
+            ForEach(0..<5, id: \.self) { i in
+                Image(systemName: "star.fill").font(.system(size: size))
+                    .foregroundColor(i < n ? Color(red: 0.95, green: 0.74, blue: 0.25) : Color(red: 0.85, green: 0.80, blue: 0.83))
+            }
+        }
+    }
+}
+
+struct ShiftPanel: View {
+    let shift: ShiftInfo
+    @ObservedObject private var store = KitchenStore.shared
+    @State private var ordering = false
+    @State private var orderText = ""
+    @State private var answerText = ""
+    @State private var rateStars = 5
+    @State private var rateText = ""
+
+    private var cur: ShiftCust? { shift.custs.first { $0.id == shift.cur } }
+    private var queue: [ShiftCust] { shift.custs.filter { ["waiting", "making", "made"].contains($0.status) && $0.id != shift.cur } }
+    private var done: [ShiftCust] { shift.custs.filter { ["paid", "angry", "rated"].contains($0.status) } }
+    private var herWaitRate: ShiftCust? { shift.custs.first { $0.her && $0.status == "wait_rate" } }
+    private var herIn: Bool { shift.custs.contains { $0.her && !["rated", "paid", "angry", "gone"].contains($0.status) } }
+
+    var body: some View {
+        VStack(spacing: 12) {
+            KitchenPixelBox(fill: KitchenInk.cream) {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 8) {
+                        KitchenRibbon(text: "上班中", fill: Color(red: 0.80, green: 0.74, blue: 0.95))
+                        Text("调酒屋").font(.system(size: 12, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
+                        Spacer()
+                        Text("G \(shift.earned)").font(.system(size: 12, weight: .heavy, design: .rounded).monospacedDigit())
+                            .foregroundColor(Color(red: 0.69, green: 0.48, blue: 0.06))
+                    }
+                    Text("已经招呼了 \(shift.served) / \(shift.max) 位" + (shift.soldOut.isEmpty ? "" : " · 今天卖完：" + shift.soldOut.joined(separator: "、")))
+                        .font(.system(size: 11.5, weight: .semibold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                }
+                .padding(.horizontal, 11).padding(.vertical, 9)
+                .frame(maxWidth: .infinity, alignment: .leading)
+            }
+            if let c = cur { curCard(c) } else {
+                KitchenPixelBox(fill: KitchenInk.cream) {
+                    Text(shift.served >= shift.max ? "这班的客人都招呼完了" : "吧台前还没人，下一位快到了")
+                        .font(.system(size: 13, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                        .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+            if let h = herWaitRate { rateCard(h) }
+            ForEach(queue) { q in
+                HStack {
+                    Text("门口在等：" + q.name).font(.system(size: 12.5, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.plum)
+                    Spacer()
+                    if !q.her { patience(q).frame(width: 90) }
+                }
+                .padding(.horizontal, 12).padding(.vertical, 8)
+                .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white))
+                .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 1.5))
+            }
+            ForEach(done.reversed()) { d in doneRow(d) }
+            if !herIn {
+                KitchenPixelButton(title: "我也点一杯", fill: KitchenInk.pink, big: true) { orderText = ""; ordering = true }
+            }
+        }
+        .alert("想喝什么样的？", isPresented: $ordering) {
+            TextField("写一句心情", text: $orderText)
+            Button("点") {
+                let t = orderText.trimmingCharacters(in: .whitespaces)
+                if !t.isEmpty { Task { await store.actShift(["do": "order", "text": t]) } }
+            }
+            Button("算了", role: .cancel) {}
+        } message: { Text("像客人那样说一句，他来猜。这杯你自己打分") }
+    }
+
+    private func curCard(_ c: ShiftCust) -> some View {
+        KitchenPixelBox(fill: KitchenInk.cream) {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text(c.her ? "你" : c.name).font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                    if c.regular { tag("熟客") }
+                    if !c.her && !c.who.isEmpty { Text(c.who).font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft) }
+                    Spacer()
+                }
+                Text("“\(c.said)”").font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(KitchenInk.plum.opacity(0.85))
+                if let q = c.ask {
+                    Text("问：“\(q)”" + (c.ans.map { "  答：“\($0)”" } ?? ""))
+                        .font(.system(size: 12.5, weight: .semibold, design: .rounded)).foregroundColor(KitchenInk.ink)
+                }
+                if c.her, c.ask != nil, c.ans == nil {
+                    HStack(spacing: 8) {
+                        TextField("回他一句", text: $answerText)
+                            .font(.system(size: 13, design: .rounded))
+                            .padding(.horizontal, 10).padding(.vertical, 6)
+                            .background(RoundedRectangle(cornerRadius: 8).fill(KitchenInk.blush))
+                            .overlay(RoundedRectangle(cornerRadius: 8).stroke(KitchenInk.plum, lineWidth: 1.5))
+                        KitchenPixelButton(title: "回") {
+                            let t = answerText.trimmingCharacters(in: .whitespaces)
+                            answerText = ""
+                            if !t.isEmpty { Task { await store.actShift(["do": "answer", "text": t]) } }
+                        }
+                    }
+                }
+                if let d = c.drink {
+                    HStack(spacing: 6) {
+                        Text((c.status == "making" ? "在做：" : "做好了：") + d + ((c.ice ?? "正常") == "正常" ? "" : " · " + (c.ice ?? "")))
+                            .font(.system(size: 12.5, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.ink)
+                        if c.first { tag("第一次做") }
+                    }
+                    if let m = c.mishap, c.status != "making" {
+                        Text("失手：" + m).font(.system(size: 12, weight: .bold, design: .rounded)).foregroundColor(Color(red: 0.75, green: 0.38, blue: 0.50))
+                    }
+                }
+                if !c.her { patience(c) }
+            }
+            .padding(.horizontal, 11).padding(.vertical, 9)
+            .frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func rateCard(_ h: ShiftCust) -> some View {
+        KitchenPixelBox(fill: KitchenInk.blush) {
+            VStack(alignment: .leading, spacing: 8) {
+                Text("你的那杯：" + (h.drink ?? "他自己配的")).font(.system(size: 14, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                HStack(spacing: 6) {
+                    ForEach(1...5, id: \.self) { i in
+                        Button { rateStars = i } label: {
+                            Image(systemName: "star.fill").font(.system(size: 22))
+                                .foregroundColor(i <= rateStars ? Color(red: 0.95, green: 0.74, blue: 0.25) : Color(red: 0.85, green: 0.80, blue: 0.83))
+                        }.buttonStyle(.plain)
+                    }
+                }
+                TextField("写一句评价（可以不写）", text: $rateText)
+                    .font(.system(size: 13, design: .rounded))
+                    .padding(.horizontal, 10).padding(.vertical, 6)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(Color.white))
+                    .overlay(RoundedRectangle(cornerRadius: 8).stroke(KitchenInk.plum, lineWidth: 1.5))
+                KitchenPixelButton(title: "打好了", big: true) {
+                    let t = rateText; rateText = ""
+                    Task { await store.actShift(["do": "rate", "stars": rateStars, "comment": t]) }
+                }
+            }
+            .padding(11).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    private func doneRow(_ d: ShiftCust) -> some View {
+        VStack(alignment: .leading, spacing: 3) {
+            HStack {
+                Text(d.her ? "你" : d.name).font(.system(size: 12.5, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
+                Text(d.status == "angry" ? "等太久，走了" : (d.drink ?? "他自己配的"))
+                    .font(.system(size: 12, weight: .semibold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                Spacer()
+                if let n = d.stars { ShiftStars(n: n) }
+                if d.money > 0 { Text("+G \(d.money)").font(.system(size: 11, weight: .heavy, design: .rounded).monospacedDigit()).foregroundColor(Color(red: 0.69, green: 0.48, blue: 0.06)) }
+            }
+            if let m = d.mishap { Text("失手：" + m).font(.system(size: 11, design: .rounded)).foregroundColor(Color(red: 0.75, green: 0.38, blue: 0.50)) }
+            if let r = d.herComment ?? d.reply ?? (d.status == "angry" ? d.bye : nil), !r.isEmpty {
+                Text("“\(r)”").font(.system(size: 11.5, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+            }
+        }
+        .padding(.horizontal, 12).padding(.vertical, 8)
+        .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.white))
+        .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous).stroke(KitchenInk.plum, lineWidth: 1.5))
+    }
+
+    private func tag(_ t: String) -> some View {
+        Text(t).font(.system(size: 10, weight: .heavy, design: .rounded)).foregroundColor(.white)
+            .padding(.horizontal, 5).padding(.vertical, 1)
+            .background(Capsule().fill(KitchenInk.pinkDeep))
+    }
+
+    /// 耐心条：跟画面上那条一样，绿→黄→红
+    private func patience(_ c: ShiftCust) -> some View {
+        TimelineView(.periodic(from: .now, by: 1)) { _ in
+            let now = Date().timeIntervalSince1970 + store.serverOffset
+            let v = max(0, min(1, 1 - (now - c.sat) / c.pat))
+            HStack(spacing: 6) {
+                Text("耐心").font(.system(size: 10.5, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                GeometryReader { g in
+                    ZStack(alignment: .leading) {
+                        RoundedRectangle(cornerRadius: 3).fill(Color.white)
+                        RoundedRectangle(cornerRadius: 3)
+                            .fill(v > 0.6 ? Color(red: 0.56, green: 0.84, blue: 0.63) : v > 0.3 ? Color(red: 0.95, green: 0.80, blue: 0.42) : Color(red: 0.91, green: 0.42, blue: 0.42))
+                            .frame(width: g.size.width * v)
+                    }
+                    .overlay(RoundedRectangle(cornerRadius: 3).stroke(KitchenInk.plum, lineWidth: 1.5))
+                }
+                .frame(height: 9)
+            }
+        }
+    }
+}
+
+/// 上班小本子：每一班一页
+struct ShiftBookSheet: View {
+    @ObservedObject private var store = KitchenStore.shared
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                HStack {
+                    Text("上班小本子").font(.system(size: 17, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                    Spacer()
+                    if let r = store.shiftRep {
+                        Text(String(format: "口碑 ★%.1f", r)).font(.system(size: 12.5, weight: .bold, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                    }
+                }
+                if store.shiftBook.isEmpty {
+                    Text("还没上过班").font(.system(size: 13, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                }
+                ForEach(store.shiftBook) { pg in page(pg) }
+            }
+            .padding(18)
+        }
+        .background(KitchenInk.check1.ignoresSafeArea())
+        .presentationDetents([.large])
+    }
+
+    private func page(_ pg: ShiftPage) -> some View {
+        KitchenPixelBox(fill: KitchenInk.cream) {
+            VStack(alignment: .leading, spacing: 8) {
+                HStack {
+                    Text(Self.fmt(pg.start)).font(.system(size: 13, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.plum)
+                    Spacer()
+                    if let a = pg.avg { Text(String(format: "平均 ★%.1f", a)).font(.system(size: 11.5, design: .rounded)).foregroundColor(KitchenInk.inkSoft) }
+                    Text("G \(pg.earned)").font(.system(size: 12, weight: .heavy, design: .rounded).monospacedDigit()).foregroundColor(Color(red: 0.69, green: 0.48, blue: 0.06))
+                }
+                ForEach(pg.orders) { o in
+                    VStack(alignment: .leading, spacing: 2) {
+                        HStack {
+                            Text(o.her ? "你" : o.cust).font(.system(size: 12.5, weight: .heavy, design: .rounded)).foregroundColor(KitchenInk.ink)
+                            Text(o.angry ? "等太久，走了" : (o.drink ?? "他自己配的")).font(.system(size: 12, design: .rounded)).foregroundColor(KitchenInk.inkSoft)
+                            Spacer()
+                            if let n = o.stars { ShiftStars(n: n, size: 10) }
+                        }
+                        if !o.said.isEmpty { Text("“\(o.said)”").font(.system(size: 11.5, design: .rounded)).foregroundColor(KitchenInk.plum.opacity(0.8)) }
+                        if let q = o.ask { Text("问：“\(q)”" + (o.ans.map { " 答：“\($0)”" } ?? "")).font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft) }
+                        if let m = o.mishap { Text("失手：" + m).font(.system(size: 11, design: .rounded)).foregroundColor(Color(red: 0.75, green: 0.38, blue: 0.50)) }
+                        if let w = o.words, !w.isEmpty { Text("他说：“\(w)”").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft) }
+                        if let r = o.herComment ?? o.reply, !r.isEmpty { Text((o.her ? "你写：" : "客人：") + "“\(r)”").font(.system(size: 11, design: .rounded)).foregroundColor(KitchenInk.inkSoft) }
+                    }
+                    if o.id != pg.orders.last?.id { Rectangle().fill(KitchenInk.check2).frame(height: 1) }
+                }
+            }
+            .padding(12).frame(maxWidth: .infinity, alignment: .leading)
+        }
+    }
+
+    static func fmt(_ t: Double) -> String {
+        let f = DateFormatter()
+        f.dateFormat = "M月d日 HH:mm"
+        f.timeZone = TimeZone(identifier: "Asia/Shanghai")
+        return f.string(from: Date(timeIntervalSince1970: t))
+    }
+}
+
+/// 聊天页上班小卡：开店时落一张，点了进上下分屏
+struct ShiftChatMessageCard: View {
+    let card: ShiftChatCard
+    @ObservedObject private var store = KitchenStore.shared
+
+    var body: some View {
+        let live = store.shift?.id == card.shift ? store.shift : nil
+        let page = store.shiftBook.first { $0.id == card.shift }
+        return Button { if live != nil { store.openSplit() } } label: {
+            HStack(spacing: 12) {
+                AsyncImage(url: AlcoveAPI.fullURL("/farm/bar/bar_thumb.png")) { img in
+                    img.interpolation(.none).resizable().scaledToFill()
+                } placeholder: { BarInk.inner }
+                .frame(width: 64, height: 64)
+                .clipShape(RoundedRectangle(cornerRadius: 3))
+                .overlay(RoundedRectangle(cornerRadius: 3).stroke(BarInk.brass, lineWidth: 2))
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("调酒屋").font(.system(size: 11, weight: .bold, design: .rounded)).foregroundColor(BarInk.brass)
+                    Text(live != nil ? "他在上班" : "收店了")
+                        .font(.system(size: 16, weight: .heavy, design: .rounded)).foregroundColor(BarInk.pink)
+                    if let l = live {
+                        Text("已经招呼了 \(l.served) / \(l.max) 位 · G \(l.earned)")
+                            .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(BarInk.text.opacity(0.8))
+                    } else if let p = page {
+                        Text("这班赚了 G \(p.earned)" + (p.avg.map { String(format: " · 平均 ★%.1f", $0) } ?? ""))
+                            .font(.system(size: 13, weight: .semibold, design: .rounded)).foregroundColor(BarInk.text.opacity(0.8))
+                    }
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(12)
+            .frame(width: 270)
+            .background(RoundedRectangle(cornerRadius: 4).fill(BarInk.night))
+            .overlay(RoundedRectangle(cornerRadius: 4).stroke(BarInk.pink.opacity(0.85), lineWidth: 2))
+            .padding(.vertical, 6)
+        }
+        .buttonStyle(.plain)
     }
 }
