@@ -4555,6 +4555,7 @@ struct MessageRow: View {
     @State private var openedTools: [ActivityItem]? = nil
     // 0822 iMessage 主题：思绪+脚印合成一条过程线，默认只露一个点
     @State private var processOpen = false
+    @State private var singleAspect: CGFloat?   // 1128 #6306 单张图按原比例：学到的宽高比
     @State private var showTranscript = false   // 0822 语音条默认不露文字，长按「转文字」才展开
     @FocusState private var editFocused: Bool
     @AppStorage("imsgShowProcess") private var showProcessDots = true
@@ -4795,9 +4796,14 @@ struct MessageRow: View {
                    spacing: 0) {
                 // 1010 #3575 她那边：时间在一轮第一条上面，靠右、跟她气泡里最右边的字对齐
                 if theme.isTreehouse && isUser && roundStamp != nil && msg.embroideryCard == nil {
-                    thRoundStampText
-                        .padding(.trailing, thStampInset)
-                        .padding(.bottom, rowPartGap)
+                    // 1128 #6296–6300 她：每轮第一个气泡加她的头像（不带名字），圆的、跟顶上陈璟头像一样大，
+                    // 时间高度不变、只往里让出头像的位置；轮与轮之间的距离从头像顶上算（头像占排版高度）。
+                    // 时间离气泡还是 rowPartGap（4 + 3），头像右边贴着气泡右边
+                    HStack(alignment: .bottom, spacing: 6) {
+                        thRoundStampText.padding(.bottom, rowPartGap - 3)
+                        TreehouseUserAvatar()
+                    }
+                    .padding(.bottom, 3)
                 }
                 // 0820：有时间线就照发生顺序摆 —— 想一段出一个面板，
                 // 中间干的活收成一行。没时间线（老消息）走原来那套。
@@ -6143,7 +6149,10 @@ struct MessageRow: View {
     private func squareImageBody(_ raw: String) -> some View {
         let url = AlcoveAPI.attachmentURL(raw)
         let previewURL = AlcoveAPI.attachmentThumbnailURL(raw)
-        // 0821 她定的：聊天里的图一律小方卡（跟成叠的那种一个尺寸），不按原图比例撑大
+        // 0821 她定的小方卡 → 1128 #6299–6306 她：「图片长宽本身多大就多大」——按原比例，不裁；
+        // 宽最多屏宽 55%、高最多 210（她嫌 72%/300 太大）。比例从缩略图量（后台按原比例缩到 800 以内），量过的记着，下回不跳
+        let size = ChatPhotoLayout.singleSize(singleAspect ?? ChatPhotoAspect.get(url) ?? 1)
+        let shape = RoundedRectangle(cornerRadius: ChatPhotoLayout.outerRadius, style: .continuous)
         return CachedImage(url: previewURL) { img in
             img.resizable().scaledToFill()
         } placeholder: {
@@ -6152,11 +6161,19 @@ struct MessageRow: View {
                 ProgressView()
             }
         }
-        .frame(width: 124, height: 124)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+        .frame(width: size.width, height: size.height)
+        .clipShape(shape)
         // 1112 她：竖图点按范围溢出方框，盖住上面那行 trace、连空白都能点开大图——clipShape 只裁画面不裁点按
-        .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .chatPhotoRim()
+        .contentShape(shape)
+        .chatPhotoRim(shape)
+        .task(id: previewURL) {
+            if let a = ChatPhotoAspect.get(url) { singleAspect = a; return }
+            if let img = await ImageDiskCache.shared.image(for: previewURL), img.size.height > 0 {
+                let a = img.size.width / img.size.height
+                ChatPhotoAspect.set(url, a)
+                singleAspect = a
+            }
+        }
         .matchedTransitionSource(id: "chat-\(msg.id)", in: photoNamespace)
         .onTapGesture { onTapImages([url], .constant(0)) }
         .contextMenu {
@@ -9775,33 +9792,26 @@ struct OfficialPhotoGridMessageView: View {
     var nativeMenu = true
 
     @State private var currentIndex = 0
-    private let side: CGFloat = 124
-    private let gap: CGFloat = 8
-    /// 第三张露出来的一截，提示还能往右滑
-    private let peek: CGFloat = 52
+    /// 1128 #6299–6306 她：几张一起发也按各自比例——每行一样高、排满，按形状自己分行（每行最多三张），
+    /// 整组超高就整组等比缩窄，一张不裁。原来是 124 的小方块横着滑
+    @State private var aspects: [URL: CGFloat] = [:]
 
     var body: some View {
-        Group {
-            if urls.count > 2 {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: gap) { photos }
+        let asp = urls.map { aspects[$0] ?? ChatPhotoAspect.get($0) ?? 1 }
+        let rows = ChatPhotoLayout.rows(aspects: asp)
+        VStack(alignment: .leading, spacing: ChatPhotoLayout.gap) {
+            ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
+                HStack(spacing: ChatPhotoLayout.gap) {
+                    ForEach(row, id: \.index) { cell in
+                        photo(urls[cell.index], cell: cell)
+                            .onTapGesture { open(at: cell.index) }
+                            .accessibilityLabel("照片 \(cell.index + 1)，共 \(urls.count) 张")
+                            .accessibilityAddTraits(.isButton)
+                    }
                 }
-                .frame(width: side * 2 + gap * 2 + peek)
-            } else {
-                HStack(spacing: gap) { photos }
             }
         }
         .id(messageID)
-    }
-
-    @ViewBuilder private var photos: some View {
-        ForEach(Array(urls.enumerated()), id: \.offset) { index, url in
-            photo(url)
-                .contentShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-                .onTapGesture { open(at: index) }
-                .accessibilityLabel("照片 \(index + 1)，共 \(urls.count) 张")
-                .accessibilityAddTraits(.isButton)
-        }
     }
 
     private func open(at index: Int) {
@@ -9812,12 +9822,14 @@ struct OfficialPhotoGridMessageView: View {
         ))
     }
 
-    private func photo(_ url: URL) -> some View {
+    private func photo(_ url: URL, cell: ChatPhotoLayout.Cell) -> some View {
         let previewURL: URL = {
             guard let range = url.path.range(of: "/attachments/") else { return url }
             return AlcoveAPI.attachmentThumbnailURL(
                 "/attachments/" + String(url.path[range.upperBound...]))
         }()
+        let shape = UnevenRoundedRectangle(topLeadingRadius: cell.tl, bottomLeadingRadius: cell.bl,
+                                           bottomTrailingRadius: cell.br, topTrailingRadius: cell.tr, style: .continuous)
         return CachedPhaseImage(url: previewURL) { phase in
             switch phase {
             case .success(let image): image.resizable().scaledToFill()
@@ -9825,9 +9837,18 @@ struct OfficialPhotoGridMessageView: View {
             default: Color(.tertiarySystemFill).overlay(ProgressView())
             }
         }
-        .frame(width: side, height: side)
-        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
-        .chatPhotoRim()
+        .frame(width: cell.size.width, height: cell.size.height)
+        .clipShape(shape)
+        .contentShape(shape)
+        .chatPhotoRim(shape)
+        .task(id: previewURL) {
+            if let a = ChatPhotoAspect.get(url) { if aspects[url] != a { aspects[url] = a }; return }
+            if let img = await ImageDiskCache.shared.image(for: previewURL), img.size.height > 0 {
+                let a = img.size.width / img.size.height
+                ChatPhotoAspect.set(url, a)
+                aspects[url] = a
+            }
+        }
         .contextMenu {
             if nativeMenu {
                 Button {
@@ -9835,6 +9856,101 @@ struct OfficialPhotoGridMessageView: View {
                 } label: { Label("保存到相册", systemImage: "square.and.arrow.down") }
             }
         }
+    }
+}
+
+/// 1128 #6299–6306 聊天里的图怎么排（她挑的那版）：
+/// 单张按原比例，宽 ≤ 屏宽 55%、高 ≤ 210；
+/// 多张每行一样高、排满屏宽 72%，一行最多三张，按形状自己分行（让每行高度尽量接近），不硬定「上二下三」（她：要每张看得清）；
+/// 整组高过 300 就整组等比缩窄（分行不变）；外角圆 12、里角 3、缝 3；一张都不裁
+enum ChatPhotoLayout {
+    static let gap: CGFloat = 3
+    static let outerRadius: CGFloat = 12
+    static let innerRadius: CGFloat = 3
+    static var screenW: CGFloat { UIScreen.main.bounds.width }
+    static var groupWidth: CGFloat { (screenW * 0.72).rounded(.down) }
+    static let groupMaxHeight: CGFloat = 300
+    static var singleWidth: CGFloat { (screenW * 0.55).rounded(.down) }
+    static let singleMaxHeight: CGFloat = 210
+
+    struct Cell {
+        let index: Int
+        let size: CGSize
+        let tl: CGFloat, tr: CGFloat, bl: CGFloat, br: CGFloat
+    }
+
+    static func singleSize(_ aspect: CGFloat) -> CGSize {
+        let a = max(0.2, min(5, aspect))
+        var w = singleWidth, h = w / a
+        if h > singleMaxHeight { h = singleMaxHeight; w = h * a }
+        return CGSize(width: w.rounded(), height: h.rounded())
+    }
+
+    /// 保持顺序分行，每行 1–3 张，让每行高度尽量接近 宽/2.3；多张时一张宽图单占一行要罚分
+    static func plan(_ a: [CGFloat], width W: CGFloat) -> [Int] {
+        let n = a.count
+        guard n > 0 else { return [] }
+        let target = W / 2.3
+        var best: [(cost: CGFloat, rows: [Int])?] = Array(repeating: nil, count: n + 1)
+        best[0] = (0, [])
+        for i in 1...n {
+            for k in 1...3 where i - k >= 0 {
+                guard let prev = best[i - k] else { continue }
+                let s = a[(i - k)..<i].reduce(0, +)
+                let h = (W - gap * CGFloat(k - 1)) / s
+                var c = pow((h - target) / target, 2)
+                if k == 1 && n > 1 && a[i - 1] >= 0.6 { c += 0.35 }
+                let total = prev.cost + c
+                if best[i] == nil || total < best[i]!.cost - 0.000001 { best[i] = (total, prev.rows + [k]) }
+            }
+        }
+        return best[n]?.rows ?? Array(repeating: 1, count: n)
+    }
+
+    static func rows(aspects raw: [CGFloat], width: CGFloat = groupWidth, maxHeight: CGFloat = groupMaxHeight) -> [[Cell]] {
+        let a = raw.map { max(0.2, min(5, $0)) }
+        let p = plan(a, width: width)
+        var segs: [(start: Int, k: Int, s: CGFloat)] = []
+        var i = 0
+        for k in p { segs.append((i, k, a[i..<(i + k)].reduce(0, +))); i += k }
+        let gaps = gap * CGFloat(max(0, segs.count - 1))
+        // 总高随宽度线性变：超高就解出刚好装下的宽度（分行不变，每行照样一样宽）
+        let inv = segs.reduce(CGFloat(0)) { $0 + 1 / $1.s }
+        let off = segs.reduce(CGFloat(0)) { $0 + gap * CGFloat($1.k - 1) / $1.s }
+        var W = width
+        if W * inv - off + gaps > maxHeight { W = max(120, (maxHeight - gaps + off) / inv) }
+        var out: [[Cell]] = []
+        for (r, seg) in segs.enumerated() {
+            let inner = W - gap * CGFloat(seg.k - 1)
+            let h = (inner / seg.s).rounded()
+            var used: CGFloat = 0
+            var row: [Cell] = []
+            for j in 0..<seg.k {
+                let idx = seg.start + j
+                var w = (a[idx] * inner / seg.s).rounded()
+                if j == seg.k - 1 { w = inner - used }
+                used += w
+                let top = r == 0, bottom = r == segs.count - 1, left = j == 0, right = j == seg.k - 1
+                row.append(Cell(index: idx, size: CGSize(width: w, height: h),
+                                tl: top && left ? outerRadius : innerRadius, tr: top && right ? outerRadius : innerRadius,
+                                bl: bottom && left ? outerRadius : innerRadius, br: bottom && right ? outerRadius : innerRadius))
+            }
+            out.append(row)
+        }
+        return out
+    }
+}
+
+/// 量过的图宽高比（按原图路径记），下回打开直接按比例排，不先方后跳
+enum ChatPhotoAspect {
+    private static let key = "chatPhotoAspects.v1"
+    private static var store: [String: Double] = (UserDefaults.standard.dictionary(forKey: key) as? [String: Double]) ?? [:]
+    static func get(_ url: URL) -> CGFloat? { store[url.path].map { CGFloat($0) } }
+    static func set(_ url: URL, _ a: CGFloat) {
+        guard a.isFinite, a > 0, store[url.path] == nil else { return }
+        if store.count > 4000 { store.removeAll() }
+        store[url.path] = Double(a)
+        UserDefaults.standard.set(store, forKey: key)
     }
 }
 
@@ -9855,6 +9971,20 @@ private struct ChatPhotoRim: ViewModifier {
 
 extension View {
     func chatPhotoRim() -> some View { modifier(ChatPhotoRim()) }
+    /// 1128：按图自己的形状描（圆角 12 / 四角不一样的那几格）
+    func chatPhotoRim<S: Shape>(_ shape: S) -> some View { modifier(ChatPhotoRimShape(shape: shape)) }
+}
+
+private struct ChatPhotoRimShape<S: Shape>: ViewModifier {
+    let shape: S
+    @Environment(\.colorScheme) private var scheme
+
+    func body(content: Content) -> some View {
+        content.overlay(
+            shape.stroke(scheme == .dark ? Color.white.opacity(0.2) : Color.black.opacity(0.14), lineWidth: 1)
+                .allowsHitTesting(false)
+        )
+    }
 }
 
 enum PhotoLibrarySaver {
@@ -10900,6 +11030,39 @@ final class EmojiCatalog: ObservableObject {
         let key = q.trimmingCharacters(in: .whitespaces).lowercased()
         guard !key.isEmpty else { return [] }
         return items.filter { $0.c == key || $0.k.lowercased().contains(key) }
+    }
+}
+
+/// 1128 #6300 树屋：她那一轮第一个气泡上面、时间旁边的头像。大小、描边、阴影跟顶栏陈璟那颗一样（RootView 36 点）
+struct TreehouseUserAvatar: View {
+    @AppStorage("userAvatarDataURL") private var userAvatar = ""
+    var size: CGFloat = 36
+
+    var body: some View {
+        Group {
+            if let img = Self.decode(userAvatar) {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                Circle().fill(TreehouseInk.night ? TreehouseInk.white : Color(red: 0xF3/255, green: 0xF0/255, blue: 0xEA/255))
+                    .overlay(Text("曈").font(.system(size: 14)).foregroundColor(TreehouseInk.ink.opacity(0.6)))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(TreehouseInk.ink.opacity(0.06), lineWidth: 1))
+        .shadow(color: TreehouseInk.ink.opacity(0.18), radius: 5, x: 0, y: 4)
+        .allowsHitTesting(false)
+    }
+
+    private static var cache: [Int: UIImage] = [:]
+    private static func decode(_ value: String) -> UIImage? {
+        guard !value.isEmpty else { return nil }
+        let key = value.hashValue
+        if let hit = cache[key] { return hit }
+        let payload = value.split(separator: ",", maxSplits: 1).last.map(String.init) ?? value
+        guard let img = Data(base64Encoded: payload).flatMap(UIImage.init(data:)) else { return nil }
+        cache[key] = img
+        return img
     }
 }
 
