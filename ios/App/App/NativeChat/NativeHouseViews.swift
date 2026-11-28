@@ -998,7 +998,7 @@ private struct NativeSettingsView: View {
     @State private var channelPicking = false
     @State private var channelWorking = ""
     @State private var channelMsg = ""
-    // 1125 #6068 她：下一个开窗带哪个通道的三十轮自己挑；没挑（""）就跟着现在住的通道。后台用一次就清
+    // 1125 #6068 她：下一个开窗带哪个通道的十五轮自己挑（1128 #6271 三十改十五）；没挑（""）就跟着现在住的通道。后台用一次就清
     @State private var nextWindowRoom = ""
     @State private var followupAlarm: String? = nil   // 他给自己订的闹钟几点到，nil = 没订
     @State private var followupSchedule: [String] = []  // 0925 他订的日程提醒（可以好几张），只给 HH:mm
@@ -1972,7 +1972,7 @@ private struct NativeSettingsView: View {
         }
     }
 
-    /// 1125 #6068 下次开窗带哪边的三十轮：跟着通道 / tmux / pi
+    /// 1125 #6068 下次开窗带哪边的十五轮：跟着通道 / tmux / pi
     private var nextWindowRow: some View {
         HStack(spacing: 6) {
             VStack(alignment: .leading, spacing: 1) {
