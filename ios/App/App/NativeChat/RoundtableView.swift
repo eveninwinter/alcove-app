@@ -319,6 +319,7 @@ struct RoundtableView: View {
     @State private var showCamera = false
     @State private var showDocPicker = false
     @State private var showPhotoPicker = false
+    @State private var showVideoPicker = false   // 1128 #6308 发视频
     @State private var showStickers = false
     @State private var previewImage: UIImage?
     @State private var photoViewer: PhotoViewerSelection?
@@ -440,6 +441,18 @@ struct RoundtableView: View {
                 }
             }
         }
+        .sheet(isPresented: $showVideoPicker) {
+            VideoLibraryPicker { url in
+                Task {
+                    guard let file = await VideoPrep.compress(url) else { return }
+                    defer { try? FileManager.default.removeItem(at: file) }
+                    guard let data = try? Data(contentsOf: file) else { VideoSendStatus.shared.show("视频没传上去", autoHide: true); return }
+                    await store.upload(data, filename: file.lastPathComponent)
+                    VideoSendStatus.shared.show(nil)
+                }
+            }
+        }
+        .videoSendBanner()
         .sheet(isPresented: $showStickers) {
             RoundtableStickerPicker { sticker in
                 showStickers = false
@@ -984,6 +997,7 @@ struct RoundtableView: View {
     private var attachmentMenuItems: some View {
         Button { showStickers = true } label: { Label("表情", systemImage: "face.smiling") }
         Button { showPhotoPicker = true } label: { Label("从相册选择", systemImage: "photo.on.rectangle") }
+        Button { showVideoPicker = true } label: { Label("发视频", systemImage: "video") }   // 1128 #6308
         Button { showCamera = true } label: { Label("拍照或录像", systemImage: "camera") }
         Button { showDocPicker = true } label: { Label("选取文件", systemImage: "doc") }
     }
@@ -1455,6 +1469,10 @@ private struct RoundtableRow: View {
                     }
                 } else if msg.attachmentType == "audio", let raw = msg.attachmentURL {
                     AudioBubble(url: AlcoveAPI.attachmentURL(raw), isUser: isUser, theme: theme)
+                } else if msg.attachmentType == "video", let raw = msg.attachmentURL {
+                    // 1128 #6308 视频：封面＋播放键，点开全屏播
+                    ChatVideoBubble(videoURL: AlcoveAPI.attachmentURL(raw),
+                                    posterURL: AlcoveAPI.attachmentURL(ChatVideoBubble.posterRaw(raw)))
                 } else if let raw = msg.attachmentURL {
                     Link(destination: AlcoveAPI.attachmentURL(raw)) {
                         Label(msg.attachmentFilename ?? "附件", systemImage: "doc.fill")

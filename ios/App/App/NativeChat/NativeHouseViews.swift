@@ -8438,6 +8438,7 @@ private struct NativeStudioView: View {
     @State private var previewImage: StudioLocalPhoto?
     @State private var photoViewer: StudioPhotoTarget?
     @State private var showPhotoPicker = false
+    @State private var showVideoPicker = false   // 1128 #6308 发视频
     @State private var showFilePicker = false
     // 1106 #4825 她：顶栏右上角加搜索（跟主聊天那页差不多）。点一条结果：在屏上就滚过去闪一下；
     // 不在屏上就拉它前后那一截进来（historyMode：这时不再往后追新消息，底下出「回到最新」）
@@ -8667,6 +8668,10 @@ private struct NativeStudioView: View {
                 }
             })
         }
+        .sheet(isPresented: $showVideoPicker) {
+            VideoLibraryPicker { url in Task { await sendVideo(url) } }
+        }
+        .videoSendBanner()
         // 1113 #5089 她：「选择文件加一个多选发送 跟发图片一样」——一次挑几份，按挑的顺序一份一份发
         .fileImporter(isPresented: $showFilePicker, allowedContentTypes: [.item], allowsMultipleSelection: true) { result in
             guard case .success(let urls) = result, !urls.isEmpty else { return }
@@ -8885,6 +8890,10 @@ private struct NativeStudioView: View {
                         .clipShape(RoundedRectangle(cornerRadius: 14))
                         .onTapGesture { photoViewer = StudioPhotoTarget(url: attachmentURL) }
                         .modifier(StudioSaveMenu(url: attachmentURL))
+                    } else if message.string("attachment_type") == "video" {
+                        // 1128 #6308 视频：封面＋播放键，点开全屏播（跟主聊天同一个气泡）
+                        ChatVideoBubble(videoURL: attachmentURL,
+                                        posterURL: Self.workAttachmentURL(ChatVideoBubble.posterRaw(message.string("attachment_url"))))
                     } else {
                         // 1027 #4445 她：工作室的文件看得见点不开——换成主聊天那张文件卡，点了在浏览器里打开/下载
                         DocumentAttachmentCard(url: attachmentURL,
@@ -8922,6 +8931,7 @@ private struct NativeStudioView: View {
                        sendColor: chatTheme.sendButtonColor,
                        onPickPhotos: { showPhotoPicker = true },
                        onPickFile: { showFilePicker = true },
+                       onPickVideo: { showVideoPicker = true },
                        onPreview: { previewImage = StudioLocalPhoto(image: $0) },
                        onSend: { text in await send(text) })
     }
@@ -9021,6 +9031,21 @@ private struct NativeStudioView: View {
         await refresh()
         return true
     }
+    /// 1128 #6308 发视频：压成 720p，走工作室自己的上传口（后台认 .mp4 成 video、截封面、拆截图和转文字给隅）
+    @MainActor private func sendVideo(_ picked: URL) async {
+        guard let file = await VideoPrep.compress(picked) else { return }
+        defer { try? FileManager.default.removeItem(at: file) }
+        guard let data = try? Data(contentsOf: file) else { VideoSendStatus.shared.show("视频没传上去", autoHide: true); return }
+        let before = messages.count
+        await upload(data, filename: file.lastPathComponent)
+        if messages.count > before, let last = messages.last, last.string("attachment_type") == "video" {
+            VideoFileCache.adopt(file, for: Self.workAttachmentURL(last.string("attachment_url")))
+            VideoSendStatus.shared.show(nil)
+        } else {
+            VideoSendStatus.shared.show("视频没传上去", autoHide: true)
+        }
+    }
+
     @MainActor private func uploadFile(_ url: URL) async {
         let access = url.startAccessingSecurityScopedResource(); defer { if access { url.stopAccessingSecurityScopedResource() } }
         guard let data = try? Data(contentsOf: url) else { return }; await upload(data, filename: url.lastPathComponent)
@@ -9175,6 +9200,7 @@ private struct StudioInputBar: View {
     var sendColor: Color = .accentColor
     var onPickPhotos: () -> Void
     var onPickFile: () -> Void
+    var onPickVideo: (() -> Void)? = nil      // 1128 #6308 她：工作室能发视频
     var onPreview: (UIImage) -> Void
     var onSend: (String) async -> Bool
 
@@ -9224,6 +9250,7 @@ private struct StudioInputBar: View {
             HStack(alignment: .bottom, spacing: 9) {
                 Menu {
                     Button { onPickPhotos() } label: { Label("图片", systemImage: "photo") }
+                    if let onPickVideo { Button { onPickVideo() } label: { Label("视频", systemImage: "video") } }
                     Button { onPickFile() } label: { Label("文件", systemImage: "doc") }
                 } label: { Image(systemName: "plus").font(.system(size: 16, weight: .semibold)).frame(width: 38, height: 38).background(.white.opacity(0.50), in: Circle()) }
                 TextField("在工作室里和他说……", text: $draft, axis: .vertical).lineLimit(1...6).focused($focused)
@@ -9258,6 +9285,7 @@ private struct StudioInputBar: View {
         return HStack(alignment: .bottom, spacing: 2) {
             Menu {
                 Button { onPickPhotos() } label: { Label("图片", systemImage: "photo") }
+                if let onPickVideo { Button { onPickVideo() } label: { Label("视频", systemImage: "video") } }
                 Button { onPickFile() } label: { Label("文件", systemImage: "doc") }
             } label: {
                 Image(systemName: "plus").font(.system(size: 20, weight: .light)).foregroundColor(ink)

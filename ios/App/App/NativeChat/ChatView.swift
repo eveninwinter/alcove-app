@@ -4,6 +4,7 @@ import WebKit
 import PhotosUI
 import Photos
 import AVFoundation
+import AVKit
 import UniformTypeIdentifiers
 import UIKit
 import CoreImage
@@ -72,6 +73,7 @@ struct ChatView: View {
     @State private var showSleepSwitch = false      // 1023 #4232 加号里的「我睡着了」开关面板
     @State private var frostedWall: CGRect?   // 1016 毛玻璃气泡对位用：壁纸在屏幕上的位置
     @State private var showPhotoPicker = false
+    @State private var showVideoPicker = false   // 1128 #6308 发视频
     @Namespace private var photoTransition
     @State private var previewImage: UIImage?
     @State private var inputBarHeight: CGFloat = 90
@@ -335,6 +337,10 @@ struct ChatView: View {
                 }
             }
         }
+        .sheet(isPresented: $showVideoPicker) {
+            VideoLibraryPicker { url in store.sendVideo(url) }
+        }
+        .videoSendBanner()
         .fullScreenCover(item: $photoViewer) { selection in
             PhotoPageViewer(selection: selection, namespace: photoTransition) { photoViewer = nil }
         }
@@ -2118,6 +2124,10 @@ struct ChatView: View {
             }
             Button { showPhotoPicker = true } label: {
                 Label("从相册选择", systemImage: "photo.on.rectangle")
+            }
+            // 1128 #6308 她：发视频，打开跟发图一样的相册页，里面是视频
+            Button { showVideoPicker = true } label: {
+                Label("发视频", systemImage: "video")
             }
             Button { showCamera = true } label: {
                 Label("拍照或录像", systemImage: "camera")
@@ -4998,6 +5008,10 @@ struct MessageRow: View {
                             .padding(.leading, (theme.isKakao && !isUser)
                                      ? (kakaoShowAvatar ? -Self.kakaoBubbleShiftLeft : 0) - kakaoCardIndent : 0)
                         if !msg.reactions.isEmpty { mediaChips(inset: reactChipInset) }
+                    }
+                    if msg.isVideo, let raw = msg.attachmentUrl {
+                        ChatVideoBubble(videoURL: AlcoveAPI.attachmentURL(raw),
+                                        posterURL: AlcoveAPI.attachmentURL(ChatVideoBubble.posterRaw(raw)))
                     }
                     if msg.isDocument, let raw = msg.attachmentUrl {
                         DocumentAttachmentCard(
@@ -11973,5 +11987,253 @@ struct SanctusEarsCard: View {
             }
         }
         .buttonStyle(.plain)
+    }
+}
+
+// MARK: - 1128 #6298/#6308 发视频（主聊天、工作室、圆桌三处共用）
+// 她：「打开是跟发图一样的页面，里面是视频」。挑一个 → 手机上压成 720p 的 mp4（压完超过 48M 不让发）→ 走各自原来的上传口。
+// 后台截封面（<视频名>_poster.jpg）给气泡用，再截几张图＋声音转文字给陈璟 / 隅看（video_digest.py）。
+// 播放：后台发文件不支持分段取，播放器边下边播会失败，所以点开先整个下载到本地缓存再播（≤48M）。
+
+/// 发送过程那一小句（压缩中 / 上传中 / 出错），三个页面顶上各挂一个 .videoSendBanner()
+@MainActor final class VideoSendStatus: ObservableObject {
+    static let shared = VideoSendStatus()
+    @Published var text: String?
+    func show(_ t: String?, autoHide: Bool = false) {
+        text = t
+        guard autoHide, let t else { return }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { [weak self] in
+            if self?.text == t { self?.text = nil }
+        }
+    }
+}
+
+private struct VideoSendBanner: ViewModifier {
+    @ObservedObject private var status = VideoSendStatus.shared
+    func body(content: Content) -> some View {
+        content.overlay(alignment: .top) {
+            if let t = status.text {
+                Text(t)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 14).padding(.vertical, 8)
+                    .background(Capsule().fill(Color.black.opacity(0.72)))
+                    .padding(.top, 60)
+                    .transition(.opacity)
+                    .allowsHitTesting(false)
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: status.text)
+    }
+}
+
+extension View {
+    func videoSendBanner() -> some View { modifier(VideoSendBanner()) }
+}
+
+/// 选一个视频：跟选图同一个系统相册页面，只放视频
+struct VideoLibraryPicker: UIViewControllerRepresentable {
+    var onPick: (URL) -> Void
+    @Environment(\.dismiss) private var dismiss
+
+    func makeUIViewController(context: Context) -> PHPickerViewController {
+        var config = PHPickerConfiguration()
+        config.selectionLimit = 1
+        config.filter = .videos
+        config.preferredAssetRepresentationMode = .current      // 不让系统先转一遍，下面自己压
+        let picker = PHPickerViewController(configuration: config)
+        picker.delegate = context.coordinator
+        return picker
+    }
+
+    func updateUIViewController(_ vc: PHPickerViewController, context: Context) {}
+
+    func makeCoordinator() -> Coordinator { Coordinator(self) }
+
+    final class Coordinator: NSObject, PHPickerViewControllerDelegate {
+        let parent: VideoLibraryPicker
+        init(_ parent: VideoLibraryPicker) { self.parent = parent }
+
+        func picker(_ picker: PHPickerViewController, didFinishPicking results: [PHPickerResult]) {
+            parent.dismiss()
+            guard let provider = results.first?.itemProvider,
+                  provider.hasItemConformingToTypeIdentifier(UTType.movie.identifier) else { return }
+            Task { @MainActor in VideoSendStatus.shared.show("正在取视频…") }
+            provider.loadFileRepresentation(forTypeIdentifier: UTType.movie.identifier) { url, _ in
+                guard let url else {
+                    Task { @MainActor in VideoSendStatus.shared.show("这个视频取不出来", autoHide: true) }
+                    return
+                }
+                // 回调一结束这个临时文件就没了，先拷一份
+                let ext = url.pathExtension.isEmpty ? "mov" : url.pathExtension
+                let copy = FileManager.default.temporaryDirectory.appendingPathComponent("pick-\(UUID().uuidString).\(ext)")
+                do {
+                    try FileManager.default.copyItem(at: url, to: copy)
+                    DispatchQueue.main.async { self.parent.onPick(copy) }
+                } catch {
+                    Task { @MainActor in VideoSendStatus.shared.show("这个视频取不出来", autoHide: true) }
+                }
+            }
+        }
+    }
+}
+
+enum VideoPrep {
+    static let maxBytes = 48 * 1024 * 1024
+
+    /// 压成 720p 的 mp4；压完还超过 48M 返回 nil（顶上会说为什么）。原始那份临时文件顺手删掉
+    @MainActor static func compress(_ src: URL) async -> URL? {
+        VideoSendStatus.shared.show("视频压缩中…")
+        defer { try? FileManager.default.removeItem(at: src) }
+        let asset = AVURLAsset(url: src)
+        guard let session = AVAssetExportSession(asset: asset, presetName: AVAssetExportPreset1280x720) else {
+            VideoSendStatus.shared.show("这个视频压不了", autoHide: true); return nil
+        }
+        let out = FileManager.default.temporaryDirectory
+            .appendingPathComponent("VID_\(Int(Date().timeIntervalSince1970 * 1000)).mp4")
+        try? FileManager.default.removeItem(at: out)
+        session.shouldOptimizeForNetworkUse = true
+        do {
+            try await session.export(to: out, as: .mp4)
+        } catch {
+            VideoSendStatus.shared.show("视频压缩失败了", autoHide: true); return nil
+        }
+        let size = ((try? FileManager.default.attributesOfItem(atPath: out.path))?[.size] as? NSNumber)?.intValue ?? 0
+        if size > maxBytes {
+            try? FileManager.default.removeItem(at: out)
+            VideoSendStatus.shared.show("压完还有 \(size / 1_048_576)M，太大了，剪短一点再发", autoHide: true)
+            return nil
+        }
+        VideoSendStatus.shared.show("视频上传中…")
+        return out
+    }
+}
+
+/// 视频下到本地再播（后台不支持分段取）；自己发的那条直接把压好的文件收进来，点开秒播
+enum VideoFileCache {
+    private static var dir: URL {
+        let d = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("chat-videos", isDirectory: true)
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        return d
+    }
+
+    private static func dest(_ url: URL) -> URL { dir.appendingPathComponent(url.lastPathComponent) }
+
+    static func adopt(_ local: URL, for url: URL) {
+        let d = dest(url)
+        try? FileManager.default.removeItem(at: d)
+        try? FileManager.default.copyItem(at: local, to: d)
+    }
+
+    static func localFile(for url: URL) async throws -> URL {
+        let d = dest(url)
+        if FileManager.default.fileExists(atPath: d.path) { return d }
+        let (tmp, resp) = try await AlcoveAPI.session.download(from: url)
+        guard let http = resp as? HTTPURLResponse, (200..<300).contains(http.statusCode) else {
+            throw URLError(.badServerResponse)
+        }
+        try? FileManager.default.removeItem(at: d)
+        try FileManager.default.moveItem(at: tmp, to: d)
+        return d
+    }
+}
+
+/// 聊天里的视频气泡：封面按原比例（跟单张图同一套大小），中间一个播放键，点开全屏播
+struct ChatVideoBubble: View {
+    let videoURL: URL
+    let posterURL: URL
+    @State private var aspect: CGFloat?
+    @State private var playing = false
+
+    /// "/attachments/abc.mp4" → "/attachments/abc_poster.jpg"（后台截的封面）
+    static func posterRaw(_ raw: String) -> String {
+        (raw as NSString).deletingPathExtension + "_poster.jpg"
+    }
+
+    var body: some View {
+        let size = ChatPhotoLayout.singleSize(aspect ?? ChatPhotoAspect.get(posterURL) ?? 9.0 / 16.0)
+        let shape = RoundedRectangle(cornerRadius: ChatPhotoLayout.outerRadius, style: .continuous)
+        CachedImage(url: posterURL) { img in
+            img.resizable().scaledToFill()
+        } placeholder: {
+            Color(.tertiarySystemFill)
+        }
+        .frame(width: size.width, height: size.height)
+        .clipShape(shape)
+        .overlay {
+            Image(systemName: "play.fill")
+                .font(.system(size: 19, weight: .medium))
+                .foregroundColor(.white)
+                .frame(width: 46, height: 46)
+                .background(Circle().fill(Color.black.opacity(0.38)))
+                .allowsHitTesting(false)
+        }
+        .contentShape(shape)
+        .chatPhotoRim(shape)
+        .onTapGesture { playing = true }
+        .task(id: posterURL) {
+            if let a = ChatPhotoAspect.get(posterURL) { aspect = a; return }
+            if let img = await ImageDiskCache.shared.image(for: posterURL), img.size.height > 0 {
+                let a = img.size.width / img.size.height
+                ChatPhotoAspect.set(posterURL, a)
+                aspect = a
+            }
+        }
+        .fullScreenCover(isPresented: $playing) {
+            ChatVideoPlayerScreen(url: videoURL) { playing = false }
+        }
+        .accessibilityLabel("视频")
+        .accessibilityAddTraits(.isButton)
+    }
+}
+
+struct ChatVideoPlayerScreen: View {
+    let url: URL
+    var dismiss: () -> Void
+    @State private var player: AVPlayer?
+    @State private var failed = false
+
+    var body: some View {
+        ZStack {
+            Color.black.ignoresSafeArea()
+            if let player {
+                VideoPlayer(player: player).ignoresSafeArea()
+            } else if failed {
+                Text("视频没下下来，退出去再点一次试试")
+                    .font(.system(size: 14))
+                    .foregroundColor(.white.opacity(0.8))
+            } else {
+                VStack(spacing: 10) {
+                    ProgressView().tint(.white)
+                    Text("加载中…").font(.system(size: 13)).foregroundColor(.white.opacity(0.7))
+                }
+            }
+        }
+        .overlay(alignment: .topTrailing) {
+            Button { dismiss() } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 16, weight: .semibold))
+                    .foregroundColor(.white)
+                    .frame(width: 40, height: 40)
+                    .background(Circle().fill(Color.white.opacity(0.16)))
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 16)
+        }
+        .task {
+            // 跟语音条一样开 playback，静音键拨着也有声音
+            try? AVAudioSession.sharedInstance().setCategory(.playback, mode: .moviePlayback)
+            try? AVAudioSession.sharedInstance().setActive(true)
+            do {
+                let file = try await VideoFileCache.localFile(for: url)
+                let p = AVPlayer(url: file)
+                player = p
+                p.play()
+            } catch {
+                failed = true
+            }
+        }
+        .onDisappear { player?.pause() }
     }
 }

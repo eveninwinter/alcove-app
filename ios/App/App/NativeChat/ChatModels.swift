@@ -118,10 +118,15 @@ struct ChatMessage: Identifiable, Equatable {
         return ["m4a", "mp3", "wav", "ogg", "webm", "aac"]
             .contains((u as NSString).pathExtension.lowercased())
     }
+    /// 1128 #6308 她发的视频（后台 attachment_type=video）
+    var isVideo: Bool {
+        guard let t = attachmentType, let u = attachmentUrl, !u.isEmpty else { return false }
+        return t == "video"
+    }
     var isDocument: Bool {
         if embroideryCard != nil { return false }
         guard let u = attachmentUrl, !u.isEmpty else { return false }
-        return !isImage && !isAudio
+        return !isImage && !isAudio && !isVideo
     }
 
     var insideText: String? {

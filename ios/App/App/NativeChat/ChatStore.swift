@@ -414,6 +414,33 @@ final class ChatStore: ObservableObject {
         }
     }
 
+    /// 1128 #6308 发视频：压成 720p → 跟图一样走 /upload（后台认 .mp4 成 video，截封面、拆给他看）。
+    /// 跟图一样先攒着，她再按发送才叫他
+    func sendVideo(_ picked: URL) {
+        guard !stagingImages else { return }
+        wakeHerLocally()
+        stagingImages = true
+        Task {
+            defer { stagingImages = false }
+            guard let file = await VideoPrep.compress(picked) else { return }
+            defer { try? FileManager.default.removeItem(at: file) }
+            do {
+                let data = try Data(contentsOf: file)
+                if let rec = try await AlcoveAPI.upload(data: data, filename: file.lastPathComponent, caption: "") {
+                    if let raw = rec.attachmentUrl { VideoFileCache.adopt(file, for: AlcoveAPI.attachmentURL(raw)) }
+                    appendNew([rec])
+                    VideoSendStatus.shared.show(nil)
+                } else {
+                    VideoSendStatus.shared.show("视频没传上去", autoHide: true)
+                }
+            } catch {
+                connectionError = true
+                VideoSendStatus.shared.show("视频没传上去", autoHide: true)
+            }
+            if let held = try? await AlcoveAPI.heldCount() { heldCount = held }
+        }
+    }
+
     // MARK: 0902 语音卡片：录完先听写、判情绪，她看过再发
 
     @Published var pendingVoice: PendingVoice?
