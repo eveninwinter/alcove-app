@@ -245,6 +245,8 @@ private struct FactoryEditor: View {
                 Button(pretty(v)) { Task { await restore(v) } }
             }
             Button("算了", role: .cancel) {}
+        } message: {
+            Text("每次存之前都会留一份底。点哪个，就换回那次改之前的样子。")
         }
     }
 
@@ -259,13 +261,22 @@ private struct FactoryEditor: View {
         .disabled(versions.isEmpty)
     }
 
+    // 1128 她截图「这排版根本看不懂什么意思」：备份名是 20261128-132602（年月日-时分秒），
+    // 原来切的位置错了一格，出来是「11--1 26:02」。改成「今天 13:26 改之前」这种人话
     private func pretty(_ v: String) -> String {
-        guard v.count >= 15 else { return v }
-        let a = v.index(v.startIndex, offsetBy: 4)
-        let b = v.index(v.startIndex, offsetBy: 8)
-        let c = v.index(v.startIndex, offsetBy: 11)
-        let d = v.index(v.startIndex, offsetBy: 13)
-        return "\(v[a..<b].prefix(2))-\(v[b..<v.index(b, offsetBy: 2)]) \(v[c..<d]):\(v[d..<v.index(d, offsetBy: 2)])"
+        let s = Array(v)
+        guard s.count >= 13, s[8] == "-" else { return v }
+        let y = Int(String(s[0..<4])) ?? 0
+        let mo = Int(String(s[4..<6])) ?? 0
+        let d = Int(String(s[6..<8])) ?? 0
+        let hm = String(s[9..<11]) + ":" + String(s[11..<13])
+        var day = "\(mo)月\(d)日"
+        var c = DateComponents(); c.year = y; c.month = mo; c.day = d
+        if let date = Calendar.current.date(from: c) {
+            if Calendar.current.isDateInToday(date) { day = "今天" }
+            else if Calendar.current.isDateInYesterday(date) { day = "昨天" }
+        }
+        return "\(day) \(hm) 改之前"
     }
 
     private func query() -> String {
