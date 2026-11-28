@@ -910,14 +910,10 @@ struct ChatView: View {
     private func photoGroupMessages(headUID: UUID) -> [ChatMessage] {
         guard let index = store.messages.firstIndex(where: { $0.uid == headUID }) else { return [] }
         let head = store.messages[index]
-        guard head.inlineImages.isEmpty, let key = head.photoBatchKey else { return [head] }
-        var group: [ChatMessage] = []
-        var i = index
-        while i < store.messages.count, store.messages[i].photoBatchKey == key {
-            group.append(store.messages[i])
-            i += 1
-        }
-        return group
+        guard head.inlineImages.isEmpty, head.photoBatchKey != nil else { return [head] }
+        // 1128 #6353 一轮的图是一批，隔着话的那几张也一起收
+        let idx = photoBatchIndices(startingAt: index)
+        return idx.isEmpty ? [head] : idx.map { store.messages[$0] }
     }
 
     private func leaveParagraphSelection() {
@@ -1231,7 +1227,8 @@ struct ChatView: View {
             // 末了再夹一道栏杆，以后不管发多少张都不会再越界。
             // 1126 #6220 他晴岛连着截的几张（夹着小票）并成一组两张一行，后面几条不占行
             let islandRun = islandRunItems(startingAt: index)
-            let rowSpan = message.inlineImages.isEmpty ? max(photos.count, mergeRun, islandRun.count, 1) : mergeRun
+            let rowSpan = message.inlineImages.isEmpty
+                ? max(photos.isEmpty ? 0 : photoRunLength(startingAt: index), mergeRun, islandRun.count, 1) : mergeRun
             let groupEnd = min(index + max(rowSpan, 1) - 1, store.messages.count - 1)
             let next = groupEnd + 1 < store.messages.count ? store.messages[groupEnd + 1] : nil
             let recall = recallFor(index: index)
@@ -1761,23 +1758,58 @@ struct ChatView: View {
         return next.date.timeIntervalSince(cur.date) > 120
     }
 
-    private func chatPhotoGroup(startingAt index: Int) -> [URL] {
+    /// 1128 #6353 她：「一轮里面的图。就是一批。」同一批的图不再要求挨着——中间隔着他说的话也算，
+    /// 全收到这批第一张那里画，后面几张那行不占位。往后只找到这一轮结束（换了轮次号就停），最多看 80 条
+    private func photoBatchIndices(startingAt index: Int) -> [Int] {
         guard index < store.messages.count,
               let key = store.messages[index].photoBatchKey else { return [] }
-        var urls: [URL] = []
+        let turn = store.messages[index].turnID ?? ""
+        var out: [Int] = []
         var i = index
-        while i < store.messages.count,
-              store.messages[i].photoBatchKey == key,
-              let raw = store.messages[i].attachmentUrl {
-            urls.append(AlcoveAPI.attachmentURL(raw))
+        while i < store.messages.count, i - index < 80 {
+            let m = store.messages[i]
+            if m.photoBatchKey == key, m.attachmentUrl != nil {
+                out.append(i)
+            } else if !turn.isEmpty, let t = m.turnID, !t.isEmpty, t != turn {
+                break
+            } else if turn.isEmpty {
+                break   // 没轮次号的照旧只认挨着的
+            }
             i += 1
+        }
+        return out
+    }
+
+    private func chatPhotoGroup(startingAt index: Int) -> [URL] {
+        guard !isPhotoGroupContinuation(at: index) else { return [] }
+        let urls = photoBatchIndices(startingAt: index).compactMap { i in
+            store.messages[i].attachmentUrl.map(AlcoveAPI.attachmentURL)
         }
         return urls.count > 1 ? urls : []
     }
 
+    /// 这批图从这一行起挨着排了几行（行数照旧只数挨着的，隔开的那几张靠 listedRows 整行拿掉）
+    private func photoRunLength(startingAt index: Int) -> Int {
+        guard index < store.messages.count,
+              let key = store.messages[index].photoBatchKey else { return 0 }
+        var i = index
+        while i < store.messages.count, store.messages[i].photoBatchKey == key { i += 1 }
+        return i - index
+    }
+
     private func isPhotoGroupContinuation(at index: Int) -> Bool {
-        guard index > 0, let key = store.messages[index].photoBatchKey else { return false }
-        return store.messages[index - 1].photoBatchKey == key
+        guard index > 0, index < store.messages.count,
+              let key = store.messages[index].photoBatchKey else { return false }
+        let turn = store.messages[index].turnID ?? ""
+        var i = index - 1
+        while i >= 0, index - i <= 80 {
+            let m = store.messages[i]
+            if m.photoBatchKey == key { return true }
+            if turn.isEmpty { return false }
+            if let t = m.turnID, !t.isEmpty, t != turn { return false }
+            i -= 1
+        }
+        return false
     }
 
     /// 1126 #6220 她：晴岛截图缩小、一行放两张、第三张换到下面。他截的图和小票是一张一条，
