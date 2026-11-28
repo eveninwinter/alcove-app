@@ -47,7 +47,7 @@ struct RingAccount: Identifiable, Equatable {
     /// 牌子上那个小胶囊
     var pill: String? {
         if verify { return "要验证" }
-        if !ok && !error.isEmpty { return error.contains("额度") ? nil : "要重登" }
+        if !ok && !error.isEmpty { return error.contains("额度") ? nil : (noPlan ? "没订阅" : "要重登") }
         // 1125 #6034 多了 pi 屋：谁在用就写谁，两个以上连着写
         let who = [("main", "陈璟"), ("work", "隅"), ("pi", "pi 屋")].filter { inUse.contains($0.0) }.map { $0.1 }
         if who.isEmpty { return nil }
@@ -55,6 +55,8 @@ struct RingAccount: Identifiable, Equatable {
     }
 
     var usable: Bool { ok }
+    /// 1128：号上没开订阅（后台认出 403 oauth_not_allowed_for_organization），重登也没用，得续费
+    var noPlan: Bool { error.contains("订阅") }
 
     private static let md: DateFormatter = {
         let f = DateFormatter(); f.dateFormat = "MM.dd"
@@ -252,10 +254,18 @@ struct AccountRingView: View {
         .confirmationDialog(hookPickTitle, isPresented: Binding(get: { hookPick != nil }, set: { if !$0 { hookPick = nil } }),
                             titleVisibility: .visible) {
             // 1125 #6054 她：「还有over的号呢」——pi 屋也能挂机器上登着的那个完整登录（后台每轮借主屋那张），别的完整登录后台会拒
-            ForEach(store.accounts.filter { $0.usable }) { a in
-                Button(a.name + "（" + a.kindText + "）") {
-                    let who = hookPick ?? "main"
-                    Task { await store.switchTo(a.name, who: who) }
+            // 1128 她：「换号的选项能不能同步一下现有的账号」——钥匙串上有几个号这里就列几个；
+            // 用不了的也列出来，写着为什么，点了弹那张牌自己的说明（重登 / 续费）
+            ForEach(store.accounts) { a in
+                if a.usable {
+                    Button(a.name + "（" + a.kindText + "）") {
+                        let who = hookPick ?? "main"
+                        Task { await store.switchTo(a.name, who: who) }
+                    }
+                } else {
+                    Button(a.name + "（" + (a.pill ?? "用不了") + "）") {
+                        DispatchQueue.main.asyncAfter(deadline: .now() + 0.4) { tagPick = a }
+                    }
                 }
             }
             Button("登一个新号") { showLogin = true }
@@ -271,7 +281,7 @@ struct AccountRingView: View {
                     Button("隅（工作室）") { Task { await store.switchTo(a.name, who: "work") } }
                     Button("两个都换") { Task { await store.switchTo(a.name, who: "both") } }
                     Button("pi 屋") { Task { await store.switchTo(a.name, who: "pi") } }
-                } else {
+                } else if !a.noPlan {
                     Button("重新登这个号") { showLogin = true }
                 }
                 Button("算了", role: .cancel) {}
