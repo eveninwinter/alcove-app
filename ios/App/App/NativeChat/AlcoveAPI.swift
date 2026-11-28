@@ -186,6 +186,13 @@ enum AlcoveAPI {
         URL(string: path, relativeTo: base)!.absoluteURL
     }
 
+    /// 1128 #6356 他 Read 过的服务器上的图（后台 /files/image 压成 JPEG 给）
+    static func readImageURL(_ serverPath: String) -> URL {
+        var c = URLComponents(url: fullURL("/api/files/image"), resolvingAgainstBaseURL: false)!
+        c.queryItems = [URLQueryItem(name: "path", value: serverPath)]
+        return c.url!
+    }
+
     // attachment_url "/attachments/x.jpg" -> https://.../api/attachments/x.jpg
     static func attachmentURL(_ raw: String) -> URL {
         let p = raw.hasPrefix("/attachments")

@@ -5956,6 +5956,14 @@ struct MessageRow: View {
         }
     }
 
+    /// 他用 Read 看的是图片文件 → 那个路径；别的工具、别的文件都不算
+    static func readImagePath(_ item: ActivityItem) -> String? {
+        guard item.toolName == "Read" else { return nil }
+        let pattern = #"/[^\s"']+\.(?:png|jpe?g|gif|webp|heic|bmp)"#
+        guard let r = item.command.range(of: pattern, options: [.regularExpression, .caseInsensitive]) else { return nil }
+        return String(item.command[r])
+    }
+
     private func commandDetailPanel(_ item: ActivityItem) -> some View {
         NavigationStack {
             ScrollView {
@@ -5963,6 +5971,19 @@ struct MessageRow: View {
                     // 1117 她：看不懂 → 先一句人话说这一步干了啥，再给具体指令和结果
                     let what = item.desc.isEmpty ? item.content : item.desc
                     if !what.isEmpty { commandDetailSection("这一步", text: what, isError: false) }
+                    // 1128 #6356 她：他看了图却没发出来——看的是图就直接显示在这里（后台压成小 JPEG 给）
+                    if let imgPath = Self.readImagePath(item) {
+                        CachedPhaseImage(url: AlcoveAPI.readImageURL(imgPath)) { phase in
+                            switch phase {
+                            case .success(let image): image.resizable().scaledToFit()
+                            case .failure: Color(.tertiarySystemFill).frame(height: 120)
+                                    .overlay(Text("图打不开了（可能已经删了）").font(.system(size: 13)).foregroundColor(.secondary))
+                            default: Color(.tertiarySystemFill).frame(height: 200).overlay(ProgressView())
+                            }
+                        }
+                        .frame(maxWidth: .infinity)
+                        .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    }
                     commandDetailSection(item.toolName == "Bash" ? "具体命令" : "具体参数", text: item.command.isEmpty
                                          ? "这一步没留下具体内容（以前的记录没存）"
                                          : item.command, isError: false)
