@@ -4809,9 +4809,11 @@ struct MessageRow: View {
                     // 1128 #6296–6300 她：每轮第一个气泡加她的头像（不带名字），圆的、跟顶上陈璟头像一样大，
                     // 时间高度不变、只往里让出头像的位置；轮与轮之间的距离从头像顶上算（头像占排版高度）。
                     // 时间离气泡还是 rowPartGap（4 + 3），头像右边贴着气泡右边
-                    HStack(alignment: .bottom, spacing: 6) {
+                    // 1128 #6355 她：头像底边跟时间那行字的底边齐平（对字的基线，不对字框底，框底还带着下沿和 4 点留白）
+                    HStack(alignment: .lastTextBaseline, spacing: 6) {
                         thRoundStampText.padding(.bottom, rowPartGap - 3)
                         TreehouseUserAvatar()
+                            .alignmentGuide(.lastTextBaseline) { $0[.bottom] }
                     }
                     .padding(.bottom, 3)
                 }
