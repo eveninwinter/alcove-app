@@ -9403,21 +9403,8 @@ struct TypingIndicator: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
-                HStack(spacing: 3) {
-                    ForEach(0..<3) { i in
-                        Circle()
-                            .fill(Color.secondary)
-                            .frame(width: 6, height: 6)
-                            .opacity(animating ? 1 : 0.3)
-                            .animation(.easeInOut(duration: 0.5)
-                                .repeatForever(autoreverses: true)
-                                .delay(Double(i) * 0.18), value: animating)
-                    }
-                }
-                .padding(.horizontal, 13)
-                .padding(.vertical, 11)
-                .background(theme.bubbleAI,
-                            in: RoundedRectangle(cornerRadius: 18, style: .continuous))
+                // 1128 #6310 她：他打字时那三个点换成他的头像在呼吸（一胀一缩），不垫气泡
+                TypingBreathingAvatar(animating: animating)
                 // 0921 任务#2485 她要的：信息主题也把「正在X中…」和工具原文显示回来（原来只留三个点）
                 Text("\(name)正在\(line)中…")
                     .font(.system(size: 12))
@@ -9435,6 +9422,43 @@ struct TypingIndicator: View {
         }
         .onAppear { animating = true }
         .padding(.vertical, 2)
+    }
+}
+
+/// 1128 #6310 他打字时：他的头像（聊天页顶上那张）慢慢一胀一缩，代替三个点
+struct TypingBreathingAvatar: View {
+    var animating: Bool
+    var size: CGFloat = 30
+    @AppStorage("assistantAvatarDataURL") private var avatar = ""
+
+    var body: some View {
+        Group {
+            if let img = Self.decode(avatar) {
+                Image(uiImage: img).resizable().scaledToFill()
+            } else {
+                Circle().fill(Color.secondary.opacity(0.25))
+                    .overlay(Text("璟").font(.system(size: 12, weight: .medium)).foregroundColor(.secondary))
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(Circle())
+        .overlay(Circle().stroke(Color.primary.opacity(0.08), lineWidth: 1))
+        .scaleEffect(animating ? 1.08 : 0.9)
+        .opacity(animating ? 1 : 0.78)
+        .animation(.easeInOut(duration: 1.3).repeatForever(autoreverses: true), value: animating)
+        .padding(.vertical, 3)
+        .accessibilityLabel("正在输入")
+    }
+
+    private static var cache: [Int: UIImage] = [:]
+    private static func decode(_ value: String) -> UIImage? {
+        guard !value.isEmpty else { return nil }
+        let key = value.hashValue
+        if let hit = cache[key] { return hit }
+        let payload = value.split(separator: ",", maxSplits: 1).last.map(String.init) ?? value
+        guard let img = Data(base64Encoded: payload).flatMap(UIImage.init(data:)) else { return nil }
+        cache[key] = img
+        return img
     }
 }
 
