@@ -442,7 +442,8 @@ struct TripRoomView: View {
     @ViewBuilder private func tripPage(_ t: Trip) -> some View {
         let back = { route = .home }
         switch route {
-        case .home: TripHome(t: t, back: { dismiss() }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, toInsp: { inspFrom = .home; inspPlace = t.name; route = .insp })
+        case .home: TripHome(t: t, back: { dismiss() }, menu: { sheet = .menu }, go: { route = $0 }, pickCover: { pickingCover = true }, toInsp: { inspFrom = .home; inspPlace = t.name; route = .insp },
+                            openDay: { d in day = d; route = .day })
         case .pack: TripPack(t: t, tab: $packTab, back: back, store: store, sheet: $sheet, toBoard: { route = .board })
         case .board: TripBoard(t: t, back: back, toPack: { route = .pack })
         case .day: TripDay(t: t, day: $day, back: back, sheet: $sheet)
@@ -587,162 +588,350 @@ private struct TripClockList: View {
 
 // MARK: 这一趟
 
+// 1128 她定的卡片版（效果图 /root/workroom/card-style-1128/trip15.html → trip-1128t.jpg）：
+// 上半截不许变——侧脸壁纸（TripWall）、顶栏「出发城 — 到达城」、右边倒计时 / DAYS TO GO / 花体英文名 / 日期；
+// 中间「沿途」一摞正方形照片（中间一张完整、两边各两层更小往外淡，左右滑）；下面「几天」一条磨砂，一天一格点进那天日程；
+// 底栏一短一长两颗磨砂胶囊：行李 done/items ｜ 票据 花销 想去 游记。其余入口（日程、登机牌、参考图、这趟的设置）收进右上「···」。
+
+/// 磨砂：半透明白＋一层系统毛玻璃＋一圈白描边，上亮下淡（照参考图那种雾面玻璃，不投影）
+private struct TripFrost: ViewModifier {
+    var r: CGFloat
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: r, style: .continuous)
+        return content
+            .background(ZStack {
+                shape.fill(.ultraThinMaterial)
+                shape.fill(LinearGradient(colors: [.white.opacity(0.55), .white.opacity(0.22)], startPoint: .top, endPoint: .bottom))
+            })
+            .overlay(shape.stroke(Color.white.opacity(0.9), lineWidth: 1))
+    }
+}
+
+/// 鼓起来的胶囊（日子切换条）：上白下灰一点、白沿、轻投影
+private struct TripCapsule: ViewModifier {
+    var r: CGFloat
+    func body(content: Content) -> some View {
+        let shape = RoundedRectangle(cornerRadius: r, style: .continuous)
+        return content
+            .background(shape.fill(LinearGradient(colors: [.white.opacity(0.9), .white.opacity(0.5), Color(red: 235/255, green: 236/255, blue: 240/255).opacity(0.65)],
+                                                  startPoint: .top, endPoint: .bottom)))
+            .overlay(shape.stroke(Color.white, lineWidth: 1))
+            .shadow(color: .black.opacity(0.07), radius: 8, x: 0, y: 6)
+    }
+}
+
+extension View {
+    fileprivate func tripFrost(_ r: CGFloat) -> some View { modifier(TripFrost(r: r)) }
+    fileprivate func tripCapsule(_ r: CGFloat) -> some View { modifier(TripCapsule(r: r)) }
+}
+
+extension Trip {
+    /// 汉字转拼音去声调（地名没写英文时顶上用）
+    static func latin(_ s: String) -> String {
+        let m = NSMutableString(string: s)
+        CFStringTransform(m, nil, kCFStringTransformToLatin, false)
+        CFStringTransform(m, nil, kCFStringTransformStripDiacritics, false)
+        return (m as String).replacingOccurrences(of: " ", with: "")
+    }
+    /// 顶栏两座城：先看第一张机票/火车票「武汉 → 成都 · CA4044」，没有就出发城 — 目的地
+    var cities: (String, String) {
+        if let k = tickets.first(where: { ($0.kind == "flight" || $0.kind == "train") && $0.title.contains("→") }) {
+            let head = k.title.components(separatedBy: "·").first ?? k.title
+            let p = head.components(separatedBy: "→").map { $0.trimmingCharacters(in: .whitespaces) }
+            if p.count >= 2, !p[0].isEmpty, !p[1].isEmpty { return (p[0], p[1]) }
+        }
+        return (fromCity, name)
+    }
+    /// 花体那行：她填了英文名就用；没填按地名拼音拼（「…圣山 / 神山 / 雪山 / 山」→ Mount …）
+    var scriptName: String {
+        let en = nameEn.trimmingCharacters(in: .whitespaces)
+        if !en.isEmpty { return en }
+        let cap: (String) -> String = { $0.prefix(1).uppercased() + $0.dropFirst().lowercased() }
+        for suf in ["圣山", "神山", "雪山", "山"] where name.hasSuffix(suf) && name.count > suf.count {
+            return "Mount " + cap(Trip.latin(String(name.dropLast(suf.count))))
+        }
+        return cap(Trip.latin(name))
+    }
+    /// 一天的一个标题、一行小字：先挑这天最要紧那站（坐飞机火车 / 起飞 / 登顶），再是他留过话的那站，再是第一站；
+    /// 标题取到第一个空格或逗号，剩下的跟时间一起当小字
+    func dayKey(_ d: String) -> (head: String, sub: String) {
+        let ss = stops.filter { $0.day == d }
+        guard let key = ss.first(where: { TripLeg.isTicket($0.how) || $0.title.contains("起飞") || $0.title.contains("登顶") })
+                ?? ss.first(where: { !$0.hisLine.isEmpty }) ?? ss.first else { return ("没排", "") }
+        let cut = key.title.firstIndex { " ，,（(".contains($0) }
+        var head = cut.map { String(key.title[..<$0]) } ?? key.title
+        var rest = cut.map { String(key.title[key.title.index(after: $0)...]) } ?? ""
+        rest = rest.trimmingCharacters(in: .whitespaces)
+        if head.count > 6 { rest = String(head.dropFirst(6)) + rest; head = String(head.prefix(6)) }
+        if let note = dayNotes[d]?.line, !note.isEmpty { head = String(note.prefix(6)) }
+        if rest.isEmpty { rest = key.note }
+        return (head, [key.time, rest].filter { !$0.isEmpty }.joined(separator: " "))
+    }
+    /// 他留话最多的那天点一个红点（整页唯一的红）
+    var hotDay: String? {
+        let c = dayList.map { d in (d, stops.filter { $0.day == d && !$0.hisLine.isEmpty }.count) }
+        guard let m = c.map({ $0.1 }).max(), m > 0 else { return nil }
+        return c.first { $0.1 == m }?.0
+    }
+    static let cnNum = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九", "十"]
+    static func dot(_ md: String) -> String { md.replacingOccurrences(of: ".", with: "·") }
+    static func weekday(_ d: String) -> String {
+        guard let x = TripText.date(d) else { return "" }
+        return ["周日", "周一", "周二", "周三", "周四", "周五", "周六"][(TripText.bjComponents(x).weekday ?? 1) - 1]
+    }
+}
+
 private struct TripHome: View {
-    // 1105 #4758–4769 她定的拼贴版（08 参考图点进去直接停在这趟的地名上）：一整张夜樱画（纸格子已经拼好、花枝漫到纸上，底图放服务器 /trip/img/voyage.jpg）
-    // 上面按画布 852×1846 的坐标摆字、摆点按区；效果图 texted6 一比一。中文衬线（宋体）、英文 Pinyon、数字 Cormorant（时间戳那款），倒计时用细一档 Light
     let t: Trip
     var back: () -> Void
     var menu: () -> Void
     var go: (TripRoute) -> Void
     var pickCover: () -> Void
     var toInsp: () -> Void
+    var openDay: (String) -> Void
 
-    private static let W: CGFloat = 852, H: CGFloat = 1846, Z: CGFloat = 1.15
-    private static let ink = Color(red: 52/255, green: 52/255, blue: 56/255)
-    private static let g1 = Color(red: 110/255, green: 110/255, blue: 116/255)
-    private static let g3 = Color(red: 150/255, green: 150/255, blue: 156/255)
+    @State private var photos: [String] = []     // 沿途：封面＋参考图里这趟的照片（都是她传过的真图）
+    @State private var at = 0
+    @State private var drag: CGFloat = 0
+
+    private static let ground = Color(red: 0xEF/255, green: 0xEF/255, blue: 0xED/255)
+    private static let ink = Color(red: 0x1F/255, green: 0x20/255, blue: 0x24/255)
+    private static let ink2 = Color(red: 0x3E/255, green: 0x40/255, blue: 0x48/255)
+    private static let mut = Color(red: 0x7D/255, green: 0x80/255, blue: 0x8B/255)
 
     var body: some View {
         GeometryReader { geo in
-            let k = max(geo.size.width / Self.W, geo.size.height / Self.H)
-            canvas(k)
-                .frame(width: Self.W * k, height: Self.H * k)
-                .position(x: geo.size.width / 2, y: geo.size.height / 2)
+            let k = geo.size.width / 390
+            ZStack(alignment: .top) {
+                backdrop(geo.size)
+                VStack(spacing: 0) {
+                    bar.padding(.top, TripSafe.top)
+                    hero(k).padding(.top, 20 * k)
+                    Spacer(minLength: 8)
+                    Text("沿　途").font(TripInk.serif(11)).tracking(3.3).foregroundStyle(Self.mut)
+                    deck(k).padding(.top, 14)
+                    dots.padding(.top, 14)
+                    Spacer(minLength: 8)
+                    days(k)
+                    dock.padding(.top, 30)
+                        .padding(.bottom, TripSafe.bottom + 16)
+                }
+                .padding(.horizontal, 16)
+            }
+            .frame(width: geo.size.width, height: geo.size.height)
         }
         .ignoresSafeArea()
-        .background(Color(red: 0.11, green: 0.11, blue: 0.12).ignoresSafeArea())
-        .overlay(alignment: .topLeading) {
-            Button(action: back) {
-                Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular)).foregroundStyle(.white.opacity(0.85))
-                    .frame(width: 44, height: 44).contentShape(Rectangle())
-            }
-            .buttonStyle(.plain)
-            .padding(.leading, 6).padding(.top, TripSafe.top)
-        }
+        .task { await loadPhotos() }
     }
 
-    @ViewBuilder private func canvas(_ k: CGFloat) -> some View {
+    // ── 底：侧脸壁纸，上面一半露脸，往下化进米白再慢慢压灰
+    private func backdrop(_ size: CGSize) -> some View {
+        ZStack(alignment: .top) {
+            Self.ground
+            Image("TripWall").resizable().scaledToFill()
+                .frame(width: size.width, height: size.width * 2048 / 946)
+                .offset(y: -40 * size.width / 390)
+                .frame(width: size.width, height: size.height, alignment: .top)
+                .clipped()
+                .allowsHitTesting(false)
+            LinearGradient(stops: [.init(color: Self.ground.opacity(0), location: 0.30), .init(color: Self.ground.opacity(0.8), location: 0.42),
+                                   .init(color: Self.ground, location: 0.49), .init(color: Color(red: 0xDC/255, green: 0xDD/255, blue: 0xE0/255), location: 0.68),
+                                   .init(color: Color(red: 0xBC/255, green: 0xBE/255, blue: 0xC3/255), location: 1)],
+                           startPoint: .top, endPoint: .bottom)
+                .allowsHitTesting(false)
+        }
+        .frame(width: size.width, height: size.height)
+        .ignoresSafeArea()
+    }
+
+    // ── 顶栏：返回 · 两座城 · 右边「···」收着其余入口
+    private var bar: some View {
+        let c = t.cities
+        return ZStack {
+            Text("\(Trip.latin(c.0).uppercased()) — \(Trip.latin(c.1).uppercased())")
+                .font(.custom("CormorantGaramond-Medium", size: 11)).tracking(3.1)
+                .foregroundStyle(Color(red: 0xE6/255, green: 0xE4/255, blue: 0xE1/255))
+            HStack(spacing: 0) {
+                Button(action: back) {
+                    Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular)).foregroundStyle(Color(red: 0xF0/255, green: 0xEE/255, blue: 0xEB/255))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                Spacer()
+                Menu {
+                    Button("日程") { go(.day) }
+                    Button("登机牌") { go(.board) }
+                    Button("参考图") { toInsp() }
+                    Button("这一趟的设置…") { menu() }
+                } label: {
+                    Text("···").font(.custom("CormorantGaramond-Medium", size: 20)).foregroundStyle(Color(red: 0xE6/255, green: 0xE4/255, blue: 0xE1/255))
+                        .frame(width: 44, height: 44).contentShape(Rectangle())
+                }
+            }
+            .padding(.horizontal, -10)
+        }
+        .frame(height: 44)
+    }
+
+    // ── 右边：倒计时 / DAYS TO GO / 花体英文名 / 日期（数字全从这一趟算）
+    private func hero(_ k: CGFloat) -> some View {
         let s = t.sum, today = TripText.ymdBJ(Date())
         let cd: (Int, String) = s.status == "before" ? (TripText.days(today, t.start), "days to go")
             : s.status == "during" ? (TripText.days(t.start, today) + 1, "day") : (TripText.days(t.end, today), "days since")
-        let Z = Self.Z
-        ZStack(alignment: .topLeading) {
-            CachedImage(url: AlcoveAPI.fullURL("/trip/img/voyage3.jpg")) { img in img.resizable() } placeholder: { Color(red: 0.11, green: 0.11, blue: 0.12) }
-                .frame(width: Self.W * k, height: Self.H * k)
-                .allowsHitTesting(false)
+        return VStack(alignment: .trailing, spacing: 0) {
+            Text("\(cd.0)").font(.custom("CormorantGaramond-Light", size: 104 * k)).foregroundStyle(Self.ink).frame(height: 104 * k)
+            Text(cd.1.uppercased()).font(.custom("CormorantGaramond-Medium", size: 8.5 * k)).tracking(2.6).foregroundStyle(Self.ink2).padding(.top, 2 * k)
+            Text(t.scriptName).font(TripInk.pin(38 * k)).foregroundStyle(Self.ink).lineLimit(1).minimumScaleFactor(0.5).padding(.top, 16 * k)
+            Text("\(Trip.dot(TripText.md(t.start))) — \(Trip.dot(TripText.md(t.end)))")
+                .font(.custom("CormorantGaramond-Light", size: 14 * k)).tracking(1.4).foregroundStyle(Self.ink2).padding(.top, 8 * k)
+        }
+        .frame(maxWidth: .infinity, alignment: .trailing)
+        .padding(.trailing, 8)
+        .allowsHitTesting(false)
+    }
 
-            // 点按区：照格子，空格子不接（ViewBuilder 一层最多十个，分组装）
-            Group {
-            tap(575, 85, 852, 348, k, menu)
-            tap(728, 640, 852, 795, k) { go(.pack) }
-            tap(357, 1088, 532, 1345, k) { go(.day) }
-            tap(532, 950, 655, 1345, k) { go(.board) }
-            tap(655, 880, 758, 1345, k) { go(.wish) }
-            tap(758, 795, 852, 1345, k) { go(.tick) }
-            tap(190, 1345, 515, 1520, k) { go(.spend) }
-            tap(515, 1345, 852, 1615, k) { go(.recap) }
-            tap(630, 1615, 852, 1755, k, toInsp)
+    // ── 沿途：一摞正方形照片，中间一张完整压在最上面，两边各两层更小、往外淡、微微转；左右滑换
+    private func deck(_ k: CGFloat) -> some View {
+        let side = 196 * k
+        let n = photos.count
+        return ZStack {
+            if n == 0 {
+                RoundedRectangle(cornerRadius: 20, style: .continuous).fill(Color.white.opacity(0.35)).frame(width: side, height: side)
             }
+            ForEach(Array(photos.enumerated()), id: \.offset) { i, url in
+                let d = CGFloat(i - at) + drag / (side * 0.6)
+                let a = abs(d)
+                if a < 2.6 {
+                    CachedImage(url: AlcoveAPI.fullURL(url.hasPrefix("/") ? url : "/" + url)) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.4) }
+                        .frame(width: side, height: side)
+                        .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                        .mask(LinearGradient(stops: [.init(color: .black.opacity(d < -0.1 ? max(0.08, 1 - a * 0.55) : 1), location: 0),
+                                                     .init(color: .black, location: 0.35), .init(color: .black, location: 0.65),
+                                                     .init(color: .black.opacity(d > 0.1 ? max(0.08, 1 - a * 0.55) : 1), location: 1)],
+                                              startPoint: .leading, endPoint: .trailing))
+                        .shadow(color: .black.opacity(a < 0.5 ? 0.18 : 0), radius: 12, x: 0, y: 10)
+                        .scaleEffect(1 - min(a, 2) * 0.13)
+                        .rotation3DEffect(.degrees(Double(-d * 8)), axis: (x: 0, y: 1, z: 0), perspective: 0.6)
+                        .offset(x: d * 50 * k - (a > 1 ? (d > 0 ? 1 : -1) * (a - 1) * 8 * k : 0))
+                        .zIndex(10 - Double(a))
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity).frame(height: side)
+        .contentShape(Rectangle())
+        .gesture(DragGesture(minimumDistance: 8)
+            .onChanged { drag = $0.translation.width }
+            .onEnded { v in
+                let step = -Int((v.predictedEndTranslation.width / (side * 0.6)).rounded())
+                withAnimation(.spring(response: 0.38, dampingFraction: 0.86)) {
+                    at = min(max(0, at + max(-1, min(1, step))), max(0, n - 1))
+                    drag = 0
+                }
+            })
+    }
 
-            Group {
-                // 右上台阶：地名
-                put(Text("Voyage").font(TripInk.pin(52 * k)).foregroundColor(Self.g1), 670, 96, k)
-                Text(t.name).font(TripInk.serif(60 * k)).foregroundColor(Self.ink).lineLimit(1).minimumScaleFactor(0.4)
-                    // 1105 她「地名为什么那么小」：外面那层 0 高的框把高度 0 传进来，minimumScaleFactor 就一路缩到 0.4；给它自己的高度
-                    .frame(width: (852 - 590 - 12) * k, height: 84 * k, alignment: .topLeading)
-                    .frame(width: 0, height: 0, alignment: .topLeading).position(x: 590 * k, y: 196 * k).allowsHitTesting(false)
-                put(mix("\(TripText.md(t.start)) — \(TripText.md(t.end))", 19 * k).foregroundColor(Self.g1), 592, 282, k)
-                put(mix("第 \(String(format: "%03d", t.id)) 次 · \(s.days) 天 \(max(s.days - 1, 0)) 晚", 14 * k).foregroundColor(Self.g3), 592, 312, k)
-                // 中间大格：倒计时
-                put(Text("\(cd.0)").font(.custom("CormorantGaramond-Light", size: 220 * k)).foregroundColor(Self.ink), 452, 520, k,
-                    Alignment(horizontal: .leading, vertical: .lastTextBaseline))
-                put(Text(cd.1).font(TripInk.pin(44 * k)).foregroundColor(Self.g1), 836, 586, k,
-                    Alignment(horizontal: .trailing, vertical: .lastTextBaseline))
+    private var dots: some View {
+        HStack(spacing: 6) {
+            ForEach(0..<max(1, min(photos.count, 9)), id: \.self) { i in
+                Capsule().fill(i == min(at, 8) ? Self.ink : Self.ink.opacity(0.3)).frame(width: i == min(at, 8) ? 14 : 4, height: 4)
             }
-            Group {
-                // 01 准备清单
-                put(mix("01", 10 * Z * k).foregroundColor(Self.g3), 740, 654, k)
-                put(Text("准备清单").font(TripInk.serif(16 * Z * k)).foregroundColor(Self.ink), 740, 674, k)
-                put(Text("Packing").font(TripInk.pin(20 * Z * k)).foregroundColor(Self.g1), 740, 706, k)
-                put(mix("\(s.done) / \(s.items)", 12 * Z * k).foregroundColor(Self.g1), 740, 768, k)
-                // 02 日程（横排）
-                put(mix("02", 10 * Z * k).foregroundColor(Self.g3), 377, 1106, k)
-                put(Text("日程").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 377, 1126, k)
-                put(Text("Days").font(TripInk.pin(22 * Z * k)).foregroundColor(Self.g1), 377, 1162, k)
-                put(mix("\(s.days) 天", 12 * Z * k).foregroundColor(Self.g1), 377, 1300, k)
+        }
+        .opacity(photos.count > 1 ? 1 : 0)
+    }
+
+    // ── 几天：一天一格（日期＋周几、这天的标题、一行小字），点进那天日程
+    private func days(_ k: CGFloat) -> some View {
+        let hot = t.hotDay
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(t.dayList.count <= 10 ? "\(Trip.cnNum[t.dayList.count]) 天" : "\(t.dayList.count) 天")
+                .font(TripInk.serif(11)).tracking(3.3).foregroundStyle(Self.mut).padding(.leading, 8)
+            HStack(spacing: 0) {
+                ForEach(Array(t.dayList.prefix(5).enumerated()), id: \.element) { i, d in
+                    let key = t.dayKey(d)
+                    Button { openDay(d) } label: {
+                        VStack(alignment: .leading, spacing: 0) {
+                            HStack(alignment: .firstTextBaseline, spacing: 4) {
+                                Text(Trip.dot(TripText.md(d))).font(.custom("CormorantGaramond-Light", size: 15))
+                                Text(Trip.weekday(d)).font(TripInk.serif(9)).foregroundStyle(Self.mut)
+                            }
+                            HStack(spacing: 4) {
+                                Text(key.head).font(TripInk.serif(13)).lineLimit(1)
+                                if d == hot { Circle().fill(Color(red: 0xB3/255, green: 0x26/255, blue: 0x2B/255)).frame(width: 5, height: 5) }
+                            }
+                            .padding(.top, 8)
+                            Text(key.sub).font(TripInk.serif(9.5)).foregroundStyle(Self.mut).lineLimit(1).minimumScaleFactor(0.8).padding(.top, 3)
+                        }
+                        .foregroundStyle(Self.ink)
+                        .padding(.leading, 12)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                        .overlay(alignment: .leading) { if i > 0 { Rectangle().fill(Self.ink.opacity(0.1)).frame(width: 1) } }
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
             }
-            Group {
-                column("03", "登机牌", "Boarding", 18, x: 593, k: k)
-                // 1108 #4910 她：登机牌不用全勾完才能看。这格改成报清单进度
-                put(Text(t.packedAt.isEmpty ? "清单 \(s.done)/\(s.items)" : "万事俱备").font(TripInk.serif(11 * Z * k)).foregroundColor(Self.g1), 593, 1300, k, .top)
-                column("04", "想去", "Wishes", 20, x: 706, k: k)
-                put(mix("\(s.wishes) 处", 12 * Z * k).foregroundColor(Self.g1), 706, 1300, k, .top)
-                column("05", "票据", "Tickets", 18, x: 805, k: k)
-                put(mix("\(s.tickets) 张", 12 * Z * k).foregroundColor(Self.g1), 805, 1300, k, .top)
-            }
-            Group {
-                // 06 花销
-                put(mix("06", 10 * Z * k).foregroundColor(Self.g3), 210, 1362, k)
-                put(Text("花销").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 210, 1384, k)
-                put(Text("Spending").font(TripInk.pin(24 * Z * k)).foregroundColor(Self.g1), 282, 1378, k)
-                put(mix("¥ \(TripText.money(s.spent))", 15 * Z * k).foregroundColor(Self.ink), 495, 1482, k, .topTrailing)
-                // 07 回顾
-                put(mix("07", 10 * Z * k).foregroundColor(Self.g3), 535, 1362, k)
-                put(Text("回顾").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 535, 1384, k)
-                put(Text("Memories").font(TripInk.pin(26 * Z * k)).foregroundColor(Self.g1), 535, 1422, k)
-                put(Text(s.status == "after" ? "看看" : "回来以后").font(TripInk.serif(12 * Z * k)).foregroundColor(Self.g3), 832, 1580, k, .topTrailing)
-            }
-            Group {
-                // 08 参考图
-                put(mix("08", 10 * Z * k).foregroundColor(Self.g3), 650, 1632, k)
-                put(Text("参考图").font(TripInk.serif(18 * Z * k)).foregroundColor(Self.ink), 650, 1654, k)
-                put(Text("Inspiration").font(TripInk.pin(24 * Z * k)).foregroundColor(Self.g1), 650, 1692, k)
-            }
-            .allowsHitTesting(false)
+            .padding(.horizontal, 4)
+            .frame(height: 96)
+            .tripFrost(22)
         }
     }
 
-    /// 字按画布坐标摆：(x, y) 是字的左上角（或 a 指定的那个角/基线）
-    private func put<V: View>(_ v: V, _ x: CGFloat, _ y: CGFloat, _ k: CGFloat, _ a: Alignment = .topLeading) -> some View {
-        v.fixedSize().frame(width: 0, height: 0, alignment: a).position(x: x * k, y: y * k).allowsHitTesting(false)
-    }
-
-    /// 窄长格：编号、竖排中文、花体英文，一列居中
-    private func column(_ no: String, _ zh: String, _ en: String, _ enSize: CGFloat, x: CGFloat, k: CGFloat) -> some View {
-        let Z = Self.Z, size = 18 * Z
-        return ZStack(alignment: .topLeading) {
-            put(mix(no, 10 * Z * k).foregroundColor(Self.g3), x, 1030, k, .top)
-            ForEach(Array(zh.enumerated()), id: \.offset) { i, ch in
-                put(Text(String(ch)).font(TripInk.serif(size * k)).foregroundColor(Self.ink), x, 1054 + CGFloat(i) * size * 1.15, k, .top)
+    // ── 底栏：行李（清单进度）｜票据 花销 想去 游记
+    private var dock: some View {
+        HStack(spacing: 10) {
+            Button { go(.pack) } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: "suitcase").font(.system(size: 19, weight: .regular))
+                    VStack(spacing: 1) {
+                        (Text("\(t.sum.done)").font(.custom("CormorantGaramond-Light", size: 16))
+                         + Text("/\(t.sum.items)").font(.custom("CormorantGaramond-Light", size: 10)).foregroundColor(Self.mut))
+                        Text("行李").font(TripInk.serif(10)).foregroundStyle(Self.ink2)
+                    }
+                }
+                .foregroundStyle(Self.ink)
+                .frame(width: 92, height: 56)
+                .background(Capsule().fill(Color.white.opacity(0.1)))
+                .overlay(Capsule().stroke(Color.white.opacity(0.8), lineWidth: 1))
+                .contentShape(Capsule())
             }
-            put(Text(en).font(TripInk.pin(enSize * Z * k)).foregroundColor(Self.g1), x, zh.count > 2 ? 1200 : 1140, k, .top)
+            .buttonStyle(.plain)
+            HStack(spacing: 0) {
+                dockItem("ticket", "票据") { go(.tick) }
+                dockItem("yensign.circle", "花销") { go(.spend) }
+                dockItem("star", "想去") { go(.wish) }
+                dockItem("pencil.line", "游记") { go(.recap) }
+            }
+            .frame(height: 56)
+            .tripFrost(28)
         }
     }
 
-    private func tap(_ x0: CGFloat, _ y0: CGFloat, _ x1: CGFloat, _ y1: CGFloat, _ k: CGFloat, _ act: @escaping () -> Void) -> some View {
-        Color.clear.contentShape(Rectangle())
-            .frame(width: (x1 - x0) * k, height: (y1 - y0) * k)
-            .onTapGesture(perform: act)
-            .offset(x: x0 * k, y: y0 * k)
+    private func dockItem(_ icon: String, _ name: String, _ act: @escaping () -> Void) -> some View {
+        Button(action: act) {
+            VStack(spacing: 4) {
+                Image(systemName: icon).font(.system(size: 18, weight: .medium))
+                Text(name).font(TripInk.serif(10)).foregroundStyle(Self.ink2)
+            }
+            .foregroundStyle(Self.ink)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
     }
 
-    /// 中文衬线、数字和标点换 Cormorant（时间戳那款，老式数字）；数字字面小，放大 1.2 跟中文一样高
-    private func mix(_ str: String, _ size: CGFloat) -> Text {
-        let numSet = Set("0123456789.,/—¥ ")
-        var out = Text("")
-        var run = "", runIsNum: Bool? = nil
-        func flush() {
-            guard let isNum = runIsNum, !run.isEmpty else { return }
-            out = out + Text(run).font(isNum ? .custom("CormorantGaramond-Medium", size: size * 1.2) : TripInk.serif(size))
-            run = ""
+    /// 封面在最前；参考图里跟这趟同名的地点的照片跟上，没有同名的就拿参考图里全部（都是她自己传的）
+    private func loadPhotos() async {
+        var out: [String] = []
+        if !t.cover.isEmpty { out.append(t.cover) }
+        if let j = try? await AlcoveAPI.getRaw("/api/trip/insp/list") {
+            let places = (j["places"] as? [[String: Any]] ?? []).map { (n($0, "id"), s($0, "name")) }
+            let all = (j["photos"] as? [[String: Any]] ?? []).map { (n($0, "place_id"), s($0, "url")) }
+            let mine = places.first { $0.1 == t.name }.map { p in all.filter { $0.0 == p.0 } } ?? all
+            out += mine.map { $0.1 }.filter { !$0.isEmpty }
         }
-        for ch in str {
-            let isNum = numSet.contains(ch)
-            if runIsNum != isNum { flush(); runIsNum = isNum }
-            run.append(ch)
-        }
-        flush()
-        return out
+        photos = Array(out.prefix(9))
+        at = min(at, max(0, photos.count - 1))
     }
 }
 
@@ -1205,6 +1394,9 @@ private enum TripRail {
 }
 
 private struct TripDay: View {
+    // 1128 换皮（效果图 /root/workroom/card-style-1128/day6.html → day-1128x.jpg）：功能照旧（展开步骤、路上导航跳高德、正在走实时剩余、点站改、加一项、从想去挑），
+    // 样子换成：顶上磨砂名牌（日期 第几天 / 周几 · 第 i / n 天 · 还有几天 · 天气）、一张照片压一张白卡（这天他留的「我说过」）、
+    // 每站一张浅白小卡、两站之间是左边一道线＋「A → B / 方式 · 多久 · 多远」＋黑色「导航」、Route 胶囊把这天的地点串起来、底下几天切换。
     let t: Trip
     @Binding var day: String
     var back: () -> Void
@@ -1212,6 +1404,11 @@ private struct TripDay: View {
     @ObservedObject private var way = TripWayModel.shared
     @State private var opened: Set<Int> = []     // 手动展开步骤的站
     @State private var shut: Set<Int> = []       // 默认展开、被她手动收起的站
+
+    private static let ink = Color(red: 0x1F/255, green: 0x20/255, blue: 0x24/255)
+    private static let ink2 = Color(red: 0x4A/255, green: 0x4C/255, blue: 0x55/255)
+    private static let mut = Color(red: 0x7D/255, green: 0x80/255, blue: 0x8B/255)
+    private static let red = Color(red: 0xB3/255, green: 0x26/255, blue: 0x2B/255)
 
     var body: some View {
         TimelineView(.periodic(from: .now, by: 30)) { _ in page }
@@ -1233,35 +1430,172 @@ private struct TripDay: View {
         let legs: [TripLeg?] = ss.indices.map { i in i + 1 < ss.count ? TripLeg.between(ss[i], ss[i + 1], all: t.stops) : nil }
         let active: Int? = (isToday && cur >= 0 && cur < ss.count - 1 && legs[cur] != nil) ? cur : nil
         let wx = t.weather[day]
-        return TripPage(title: "Day by Day", tint: t.tint, back: back, menu: nil,
-                        foot: ("\(ss.count) 件事" + (wx.map { $0.sunset.isEmpty ? "" : " · 日落 \($0.sunset)" } ?? ""), "slowly…"),
-                        pinned: AnyView(head(wx)), scrollTo: isToday && cur >= 0 ? "now" : nil) {
-            VStack(spacing: 0) {
-                if ss.isEmpty { Text("这天还没排").font(TripInk.serif(13)).foregroundStyle(TripInk.g3).frame(maxWidth: .infinity).padding(.vertical, 40) }
-                ForEach(Array(ss.enumerated()), id: \.element.id) { i, x in
-                    let node = nodeAt(i, cur: cur, active: active, pastDay: day < today)
-                    stopRow(x, first: i == 0, top: i == 0 ? .gap : (i <= cur ? .walked : .ahead), bottom: belowAt(i, count: ss.count, cur: cur, active: active),
-                            node: node, open: isOpen(x, i: i, node: node, active: active))
-                        .id(node == .now ? "now" : "stop\(x.id)")
-                    if let leg = legs[i] {
-                        legRow(leg, a: ss[i], b: ss[i + 1], ln: ln, state: i < cur ? .walked : (active == i ? .moving : .ahead))
-                            .id(active == i ? "now" : "leg\(x.id)")
+        return ZStack(alignment: .top) {
+            LinearGradient(colors: [Color(red: 0xF3/255, green: 0xF3/255, blue: 0xF4/255), Color(red: 0xE9/255, green: 0xEA/255, blue: 0xEC/255),
+                                    Color(red: 0xDC/255, green: 0xDD/255, blue: 0xE0/255)], startPoint: .top, endPoint: .bottom)
+                .ignoresSafeArea()
+            ScrollViewReader { proxy in
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        badge(wx, today: today)
+                        notes(ss).padding(.top, 18)
+                        VStack(spacing: 0) {
+                            if ss.isEmpty { Text("这天还没排").font(TripInk.serif(13)).foregroundStyle(TripInk.g3).frame(maxWidth: .infinity).padding(.vertical, 40) }
+                            ForEach(Array(ss.enumerated()), id: \.element.id) { i, x in
+                                let node = nodeAt(i, cur: cur, active: active, pastDay: day < today)
+                                stopCard(x, node: node, open: isOpen(x, i: i, node: node, active: active))
+                                    .padding(.top, i > 0 && legs[i - 1] == nil ? 10 : 0)
+                                    .id(node == .now ? "now" : "stop\(x.id)")
+                                if let leg = legs[i] {
+                                    legRow(leg, a: ss[i], b: ss[i + 1], ln: ln, state: i < cur ? .walked : (active == i ? .moving : .ahead))
+                                        .id(active == i ? "now" : "leg\(x.id)")
+                                }
+                            }
+                        }
+                        .padding(.top, 18)
+                        routeCapsule(ss).padding(.top, 18)
+                        HStack {
+                            Button { sheet = .stop(nil) } label: { Text("＋ 加一项").font(TripInk.serif(13)).foregroundStyle(Self.ink) }
+                            Spacer()
+                            Button { sheet = .fromWish } label: { Text("从想去挑 · \(t.wishes.filter { $0.stopId == nil }.count)").font(TripInk.serif(12)).foregroundStyle(Self.ink2) }
+                        }
+                        .buttonStyle(.plain)
+                        .padding(.horizontal, 6).padding(.top, 16)
+                    }
+                    .padding(.horizontal, 20)
+                    .padding(.top, TripSafe.top + 44 + 6)
+                    .padding(.bottom, TripSafe.bottom + 60 + 40)
+                }
+                .scrollIndicators(.hidden)
+                .onAppear {
+                    guard isToday && cur >= 0 else { return }
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 0.35) {
+                        withAnimation(.easeOut(duration: 0.3)) { proxy.scrollTo("now", anchor: UnitPoint(x: 0.5, y: 0.3)) }
                     }
                 }
             }
-            .padding(.top, 4)
-            .background(alignment: .topLeading) {
-                TripMat(name: "tree", tint: t.tint, opacity: 0.42).frame(width: 450, height: 788)
-                    .mask(LinearGradient(stops: [.init(color: .clear, location: 0), .init(color: .black, location: 0.14), .init(color: .black, location: 0.42),
-                                                 .init(color: .black.opacity(0.35), location: 0.62), .init(color: .clear, location: 0.86)], startPoint: .top, endPoint: .bottom))
-                    .offset(x: -50, y: 100)
+            // 顶栏：只留返回（第几天写在名牌里）
+            ZStack {
+                HStack {
+                    Button(action: back) {
+                        Image(systemName: "chevron.left").font(.system(size: 18, weight: .regular)).foregroundStyle(Self.ink)
+                            .frame(width: 44, height: 44).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
+                }
+                .padding(.leading, 6)
             }
-        } bar: {
-            HStack {
-                Button { sheet = .stop(nil) } label: { Text("＋ 加一项").font(TripInk.serif(13)).foregroundStyle(TripInk.ink) }
-                Spacer()
-                Button { sheet = .fromWish } label: { Mono("从想去挑 · \(t.wishes.filter { $0.stopId == nil }.count)", color: TripInk.ink) }
+            .frame(height: 44)
+            .padding(.top, TripSafe.top)
+            .background(LinearGradient(colors: [Color(red: 0xF3/255, green: 0xF3/255, blue: 0xF4/255), Color(red: 0xF3/255, green: 0xF3/255, blue: 0xF4/255).opacity(0)],
+                                       startPoint: .init(x: 0.5, y: 0.7), endPoint: .bottom).ignoresSafeArea().allowsHitTesting(false))
+        }
+        .overlay(alignment: .bottom) {
+            daySwitch
+                .padding(.horizontal, 16)
+                .padding(.bottom, TripSafe.bottom + 10)
+        }
+    }
+
+    // ── 名牌：12·31 第一天 / 周四 · 第 1 / 4 天 · 还有 34 天 · 天气 · 日落
+    private func badge(_ wx: TripWx?, today: String) -> some View {
+        let i = (t.dayList.firstIndex(of: day) ?? 0) + 1
+        let gap = TripText.days(today, day)
+        var sub = ["\(Trip.weekday(day))", "第 \(i) / \(t.dayList.count) 天"]
+        if gap > 0 { sub.append("还有 \(gap) 天") } else if gap == 0 { sub.append("就是今天") }
+        if let wx { sub.append("\(wx.wx) \(wx.hi)° / \(wx.lo)°"); if !wx.sunset.isEmpty { sub.append("日落 \(wx.sunset)") } }
+        return VStack(alignment: .leading, spacing: 2) {
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Text(Trip.dot(TripText.md(day))).font(.custom("CormorantGaramond-Light", size: 17))
+                Text("第\(Trip.cnNum[min(10, i)])天").font(TripInk.serif(15))
             }
+            .foregroundStyle(Self.ink)
+            Text(sub.joined(separator: " · ")).font(TripInk.serif(9.5)).foregroundStyle(Self.mut).lineLimit(1).minimumScaleFactor(0.8)
+        }
+        .padding(.horizontal, 20).padding(.vertical, 8)
+        .tripCapsule(26)
+    }
+
+    // ── 一张照片压着一张白卡：白卡里是这天他在各站留的话（没有就整块不出）
+    @ViewBuilder private func notes(_ ss: [TripStop]) -> some View {
+        let lines = ss.filter { !$0.hisLine.isEmpty }
+        if !lines.isEmpty {
+            let photo = t.dayNotes[day]?.photo ?? ""
+            let src = !photo.isEmpty ? photo : t.cover
+            ZStack(alignment: .leading) {
+                VStack(alignment: .leading, spacing: 0) {
+                    ForEach(Array(lines.enumerated()), id: \.element.id) { j, x in
+                        if j > 0 { Rectangle().fill(Self.ink.opacity(0.15)).frame(height: 1).padding(.vertical, 7) }
+                        Text(x.hisLine).font(TripInk.serif(11)).foregroundStyle(Self.ink).lineSpacing(3).fixedSize(horizontal: false, vertical: true)
+                        Text("璟 · \(TripLeg.place(x)?.name ?? x.title)").font(.custom("CormorantGaramond-Medium", size: 9)).foregroundStyle(Color(red: 0x9A/255, green: 0x9D/255, blue: 0xA6/255)).lineLimit(1).padding(.top, 2)
+                    }
+                }
+                .padding(.vertical, 14).padding(.trailing, 18).padding(.leading, src.isEmpty ? 18 : 130)
+                .frame(maxWidth: .infinity, minHeight: 112, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 26, style: .continuous).fill(Color(red: 0xFB/255, green: 0xFB/255, blue: 0xFC/255))
+                    .shadow(color: .black.opacity(0.07), radius: 10, x: 0, y: 8))
+                .padding(.leading, src.isEmpty ? 0 : 38)
+                if !src.isEmpty {
+                    CachedImage(url: AlcoveAPI.fullURL("/\(src)")) { $0.resizable().scaledToFill() } placeholder: { Color.white.opacity(0.5) }
+                        .frame(width: 150, height: 96)
+                        .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
+                        .shadow(color: .black.opacity(0.16), radius: 9, x: 0, y: 8)
+                        .allowsHitTesting(false)
+                }
+            }
+        }
+    }
+
+    // ── 底下几天切换（当前那天按下去）
+    private var daySwitch: some View {
+        let hot = t.hotDay
+        return HStack(spacing: 0) {
+            ForEach(t.dayList, id: \.self) { d in
+                Button { day = d } label: {
+                    VStack(spacing: 1) {
+                        Text(Trip.dot(TripText.md(d))).font(.custom("CormorantGaramond-Light", size: 14)).foregroundStyle(Self.ink)
+                        HStack(spacing: 3) {
+                            Text(t.dayKey(d).head).font(TripInk.serif(9.5)).foregroundStyle(Color(red: 0x6A/255, green: 0x6D/255, blue: 0x76/255)).lineLimit(1)
+                            if d == hot { Circle().fill(Self.red).frame(width: 4, height: 4) }
+                        }
+                    }
+                    .frame(maxWidth: .infinity).padding(.vertical, 7)
+                    .background(Capsule().fill(d == day ? Color.black.opacity(0.08) : Color.clear))
+                    .overlay(Capsule().stroke(Color.black.opacity(d == day ? 0.05 : 0), lineWidth: 1))
+                    .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
+            }
+        }
+        .padding(.horizontal, 6)
+        .frame(height: 60)
+        .tripCapsule(30)
+    }
+
+    // ── Route：这天有地点的站串起来（没有图，小圆点）
+    @ViewBuilder private func routeCapsule(_ ss: [TripStop]) -> some View {
+        let names: [String] = ss.compactMap { TripLeg.place($0)?.name }.reduce(into: []) { if $0.last != $1 { $0.append($1) } }
+        if names.count >= 2 {
+            HStack(spacing: 0) {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text("Route").font(TripInk.pin(18)).foregroundStyle(Self.ink)
+                    Text("今天的路").font(TripInk.serif(9)).foregroundStyle(Self.mut)
+                }
+                .padding(.trailing, 12)
+                ForEach(Array(names.enumerated()), id: \.offset) { i, nm in
+                    if i > 0 {
+                        TripDash().stroke(Self.ink.opacity(0.35), style: StrokeStyle(lineWidth: 1, dash: [3, 3])).frame(height: 1).frame(minWidth: 10).offset(y: -7)
+                    }
+                    VStack(spacing: 4) {
+                        Circle().stroke(Self.ink.opacity(0.55), lineWidth: 1).frame(width: 7, height: 7)
+                        Text(nm).font(TripInk.serif(9)).foregroundStyle(Self.ink2).lineLimit(2).multilineTextAlignment(.center).frame(maxWidth: 64)
+                    }
+                }
+            }
+            .padding(.horizontal, 18).padding(.vertical, 12)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .tripCapsule(33)
         }
     }
 
@@ -1269,10 +1603,6 @@ private struct TripDay: View {
         if i < cur { return .past }
         if i == cur { return (active == i || pastDay) ? .past : .now }
         return .next
-    }
-    private func belowAt(_ i: Int, count: Int, cur: Int, active: Int?) -> TripLine {
-        if i == count - 1 { return .gap }
-        return (i < cur || active == i) ? .walked : .ahead
     }
     /// 步骤默认展开：现在待着的那站、正在去的那站；她手动点过的照她的
     private func isOpen(_ x: TripStop, i: Int, node: TripNode, active: Int?) -> Bool {
@@ -1282,83 +1612,59 @@ private struct TripDay: View {
         return node == .now || (active.map { i == $0 + 1 } ?? false)
     }
 
-    /// 钉在顶上的日期那块
-    private func head(_ wx: TripWx?) -> some View {
-        let wd = TripText.date(day).map { TripText.weekdays[(TripText.bjComponents($0).weekday ?? 1) - 1] } ?? ""
-        return HStack(alignment: .top) {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(TripText.md(day)).font(TripInk.serif(40))
-                HStack(spacing: 6) {
-                    Mono(wd)
-                    Text("· 第 \((t.dayList.firstIndex(of: day) ?? 0) + 1) / \(t.dayList.count) 天" + (wx.map { " · \($0.wx) \($0.hi)° / \($0.lo)°" } ?? "")).font(TripInk.serif(10)).foregroundStyle(TripInk.g1)
-                }
-            }
-            Spacer()
-            HStack(spacing: 12) {
-                ForEach(t.dayList, id: \.self) { d in
-                    Button { day = d } label: {
-                        Text(String(d.suffix(2))).font(TripInk.serif(12)).foregroundStyle(d == day ? TripInk.ink : TripInk.g3).padding(.bottom, 3)
-                            .overlay(alignment: .bottom) { if d == day { Rectangle().fill(TripInk.ink).frame(height: 0.7) } }
-                    }
-                    .buttonStyle(.plain)
-                }
-            }
-            .padding(.top, 10)
-        }
-        .padding(.top, 12).padding(.bottom, 14)
-        .foregroundStyle(TripInk.ink)
-    }
-
     // MARK: 一站
 
-    private func stopRow(_ x: TripStop, first: Bool, top: TripLine, bottom: TripLine, node: TripNode, open: Bool) -> some View {
+    private func stopCard(_ x: TripStop, node: TripNode, open: Bool) -> some View {
         let grey = node == .past
         let place = x.addr.trimmingCharacters(in: .whitespaces)
+        let how = TripText.how(x.how)
         return VStack(alignment: .leading, spacing: 0) {
-            if !first { Hair().padding(.leading, TripRail.content) }      // #5563 最上面不要线
-            HStack(alignment: .firstTextBaseline, spacing: 0) {
-                TripClock(x.time.isEmpty ? "—" : x.time).foregroundStyle(grey ? TripInk.g3 : TripInk.ink)
-                    .frame(width: TripRail.time, alignment: .leading)
-                Spacer().frame(width: TripRail.rail + TripRail.gap)
-                VStack(alignment: .leading, spacing: 6) {
-                    VStack(alignment: .leading, spacing: 6) {
-                        Text(place.isEmpty ? x.title : place).font(TripInk.serif(14.5))
-                            .foregroundStyle(grey ? TripInk.g3 : TripInk.ink)
-                        if !place.isEmpty {
-                            Text(x.title).font(TripInk.serif(12.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.ink.opacity(0.82))
-                        }
-                        if !x.note.isEmpty { Text(x.note).font(TripInk.serif(11.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.g1).lineSpacing(3) }
+            VStack(alignment: .leading, spacing: 0) {
+                if node == .now { Text("NOW").font(TripInk.mono(9)).tracking(0.6).foregroundStyle(Self.ink).padding(.bottom, 4) }
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(place.isEmpty ? x.title : place).font(TripInk.serif(14)).foregroundStyle(grey ? TripInk.g3 : Self.ink)
+                        .fixedSize(horizontal: false, vertical: true)
+                    if !how.isEmpty {
+                        Text(how).font(TripInk.serif(9.5)).foregroundStyle(Self.mut)
+                            .padding(.horizontal, 6).padding(.vertical, 1)
+                            .overlay(Capsule().stroke(Self.ink.opacity(0.2), lineWidth: 1))
                     }
-                    .frame(maxWidth: .infinity, alignment: .leading)
-                    .contentShape(Rectangle())
-                    .onTapGesture { sheet = .stop(x.id) }
-                    if !x.steps.isEmpty { steps(x, open: open, grey: grey) }
-                    if !x.hisLine.isEmpty {
-                        Text("「\(x.hisLine)」").font(TripInk.serif(11.5)).foregroundStyle(TripInk.g1).lineSpacing(4).padding(.top, 2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        Text("璟 · \(String(x.hisAt.dropFirst(11).prefix(5)))").font(TripInk.mono(9)).foregroundStyle(TripInk.g3)
-                    }
+                    Spacer(minLength: 6)
+                    TripClock(x.time.isEmpty ? "—" : x.time).foregroundStyle(grey ? TripInk.g3 : Self.ink2)
+                }
+                if !place.isEmpty {
+                    Text(x.title).font(TripInk.serif(11.5)).foregroundStyle(grey ? TripInk.g3 : Self.ink.opacity(0.88)).padding(.top, 5)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if !x.note.isEmpty {
+                    Text(x.note).font(TripInk.serif(10.5)).foregroundStyle(grey ? TripInk.g3 : Self.mut).lineSpacing(3).padding(.top, 3)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
             }
-            .padding(.top, 14).padding(.bottom, 16)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .contentShape(Rectangle())
+            .onTapGesture { sheet = .stop(x.id) }
+            if !x.steps.isEmpty { steps(x, open: open, grey: grey) }
         }
-        .overlay(alignment: .topLeading) {
-            TripRailLine(top: top, bottom: bottom, node: node, nodeY: first ? TripRail.nodeY - 0.5 : TripRail.nodeY)
-                .frame(width: TripRail.rail).frame(maxHeight: .infinity)
-                .padding(.leading, TripRail.time)
+        .padding(.horizontal, 16).padding(.vertical, 11)
+        .background(RoundedRectangle(cornerRadius: 10, style: .continuous).fill(Color.white.opacity(0.6)))
+        .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).stroke(Color.white.opacity(0.95), lineWidth: 1))
+        .overlay(alignment: .leading) {
+            if node == .now { RoundedRectangle(cornerRadius: 1).fill(Self.ink).frame(width: 2).padding(.vertical, 12) }
         }
     }
 
     /// 到了以后的几步（#5568）：标题一行能点开收起，下面一串小圆点
     private func steps(_ x: TripStop, open: Bool, grey: Bool) -> some View {
         VStack(alignment: .leading, spacing: 0) {
+            Rectangle().fill(Self.ink.opacity(0.1)).frame(height: 1).padding(.top, 10).padding(.bottom, 6)
             Button {
                 if open { opened.remove(x.id); shut.insert(x.id) } else { shut.remove(x.id); opened.insert(x.id) }
             } label: {
                 HStack {
-                    Mono("到了以后 · \(x.steps.count) 步", size: 9.5, color: TripInk.g1)
+                    Text("到了以后 · \(x.steps.count) 步").font(TripInk.serif(9.5)).tracking(1).foregroundStyle(Self.mut)
                     Spacer()
-                    Mono(open ? "收起" : "展开", size: 9.5, color: TripInk.g1)
+                    Text(open ? "收起 ⌃" : "展开 ⌄").font(TripInk.serif(9.5)).tracking(1).foregroundStyle(Self.mut)
                 }
                 .padding(.vertical, 4)
                 .contentShape(Rectangle())
@@ -1369,22 +1675,20 @@ private struct TripDay: View {
                     // 1117 她：长的那步被省略号截了 → 一步写多长就折几行，小圆点对着第一行
                     ForEach(Array(x.steps.enumerated()), id: \.offset) { _, st in
                         HStack(alignment: .top, spacing: 10) {
-                            Circle().stroke(TripInk.g2, lineWidth: 0.8).frame(width: 5, height: 5).padding(.top, 6)
-                            Text(st).font(TripInk.serif(11.5)).foregroundStyle(grey ? TripInk.g3 : TripInk.ink.opacity(0.78))
+                            Circle().stroke(Color(red: 0x8A/255, green: 0x8D/255, blue: 0x96/255), lineWidth: 0.8).frame(width: 5, height: 5).padding(.top, 6)
+                            Text(st).font(TripInk.serif(11)).foregroundStyle(grey ? TripInk.g3 : Color(red: 0x3E/255, green: 0x40/255, blue: 0x48/255))
                                 .lineSpacing(3).fixedSize(horizontal: false, vertical: true)
                         }
-                        .padding(.vertical, 3.5)
+                        .padding(.vertical, 4)
                     }
                 }
                 .background(alignment: .topLeading) {
-                    // 竖线从第一个点连到最后一个点：上头让开 3.5+6+2.5，下头让开最后一行（按一行高约 22 估）
-                    Rectangle().fill(TripInk.hl).frame(width: 0.7).padding(.top, 12).padding(.bottom, 16).offset(x: 2.15)
+                    Rectangle().fill(Self.ink.opacity(0.18)).frame(width: 0.7).padding(.top, 12).padding(.bottom, 16).offset(x: 2.15)
                         .frame(maxHeight: .infinity, alignment: .top)
                 }
-                .padding(.leading, 3)
+                .padding(.leading, 1)
             }
         }
-        .padding(.top, 2)
     }
 
     // MARK: 路上
@@ -1406,42 +1710,57 @@ private struct TripDay: View {
         else if let p = planned { line1 += ["约 " + TripLeg.minutes(p.sec), TripLeg.meters(p.meters)] }
         else { line1.append(leg.dur) }
         let minute = Int(ln.timeIntervalSince1970 / 60)
-        return VStack(alignment: .leading, spacing: 5) {
-            if live { Mono("NOW · 在路上", size: 9, color: TripInk.ink) }
-            HStack(alignment: .firstTextBaseline, spacing: 10) {
-                Text("\(leg.from.name) → \(leg.to.name)").font(TripInk.serif(13.5)).foregroundStyle(done ? TripInk.g3 : TripInk.ink)
+        return HStack(alignment: .center, spacing: 10) {
+            VStack(alignment: .leading, spacing: 3) {
+                if live { Text("NOW · 在路上").font(TripInk.mono(9)).tracking(0.6).foregroundStyle(Self.ink) }
+                Text("\(leg.from.name) → \(leg.to.name)").font(TripInk.serif(11.5)).foregroundStyle(done ? TripInk.g3 : Color(red: 0x2A/255, green: 0x2B/255, blue: 0x30/255))
                     .fixedSize(horizontal: false, vertical: true)
-                Spacer(minLength: 0)
-                if !leg.ticket {
-                    Button {
-                        Task {
-                            let to = await way.coord(leg.to)
-                            var from: (CLLocationCoordinate2D, String)? = nil
-                            if !live, let c = await way.coord(leg.from) { from = (c, leg.from.name) }
-                            TripAmap.go(from: from, to: to, name: leg.to.name, mode: leg.mode)
-                        }
-                    } label: { Mono("导航", size: 11.5, color: TripInk.ink).padding(.vertical, 4).padding(.leading, 8).contentShape(Rectangle()) }
-                    .buttonStyle(.plain)
+                Text(line1.filter { !$0.isEmpty }.joined(separator: " · ")).font(TripInk.serif(9.5)).foregroundStyle(done ? TripInk.g3 : Self.mut)
+                if !leg.route.isEmpty {
+                    Text(leg.route).font(TripInk.serif(10)).foregroundStyle(done ? TripInk.g3 : Self.mut).lineSpacing(3)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                if live {
+                    Text("已走 " + TripLeg.minutes(elapsed) + (remain.map { " · 还剩约 " + TripLeg.minutes($0) } ?? "")).font(TripInk.serif(10)).foregroundStyle(Self.ink)
                 }
             }
-            Mono(line1.filter { !$0.isEmpty }.joined(separator: " · "), size: 10, color: done ? TripInk.g3 : TripInk.g1)
-            if !leg.route.isEmpty {
-                Text(leg.route).font(TripInk.serif(11)).foregroundStyle(done ? TripInk.g3 : TripInk.g1).lineSpacing(3)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            if live {
-                Mono("已走 " + TripLeg.minutes(elapsed) + (remain.map { " · 还剩约 " + TripLeg.minutes($0) } ?? ""), size: 10, color: TripInk.ink)
+            Spacer(minLength: 0)
+            if !leg.ticket {
+                Button {
+                    Task {
+                        let to = await way.coord(leg.to)
+                        var from: (CLLocationCoordinate2D, String)? = nil
+                        if !live, let c = await way.coord(leg.from) { from = (c, leg.from.name) }
+                        TripAmap.go(from: from, to: to, name: leg.to.name, mode: leg.mode)
+                    }
+                } label: {
+                    Text("导航").font(TripInk.serif(10.5)).tracking(2).foregroundStyle(Color(red: 0xF2/255, green: 0xF2/255, blue: 0xF4/255))
+                        .padding(.horizontal, 14).padding(.vertical, 6)
+                        .background(Capsule().fill(Color(red: 0x26/255, green: 0x27/255, blue: 0x2C/255)))
+                        .contentShape(Capsule())
+                }
+                .buttonStyle(.plain)
             }
         }
-        .padding(.leading, TripRail.content).padding(.top, 4).padding(.bottom, 16)
+        .padding(.leading, 16).padding(.trailing, 4).padding(.vertical, 10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .overlay(alignment: .topLeading) {
-            TripRailLine(top: live ? .gap : state, split: split)
-                .frame(width: TripRail.rail).frame(maxHeight: .infinity)
-                .padding(.leading, TripRail.time)
+            TripRailLine(top: live ? .gap : (done ? .walked : .ahead), split: split)
+                .frame(width: 8).frame(maxHeight: .infinity).offset(x: -4)
         }
+        .padding(.leading, 22)
         .task(id: leg.key) { await way.plan(leg, depart: start) }
         .task(id: live ? "\(leg.key)|\(minute)" : "") { if live { await way.live(leg) } }
+    }
+}
+
+/// 一根横线（Route 胶囊里站和站之间的虚线）
+private struct TripDash: Shape {
+    func path(in rect: CGRect) -> Path {
+        var p = Path()
+        p.move(to: CGPoint(x: 0, y: rect.midY))
+        p.addLine(to: CGPoint(x: rect.maxX, y: rect.midY))
+        return p
     }
 }
 
