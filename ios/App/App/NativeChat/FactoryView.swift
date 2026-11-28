@@ -185,6 +185,7 @@ private struct FactoryEditor: View {
     @State private var text = ""
     @State private var original = ""
     @State private var versions: [String] = []
+    @State private var savedAt: [String: String] = [:]   // 1128 #6266 每版是什么时候存的
     @State private var loading = true
     @State private var saving = false
     @State private var note = ""
@@ -242,11 +243,11 @@ private struct FactoryEditor: View {
         .task { await load() }
         .confirmationDialog("翻回哪一版", isPresented: $showVersions, titleVisibility: .visible) {
             ForEach(versions.prefix(8), id: \.self) { v in
-                Button(pretty(v)) { Task { await restore(v) } }
+                Button(pretty(savedAt[v] ?? v)) { Task { await restore(v) } }
             }
             Button("算了", role: .cancel) {}
         } message: {
-            Text("每次存之前都会留一份底。点哪个，就换回那次改之前的样子。")
+            Text("你以前存过的每一版都留着，点哪个就换回哪个。")
         }
     }
 
@@ -261,8 +262,8 @@ private struct FactoryEditor: View {
         .disabled(versions.isEmpty)
     }
 
-    // 1128 她截图「这排版根本看不懂什么意思」：备份名是 20261128-132602（年月日-时分秒），
-    // 原来切的位置错了一格，出来是「11--1 26:02」。改成「今天 13:26 改之前」这种人话
+    // 1128 她截图「这排版根本看不懂什么意思」：原来切的位置错了一格，出来是「11--1 26:02」。
+    // #6266「什么叫 13:25 改之前？是人话吗」：改成按那一版是什么时候存的写，「今天 09:32 存的那版」
     private func pretty(_ v: String) -> String {
         let s = Array(v)
         guard s.count >= 13, s[8] == "-" else { return v }
@@ -276,7 +277,7 @@ private struct FactoryEditor: View {
             if Calendar.current.isDateInToday(date) { day = "今天" }
             else if Calendar.current.isDateInYesterday(date) { day = "昨天" }
         }
-        return "\(day) \(hm) 改之前"
+        return "\(day) \(hm) 存的那版"
     }
 
     private func query() -> String {
@@ -294,6 +295,7 @@ private struct FactoryEditor: View {
             text = raw.string("text")
             original = text
             versions = raw["versions"] as? [String] ?? []
+            savedAt = raw["saved"] as? [String: String] ?? [:]
             loading = false
         }
     }
